@@ -60,4 +60,3 @@ Show Subagent summary to user:
 - Avoid documenting agent-specific tooling directories (e.g. `.cursor/`, `.gemini/`, `.claude/`)
 - `.claude/kiro/settings/` content should NOT be documented in steering files (settings are metadata, not project knowledge)
 - Light references to `specs/` and `.claude/steering/` are acceptable; avoid other `.kiro/` directories
-# test change
