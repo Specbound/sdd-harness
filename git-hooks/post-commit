@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+TODAY=$(date +%Y-%m-%d)
+
+CHANGED=$(git diff HEAD~1 --name-only 2>/dev/null)
+if [ -z "$CHANGED" ]; then exit 0; fi
+
+# ── Hook 1: Doc sync (documentation drift prevention) ────────────────────────
+# Skip if only .md files changed (avoid infinite loop if docs are committed)
+NON_MD=$(echo "$CHANGED" | grep -v '\.md$' | grep -v '\.claude/')
+if [ -n "$NON_MD" ]; then
+  DOC_SYNC_PROMPT="The following source files changed in the last git commit:
+$NON_MD
+
+Your task: find ALL .md files in the repo that document behavior affected by these changes.
+Use: find $REPO_ROOT -name '*.md' -not -path '*/.venv/*' -not -path '*/.git/*' -not -path '*/__pycache__/*'
+
+Determine relevance using these rules (apply in order, stop at first match):
+- Filename match: stem of changed file appears in the .md filename
+- Content keyword match: stem of changed file appears in a heading in the .md file
+- Topic match: changed file alters how a feature works, and .md describes that feature
+- No match: do not update
+
+For EACH relevant .md file:
+- Read it, then update only the sections directly affected by the code changes
+- Do not remove content unless it directly contradicts what changed
+- Do not restructure or reformat unrelated sections
+- Replace any existing '_Last synced' line with: _Last synced: $TODAY_
+
+Also check .claude/steering/*.md — if code changes introduce new patterns, conventions,
+or architectural decisions not yet captured in steering, update the relevant steering file.
+
+Skip .md files inside .venv/ and .git/. Never write to source code files."
+
+  claude --print "$DOC_SYNC_PROMPT" 2>/dev/null &
+  echo "  post-commit: source changes detected — doc sync running in background..."
+fi
+
+# ── Hook 2: Harness updater (SDD-SETUP-GUIDE sync) ──────────────────────────
+HARNESS_CHANGED=$(echo "$CHANGED" | grep '\.claude/' | grep -v '\.claude/memory/')
+if [ -n "$HARNESS_CHANGED" ]; then
+  HARNESS_PROMPT="The following Claude Code harness files were modified in the last git commit:
+$HARNESS_CHANGED
+
+Your task: update .claude/docs/SDD-SETUP-GUIDE.md to reflect these changes.
+- New or modified command file (.claude/commands/) → update the slash commands section
+- New or modified agent file (.claude/agents/) → update the subagents section
+- CLAUDE.md changed → update the project constitution section
+- New steering file (.claude/steering/) → update the steering section
+- New or modified skill (.claude/skills/) → update or add a skills section
+- Modified hook (.claude/hooks/) → update the automated hooks section
+- New or modified kiro settings (.claude/kiro/) → update the rules/templates section
+- Modified settings.json → update the hooks/configuration section
+Do not remove existing documented steps unless directly replaced by the changes.
+Do not overwrite sections unrelated to the detected changes.
+Replace any existing '_Last synced' line with: _Last synced: $TODAY_"
+
+  claude --print "$HARNESS_PROMPT" 2>/dev/null &
+  echo "  post-commit: harness changes detected — SDD-SETUP-GUIDE sync running in background..."
+fi
