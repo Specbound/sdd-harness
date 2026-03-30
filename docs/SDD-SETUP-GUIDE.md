@@ -98,6 +98,7 @@ Create `CLAUDE.md` at the repo root. Adapt for your project:
 - `.claude/memory/` — read when you need cross-session context or past decisions
 - `specs/` — read when working on or near a feature that has a spec
 - `.claude/docs/` — read when the user asks how to replicate or explain the SDD setup
+- Context Hub MCP tools (`chub_search`, `chub_get`) — available automatically for third-party API docs
 
 ## SDD Workflow
 1. `/kiro:steering`         — bootstrap/refresh project memory
@@ -145,6 +146,12 @@ Create `.claude/settings.json`:
 {
   "env": {
     "CLAUDE_CODE_TASK_LIST_ID": "your-project-name"
+  },
+  "mcpServers": {
+    "context-hub": {
+      "command": "npx",
+      "args": ["-y", "@aisuite/chub-mcp"]
+    }
   },
   "permissions": {
     "allow": [
@@ -561,6 +568,40 @@ See `docs/autoresearch/README.md` for full details.
 
 ---
 
+## Context Hub (Automatic API Documentation)
+
+The harness includes [Context Hub](https://github.com/andrewyng/context-hub) as an MCP server. It provides a curated registry of LLM-optimized documentation for third-party libraries and APIs (OpenAI, Stripe, Anthropic, etc.) so agents use accurate, up-to-date API signatures instead of hallucinating from training data.
+
+### How it works
+
+Context Hub runs as an MCP server (`chub-mcp`) configured in `.claude/settings.json`. It exposes tools that Claude Code can call automatically when needed:
+
+| MCP Tool | Purpose |
+|---|---|
+| `chub_search` | Search docs/skills by keyword |
+| `chub_get` | Fetch doc content by ID (with language/version selection) |
+| `chub_list` | List all available documentation entries |
+| `chub_annotate` | Read/write persistent annotations on docs |
+| `chub_feedback` | Rate doc quality to inform maintainers |
+
+**No manual invocation needed.** Claude Code sees these tools automatically and calls them when it encounters unfamiliar APIs or needs accurate documentation for code generation.
+
+### Prerequisites
+
+- **Node.js** — for npx (already required by the harness)
+
+The MCP server is configured in Step 6 (`settings.json`). No additional installation steps required — `npx -y @aisuite/chub-mcp` downloads and runs the server on demand.
+
+### CLAUDE.md additions
+
+Add to your project's `CLAUDE.md` Context Resources section:
+
+```markdown
+- Context Hub MCP tools (`chub_search`, `chub_get`) — available automatically for third-party API docs
+```
+
+---
+
 ## Detailed Documentation
 
 Each harness subsystem has a detailed reference doc:
@@ -571,6 +612,7 @@ Each harness subsystem has a detailed reference doc:
 | Cog Memory | `docs/memory/README.md` | Tier architecture, file formats, conventions, data flow |
 | Jira Integration | `docs/jira/README.md` | Hook architecture, scripts, credentials, troubleshooting |
 | AutoResearch | `docs/autoresearch/README.md` | Interview protocol, loop mechanics, agent behavior |
+| Context Hub | [github.com/andrewyng/context-hub](https://github.com/andrewyng/context-hub) | MCP server for third-party API docs (external) |
 
 ---
 

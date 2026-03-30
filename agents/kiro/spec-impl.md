@@ -76,10 +76,12 @@ For each selected task, follow Kent Beck's TDD cycle:
    - Apply design patterns where appropriate
    - Ensure all tests still pass after refactoring
 
-4. **VERIFY - Validate Quality**:
-   - All tests pass (new and existing)
+4. **VERIFY - Validate Quality (Success Silent, Failure Loud)**:
+   - Run tests and capture output to a temp file: `pytest -x --ignore=tests/integration > /tmp/test-output.txt 2>&1`
+   - Check exit code only — if 0, report "tests pass" without reading the file
+   - If non-zero, read `/tmp/test-output.txt` to diagnose failures
+   - Never paste passing test output into context — it wastes tokens and causes context rot
    - No regressions in existing functionality
-   - Code coverage maintained or improved
 
 5. **SELF-REVIEW - Spawn Refactor Agent**:
    - Use the Agent tool to spawn `spec-refactor-agent`
@@ -103,14 +105,26 @@ For each selected task, follow Kent Beck's TDD cycle:
 - **Test first**: Write tests before code
 - Use **WebSearch/WebFetch** for library documentation when needed
 
-## Output Description
+## Output Description (Standardized Agent Output Format)
 
-Provide brief summary in the language specified in spec.json:
+Return using this structure (under 150 words total):
 
-1. **Tasks Executed**: Task numbers and test results
-2. **Status**: Completed tasks marked in tasks.md, remaining tasks count
+```
+## Summary
+[2-3 sentences: tasks executed, outcome, any blockers]
 
-**Format**: Concise (under 150 words)
+## Changes Made
+- [filepath:line] — description
+(list all files written/edited)
+
+## Verification
+- Tests: pass / fail
+- Tasks completed: X of Y, remaining: [list]
+
+## Issues Found
+- [any blockers, regressions, or concerns]
+(or "None")
+```
 
 ## Safety & Fallback
 

@@ -1,45 +1,26 @@
 # {{PROJECT_NAME}}
 
 ## Context Resources (read on demand, not upfront)
-- `.claude/steering/` — read when you need project architecture, stack, or code structure context
 - `.claude/memory/hot-memory.md` — read at session start (current state, priorities)
 - `.claude/memory/meta/patterns.md` — read at session start (workflow patterns)
+- `.claude/steering/` — read when you need project architecture, stack, or code structure context
 - `.claude/memory/` — read when you need cross-session context or past decisions
 - `specs/` — read when working on or near a feature that has a spec
-- `.claude/docs/specs/` — read when the user asks about design decisions behind the SDD harness
-- `.claude/docs/SDD-USAGE.md` — read when the user asks how to use the SDD workflow or needs command examples
-- `.claude/docs/` — read when the user asks how to replicate or explain the SDD setup
-
-## SDD Workflow
-1. `/kiro:steering`         — bootstrap/refresh project memory
-2. `/kiro:steering-custom`  — add domain-specific steering (auth, DB, API, etc.)
-3. `/kiro:spec-init`        — start a new feature
-4. `/kiro:spec-quick`       — fast path (requirements→design→tasks in one command)
-5. `/kiro:spec-impl`        — implement from approved spec
-6. `/kiro:sync-docs`        — sync docs with all code changes (or runs automatically on git commit)
-7. `/kiro:reflect`          — review session, extract patterns, update memory
-8. `/kiro:housekeeping`     — prune memory, archive old observations
-9. `/kiro:evolve`           — audit harness rules, propose improvements
+- `.claude/docs/SDD-USAGE.md` — read when you need SDD command reference
 
 ## Rules
-- Keep context under 40% before moving from planning to implementation
 - Always plan before coding — use Plan mode for back-and-forth
 - Every feature needs an approved spec in `specs/` before implementation
 - Atomic commits per task (one task = one commit, code only)
 - Never skip the human review gate between spec phases
 - Never commit SDD files — harness is local only
-- Read `.claude/memory/hot-memory.md` and `meta/patterns.md` at session start
-- Observations are append-only; never edit past entries
-- Hot memory stays under 50 lines; patterns under 70 lines
-- Each fact lives in ONE file; reference via paths, don't duplicate
 
 ## Quality Gates (automated)
-- `ruff check`: on every `.py` file write  # Adjust lint command for your language/stack
-- `pytest -x --ignore=tests/integration`: after each impl task  # Adjust test command for your stack
-- doc sync: automatically on every `git commit` via post-commit hook (source files only)
-- harness guide sync: automatically on every `git commit` if `.claude/` files changed
-- memory health: warns when observations.md exceeds 50 entries (on session stop)
+- `ruff check`: on every `.py` file write
+- `pytest -x --ignore=tests/integration`: after each impl task
+- doc sync: automatically on every `git commit` via post-commit hook
 
-## Quality Gates (manual)
-- memory reflect: `/kiro:reflect` after significant sessions (spec completion, major impl)
-- memory housekeeping: `/kiro:housekeeping` when observations.md exceeds 50 entries
+## Test Output Convention
+- When running tests, capture output to a temp file
+- Only read the output if the exit code is non-zero
+- Do not paste passing test output into conversation context

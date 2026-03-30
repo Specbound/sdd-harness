@@ -142,6 +142,15 @@ Measures memory health, detects friction patterns, proposes rule improvements.
 ```
 Run on demand when something feels off about the workflow.
 
+### `/kiro:harness-fix` — Fix a specific agent mistake
+When you observe the agent making a repeatable behavioral mistake, this command encodes a targeted prevention rule so it never happens again. Lighter than `/kiro:evolve` — fixes one thing immediately.
+
+```
+/kiro:harness-fix "agent keeps creating new utility files instead of reusing existing ones"
+/kiro:harness-fix "agent runs the full test suite instead of targeted tests"
+```
+The rule is added to the appropriate agent file or rule file and distributed via `update.sh`.
+
 ---
 
 ## Jira Integration
@@ -186,6 +195,32 @@ Reads `program.md`, iterates on `train.py` (~5 min per experiment), keeps improv
 **Prerequisites**: `uv` installed, `program.md` + `train.py` + `prepare.py` in project root. Run `uv run prepare.py` once before starting the loop.
 
 See `docs/autoresearch/README.md` for full details.
+
+---
+
+## Skill Extraction (from Repositories)
+
+### `/kiro:skill-extract-scan` — Analyze a repo for extractable skills
+Scans a repository, scores candidate modules against the extraction rubric, and produces a reviewable plan.
+
+```
+/kiro:skill-extract-scan https://github.com/org/repo
+/kiro:skill-extract-scan /path/to/local/repo
+```
+
+Output: `.claude/skill-extraction/<repo-name>/plan.md` with ranked candidates, scores, and rationale.
+
+### `/kiro:skill-extract` — Generate SKILL.md files
+Generates skills from an approved extraction plan, or runs the full pipeline with `-y`.
+
+```
+/kiro:skill-extract .claude/skill-extraction/repo/plan.md
+/kiro:skill-extract https://github.com/org/repo -y
+```
+
+Output: `~/.claude/skills/<name>/SKILL.md` for each extracted skill.
+
+See `docs/skill-extraction/README.md` for full details on scoring, workflow, and security.
 
 ---
 

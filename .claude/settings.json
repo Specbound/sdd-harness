@@ -10,7 +10,19 @@
       "Read(//home/dalesser/.config/Code/User/**)",
       "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(json.dumps\\({k:v for k,v in d.items\\(\\) if ''''sonar'''' in k.lower\\(\\) or ''''sonar'''' in json.dumps\\(v\\).lower\\(\\)}, indent=2\\)\\)\")",
       "Bash(TOKEN=\"squ_854dc8b009a63007c67dcc4bdb50ed9c3dd47b17\" HOST=\"https://sonar.tools.deloitteinnovation.us\" PROJECT_KEY=\"INT__aiq-zora-agent-skills\" BRANCH=\"main\" __NEW_LINE_2925b6ed9a1b842a__ curl -s -u \"$TOKEN:\" \"$HOST/api/hotspots/search?projectKey=$PROJECT_KEY&branch=$BRANCH&status=TO_REVIEW&ps=500\")",
-      "Read(//mnt/c/dev/**)"
+      "Read(//mnt/c/dev/**)",
+      "WebFetch(domain:arxiv.org)",
+      "Bash(gh api:*)",
+      "Bash(curl -s \"https://raw.githubusercontent.com/sanyuan0704/sanyuan-skills/main/skills/code-review-expert/SKILL.md\")",
+      "Bash(curl -s \"https://api.github.com/repos/sanyuan0704/sanyuan-skills/contents/skills/code-review-expert\")",
+      "Bash(grep -rn refactor /home/dalesser/.claude/sdd-harness/ --include=*.md --include=*.json --include=*.yaml --include=*.yml)",
+      "Bash(curl -s \"https://raw.githubusercontent.com/sanyuan0704/sanyuan-skills/main/skills/code-review-expert/README.md\")",
+      "Bash(curl -s \"https://api.github.com/repos/sanyuan0704/sanyuan-skills/contents/skills/code-review-expert/agents\")",
+      "Bash(curl -s \"https://api.github.com/repos/sanyuan0704/sanyuan-skills/contents/skills/code-review-expert/references\")",
+      "Bash(curl -s \"https://raw.githubusercontent.com/sanyuan0704/sanyuan-skills/main/skills/code-review-expert/agents/agent.yaml\")",
+      "Bash(curl -s \"https://raw.githubusercontent.com/sanyuan0704/sanyuan-skills/main/skills/code-review-expert/references/solid-checklist.md\")",
+      "Bash(curl -s \"https://raw.githubusercontent.com/sanyuan0704/sanyuan-skills/main/skills/code-review-expert/references/security-checklist.md\")",
+      "Bash(curl -s \"https://raw.githubusercontent.com/sanyuan0704/sanyuan-skills/main/skills/code-review-expert/references/code-quality-checklist.md\")"
     ],
     "additionalDirectories": [
       "/home/dalesser/.claude/sdd-harness",
