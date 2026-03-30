@@ -1,0 +1,131 @@
+# Cog Memory — Cross-Session Persistent Memory System
+
+> Detailed reference for the temperature-tiered memory architecture.
+
+## What It Is
+
+A structured, file-based memory system that gives Claude persistent context across sessions. Inspired by cognitive memory models — information flows from hot (active context) through warm (observations) to cold (glacier archives), with progressive condensation at each tier.
+
+Without it, every Claude session starts from zero. With it, Claude reads `hot-memory.md` and `patterns.md` at session start and immediately knows what's in progress, what was decided, and what patterns to follow.
+
+## Architecture
+
+```
+.claude/memory/
+├── hot-memory.md              # HOT — <50 lines, loaded at session start
+├── observations.md            # WARM — append-only session log (max 50 entries)
+├── action-items.md            # WARM — cross-session TODOs with due dates
+├── entities.md                # WARM — project entity registry
+├── meta/
+│   ├── self-observations.md   # META — SDD workflow learnings
+│   └── patterns.md            # META — distilled rules (<70 lines, loaded at start)
+└── glacier/                   # COLD — archived observations
+    └── index.md               # auto-generated catalog
+```
+
+### Tier Details
+
+| Tier | Files | Read When | Cap |
+|---|---|---|---|
+| Hot | `hot-memory.md` | Every session start | 50 lines |
+| Warm | `observations.md`, `action-items.md`, `entities.md` | On demand / when relevant | 50 entries (observations) |
+| Meta | `meta/patterns.md`, `meta/self-observations.md` | Session start (patterns), on evolve (self-obs) | 70 lines (patterns) |
+| Cold | `glacier/*.md` | Rarely — when investigating old decisions | Unlimited |
+
+### Data Flow
+
+```
+Session work → /kiro:reflect → observations.md (append)
+                             → patterns.md (promote recurring themes)
+                             → hot-memory.md (update current state)
+
+observations.md (>50) → /kiro:housekeeping → glacier/YYYY-MM.md (archive)
+                                            → observations.md (pruned)
+
+friction patterns → /kiro:evolve → meta/self-observations.md (audit findings)
+                                 → proposed rule changes (user approval required)
+```
+
+## File Formats
+
+### hot-memory.md
+Current priorities, active specs, recent decisions. Updated by `reflect`.
+```markdown
+<!-- L0: Current sprint priorities and active decisions -->
+- Active spec: feature-x (tasks phase, 3/7 complete)
+- Decision: using PostgreSQL jsonb for metadata storage
+- Priority: finish feature-x before Thursday deploy freeze
+```
+
+### observations.md
+Append-only session log. Each entry tagged with category.
+```markdown
+- 2026-03-28 [impl]: feature-x task 3 required refactoring the query builder — existing abstraction didn't support joins
+- 2026-03-28 [friction]: ruff auto-fix removed a needed import; had to re-add manually
+- 2026-03-29 [decision]: switched from REST to GraphQL for the dashboard endpoint — reduces frontend round-trips
+```
+
+**Tags**: `spec`, `impl`, `design`, `debug`, `decision`, `friction`, `insight`, `pattern`
+
+### action-items.md
+Cross-session TODOs with priority and dates.
+```markdown
+- [ ] Migrate old auth tokens to new format | due:2026-04-05 | pri:high | added:2026-03-28
+- [x] Add index on users.email | due:2026-03-30 | pri:medium | added:2026-03-25
+```
+
+### entities.md
+Project entity registry (services, APIs, databases). 3-line max per entry.
+```markdown
+### query-builder
+Internal SQL query builder module. Lives in `src/db/query.py`.
+Supports SELECT, INSERT, UPDATE. No JOIN support yet (see feature-x spec).
+```
+
+### meta/patterns.md
+Distilled workflow rules — promoted from recurring observations. Loaded at session start alongside hot-memory.
+```markdown
+- Always run pytest after editing query builder — it has subtle edge cases
+- The dashboard API returns paginated results; always pass limit param
+- Feature specs in this project usually need a migration task
+```
+
+### L0 Headers
+Every memory file starts with an L0 summary comment:
+```markdown
+<!-- L0: summary of this file's purpose (max 80 chars) -->
+```
+
+## Use Cases
+
+1. **Session continuity** — Pick up where you left off without re-explaining context
+2. **Decision tracking** — Know *why* something was decided, not just what
+3. **Pattern accumulation** — Workflow improvements compound over time
+4. **Friction detection** — Tagged `[friction]` observations feed into `evolve` audits
+5. **Onboarding** — New team members (or fresh Claude sessions) get instant context
+
+## Commands
+
+| Command | When | What |
+|---|---|---|
+| `/kiro:reflect` | After significant sessions | Mines git log → observations, promotes patterns, updates hot-memory |
+| `/kiro:housekeeping` | When observations >50 or periodically | Archives to glacier, prunes caps, validates formats |
+| `/kiro:evolve` | On demand | Audits rules against friction patterns, proposes improvements |
+
+## Conventions
+
+Defined in `kiro/settings/rules/memory-conventions.md`:
+- Observations are append-only; never edit past entries
+- Hot memory stays under 50 lines; patterns under 70 lines
+- Each fact lives in ONE file — reference via paths, never duplicate
+- Tags are mandatory on observations
+- Action items must have `due:`, `pri:`, and `added:` fields
+
+## Setup
+
+1. Run `/kiro:reflect` in any session — auto-creates from templates if missing
+2. Or manually: copy templates from `kiro/settings/templates/memory/` to `.claude/memory/`
+3. Seed `hot-memory.md` with current project state
+4. Add to `CLAUDE.md`: "Read `.claude/memory/hot-memory.md` and `meta/patterns.md` at session start"
+
+See `SDD-SETUP-GUIDE.md` Step 12 for full bootstrap instructions.

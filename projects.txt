@@ -1,1 +1,2 @@
 /mnt/c/dev/aiq-zora-ai-engine
+/home/dalesser/aiq-purina-salesorderintelligence-poc

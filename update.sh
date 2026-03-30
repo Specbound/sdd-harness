@@ -1,5 +1,11 @@
 #!/bin/bash
-# Usage: update.sh [/path/to/project]
+# ──────────────────────────────────────────────────────────
+# Update all registered projects:
+#   ~/.claude/sdd-harness/update.sh
+#
+# Update a single project:
+#   ~/.claude/sdd-harness/update.sh /path/to/project
+# ──────────────────────────────────────────────────────────
 # Syncs harness files to all registered projects (or just one).
 set -e
 
@@ -17,12 +23,14 @@ do_update() {
   cp -r "$HARNESS_DIR/agents/"   "$proj/.claude/"
   cp -r "$HARNESS_DIR/kiro/"     "$proj/.claude/"
   cp -r "$HARNESS_DIR/scripts/"  "$proj/.claude/"
+  cp -r "$HARNESS_DIR/docs/"     "$proj/.claude/"
   cp    "$HARNESS_DIR/hooks/stop-hook.sh" "$proj/.claude/hooks/"
   chmod +x "$proj/.claude/hooks/stop-hook.sh"
   if [ -d "$proj/.git" ]; then
     cp "$HARNESS_DIR/git-hooks/post-commit" "$proj/.git/hooks/"
     chmod +x "$proj/.git/hooks/post-commit"
   fi
+  bash "$HARNESS_DIR/generate-project-stack.sh" "$proj"
   date -Iseconds > "$proj/.claude/.last-harness-check"
   echo "  Done."
 }
@@ -34,7 +42,7 @@ else
     echo "No registered projects. Run install.sh in a project first."
     exit 0
   fi
-  while IFS= read -r project; do
+  while IFS= read -r project || [ -n "$project" ]; do
     [ -n "$project" ] && do_update "$project"
   done < "$HARNESS_DIR/projects.txt"
 fi

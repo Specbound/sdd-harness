@@ -1,0 +1,103 @@
+# Kiro — Spec-Driven Development Engine
+
+> Detailed reference for the Kiro SDD subsystem within the harness.
+
+## What It Is
+
+Kiro is the core spec-driven development (SDD) engine. It provides a structured, phase-gated workflow for turning feature descriptions into implemented, tested code — with human review gates between every phase.
+
+The workflow enforces: **Requirements → Design → Tasks → Implementation**, each phase producing a concrete artifact that the next phase consumes.
+
+## Origin
+
+Based on [cc-sdd](https://www.npmjs.com/package/cc-sdd) (`npx cc-sdd@latest`), adapted with custom path remapping and additional agents (doc-sync, harness-updater, reflect, housekeeping, evolve).
+
+## Components
+
+### Slash Commands (`commands/kiro/`)
+
+| Command | Phase | Description |
+|---|---|---|
+| `steering` | Setup | Bootstrap/refresh project memory from codebase scan |
+| `steering-custom` | Setup | Add domain-specific steering (auth, DB, API, etc.) |
+| `spec-init` | 1. Init | Create spec workspace in `specs/` with metadata |
+| `spec-requirements` | 2. Requirements | Generate EARS-format requirements |
+| `spec-design` | 3. Design | Research codebase + produce technical design |
+| `spec-tasks` | 4. Tasks | Break design into parallelizable task list |
+| `spec-impl` | 5. Implement | TDD implementation with self-review after each task |
+| `spec-quick` | 2-4 (fast) | Requirements → Design → Tasks in one command |
+| `spec-status` | Any | Show current phase, approvals, open tasks |
+| `validate-gap` | Review | Requirements vs. existing code gap analysis |
+| `validate-design` | Review | Design quality review |
+| `validate-impl` | Review | Implementation vs. spec validation |
+| `sync-docs` | Maintenance | Sync `.md` files with code changes |
+| `reflect` | Memory | Mine session learnings, update observations/patterns |
+| `housekeeping` | Memory | Prune memory, archive old observations |
+| `evolve` | Meta | Audit harness rules, propose improvements |
+
+### Subagents (`agents/kiro/`)
+
+Each command delegates to a specialized subagent. Agents are autonomous — they receive a prompt with file patterns, execute their protocol, and return a summary.
+
+Key agents beyond the spec pipeline:
+- **doc-sync** — Triggered by post-commit hook or `/kiro:sync-docs`. Diffs recent commits against `.md` files and updates stale documentation.
+- **harness-updater** — Triggered by post-commit hook when `.claude/` files change. Updates `SDD-SETUP-GUIDE.md`.
+- **reflect-agent** — Mines `git log` for observations, promotes patterns, updates hot-memory.
+- **housekeeping-agent** — Archives observations to glacier, enforces memory caps.
+- **evolve-agent** — Measures memory health metrics, detects friction patterns, proposes rule changes.
+- **spec-refactor** — Auto-spawned after each impl task's VERIFY step. Reviews touched files for reuse/quality/efficiency.
+
+### Rules (`kiro/settings/rules/`)
+
+Rules control agent behavior:
+- `ears-format.md` — EARS requirement syntax
+- `design-principles.md` — Design doc structure and quality criteria
+- `design-discovery-light.md` / `design-discovery-full.md` — Codebase research depth
+- `design-review.md` — Review checklist for designs
+- `tasks-generation.md` — Task breakdown rules
+- `tasks-parallel-analysis.md` — Parallelism detection (P-wave)
+- `gap-analysis.md` — Gap analysis methodology
+- `steering-principles.md` — Steering doc conventions
+- `memory-conventions.md` — Memory format, caps, and lifecycle rules
+
+### Templates (`kiro/settings/templates/`)
+
+Starting-point files for specs, steering docs, and memory files. Used by `spec-init`, `steering`, and `reflect` to bootstrap new artifacts.
+
+## Use Cases
+
+1. **New feature development** — Full SDD pipeline from idea to implementation
+2. **Brownfield features** — Use `validate-gap` to assess existing code before spec'ing the delta
+3. **Bug fixes** — Use `spec-quick` for a lightweight spec, then `spec-impl` for TDD
+4. **Codebase onboarding** — Run `steering` to generate project knowledge docs
+5. **Quality audits** — Run `validate-impl` against existing specs to find drift
+
+## How to Use
+
+### Full workflow (large features)
+```
+/kiro:steering                          # once per project
+/kiro:spec-init "Add feature X"        # create spec workspace
+/kiro:spec-requirements feature-x       # generate requirements (review + approve)
+/kiro:spec-design feature-x             # generate design (review + approve)
+/kiro:spec-tasks feature-x              # generate tasks (review + approve)
+/kiro:spec-impl feature-x              # implement via TDD
+/kiro:reflect                           # capture session learnings
+```
+
+### Fast path (small features / bug fixes)
+```
+/kiro:spec-quick "Fix the broken auth redirect"
+/kiro:spec-impl fix-auth-redirect
+```
+
+### Maintenance
+```
+/kiro:sync-docs                         # manual doc sync
+/kiro:housekeeping                      # prune memory
+/kiro:evolve                            # audit harness effectiveness
+```
+
+## Setup
+
+Installed via `npx cc-sdd@latest --claude-agent --lang en`, then path-remapped with `scripts/remap-ccsdd-paths.sh`. See `SDD-SETUP-GUIDE.md` Steps 3–4 for details.
