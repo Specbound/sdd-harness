@@ -97,10 +97,18 @@ Reviews the design doc for completeness and consistency.
 ```
 
 ### `/kiro:validate-impl` — Implementation validation
-Verifies code matches the spec (requirements + design + tasks).
+Verifies code matches the spec (requirements + design + tasks). On NO-GO, provides a structured remediation plan with `filepath:line` references.
 
 ```
 /kiro:validate-impl revenue-trend-chart
+```
+
+### `/kiro:validate-adversarial` — High-confidence adversarial review
+Three-pass review: (1) neutral assessment, (2) adversarial refutation, (3) judge synthesis with asymmetric +1/-2 scoring. Use for high-stakes validations.
+
+```
+/kiro:validate-adversarial revenue-trend-chart design
+/kiro:validate-adversarial revenue-trend-chart impl
 ```
 
 ---
@@ -141,6 +149,22 @@ Measures memory health, detects friction patterns, proposes rule improvements.
 /kiro:evolve
 ```
 Run on demand when something feels off about the workflow.
+
+### `/kiro:harness-validate` — Check harness structural integrity
+Validates command→agent references, template existence, memory caps, L0 headers, and generates a component relationship index.
+
+```
+/kiro:harness-validate
+```
+Run after `update.sh` or when something feels broken.
+
+### `/kiro:harness-test` — Smoke-test prompts with Haiku
+Runs key workflows at Haiku tier to expose vague instructions. Failures indicate prompt quality issues, not model issues.
+
+```
+/kiro:harness-test
+/kiro:harness-test steering
+```
 
 ### `/kiro:harness-fix` — Fix a specific agent mistake
 When you observe the agent making a repeatable behavioral mistake, this command encodes a targeted prevention rule so it never happens again. Lighter than `/kiro:evolve` — fixes one thing immediately.

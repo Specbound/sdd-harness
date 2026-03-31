@@ -64,6 +64,7 @@ For each selected task, follow Kent Beck's TDD cycle:
    - Write test for the next small piece of functionality
    - Test should fail (code doesn't exist yet)
    - Use descriptive test names
+   - Add a spec backlink comment above each test: `# Verifies: specs/{feature}/requirements.md#N.M`
 
 2. **GREEN - Write Minimal Code**:
    - Implement simplest solution to make test pass

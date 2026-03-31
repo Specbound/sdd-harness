@@ -364,13 +364,17 @@ Conventions are defined in `.claude/kiro/settings/rules/memory-conventions.md`:
 | `/kiro:spec-impl {feature}` | Implement from approved spec via TDD (subagent) |
 | `/kiro:spec-quick "description"` | Fast path: requirements→design→tasks in one command |
 | `/kiro:validate-gap {feature}` | Gap analysis: requirements vs. existing code |
-| `/kiro:validate-design {feature}` | Design quality review |
-| `/kiro:validate-impl {feature}` | Implementation vs. spec validation |
+| `/kiro:validate-design {feature}` | Design quality review (with remediation plan on NO-GO) |
+| `/kiro:validate-impl {feature}` | Implementation vs. spec validation (with remediation) |
+| `/kiro:validate-adversarial {feature}` | Three-pass adversarial review with +1/-2 scoring |
 | `/kiro:spec-status {feature}` | Show current phase, approvals, and open tasks |
 | `/kiro:sync-docs` | Sync docs with ALL code changes (uncommitted + staged + committed) |
 | `/kiro:reflect` | Review session, extract observations, update memory (subagent) |
 | `/kiro:housekeeping` | Prune memory, archive old observations to glacier (subagent) |
 | `/kiro:evolve` | Audit harness rules effectiveness, propose improvements (subagent) |
+| `/kiro:harness-fix` | Encode a behavioral prevention rule from a specific mistake |
+| `/kiro:harness-validate` | Check structural integrity of harness installation |
+| `/kiro:harness-test` | Haiku smoke-test to expose vague prompts |
 | `/kiro:autoresearch-init` | Interactive ML project setup — generates program.md, train.py, prepare.py |
 | `/kiro:autoresearch [N]` | Run autonomous ML experiment loop (N iterations or continuous) |
 
@@ -386,15 +390,17 @@ Conventions are defined in `.claude/kiro/settings/rules/memory-conventions.md`:
 | `@agents-spec-impl` | `/kiro:spec-impl` | TDD implementation per task |
 | `@agents-spec-refactor` | After each impl task (auto, spawned by spec-impl agent) | Post-task self-review: reuse, quality, efficiency checks on touched files + test re-run |
 | `@agents-validate-gap` | `/kiro:validate-gap` | Requirements vs. code gap analysis |
-| `@agents-validate-design` | `/kiro:validate-design` | Design quality review |
-| `@agents-validate-impl` | `/kiro:validate-impl` | Implementation validation |
+| `@agents-validate-design` | `/kiro:validate-design` | Design quality review (with remediation) |
+| `@agents-validate-impl` | `/kiro:validate-impl` | Implementation validation (with backlink checks) |
+| `@agents-validate-adversarial` | `/kiro:validate-adversarial` | Three-pass adversarial review |
 | `@agents-steering` | `/kiro:steering` | Project memory bootstrap |
 | `@agents-steering-custom` | `/kiro:steering-custom` | Domain-specific steering |
 | `@agents-doc-sync` | git post-commit hook or `/kiro:sync-docs` | Code→doc drift prevention for committed changes |
 | `@agents-harness-updater` | git post-commit hook (when `.claude/` files committed) | Harness→guide sync |
 | `@agents-reflect` | `/kiro:reflect` | Session mining → observations, patterns, hot-memory |
 | `@agents-housekeeping` | `/kiro:housekeeping` | Memory archival, pruning, format validation |
-| `@agents-evolve` | `/kiro:evolve` | Rule audit, friction analysis, improvement proposals |
+| `@agents-evolve` | `/kiro:evolve` | Rule audit, friction analysis, trace log analysis, improvement proposals |
+| `@agents-harness-validate` | `/kiro:harness-validate` | Structural integrity check, component index generation |
 | `@agents-autoresearch-init` | `/kiro:autoresearch-init` | Interactive interview → file generation |
 | `@agents-autoresearch` | `/kiro:autoresearch` | Autonomous ML experiment loop |
 
@@ -408,6 +414,7 @@ Conventions are defined in `.claude/kiro/settings/rules/memory-conventions.md`:
 | spec-refactor (internal) | After each impl task's SELF-REVIEW step (Step 5) | Spawned by spec-tdd-impl-agent; reviews touched files, fixes issues, re-runs tests |
 | PostToolUse (Jira comment) | Every `git push` Bash command | Posts Jira comment with branch/commits/docs summary if a `jira-solve` session is active |
 | UserPromptSubmit (Jira capture) | Every user prompt | Captures ticket ID from `/kiro:jira-solve TICKET-ID` prompts, writes to `~/.claude/state/active_jira_ticket` |
+| UserPromptSubmit (context priming) | Every user prompt | Injects hot-memory.md contents for session context |
 | Stop (memory health) | Every Claude session end | Nudges `/kiro:housekeeping` if observations >50 |
 | post-commit (doc sync) | Every `git commit` with non-`.md` source changes | Doc-sync: updates all `.md` files referencing changed code via `claude --print` (background) |
 | post-commit (harness updater) | Every `git commit` with `.claude/` changes (excl. memory) | Updates `SDD-SETUP-GUIDE.md` via `claude --print` (background) |

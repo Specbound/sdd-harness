@@ -64,7 +64,18 @@ For each relevant `.md` file:
 5. Do not restructure or reformat unrelated sections
 6. Replace any existing `_Last synced:` line, or append: `_Last synced: YYYY-MM-DD_`
 
-### Step 3: Check Steering
+### Step 3: Reverse Validation (Doc-to-Code)
+
+For each `.md` file that references specific code elements (function names, class names, file paths, API endpoints):
+1. Grep the codebase for each referenced element
+2. If a referenced element no longer exists in code, flag the section as stale:
+   ```
+   ⚠️ Stale reference: docs/api.md mentions `UserController.getProfile` — not found in codebase
+   ```
+3. Collect all stale references into the output report under `## Stale References`
+4. Stale references are warnings — the agent reports them but does not auto-fix (the reference may have been renamed)
+
+### Step 4: Check Steering
 
 Read `.claude/steering/*.md` files. Check if code changes introduce:
 - New architectural patterns not yet documented
@@ -89,6 +100,10 @@ Chat summary only (files updated directly):
 ## Updated:
 - path/to/doc.md: [what changed]
 - .claude/steering/tech.md: [new pattern added]
+
+## Stale References:
+- path/to/doc.md: `functionName` not found in codebase
+(or "None detected")
 
 ## Skipped (no relevant changes):
 - N .md files checked, M skipped

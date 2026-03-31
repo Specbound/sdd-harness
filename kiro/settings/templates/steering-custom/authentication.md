@@ -1,3 +1,4 @@
+<!-- L0: Auth model, token lifecycle, permission checks, security -->
 # Authentication & Authorization Standards
 
 [Purpose: unify auth model, token/session lifecycle, permission checks, and security]

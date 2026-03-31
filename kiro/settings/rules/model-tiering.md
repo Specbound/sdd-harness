@@ -8,6 +8,7 @@ These agents make architectural decisions or evaluate quality:
 - `spec-refactor` — code quality evaluation (skeptical evaluator)
 - `evolve-agent` — harness rule design
 - `spec-requirements` — requirement analysis
+- `validate-adversarial` — three-pass adversarial review with judgment-heavy refutation
 
 ## Tier 2: Sonnet (structured execution, moderate judgment)
 These agents follow clear protocols with some judgment:
@@ -38,3 +39,7 @@ When spawning a sub-agent via the Agent tool, set the `model` parameter:
 - Tier 3: `model: "haiku"`
 
 This is guidance, not enforcement. If a Tier 3 agent produces poor results, promote it to Tier 2.
+
+## Smoke Testing with Haiku
+
+Use `/kiro:harness-test` to run key workflows at Haiku tier. Haiku failures expose vague prompts that rely on model intelligence instead of clear structure. If a prompt works with Haiku, it is well-structured. Use cheap models during development to stress-test prompt quality before committing changes to agent or rule files.

@@ -19,7 +19,7 @@ Rules governing `.claude/memory/` — the persistent cross-session memory system
 - `insight` — cross-cutting realizations
 - `pattern` — recurring theme worth distilling
 
-**Rules**: Never edit past entries. Append only. Max 5 new observations per `/kiro:reflect` pass.
+**Rules**: Observations are append-only; new entries go at the bottom. Max 5 new observations per `/kiro:reflect` pass.
 
 ### Action Items
 ```
@@ -54,7 +54,7 @@ Distilled rules from repeated observations. Edited in-place.
 ## Structural Rules
 
 ### Single Source of Truth (SSOT)
-Each fact lives in ONE canonical file. Other files reference via file paths, never copy content.
+Each fact lives in ONE canonical file. Other files reference via file paths; all cross-references use paths instead of duplicating content.
 
 ### Edit Discipline
 | File | Edit Mode |

@@ -1,3 +1,4 @@
+<!-- L0: Release process, environment config, pipeline patterns -->
 # Deployment Standards
 
 [Purpose: safe, repeatable releases with clear environment and pipeline patterns]

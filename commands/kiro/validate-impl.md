@@ -61,8 +61,8 @@ Show Subagent summary to user, then provide next step guidance:
 - Proceed to deployment or next feature
 
 **If NO-GO Decision**:
-- Address critical issues listed
-- Re-run `/kiro:spec-impl <feature> [tasks]` for fixes
+- Review the Remediation Plan provided by the agent (specific fixes with `filepath:line` references)
+- Address each remediation item by severity (Critical first)
 - Re-validate with `/kiro:validate-impl [feature] [tasks]`
 
 **Note**: Validation is recommended after implementation to ensure spec alignment and quality.

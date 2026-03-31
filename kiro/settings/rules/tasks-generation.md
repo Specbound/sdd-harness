@@ -46,7 +46,7 @@ Focus on capabilities and outcomes, not code structure.
 ### 4. Requirements Mapping
 
 **End each task detail section with**:
-- `_Requirements: X.X, Y.Y_` listing **only numeric requirement IDs** (comma-separated). Never append descriptive text, parentheses, translations, or free-form labels.
+- `_Requirements: X.X, Y.Y_` listing **only numeric requirement IDs** (comma-separated). The value must contain only comma-separated numeric IDs — no descriptive text, parentheses, translations, or free-form labels.
 - For cross-cutting requirements, list every relevant requirement ID. All requirements MUST have numeric IDs in requirements.md. If an ID is missing, stop and correct requirements.md before generating tasks.
 - Reference components/interfaces from design.md when helpful (e.g., `_Contracts: AuthService API`)
 
@@ -67,7 +67,7 @@ Focus on capabilities and outcomes, not code structure.
 
 - When the design already guarantees functional coverage and rapid MVP delivery is prioritized, mark purely test-oriented follow-up work (e.g., baseline rendering/unit tests) as **optional** using the `- [ ]*` checkbox form.
 - Only apply the optional marker when the sub-task directly references acceptance criteria from requirements.md in its detail bullets.
-- Never mark implementation work or integration-critical verification as optional—reserve `*` for auxiliary/deferrable test coverage that can be revisited post-MVP.
+- Reserve `*` for auxiliary/deferrable test coverage that can be revisited post-MVP; implementation work and integration-critical verification are always required.
 
 ## Task Hierarchy Rules
 
@@ -81,7 +81,7 @@ Focus on capabilities and outcomes, not code structure.
 ### Sequential Numbering
 - Major tasks MUST increment: 1, 2, 3, 4, 5...
 - Sub-tasks reset per major task: 1.1, 1.2, then 2.1, 2.2...
-- Never repeat major task numbers
+- Each major task number is used exactly once
 
 ### Parallel Analysis (default)
 - Assume parallel analysis is enabled unless explicitly disabled (e.g. `--sequential` flag).

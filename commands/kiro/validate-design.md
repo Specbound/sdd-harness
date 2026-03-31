@@ -52,8 +52,8 @@ Show Subagent summary to user, then provide next step guidance:
 - Or `/kiro:spec-tasks $1 -y` to auto-approve and proceed directly
 
 **If Design Needs Revision (NO-GO Decision)**:
-- Address critical issues identified
-- Re-run `/kiro:spec-design $1` with improvements
+- Review the Remediation Plan provided by the agent (specific changes with `file:section` references)
+- Address each remediation item in order
 - Re-validate with `/kiro:validate-design $1`
 
 **Note**: Design validation is recommended but optional. Quality review helps catch issues early.

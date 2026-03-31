@@ -1,3 +1,4 @@
+<!-- L0: Test strategy, structure, coverage expectations -->
 # Testing Standards
 
 [Purpose: guide what to test, where tests live, and how to structure them]

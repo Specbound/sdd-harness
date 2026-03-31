@@ -43,7 +43,25 @@ Keep EARS trigger keywords and fixed phrases in English (`When`, `If`, `While`, 
 - **Process/Workflow**: Use responsible team/role (e.g., "Support Team", "Review Process")
 - **Non-Software**: Use appropriate subject (e.g., "Marketing Campaign", "Documentation")
 
+## Binary Verification
+
+Every EARS requirement MUST include a `Verify:` statement — a single sentence (8-12 words) that is true when the requirement is met and false otherwise.
+
+**Pattern**: `Verify: [binary pass/fail statement]`
+
+**Examples**:
+- Verify: Checkout completes in under 3 seconds with valid card
+- Verify: Error message displays when invalid credit card is entered
+- Verify: Loading indicator appears while payment is processing
+
+**Rules**:
+- One `Verify:` per acceptance criterion
+- Must be objectively testable (no "should work well" or "is fast enough")
+- Written in present tense, no conditionals
+- Maps directly to a test assertion
+
 ## Quality Criteria
 - Requirements must be testable, verifiable, and describe a single behavior.
 - Use objective language: "shall" for mandatory behavior, "should" for recommendations; avoid ambiguous terms.
 - Follow EARS syntax: [condition], the [system] shall [response/action].
+- Every acceptance criterion includes a `Verify:` statement (see above).

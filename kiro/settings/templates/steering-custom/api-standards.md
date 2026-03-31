@@ -1,3 +1,4 @@
+<!-- L0: API naming, structure, auth, versioning, error conventions -->
 # API Standards
 
 [Purpose: consistent API patterns for naming, structure, auth, versioning, and errors]

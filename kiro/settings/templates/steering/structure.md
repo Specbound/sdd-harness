@@ -1,3 +1,4 @@
+<!-- L0: Organization philosophy, naming rules, module boundaries -->
 # Project Structure
 
 ## Organization Philosophy

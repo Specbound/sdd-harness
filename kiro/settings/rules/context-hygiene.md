@@ -7,7 +7,7 @@ Context rot describes how model reasoning quality degrades as the context window
 - When running tests, linters, or builds: capture output to a temp file
 - Check the exit code only — if success, report "pass" without reading the file
 - Only read the output file when the exit code indicates failure
-- Never paste passing test suites, successful lint output, or clean build logs into context
+- Capture only failures and errors; success is confirmed by exit code alone
 
 ## Offload Large Outputs
 
@@ -26,3 +26,21 @@ Context rot describes how model reasoning quality degrades as the context window
 - After completing each spec task, write a brief progress summary to the spec's `tasks.md`
 - Before starting complex work, note the current state so it can be recovered if context is compacted
 - If you notice reasoning quality degrading, proactively checkpoint to filesystem and suggest continuing in a fresh session
+
+## Context Degradation Detection
+
+Watch for these signals that context quality is declining:
+- **Tool call repetition**: Same search or read repeated within a few turns
+- **Contradictory statements**: Agent says X, then later says not-X without new information
+- **Loss of prior decisions**: Agent re-asks questions already answered in conversation
+- **Increasing vagueness**: Responses become generic instead of project-specific
+
+**When degradation is detected**:
+1. Checkpoint current progress to filesystem (tasks.md, hot-memory.md, or a temp summary file)
+2. Report the checkpoint location to the user
+3. Suggest: "Context quality is declining. Consider continuing in a fresh session — progress has been saved to [location]."
+
+**Proactive checkpointing triggers**:
+- After completing 5+ spec tasks in a single session
+- After 3+ agent invocations without a natural pause
+- When the conversation includes 10+ tool calls on a single topic

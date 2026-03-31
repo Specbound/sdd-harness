@@ -45,6 +45,7 @@ You will receive task prompts containing:
    - `.claude/memory/action-items.md`
    - `.claude/memory/entities.md`
 4. Read glacier index: `.claude/memory/glacier/index.md`
+5. Read agent trace log (if exists): `.claude/memory/trace.log`
 
 ### Step 1: Collect Metrics
 
@@ -60,6 +61,16 @@ Measure and report:
 | entities count | track | count `^###` lines |
 | glacier archives | track | count files |
 | L0 headers present | 100% | check all memory files |
+
+### Step 1b: Analyze Trace Log
+
+If `.claude/memory/trace.log` exists, compute:
+- **Failure rate per agent**: Count fail/error/no-go vs pass/go per agent name
+- **Tier usage distribution**: How often each tier (opus/sonnet/haiku) is used
+- **High-failure agents**: Any agent with >30% failure rate is a candidate for prompt improvement
+- **Over-tiered agents**: Haiku agents that consistently pass may not need promotion; Opus agents on mechanical work may be demotable
+
+Include these findings in the friction analysis.
 
 ### Step 2: Analyze Friction
 

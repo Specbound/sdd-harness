@@ -1,3 +1,4 @@
+<!-- L0: Error classification, propagation, logging, and monitoring -->
 # Error Handling Standards
 
 [Purpose: unify how errors are classified, shaped, propagated, logged, and monitored]

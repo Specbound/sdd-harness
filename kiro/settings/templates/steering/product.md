@@ -1,3 +1,4 @@
+<!-- L0: Product vision, goals, personas, and business context -->
 # Product Overview
 
 [Brief description of what this product does and who it serves]

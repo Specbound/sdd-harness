@@ -47,12 +47,23 @@ Reusable, design-system aligned primitives
 
 ## Security
 
-Never include:
-- API keys, passwords, credentials
-- Database URLs, internal IPs
-- Secrets or sensitive data
+Steering files contain architectural decisions only. Credentials and secrets live in vault or environment variables.
+
+Sensitive items that belong elsewhere:
+- API keys, passwords, credentials → vault / `.env`
+- Database URLs, internal IPs → infrastructure config
+- Secrets or sensitive data → secrets manager
 
 ---
+
+## L0 Headers
+
+Every steering file starts with an L0 summary comment for fast relevance filtering:
+```
+<!-- L0: summary of what this file covers (max 80 chars) -->
+```
+
+Agents use L0 headers to decide which steering files to load fully. Keep them specific enough to distinguish files.
 
 ## Quality Standards
 

@@ -28,23 +28,29 @@ Based on [cc-sdd](https://www.npmjs.com/package/cc-sdd) (`npx cc-sdd@latest`), a
 | `spec-quick` | 2-4 (fast) | Requirements → Design → Tasks in one command |
 | `spec-status` | Any | Show current phase, approvals, open tasks |
 | `validate-gap` | Review | Requirements vs. existing code gap analysis |
-| `validate-design` | Review | Design quality review |
-| `validate-impl` | Review | Implementation vs. spec validation |
+| `validate-design` | Review | Design quality review (with remediation on NO-GO) |
+| `validate-impl` | Review | Implementation vs. spec validation (with remediation) |
+| `validate-adversarial` | Review | Three-pass adversarial review with +1/-2 scoring |
 | `sync-docs` | Maintenance | Sync `.md` files with code changes |
 | `reflect` | Memory | Mine session learnings, update observations/patterns |
 | `housekeeping` | Memory | Prune memory, archive old observations |
 | `evolve` | Meta | Audit harness rules, propose improvements |
+| `harness-fix` | Meta | Encode behavioral prevention rule from a specific mistake |
+| `harness-validate` | Meta | Structural integrity check of the harness |
+| `harness-test` | Meta | Haiku smoke-test to expose vague prompts |
 
 ### Subagents (`agents/kiro/`)
 
 Each command delegates to a specialized subagent. Agents are autonomous — they receive a prompt with file patterns, execute their protocol, and return a summary.
 
 Key agents beyond the spec pipeline:
-- **doc-sync** — Triggered by post-commit hook or `/kiro:sync-docs`. Diffs recent commits against `.md` files and updates stale documentation.
+- **doc-sync** — Triggered by post-commit hook or `/kiro:sync-docs`. Diffs recent commits against `.md` files, updates stale docs, and detects stale doc-to-code references (reverse validation).
 - **harness-updater** — Triggered by post-commit hook when `.claude/` files change. Updates `SDD-SETUP-GUIDE.md`.
 - **reflect-agent** — Mines `git log` for observations, promotes patterns, updates hot-memory.
 - **housekeeping-agent** — Archives observations to glacier, enforces memory caps.
-- **evolve-agent** — Measures memory health metrics, detects friction patterns, proposes rule changes.
+- **evolve-agent** — Measures memory health metrics, analyzes agent trace logs, detects friction patterns, proposes rule changes.
+- **validate-adversarial** — Three-pass adversarial review (neutral → refutation → judge synthesis with +1/-2 scoring).
+- **harness-validate-agent** — Checks structural integrity: command→agent references, template existence, memory caps, L0 headers. Generates component relationship index.
 - **spec-refactor** — Auto-spawned after each impl task's VERIFY step. Reviews touched files for reuse/quality/efficiency.
 
 ### Rules (`kiro/settings/rules/`)
@@ -57,8 +63,14 @@ Rules control agent behavior:
 - `tasks-generation.md` — Task breakdown rules
 - `tasks-parallel-analysis.md` — Parallelism detection (P-wave)
 - `gap-analysis.md` — Gap analysis methodology
-- `steering-principles.md` — Steering doc conventions
+- `steering-principles.md` — Steering doc conventions (with L0 header requirement)
 - `memory-conventions.md` — Memory format, caps, and lifecycle rules
+- `agent-output-format.md` — Standardized agent return format with output recovery tiers
+- `agent-tracing.md` — Invocation trace log for observability
+- `test-backlinks.md` — Spec traceability convention in test files
+- `model-tiering.md` — Cost optimization tiers (Opus/Sonnet/Haiku) with smoke testing
+- `context-hygiene.md` — Context rot prevention with degradation detection
+- `skill-extraction-scoring.md` — 4-criteria rubric for skill extraction
 
 ### Templates (`kiro/settings/templates/`)
 

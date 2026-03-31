@@ -14,30 +14,33 @@ One harness, many projects. Install once, keep every repo in sync.
 - [The SDD Workflow](#the-sdd-workflow)
 - [Commands Reference](#commands-reference)
 - [Agents](#agents)
-- [Memory System](#memory-system)
+- [Cog Memory System](#cog-memory-system)
 - [Steering (Project Knowledge)](#steering-project-knowledge)
 - [Jira Integration](#jira-integration)
 - [Skill Extraction](#skill-extraction)
 - [AutoResearch (ML Experiments)](#autoresearch-ml-experiments)
+- [Context Hub (MCP Integration)](#context-hub-mcp-integration)
 - [Automation & Hooks](#automation--hooks)
 - [Multi-Project Management](#multi-project-management)
 - [Documentation Index](#documentation-index)
 - [Design Principles](#design-principles)
+- [Built With](#built-with)
 
 ---
 
 ## What It Does
 
-| Capability | Description |
-|---|---|
-| **Spec-Driven Development** | Requirements → Design → Tasks → TDD Implementation, with human approval gates between every phase |
-| **Cross-Session Memory** | Temperature-tiered memory (hot/warm/meta/cold) that persists context across Claude Code sessions |
-| **Project Steering** | Auto-generated architecture, tech stack, and structure docs that ground every conversation |
-| **Doc Sync** | Automatically updates `.md` files when code changes on every git commit |
-| **Jira Integration** | Fetch tickets, route to the right workflow (bug/feature/task), auto-comment on push |
-| **Skill Extraction** | Analyze repos and extract reusable `SKILL.md` files for Claude Code |
-| **AutoResearch** | Autonomous ML experiment loop with hypothesis-driven iteration |
-| **Portable Installation** | Single `install.sh` bootstraps any project; `update.sh` keeps them all in sync |
+| Capability | Built On | Description |
+|---|---|---|
+| **Spec-Driven Development** | [cc-sdd](https://www.npmjs.com/package/cc-sdd) | Requirements → Design → Tasks → TDD Implementation, with human approval gates between every phase |
+| **Cross-Session Memory** | [CogMem](https://arxiv.org/abs/2512.14118) | Temperature-tiered memory (hot/warm/meta/cold) that persists context across Claude Code sessions |
+| **Project Steering** | Custom | Auto-generated architecture, tech stack, and structure docs that ground every conversation |
+| **Doc Sync** | Custom | Automatically updates `.md` files when code changes on every git commit |
+| **Jira Integration** | [Jira REST API v2](https://developer.atlassian.com/cloud/jira/platform/rest/v2/) | Fetch tickets, route to the right workflow (bug/feature/task), auto-comment on push |
+| **Skill Extraction** | [arXiv:2603.11808](https://arxiv.org/abs/2603.11808) | Analyze repos and extract reusable `SKILL.md` files for Claude Code |
+| **AutoResearch** | [karpathy/autoresearch](https://github.com/karpathy/autoresearch) | Autonomous ML experiment loop with hypothesis-driven iteration |
+| **Context Hub** | [andrewyng/context-hub](https://github.com/andrewyng/context-hub) | MCP server providing curated, LLM-optimized docs for third-party libraries |
+| **Portable Installation** | Custom | Single `install.sh` bootstraps any project; `update.sh` keeps them all in sync |
 
 ---
 
@@ -87,7 +90,7 @@ sdd-harness/
 ├── VERSION                       # Last harness update date (auto-managed)
 ├── projects.txt                  # Registry of installed projects (gitignored)
 │
-├── commands/kiro/                # 21 slash commands (user-facing)
+├── commands/kiro/                # 25 slash commands (user-facing)
 │   ├── spec-init.md              #   Initialize a spec workspace
 │   ├── spec-requirements.md      #   Generate EARS-format requirements
 │   ├── spec-design.md            #   Generate technical design
@@ -96,13 +99,17 @@ sdd-harness/
 │   ├── spec-impl.md              #   TDD implementation of tasks
 │   ├── spec-status.md            #   Check spec phase and progress
 │   ├── validate-gap.md           #   Requirements vs. code gap analysis
-│   ├── validate-design.md        #   Design quality review
-│   ├── validate-impl.md          #   Implementation vs. spec validation
+│   ├── validate-design.md        #   Design quality review (with remediation on NO-GO)
+│   ├── validate-impl.md          #   Implementation vs. spec validation (with remediation)
+│   ├── validate-adversarial.md   #   Three-pass adversarial review (+1/-2 scoring)
 │   ├── steering.md               #   Bootstrap/sync project knowledge
 │   ├── steering-custom.md        #   Add domain-specific docs (auth, DB, etc.)
 │   ├── reflect.md                #   Mine session learnings, update memory
 │   ├── housekeeping.md           #   Prune memory, enforce caps
 │   ├── evolve.md                 #   Audit harness rules, propose improvements
+│   ├── harness-fix.md            #   Encode behavioral prevention rules
+│   ├── harness-validate.md       #   Structural integrity check
+│   ├── harness-test.md           #   Haiku smoke-test for prompt quality
 │   ├── sync-docs.md              #   Sync .md files with code changes
 │   ├── jira-solve.md             #   Fetch and route Jira tickets
 │   ├── skill-extract-scan.md     #   Analyze repo for extractable skills
@@ -110,31 +117,35 @@ sdd-harness/
 │   ├── autoresearch-init.md      #   Interactive ML research setup
 │   └── autoresearch.md           #   Run autonomous experiment loop
 │
-├── agents/kiro/                  # 19 subagents (autonomous workers)
+├── agents/kiro/                  # 22 subagents (autonomous workers)
 │   ├── spec-requirements.md      #   Requirements generation agent
 │   ├── spec-design.md            #   Design generation agent
 │   ├── spec-tasks.md             #   Task breakdown agent
-│   ├── spec-impl.md              #   TDD implementation agent
+│   ├── spec-impl.md              #   TDD implementation agent (with spec backlinks)
 │   ├── spec-refactor.md          #   Post-task code review agent
 │   ├── steering.md               #   Steering file generation agent
 │   ├── steering-custom.md        #   Custom steering agent
 │   ├── validate-gap.md           #   Gap analysis agent
-│   ├── validate-design.md        #   Design review agent
-│   ├── validate-impl.md          #   Implementation review agent
+│   ├── validate-design.md        #   Design review agent (with remediation plans)
+│   ├── validate-impl.md          #   Implementation review agent (with backlink checks)
+│   ├── validate-adversarial.md   #   Three-pass adversarial review agent
 │   ├── reflect-agent.md          #   Session learning extraction agent
 │   ├── housekeeping-agent.md     #   Memory pruning agent
-│   ├── evolve-agent.md           #   Harness improvement agent
-│   ├── doc-sync.md               #   Automatic doc update agent
+│   ├── evolve-agent.md           #   Harness improvement agent (with trace analysis)
+│   ├── doc-sync.md               #   Automatic doc update agent (with reverse validation)
 │   ├── harness-updater.md        #   Harness self-update agent
+│   ├── harness-fix-agent.md      #   Behavioral rule encoding agent
+│   ├── harness-validate-agent.md #   Structural integrity checker
 │   ├── jira-solve-agent.md       #   Jira ticket analysis agent
 │   ├── skill-extract-agent.md    #   Skill extraction agent
 │   ├── autoresearch-agent.md     #   ML experiment loop agent
 │   └── autoresearch-init-agent.md#   ML research setup agent
 │
 ├── kiro/settings/                # Spec engine configuration
-│   ├── rules/                    #   11 rule files (EARS syntax, design
-│   │   │                         #   principles, task generation, gap
-│   │   │                         #   analysis, memory conventions, etc.)
+│   ├── rules/                    #   16 rule files (EARS syntax, design
+│   │   │                         #   principles, task generation, gap analysis,
+│   │   │                         #   memory conventions, agent tracing,
+│   │   │                         #   test backlinks, model tiering, etc.)
 │   └── templates/                #   16 templates across 4 categories:
 │       ├── specs/                #     Spec phase templates (init, requirements, design, tasks)
 │       ├── steering/             #     Project knowledge templates (product, tech, structure)
@@ -147,7 +158,8 @@ sdd-harness/
 │   └── jira_push_comment.py      #   Post implementation summary to Jira
 │
 ├── hooks/                        # Session lifecycle hooks
-│   └── stop-hook.sh              #   On session exit: check for updates, memory health
+│   ├── stop-hook.sh              #   On session exit: check for updates, memory health
+│   └── prompt-hook.sh            #   On prompt submit: inject hot-memory context
 │
 ├── git-hooks/                    # Git lifecycle hooks
 │   └── post-commit               #   On commit: doc sync + harness update detection
@@ -171,6 +183,8 @@ sdd-harness/
 ---
 
 ## The SDD Workflow
+
+The spec engine is built on [cc-sdd](https://www.npmjs.com/package/cc-sdd) — a Spec-Driven Development framework for Claude Code. We adapted it with custom path mapping, additional agents (doc-sync, harness-updater, reflect, housekeeping, evolve), and extended it with memory, steering, and Jira subsystems.
 
 The core workflow enforces deliberate planning before coding, with human review gates at every transition:
 
@@ -200,8 +214,9 @@ The core workflow enforces deliberate planning before coding, with human review 
 **Validation** (at any point):
 ```
 /kiro:validate-gap                    # What's specified but not built?
-/kiro:validate-design                 # Is the design sound?
-/kiro:validate-impl                   # Does the code match the spec?
+/kiro:validate-design                 # Is the design sound? (remediation plan on NO-GO)
+/kiro:validate-impl                   # Does the code match the spec? (remediation plan on NO-GO)
+/kiro:validate-adversarial            # High-confidence three-pass adversarial review
 ```
 
 ---
@@ -218,14 +233,18 @@ The core workflow enforces deliberate planning before coding, with human review 
 | `/kiro:spec-impl` | TDD implementation with automatic self-review |
 | `/kiro:spec-status` | Check current spec phase and progress |
 | `/kiro:validate-gap` | Requirements vs. existing code gap analysis |
-| `/kiro:validate-design` | Design quality and completeness review |
-| `/kiro:validate-impl` | Implementation vs. spec validation |
+| `/kiro:validate-design` | Design quality review (with remediation plan on NO-GO) |
+| `/kiro:validate-impl` | Implementation vs. spec validation (with remediation plan) |
+| `/kiro:validate-adversarial` | Three-pass adversarial review with +1/-2 scoring |
 | `/kiro:steering` | Bootstrap/sync project knowledge docs |
 | `/kiro:steering-custom` | Add domain-specific steering (auth, DB, API, etc.) |
 | `/kiro:reflect` | Extract session learnings, update memory |
 | `/kiro:housekeeping` | Prune memory, archive old observations |
 | `/kiro:evolve` | Audit harness rules, detect friction, propose improvements |
-| `/kiro:sync-docs` | Sync `.md` files with code changes |
+| `/kiro:harness-fix` | Encode a behavioral prevention rule from a specific mistake |
+| `/kiro:harness-validate` | Check structural integrity of the harness installation |
+| `/kiro:harness-test` | Smoke-test prompts with Haiku to expose vague instructions |
+| `/kiro:sync-docs` | Sync `.md` files with code changes (with reverse validation) |
 | `/kiro:jira-solve` | Fetch Jira ticket and route to correct workflow |
 | `/kiro:skill-extract-scan` | Analyze repo for extractable skills |
 | `/kiro:skill-extract` | Generate `SKILL.md` files from scored plan |
@@ -242,30 +261,44 @@ Each command delegates to one or more autonomous subagents. Agents receive a pro
 
 - **Spec pipeline agents** — Handle requirements, design, tasks, and implementation phases
 - **`spec-refactor`** — Auto-spawned after each implementation task to review touched files for reuse, quality, and efficiency
+- **`validate-adversarial`** — Three-pass adversarial review: neutral assessment → refutation → judge synthesis with asymmetric +1/-2 scoring
 - **`reflect-agent`** — Mines git log for observations, promotes recurring themes to patterns, updates hot-memory
 - **`housekeeping-agent`** — Archives observations to cold storage, enforces memory caps
-- **`evolve-agent`** — Measures memory health, detects friction patterns, proposes rule changes
-- **`doc-sync`** — Triggered by post-commit hook; finds and updates stale `.md` files after code changes
+- **`evolve-agent`** — Measures memory health, detects friction patterns, analyzes agent trace logs, proposes rule changes
+- **`doc-sync`** — Triggered by post-commit hook; finds and updates stale `.md` files after code changes; detects stale doc-to-code references
 - **`harness-updater`** — Triggered when `.claude/` files change; keeps `SDD-SETUP-GUIDE.md` current
+- **`harness-validate-agent`** — Checks structural integrity: command→agent references, template existence, memory caps, L0 headers, generates component index
 - **`jira-solve-agent`** — Analyzes ticket type and routes to the appropriate workflow
 
 ---
 
-## Memory System
+## Cog Memory System
 
-A temperature-tiered memory architecture that persists context across Claude Code sessions:
+The memory system is called **Cog Memory** — a cross-session persistent memory architecture inspired by [CogMem](https://arxiv.org/abs/2512.14118) ("A Cognitive Memory Architecture for Sustained Multi-Turn Reasoning in Large Language Models"). CogMem proposes a hierarchical memory system where LLMs maintain coherent reasoning across extended conversations using three layers: Long-Term Memory (distilled patterns), Direct-Access Memory (session working notes), and Focus of Attention (bounded context reconstruction at each turn).
 
-| Tier | File | Purpose | Cap |
-|---|---|---|---|
-| **Hot** | `hot-memory.md` | Current priorities, active specs, recent decisions | 50 lines |
-| **Warm** | `observations.md` | Append-only session log with tagged entries | 50 entries |
-| **Warm** | `action-items.md` | Cross-session TODOs with due dates | — |
-| **Warm** | `entities.md` | Project entity registry (services, APIs, DBs) | — |
-| **Meta** | `meta/patterns.md` | Distilled workflow rules (loaded at session start) | 70 lines |
-| **Meta** | `meta/self-observations.md` | SDD workflow learnings | — |
-| **Cold** | `glacier/` | Archived observations (unlimited) | — |
+We adapted this into a temperature-tiered filesystem architecture for Claude Code. Information flows through tiers with progressive condensation at each level — hot memory is small and always loaded (like CogMem's Focus of Attention), warm memory captures session observations (like Direct-Access), and cold/glacier storage preserves historical knowledge (like Long-Term Memory). This prevents token bloat while maintaining full historical access.
 
-**Lifecycle**: Observations flow from warm → cold via `/kiro:housekeeping`. Recurring themes get promoted to patterns. Hot memory is always loaded at session start.
+| Tier | File | Purpose | Cap | Loaded |
+|---|---|---|---|---|
+| **Hot** | `hot-memory.md` | Current priorities, active specs, recent decisions | 50 lines | Every session |
+| **Warm** | `observations.md` | Append-only session log with tagged entries | 50 entries | On demand |
+| **Warm** | `action-items.md` | Cross-session TODOs with due dates | — | On demand |
+| **Warm** | `entities.md` | Project entity registry (services, APIs, DBs) | — | On demand |
+| **Meta** | `meta/patterns.md` | Distilled workflow rules | 70 lines | Every session |
+| **Meta** | `meta/self-observations.md` | SDD workflow learnings | — | On demand |
+| **Cold** | `glacier/` | Archived observations (YAML frontmatter) | Unlimited | Rarely |
+
+**Lifecycle — progressive condensation**:
+```
+Session work → /kiro:reflect    → observations.md (append new learnings)
+                                → patterns.md (promote recurring themes)
+                                → hot-memory.md (update current state)
+
+observations.md (>50) → /kiro:housekeeping → glacier/YYYY-MM.md (archive)
+                                            → observations.md (pruned)
+```
+
+This creates a self-improving loop: observations compound over time, patterns emerge from repetition, and the workflow gets better as more data flows through the system.
 
 For the full memory architecture, see [docs/memory/README.md](docs/memory/README.md).
 
@@ -308,7 +341,7 @@ On `git push`, an auto-comment is posted to the ticket with a summary of changes
 
 ## Skill Extraction
 
-Extract reusable patterns from any repository into standardized `SKILL.md` files:
+Based on the methodology from ["Automating Skill Acquisition through Large-Scale Mining of Open-Source Agentic Repositories"](https://arxiv.org/abs/2603.11808) — a research paper on extracting reusable procedural knowledge from codebases. We implement their 4-criteria scoring rubric (Recurrence, Code Quality, Domain Expertise, Generalizability) as a 3-stage pipeline within the harness.
 
 ```
 /kiro:skill-extract-scan            # Analyze repo, score modules, produce plan
@@ -317,7 +350,7 @@ Extract reusable patterns from any repository into standardized `SKILL.md` files
 
 **3-stage pipeline**:
 1. **Structural analysis** — Map repo architecture and module boundaries
-2. **Semantic scoring** — Score against recurrence, code quality, expertise, and generalizability
+2. **Semantic scoring** — Score against the 4-criteria rubric from the paper
 3. **SKILL.md generation** — Produce standalone skill files for `~/.claude/skills/`
 
 See [docs/skill-extraction/README.md](docs/skill-extraction/README.md).
@@ -326,7 +359,9 @@ See [docs/skill-extraction/README.md](docs/skill-extraction/README.md).
 
 ## AutoResearch (ML Experiments)
 
-An autonomous experiment loop for ML training code, inspired by [Karpathy's autoresearch](https://github.com/karpathy/autoresearch):
+Adapted from [karpathy/autoresearch](https://github.com/karpathy/autoresearch) — Andrej Karpathy's tool for autonomous ML experimentation where an AI agent iterates on training code in a loop, making hypotheses, running experiments, and keeping what works. We adapted this into the harness as slash commands with an interactive setup flow and integration with our memory system so experiment results persist across sessions.
+
+Requires [uv](https://docs.astral.sh/uv/) (Astral's fast Python package manager) for running training scripts.
 
 ```
 /kiro:autoresearch-init             # Interactive setup (asks about your model, metrics, constraints)
@@ -339,7 +374,21 @@ See [docs/autoresearch/README.md](docs/autoresearch/README.md).
 
 ---
 
+## Context Hub (MCP Integration)
+
+Integrates [andrewyng/context-hub](https://github.com/andrewyng/context-hub) — Andrew Ng's MCP server that provides curated, LLM-optimized documentation for third-party libraries and APIs (OpenAI, Stripe, Anthropic, etc.). Instead of Claude hallucinating API signatures or working from stale training data, Context Hub serves up-to-date, verified documentation on demand.
+
+Runs as an MCP server via `npx -y @aisuite/chub-mcp` and is configured in the project's `.claude/settings.json`. Exposes tools like `chub_search`, `chub_get`, and `chub_list` that Claude Code can call during any workflow.
+
+See the Context Hub section in [docs/SDD-SETUP-GUIDE.md](docs/SDD-SETUP-GUIDE.md) for configuration.
+
+---
+
 ## Automation & Hooks
+
+### Context Priming Hook (`hooks/prompt-hook.sh`)
+
+Runs before every user prompt (UserPromptSubmit). Injects the contents of `hot-memory.md` into context so the agent always has current priorities, active specs, and recent decisions.
 
 ### Session Exit Hook (`hooks/stop-hook.sh`)
 
@@ -416,13 +465,23 @@ git push -u origin main
 
 ---
 
-## Tech Stack
+## Built With
 
-- **Runtime**: Claude Code (CLI)
-- **Spec Engine**: Based on [cc-sdd](https://www.npmjs.com/package/cc-sdd) with custom extensions
-- **Scripts**: Python 3 (standard library only — no pip install required)
-- **Hooks**: Bash
-- **Configuration**: JSON + Markdown
+| Component | Source | Role in Harness |
+|---|---|---|
+| [cc-sdd](https://www.npmjs.com/package/cc-sdd) | npm package | Spec engine foundation — provides the requirements → design → tasks → implement pipeline. We extended it with custom agents, memory, and Jira integration. |
+| [karpathy/autoresearch](https://github.com/karpathy/autoresearch) | GitHub | Autonomous ML experiment loop. Adapted into harness slash commands with interactive setup and persistent memory. |
+| [andrewyng/context-hub](https://github.com/andrewyng/context-hub) | GitHub / MCP | LLM-optimized third-party API documentation server. Runs as an MCP server (`@aisuite/chub-mcp`) so Claude Code gets accurate, up-to-date library docs. |
+| [CogMem (arXiv:2512.14118)](https://arxiv.org/abs/2512.14118) | Research paper | Cognitive memory architecture for LLMs. Inspired our temperature-tiered memory system (hot/warm/meta/cold) with progressive condensation across tiers. |
+| [arXiv:2603.11808](https://arxiv.org/abs/2603.11808) | Research paper | Methodology for skill extraction — 4-criteria scoring rubric for identifying and extracting reusable procedural knowledge from repositories. |
+| [uv](https://docs.astral.sh/uv/) | Astral | Fast Python package manager. Required runtime for autoresearch experiments and Python project tooling. |
+| [Jira REST API v2](https://developer.atlassian.com/cloud/jira/platform/rest/v2/) | Atlassian | Ticket fetching, comment posting, JQL search. Custom Python client in `scripts/` (stdlib only, no pip deps). |
+| [SonarQube](https://www.sonarsource.com/products/sonarqube/) | SonarSource | Security hotspot review integration via the `sonar-hotspot-review` skill. |
+
+**Runtime**: Claude Code (CLI)
+**Scripts**: Python 3 (standard library only)
+**Hooks**: Bash
+**Configuration**: JSON + Markdown
 
 ---
 
