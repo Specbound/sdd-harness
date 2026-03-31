@@ -80,6 +80,37 @@ Shows current phase, approvals, and open tasks.
 
 ---
 
+## Verification & Error Recovery
+
+### `/kiro:verify` — Run verification pipeline
+Runs a multi-stage pipeline: build, type-check, lint, test, debug artifact audit, and git status. Reports structured PASS/FAIL per stage.
+
+```
+/kiro:verify              # full (all 6 stages)
+/kiro:verify quick        # build + test only
+/kiro:verify pre-commit   # build + types + lint + test
+/kiro:verify pre-pr       # all stages with stricter thresholds
+```
+
+### `/kiro:fix-build` — Resolve build errors automatically
+Runs diagnostics, categorizes errors, and applies minimal surgical fixes. Hard cap of 3 attempts.
+
+```
+/kiro:fix-build
+```
+
+### `/kiro:checkpoint` — Named workflow checkpoints
+Create, compare, or restore named save points during long implementation sessions.
+
+```
+/kiro:checkpoint save task-1.2-done     # create checkpoint
+/kiro:checkpoint compare task-1.2-done  # show changes since
+/kiro:checkpoint list                   # show all checkpoints
+/kiro:checkpoint restore task-1.2-done  # soft reset (with confirmation)
+```
+
+---
+
 ## Validation
 
 ### `/kiro:validate-gap` — Requirements vs. code gap analysis
@@ -111,6 +142,14 @@ Three-pass review: (1) neutral assessment, (2) adversarial refutation, (3) judge
 /kiro:validate-adversarial revenue-trend-chart impl
 ```
 
+### `/kiro:validate-perf` — Performance anti-pattern review
+Checks for N+1 queries, unbounded operations, blocking I/O, missing indexes, and caching opportunities.
+
+```
+/kiro:validate-perf revenue-trend-chart
+/kiro:validate-perf                           # auto-detect from git diff
+```
+
 ---
 
 ## Documentation Sync
@@ -133,6 +172,39 @@ Reviews recent work, extracts observations, promotes patterns, updates hot-memor
 /kiro:reflect
 ```
 Run after completing a spec, finishing a debugging session, or at end of a productive session.
+
+### `/kiro:learn-eval` — Quality-gated pattern evaluation
+Evaluates session patterns with quality scoring (specificity, actionability, evidence). Deduplicates against existing knowledge and produces save/absorb/drop verdicts. Deeper than `/kiro:reflect` — use periodically.
+
+```
+/kiro:learn-eval              # evaluate current session
+/kiro:learn-eval sprint       # evaluate since last learn-eval
+/kiro:learn-eval feature      # evaluate patterns from a specific spec
+```
+
+### `/kiro:save-session` — Save session for later
+Captures what worked, what didn't, untried approaches, file states, and the exact next step.
+
+```
+/kiro:save-session bug-fix-auth
+/kiro:save-session                # auto-named with timestamp
+```
+
+### `/kiro:resume-session` — Resume a saved session
+Loads and displays a session snapshot. You decide what to do next.
+
+```
+/kiro:resume-session bug-fix-auth
+/kiro:resume-session              # most recent session
+/kiro:resume-session list         # show all saved sessions
+```
+
+### `/kiro:context-budget` — Analyze context token usage
+Measures token footprint of steering, memory, rules, and CLAUDE.md. Recommends optimizations.
+
+```
+/kiro:context-budget
+```
 
 ### `/kiro:housekeeping` — Prune and archive memory
 Archives old observations to glacier, enforces caps, validates formats.
@@ -256,7 +328,27 @@ See `docs/skill-extraction/README.md` for full details on scoring, workflow, and
 3. /kiro:spec-quick "Add feature X"      ← fast: requirements → design → tasks
    (review and approve each phase)
 4. /kiro:spec-impl feature-x             ← implement via TDD
-5. /kiro:reflect                         ← capture what you learned
+5. /kiro:verify                          ← confirm build, tests, lint all pass
+6. /kiro:validate-impl feature-x         ← confirm spec alignment
+7. /kiro:reflect                         ← capture what you learned
 ```
 
 For larger features, use the individual spec phases (`spec-requirements` → `spec-design` → `spec-tasks`) instead of `spec-quick` to review each phase separately.
+
+### Quality Gate Sequence (pre-completion)
+
+```
+/kiro:verify                             ← Gate 1: does it build and pass?
+/kiro:validate-impl feature-x            ← Gate 2: does it match the spec?
+/kiro:validate-adversarial feature-x     ← Gate 3: can we poke holes? (optional)
+/kiro:validate-perf feature-x            ← Gate 4: will it perform? (optional)
+```
+
+### Long Session Management
+
+```
+/kiro:checkpoint save task-1-done        ← save progress after each task
+/kiro:save-session                       ← save full session state before leaving
+/kiro:resume-session                     ← pick up where you left off
+/kiro:context-budget                     ← check if context is getting bloated
+```

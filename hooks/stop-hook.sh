@@ -3,6 +3,12 @@
 # 1. Check if harness has updates since last install
 # 2. Nudge /kiro:housekeeping if observations.md > 50 entries
 
+# Profile guard — skip all checks if profile is minimal
+SDD_PROFILE="${SDD_PROFILE:-standard}"
+if [ "$SDD_PROFILE" = "minimal" ]; then
+  exit 0
+fi
+
 HARNESS_DIR="$HOME/.claude/sdd-harness"
 LAST_CHECK_FILE=".claude/.last-harness-check"
 

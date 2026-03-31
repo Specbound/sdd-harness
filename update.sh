@@ -24,6 +24,7 @@ do_update() {
   cp -r "$HARNESS_DIR/kiro/"     "$proj/.claude/"
   cp -r "$HARNESS_DIR/scripts/"  "$proj/.claude/"
   cp -r "$HARNESS_DIR/docs/"     "$proj/.claude/"
+  mkdir -p "$proj/.claude/memory/sessions"
   cp    "$HARNESS_DIR/hooks/stop-hook.sh" "$proj/.claude/hooks/"
   chmod +x "$proj/.claude/hooks/stop-hook.sh"
   if [ -d "$proj/.git" ]; then

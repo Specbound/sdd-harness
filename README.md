@@ -90,7 +90,7 @@ sdd-harness/
 ├── VERSION                       # Last harness update date (auto-managed)
 ├── projects.txt                  # Registry of installed projects (gitignored)
 │
-├── commands/kiro/                # 25 slash commands (user-facing)
+├── commands/kiro/                # 32 slash commands (user-facing)
 │   ├── spec-init.md              #   Initialize a spec workspace
 │   ├── spec-requirements.md      #   Generate EARS-format requirements
 │   ├── spec-design.md            #   Generate technical design
@@ -98,15 +98,23 @@ sdd-harness/
 │   ├── spec-quick.md             #   Fast path: requirements → design → tasks
 │   ├── spec-impl.md              #   TDD implementation of tasks
 │   ├── spec-status.md            #   Check spec phase and progress
+│   ├── verify.md                 #   6-stage verification pipeline (build/types/lint/test/audit/git)
+│   ├── fix-build.md              #   Surgical build error resolver (3-attempt cap)
+│   ├── checkpoint.md             #   Named workflow checkpoints (save/compare/list/restore)
 │   ├── validate-gap.md           #   Requirements vs. code gap analysis
 │   ├── validate-design.md        #   Design quality review (with remediation on NO-GO)
 │   ├── validate-impl.md          #   Implementation vs. spec validation (with remediation)
 │   ├── validate-adversarial.md   #   Three-pass adversarial review (+1/-2 scoring)
+│   ├── validate-perf.md          #   Performance anti-pattern detection (N+1, unbounded, etc.)
 │   ├── steering.md               #   Bootstrap/sync project knowledge
 │   ├── steering-custom.md        #   Add domain-specific docs (auth, DB, etc.)
 │   ├── reflect.md                #   Mine session learnings, update memory
+│   ├── learn-eval.md             #   Quality-gated pattern evaluation (save/absorb/drop)
 │   ├── housekeeping.md           #   Prune memory, enforce caps
 │   ├── evolve.md                 #   Audit harness rules, propose improvements
+│   ├── save-session.md           #   Save resumable session snapshot
+│   ├── resume-session.md         #   Resume a previously saved session
+│   ├── context-budget.md         #   Analyze token consumption across context files
 │   ├── harness-fix.md            #   Encode behavioral prevention rules
 │   ├── harness-validate.md       #   Structural integrity check
 │   ├── harness-test.md           #   Haiku smoke-test for prompt quality
@@ -117,7 +125,7 @@ sdd-harness/
 │   ├── autoresearch-init.md      #   Interactive ML research setup
 │   └── autoresearch.md           #   Run autonomous experiment loop
 │
-├── agents/kiro/                  # 22 subagents (autonomous workers)
+├── agents/kiro/                  # 27 subagents (autonomous workers)
 │   ├── spec-requirements.md      #   Requirements generation agent
 │   ├── spec-design.md            #   Design generation agent
 │   ├── spec-tasks.md             #   Task breakdown agent
@@ -125,10 +133,15 @@ sdd-harness/
 │   ├── spec-refactor.md          #   Post-task code review agent
 │   ├── steering.md               #   Steering file generation agent
 │   ├── steering-custom.md        #   Custom steering agent
+│   ├── verify-agent.md           #   6-stage verification pipeline agent (Haiku)
+│   ├── fix-build-agent.md        #   Surgical build error resolver (Sonnet)
 │   ├── validate-gap.md           #   Gap analysis agent
 │   ├── validate-design.md        #   Design review agent (with remediation plans)
 │   ├── validate-impl.md          #   Implementation review agent (with backlink checks)
 │   ├── validate-adversarial.md   #   Three-pass adversarial review agent
+│   ├── validate-perf-agent.md    #   Performance anti-pattern detector (Opus)
+│   ├── save-session-agent.md     #   Session state capture agent (Haiku)
+│   ├── learn-eval-agent.md       #   Pattern quality evaluation agent (Sonnet)
 │   ├── reflect-agent.md          #   Session learning extraction agent
 │   ├── housekeeping-agent.md     #   Memory pruning agent
 │   ├── evolve-agent.md           #   Harness improvement agent (with trace analysis)
@@ -142,10 +155,10 @@ sdd-harness/
 │   └── autoresearch-init-agent.md#   ML research setup agent
 │
 ├── kiro/settings/                # Spec engine configuration
-│   ├── rules/                    #   16 rule files (EARS syntax, design
+│   ├── rules/                    #   20 rule files (EARS syntax, design
 │   │   │                         #   principles, task generation, gap analysis,
-│   │   │                         #   memory conventions, agent tracing,
-│   │   │                         #   test backlinks, model tiering, etc.)
+│   │   │                         #   memory conventions, agent tracing, quality gates,
+│   │   │                         #   loop safety, hook profiles, model tiering, etc.)
 │   └── templates/                #   16 templates across 4 categories:
 │       ├── specs/                #     Spec phase templates (init, requirements, design, tasks)
 │       ├── steering/             #     Project knowledge templates (product, tech, structure)
@@ -232,15 +245,23 @@ The core workflow enforces deliberate planning before coding, with human review 
 | `/kiro:spec-quick` | Fast path: all spec phases in one command |
 | `/kiro:spec-impl` | TDD implementation with automatic self-review |
 | `/kiro:spec-status` | Check current spec phase and progress |
+| `/kiro:verify` | 6-stage verification pipeline (build, types, lint, test, audit, git status) |
+| `/kiro:fix-build` | Surgical build error resolution (3-attempt cap, minimal changes) |
+| `/kiro:checkpoint` | Named workflow checkpoints (save, compare, list, restore) |
 | `/kiro:validate-gap` | Requirements vs. existing code gap analysis |
 | `/kiro:validate-design` | Design quality review (with remediation plan on NO-GO) |
 | `/kiro:validate-impl` | Implementation vs. spec validation (with remediation plan) |
 | `/kiro:validate-adversarial` | Three-pass adversarial review with +1/-2 scoring |
+| `/kiro:validate-perf` | Performance anti-pattern detection (N+1 queries, unbounded ops, etc.) |
 | `/kiro:steering` | Bootstrap/sync project knowledge docs |
 | `/kiro:steering-custom` | Add domain-specific steering (auth, DB, API, etc.) |
 | `/kiro:reflect` | Extract session learnings, update memory |
+| `/kiro:learn-eval` | Quality-gated pattern evaluation with save/absorb/drop verdicts |
 | `/kiro:housekeeping` | Prune memory, archive old observations |
 | `/kiro:evolve` | Audit harness rules, detect friction, propose improvements |
+| `/kiro:save-session` | Save resumable session snapshot (what worked, what didn't, next step) |
+| `/kiro:resume-session` | Resume a previously saved session |
+| `/kiro:context-budget` | Analyze token consumption across steering, memory, rules |
 | `/kiro:harness-fix` | Encode a behavioral prevention rule from a specific mistake |
 | `/kiro:harness-validate` | Check structural integrity of the harness installation |
 | `/kiro:harness-test` | Smoke-test prompts with Haiku to expose vague instructions |
@@ -261,7 +282,12 @@ Each command delegates to one or more autonomous subagents. Agents receive a pro
 
 - **Spec pipeline agents** — Handle requirements, design, tasks, and implementation phases
 - **`spec-refactor`** — Auto-spawned after each implementation task to review touched files for reuse, quality, and efficiency
+- **`verify-agent`** — Runs 6-stage verification pipeline (build, types, lint, test, debug audit, git status) with structured PASS/FAIL reporting
+- **`fix-build-agent`** — Diagnoses build errors, categorizes by type, applies minimal surgical fixes with a hard 3-attempt cap
 - **`validate-adversarial`** — Three-pass adversarial review: neutral assessment → refutation → judge synthesis with asymmetric +1/-2 scoring
+- **`validate-perf-agent`** — Detects performance anti-patterns: N+1 queries, unbounded operations, blocking I/O, missing indexes, and caching opportunities
+- **`save-session-agent`** — Captures resumable session snapshots with what worked, what failed, untried approaches, and exact next step
+- **`learn-eval-agent`** — Evaluates session patterns with quality gates (specificity, actionability, evidence) and deduplicates against existing knowledge
 - **`reflect-agent`** — Mines git log for observations, promotes recurring themes to patterns, updates hot-memory
 - **`housekeeping-agent`** — Archives observations to cold storage, enforces memory caps
 - **`evolve-agent`** — Measures memory health, detects friction patterns, analyzes agent trace logs, proposes rule changes
@@ -395,6 +421,20 @@ Runs before every user prompt (UserPromptSubmit). Injects the contents of `hot-m
 Runs when a Claude Code session ends. Checks for:
 - Harness updates available (prompts to run `update.sh`)
 - Memory health (warns if observations exceed cap)
+
+Respects the `SDD_PROFILE` environment variable — skipped entirely when profile is `minimal`.
+
+### Hook Profiles
+
+Control automation intensity via `SDD_PROFILE` environment variable:
+
+| Profile | Session Hooks | Git Hooks | Description |
+|---|---|---|---|
+| `minimal` | Skipped | Active | Rapid prototyping, exploratory work |
+| `standard` | Active | Active | Normal development (default) |
+| `strict` | Active | Active | Production-bound code, release prep |
+
+Set with: `export SDD_PROFILE=minimal` (defaults to `standard` if unset).
 
 ### Git Post-Commit Hook (`git-hooks/post-commit`)
 

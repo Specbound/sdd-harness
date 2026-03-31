@@ -9,6 +9,7 @@ These agents make architectural decisions or evaluate quality:
 - `evolve-agent` — harness rule design
 - `spec-requirements` — requirement analysis
 - `validate-adversarial` — three-pass adversarial review with judgment-heavy refutation
+- `validate-perf-agent` — performance analysis requiring deep judgment about scalability
 
 ## Tier 2: Sonnet (structured execution, moderate judgment)
 These agents follow clear protocols with some judgment:
@@ -20,6 +21,8 @@ These agents follow clear protocols with some judgment:
 - `jira-solve-agent` — ticket classification and routing
 - `harness-fix-agent` — rule encoding from mistake description
 - `skill-extract-agent` — scoring and extraction
+- `fix-build-agent` — surgical build error resolution (diagnostic + fix loop)
+- `learn-eval-agent` — pattern quality evaluation and deduplication
 
 ## Tier 3: Haiku (mechanical, scanning, low-judgment)
 These agents do mostly mechanical work:
@@ -30,6 +33,8 @@ These agents do mostly mechanical work:
 - `reflect-agent` — log mining and pattern extraction
 - `autoresearch-agent` — experiment loop execution
 - `harness-updater` — file copying and sync
+- `verify-agent` — mechanical command execution and exit code reporting
+- `save-session-agent` — session state capture to markdown
 
 ## How to Apply
 
