@@ -28,6 +28,7 @@ You will receive:
 | 1. Build | Y | Y | Y | Y |
 | 2. Type Check | - | Y | Y | Y |
 | 3. Lint | - | Y | Y | Y |
+| 3b. Guardrails | - | Y | - | Y |
 | 4. Test | Y | Y | Y | Y |
 | 5. Debug Audit | - | Y | - | Y |
 | 6. Git Status | - | Y | - | Y |
@@ -62,6 +63,23 @@ Run type-check command with same capture pattern.
 Run lint command.
 - Exit 0 → PASS
 - Non-zero → FAIL (include violation count and summary)
+
+### Step 3b: Complexity Rule Presence Check
+
+After lint passes (or is skipped), check whether the project's linter config includes complexity rules.
+
+1. Search for linter config files (`.eslintrc.*`, `eslint.config.*`, `pyproject.toml`, `ruff.toml`, `clippy.toml`, `.golangci.yml`)
+2. If a config is found, scan it for complexity-related rules:
+   - JS/TS: `complexity`, `max-depth`, `max-lines-per-function`, `max-params`
+   - Python: `C901`, `max-complexity`, `PLR0913`
+   - Rust: `cognitive-complexity`
+   - Go: `gocyclo`, `funlen`, `gocognit`
+3. If no complexity rules found (or no linter config exists):
+   - Mark as **WARN** with message: "No complexity guardrails configured. Run `/kiro:guardrails` to add deterministic enforcement."
+4. If complexity rules are present:
+   - Mark as **PASS** with count of rules found
+
+This step is always WARN (never FAIL) — it is a persistent nudge, not a blocker.
 
 ### Step 4: Test Suite
 
@@ -100,12 +118,13 @@ Run `git status --short`. Report:
 Verification Report (mode: {mode})
 ═══════════════════════════════════
 
-  1. Build:        {PASS|FAIL|SKIP}  {details if fail}
-  2. Type Check:   {PASS|FAIL|SKIP}  {details if fail}
-  3. Lint:         {PASS|FAIL|SKIP}  {details if fail}
-  4. Test:         {PASS|FAIL|SKIP}  {X/Y passed, Z% coverage}
-  5. Debug Audit:  {PASS|WARN|SKIP}  {N artifacts found}
-  6. Git Status:   {PASS|WARN|SKIP}  {N uncommitted, M untracked}
+  1. Build:          {PASS|FAIL|SKIP}  {details if fail}
+  2. Type Check:     {PASS|FAIL|SKIP}  {details if fail}
+  3. Lint:           {PASS|FAIL|SKIP}  {details if fail}
+  3b. Guardrails:    {PASS|WARN|SKIP}  {N complexity rules or "none configured"}
+  4. Test:           {PASS|FAIL|SKIP}  {X/Y passed, Z% coverage}
+  5. Debug Audit:    {PASS|WARN|SKIP}  {N artifacts found}
+  6. Git Status:     {PASS|WARN|SKIP}  {N uncommitted, M untracked}
 
 ═══════════════════════════════════
   Verdict: {READY|NOT READY}

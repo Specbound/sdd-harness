@@ -45,6 +45,8 @@ Finding 2: [observation] — Positive/Concern
 
 Limit to 5-7 findings. Focus on what materially affects success.
 
+**Property test gap check**: When validating implementation, scan for functions that transform data, have mathematical properties, or maintain invariants. If these functions only have example-based tests (no property-based tests), report this as a Concern finding: "Functions with testable properties lack property-based tests" — listing the specific functions. See `.claude/kiro/settings/rules/property-testing.md` for criteria.
+
 ### Step 2: Adversarial Refutation
 
 For each finding from Step 1, attempt to refute it:

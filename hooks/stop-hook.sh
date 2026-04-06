@@ -37,3 +37,27 @@ if [ -f "$OBS_FILE" ]; then
     echo ""
   fi
 fi
+
+# --- Agent failure pattern detection (self-tightening loop) ---
+TRACE_LOG=".claude/memory/trace.log"
+if [ -f "$TRACE_LOG" ]; then
+  # Check for 3+ consecutive failures for the same agent type
+  REPEAT_FAILURES=$(awk -F'|' '
+    {
+      gsub(/^[ \t]+|[ \t]+$/, "", $2); agent=$2
+      gsub(/^[ \t]+|[ \t]+$/, "", $4); outcome=$4
+    }
+    outcome ~ /fail|error|no-go/ {
+      if (agent == last_agent) { count++ } else { count=1 }
+      last_agent=agent
+      if (count >= 3) { print agent; found=1; exit }
+    }
+  ' "$TRACE_LOG" 2>/dev/null)
+
+  if [ -n "$REPEAT_FAILURES" ]; then
+    echo ""
+    echo "Agent '$REPEAT_FAILURES' has 3+ consecutive failures in trace.log."
+    echo "Run: /kiro:evolve to investigate friction patterns and propose improvements."
+    echo ""
+  fi
+fi

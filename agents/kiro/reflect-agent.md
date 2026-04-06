@@ -58,7 +58,12 @@ Format each observation:
 - YYYY-MM-DD [tag1, tag2]: observation text
 ```
 
-**Tags**: `spec`, `impl`, `design`, `debug`, `decision`, `friction`, `insight`, `pattern`
+**Tags**: `spec`, `impl`, `design`, `debug`, `decision`, `friction`, `insight`, `pattern`, `enforceable`, `escaped`
+
+**Special tagging rules**:
+- `enforceable`: Add this tag when the observation describes a convention violation that could be prevented by a linter rule. This feeds the evolve agent's graduation pipeline (see `rules/self-tightening.md`).
+- `escaped`: Add this tag when a bug passed validation but was caught later (in CI, testing, or production). These are highest-priority graduation candidates.
+- An observation can have multiple tags: `[friction, enforceable]` means "this was painful AND could be a linter rule"
 
 **Rules**:
 - Max 5 new observations per reflect pass

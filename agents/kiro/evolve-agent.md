@@ -84,6 +84,23 @@ Scan observations and self-observations for friction patterns:
   - **Overly strict**: Rule causes more friction than it prevents
   - **Stale**: Rule references something that no longer exists
 
+### Step 2b: Enforceable Pattern Detection
+
+Scan for patterns that can be graduated from probabilistic (markdown) to deterministic (linter) enforcement:
+
+1. **Read graduations file**: `.claude/memory/meta/graduations.md` (if exists) — skip already-graduated rules
+2. **Scan for `[enforceable]` tags**: Look in observations for entries tagged `[enforceable]` — these are pre-identified graduation candidates
+3. **Scan steering files**: Read `.claude/steering/*.md` for conventions that map to linter rules:
+   - Naming conventions → linter naming rules
+   - Import ordering → import-sort rules
+   - Code size limits → complexity rules
+   - Banned patterns → no-restricted-syntax rules
+4. **Cross-reference with linter config**: Check if the project already enforces these via linter
+   - Glob for linter configs (`.eslintrc.*`, `eslint.config.*`, `pyproject.toml`, `ruff.toml`, `clippy.toml`, `.golangci.yml`)
+   - Read config to check existing rules
+
+For each enforceable pattern not already graduated or enforced, create a `graduate-to-linter` proposal.
+
 ### Step 3: Propose Changes
 
 For each identified issue, propose a specific change:
@@ -98,11 +115,27 @@ For each identified issue, propose a specific change:
 **Risk**: [what could go wrong]
 ```
 
+For enforceable patterns, use this additional proposal format:
+
+```
+### Proposal: [Short title]
+**Type**: graduate-to-linter
+**Source**: [observation or steering file that identified the pattern]
+**Linter**: [eslint | ruff | clippy | golangci-lint]
+**Rule**: [exact rule name and configuration value]
+**Config File**: [path to linter config file]
+**Evidence**: [observations showing this pattern recurs]
+**Risk**: [what could go wrong if rule is too strict]
+```
+
+When a `graduate-to-linter` proposal is approved by the user, record it in `.claude/memory/meta/graduations.md` with the date, source pattern, linter rule, config file, and status "active".
+
 **Rules**:
 - Never apply changes automatically
 - All proposals require user approval
 - Include evidence from observations
 - Assess risk of each change
+- For graduation proposals: recommend running `/kiro:guardrails scaffold` after approval to apply the linter rule
 
 ### Step 4: Record Findings
 

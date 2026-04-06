@@ -65,6 +65,10 @@ For each selected task, follow Kent Beck's TDD cycle:
    - Test should fail (code doesn't exist yet)
    - Use descriptive test names
    - Add a spec backlink comment above each test: `# Verifies: specs/{feature}/requirements.md#N.M`
+   - **Property test evaluation**: After writing example-based tests, check if the function under test has properties that should hold for all inputs (see `.claude/kiro/settings/rules/property-testing.md`):
+     - Roundtrip (encode/decode), invariants (sorted, non-negative), idempotent (f(f(x)) == f(x)), commutative, oracle
+     - If a property applies, write a property-based test alongside the example test using the project's ecosystem library (hypothesis, fast-check, proptest, testing/quick)
+     - Add backlink: `# Verifies: specs/{feature}/requirements.md#N.M (property)`
 
 2. **GREEN - Write Minimal Code**:
    - Implement simplest solution to make test pass
