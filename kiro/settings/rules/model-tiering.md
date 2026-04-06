@@ -7,6 +7,7 @@ These agents make architectural decisions or evaluate quality:
 - `spec-design` — architectural decisions
 - `spec-refactor` — code quality evaluation (skeptical evaluator)
 - `evolve-agent` — harness rule design
+- `prompt-diagnosis-agent` — analyzing prompt quality and recommending targeted improvements
 - `spec-requirements` — requirement analysis
 - `validate-adversarial` — three-pass adversarial review with judgment-heavy refutation
 - `validate-perf-agent` — performance analysis requiring deep judgment about scalability
@@ -44,6 +45,32 @@ When spawning a sub-agent via the Agent tool, set the `model` parameter:
 - Tier 3: `model: "haiku"`
 
 This is guidance, not enforcement. If a Tier 3 agent produces poor results, promote it to Tier 2.
+
+## Data-Driven Tiering
+
+The initial tier assignments above are heuristic starting points. Over time, alignment data from `trace.log` should inform tiering decisions — replacing debate with measurement.
+
+### How It Works
+
+The evolve agent (Step 1c) computes alignment scores per agent at their current tier and flags candidates:
+
+| Signal | Condition | Action |
+|--------|-----------|--------|
+| `DEMOTE?` | Mean alignment >= 4.0 at opus/sonnet | Try cheaper tier — prompt is well-structured enough |
+| `PROMOTE?` | Mean alignment < 3.0 at haiku/sonnet | Try more capable tier — task may require more judgment |
+| `FIX-FORMAT` | Structural reliability < 90% | Fix the prompt, not the tier — format issues are prompt quality problems |
+
+### Validation Before Committing
+
+Every tier change must be validated:
+1. Run `/kiro:harness-test {agent-name}` at the proposed tier
+2. If regression scenarios exist (`/kiro:harness-test regression {agent-name}`), run those too
+3. Monitor alignment in the next 3-5 invocations after the change
+4. Revert if alignment drops >1.0 from the pre-change mean
+
+### Key Insight
+
+From Dropbox's DSPy work: "Model swaps went from prolonged debate to quick measurement-based decisions." With alignment scores in trace.log, tiering is an evidence-based decision, not a guess.
 
 ## Smoke Testing with Haiku
 

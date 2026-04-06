@@ -1,7 +1,7 @@
 ---
 name: evolve-agent
 description: Audit harness rules effectiveness, measure memory health, propose improvements
-tools: Read, Write, Edit, Glob, Grep, Bash
+tools: Read, Write, Edit, Glob, Grep, Bash, Agent
 model: inherit
 color: magenta
 ---
@@ -46,6 +46,7 @@ You will receive task prompts containing:
    - `.claude/memory/entities.md`
 4. Read glacier index: `.claude/memory/glacier/index.md`
 5. Read agent trace log (if exists): `.claude/memory/trace.log`
+6. Read instruction library (if exists): `.claude/memory/meta/instruction-library.md`
 
 ### Step 1: Collect Metrics
 
@@ -71,6 +72,34 @@ If `.claude/memory/trace.log` exists, compute:
 - **Over-tiered agents**: Haiku agents that consistently pass may not need promotion; Opus agents on mechanical work may be demotable
 
 Include these findings in the friction analysis.
+
+### Step 1c: Alignment Analysis
+
+Parse alignment and structural fields from trace entries (see `rules/alignment-scoring.md`). For each agent with alignment data:
+
+1. **Mean alignment**: Average of all `alignment:N` values for the agent
+2. **Structural reliability**: `count(structural:ok) / count(all entries with structural field)` as a percentage
+3. **Alignment trend**: Compare mean of last 5 scored entries vs previous 5. Report as `improving`, `stable`, or `degrading` (threshold: 1.0 difference)
+4. **Alignment variance**: If variance is high (>1.5), the agent is inconsistent — prompt may be ambiguous
+
+Produce an alignment scorecard:
+
+```
+### Alignment Scorecard
+| Agent | Invocations | Mean Align | Structural | Trend | Flag |
+|-------|-------------|-----------|------------|-------|------|
+| validate-adversarial | 8 | 4.2 | 100% | stable | — |
+| steering | 12 | 2.8 | 75% | degrading | DIAGNOSE |
+| spec-impl | 6 | 3.5 | 100% | improving | — |
+```
+
+**Flags**:
+- `DIAGNOSE`: Mean alignment < 3.0 — invoke prompt-diagnosis-agent (Step 2c)
+- `FIX-FORMAT`: Structural reliability < 90% — prompt needs format reinforcement
+- `DEMOTE?`: Mean alignment >= 4.0 at opus/sonnet — candidate for cheaper tier
+- `PROMOTE?`: Mean alignment < 3.0 at haiku/sonnet — candidate for more capable tier
+
+Agents with fewer than 3 scored entries are excluded from alignment analysis (insufficient data).
 
 ### Step 2: Analyze Friction
 
@@ -101,6 +130,39 @@ Scan for patterns that can be graduated from probabilistic (markdown) to determi
 
 For each enforceable pattern not already graduated or enforced, create a `graduate-to-linter` proposal.
 
+### Step 2c: Prompt Diagnosis for Underperformers
+
+For each agent flagged `DIAGNOSE` or `FIX-FORMAT` in the alignment scorecard (Step 1c), invoke the prompt-diagnosis-agent:
+
+```
+Agent(
+  subagent_type="prompt-diagnosis-agent",
+  description="Diagnose {agent-name} prompt issues",
+  prompt="""
+Diagnose why {agent-name} is underperforming and recommend instruction changes.
+
+Agent file: agents/kiro/{agent-name}.md
+Mean alignment: {X.X}
+Structural reliability: {Y}%
+Current tier: {tier}
+
+Recent trace entries for this agent:
+{filtered trace entries}
+
+Relevant observations:
+{observations mentioning this agent}
+
+Read the agent prompt, alignment-scoring.md, and instruction-library.md (if exists).
+Produce a structured diagnosis with specific ADD/REMOVE/SHARPEN recommendations.
+"""
+)
+```
+
+Include each diagnosis summary in the output report under "Prompt Diagnoses". Convert each diagnosis recommendation into a proposal (Step 3) using the appropriate type:
+- ADD recommendation → `add-instruction` proposal
+- REMOVE recommendation → `remove-instruction` proposal  
+- SHARPEN recommendation → `modify-instruction` proposal
+
 ### Step 3: Propose Changes
 
 For each identified issue, propose a specific change:
@@ -130,6 +192,59 @@ For enforceable patterns, use this additional proposal format:
 
 When a `graduate-to-linter` proposal is approved by the user, record it in `.claude/memory/meta/graduations.md` with the date, source pattern, linter rule, config file, and status "active".
 
+For prompt-level improvements from Step 2c diagnoses, use these additional proposal formats:
+
+```
+### Proposal: [Short title]
+**Type**: add-instruction
+**Category**: [cross-cutting | validation | implementation | scanning | design]
+**Instruction**: "[tag] instruction text"
+**Addresses**: [which root cause from diagnosis]
+**Generalizes across**: [list 2+ instances this addresses]
+**Risk**: [what could go wrong if instruction is too strict]
+```
+
+```
+### Proposal: [Short title]
+**Type**: remove-instruction
+**Category**: [category]
+**Instruction**: "[existing instruction text to remove]"
+**Reason**: [which failure mode it contributes to]
+**Risk**: [what the instruction was preventing — could removal cause regressions?]
+```
+
+```
+### Proposal: [Short title]
+**Type**: modify-instruction
+**Category**: [category]
+**Current**: "[existing instruction]"
+**Proposed**: "[sharpened instruction]"
+**Addresses**: [which root cause]
+**Risk**: [what could go wrong]
+```
+
+When an instruction proposal is approved, update `.claude/memory/meta/instruction-library.md` under the appropriate category. Recommend running `/kiro:harness-test regression` after applying instruction changes.
+
+For data-driven tiering adjustments from Step 1c, use this proposal format:
+
+```
+### Proposal: [Short title]
+**Type**: adjust-tier
+**Agent**: [agent-name]
+**Current Tier**: [opus|sonnet|haiku]
+**Proposed Tier**: [opus|sonnet|haiku]
+**Evidence**: Mean alignment {X.X} over {N} invocations at current tier, structural reliability {Y}%
+**Rationale**: [why this tier change is warranted — e.g., "consistently high alignment suggests prompt is well-structured enough for a cheaper model"]
+**Test**: Run `/kiro:harness-test {agent-name}` at proposed tier before committing
+**Risk**: [what could degrade — e.g., "edge cases requiring deeper judgment may score lower"]
+```
+
+When an `adjust-tier` proposal is approved:
+1. Update the agent's `model:` frontmatter field in its `.md` file
+2. Update the agent's tier listing in `.claude/kiro/settings/rules/model-tiering.md`
+3. Run `/kiro:harness-test {agent-name}` at the new tier to validate
+4. Monitor alignment in subsequent trace entries — revert if alignment drops >1.0
+
 **Rules**:
 - Never apply changes automatically
 - All proposals require user approval
@@ -151,7 +266,7 @@ Chat summary only (self-observations updated directly):
 ```
 ✅ Evolve Audit Complete
 
-## Scorecard
+## Memory Scorecard
 | Metric | Value | Status |
 |--------|-------|--------|
 | hot-memory lines | N/50 | ✅/⚠️ |
@@ -161,8 +276,17 @@ Chat summary only (self-observations updated directly):
 | stale items | N | ✅/⚠️ |
 | L0 coverage | N% | ✅/⚠️ |
 
+## Alignment Scorecard
+| Agent | Invocations | Mean Align | Structural | Trend | Flag |
+|-------|-------------|-----------|------------|-------|------|
+| [agent] | N | X.X | Y% | [trend] | [flag or —] |
+(only agents with 3+ scored entries shown)
+
 ## Friction Patterns
 - [description of each friction pattern found]
+
+## Prompt Diagnoses
+- [agent-name]: [one-line diagnosis summary] (or "None — no agents flagged for diagnosis")
 
 ## Proposals (require your approval)
 1. [Short title]: [one-line summary]

@@ -16,10 +16,13 @@ Run key harness workflows at Haiku tier (cheapest model) to stress-test prompt q
 
 ```
 /kiro:harness-test [agent-name]
+/kiro:harness-test regression [agent-name]
 ```
 
 - No arguments: runs the standard smoke-test suite
 - `agent-name`: test a specific agent only
+- `regression`: runs scenario-based regression tests against expected outcomes
+- `regression agent-name`: regression tests for a specific agent only
 
 ## Standard Smoke-Test Suite
 
@@ -106,9 +109,61 @@ File patterns: specs/{detected-feature}/*.md, .claude/steering/*.md, .claude/kir
 [Specific prompt improvements based on failures]
 ```
 
+## Regression Test Mode
+
+When invoked with `regression`, runs scenario-based tests to verify prompt changes don't degrade agent quality.
+
+### Step 1: Load Scenarios
+
+Read `.claude/memory/meta/prompt-scenarios.md`. If the file doesn't exist or has no scenarios, tell the user to add scenarios first (scenarios are populated from real usage and prompt diagnoses).
+
+If `agent-name` is specified, filter to scenarios for that agent only.
+
+### Step 2: Run Each Scenario
+
+For each scenario:
+
+1. Invoke the target agent at **Haiku tier** with the scenario's input context
+2. Compare the output against:
+   - **Expected outcome**: Does the conclusion match? (GO/NO-GO, PASS/FAIL, key content)
+   - **Expected finding**: Does the specific required finding appear?
+   - **Output format**: Is the structure correct? (structural reliability)
+3. Score alignment using the rubric from `.claude/kiro/settings/rules/alignment-scoring.md`
+4. Compare against the scenario's alignment floor
+
+### Step 3: Report
+
+```
+## Regression Test Results
+
+| Agent | Scenario | Alignment | Floor | Structural | Result |
+|-------|----------|-----------|-------|------------|--------|
+| validate-adversarial | obvious-flaw | 4 | 3 | ok | PASS |
+| validate-adversarial | solid-design | 2 | 4 | ok | FAIL |
+| steering | python-fastapi | 5 | 4 | ok | PASS |
+
+### Regressions
+[For each FAIL: which scenario, what was expected vs actual, suggested investigation]
+
+### Summary
+- Scenarios run: N
+- Passed: M
+- Failed: K
+- Verdict: {ALL CLEAR | REGRESSIONS DETECTED}
+```
+
+### Step 4: Trace Entry
+
+For each scenario run, append a trace entry:
+```
+YYYY-MM-DD HH:MM | {agent-name} | haiku | {pass|fail} | fast | alignment:{N} | structural:{ok|malformed}
+```
+
 ## Notes
 
 - Haiku failures are a QA signal about harness quality, not Haiku quality
 - Run this after making changes to agent prompts or rules
 - If an agent consistently fails at Haiku, its prompt needs clarification — add structure, examples, or constraints
 - Results are informational only — they don't block any workflow
+- Run `regression` mode after approving instruction library changes from `/kiro:evolve`
+- Scenarios grow organically from real usage — add them after successful invocations or diagnosed failures

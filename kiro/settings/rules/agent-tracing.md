@@ -11,7 +11,7 @@ Location: `.claude/memory/trace.log`
 One line per agent invocation:
 
 ```
-YYYY-MM-DD HH:MM | agent-name | tier | outcome | duration-hint
+YYYY-MM-DD HH:MM | agent-name | tier | outcome | duration-hint | alignment:N | structural:ok|malformed
 ```
 
 **Fields**:
@@ -19,13 +19,18 @@ YYYY-MM-DD HH:MM | agent-name | tier | outcome | duration-hint
 - `tier`: Model tier used (`opus`, `sonnet`, `haiku`)
 - `outcome`: `pass`, `fail`, `error`, `no-go`, or `go`
 - `duration-hint`: `fast` (<30s), `medium` (30s-2min), `slow` (>2min) — estimated, not measured
+- `alignment:N`: (optional) 0-5 alignment score — how well output matched expected outcome. See `alignment-scoring.md` for the rubric. Omit if the command cannot meaningfully score.
+- `structural:ok|malformed`: (optional) Whether agent output followed the expected format. `ok` = correct structure, `malformed` = missing sections, wrong format, or unparseable.
+
+The last two fields are optional for backward compatibility — older entries without them remain valid.
 
 ## Example
 
 ```
-2026-03-30 14:22 | spec-impl | sonnet | pass | medium
-2026-03-30 14:25 | validate-design | sonnet | no-go | fast
+2026-03-30 14:22 | spec-impl | sonnet | pass | medium | alignment:4 | structural:ok
+2026-03-30 14:25 | validate-design | sonnet | no-go | fast | alignment:5 | structural:ok
 2026-03-30 14:30 | spec-refactor | opus | pass | fast
+2026-03-30 14:35 | steering | haiku | pass | medium | alignment:3 | structural:malformed
 ```
 
 ## Rules
@@ -42,3 +47,7 @@ The evolve agent reads `trace.log` to:
 - Track tier usage patterns (are expensive agents being over-used?)
 - Correlate failures with specific workflow phases
 - Measure harness usage frequency over time
+- Compute mean alignment per agent (prompt quality metric — see `alignment-scoring.md`)
+- Compute structural reliability rate per agent (format compliance)
+- Detect alignment trends (improving/degrading over recent invocations)
+- Generate data-driven tiering recommendations (promote/demote based on alignment at current tier)

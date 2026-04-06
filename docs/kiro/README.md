@@ -38,6 +38,8 @@ Based on [cc-sdd](https://www.npmjs.com/package/cc-sdd) (`npx cc-sdd@latest`), a
 | `harness-fix` | Meta | Encode behavioral prevention rule from a specific mistake |
 | `harness-validate` | Meta | Structural integrity check of the harness |
 | `harness-test` | Meta | Haiku smoke-test to expose vague prompts |
+| `guardrails` | Meta | Audit/scaffold linter complexity rules for deterministic enforcement |
+| `ci-scaffold` | Meta | Generate CI configuration mirroring the verify pipeline |
 
 ### Subagents (`agents/kiro/`)
 
@@ -48,7 +50,9 @@ Key agents beyond the spec pipeline:
 - **harness-updater** — Triggered by post-commit hook when `.claude/` files change. Updates `SDD-SETUP-GUIDE.md`.
 - **reflect-agent** — Mines `git log` for observations, promotes patterns, updates hot-memory.
 - **housekeeping-agent** — Archives observations to glacier, enforces memory caps.
-- **evolve-agent** — Measures memory health metrics, analyzes agent trace logs, detects friction patterns, proposes rule changes.
+- **evolve-agent** — Measures memory health metrics, analyzes agent trace logs, detects friction patterns, proposes rule changes and linter rule graduations.
+- **guardrails-agent** — Audits project linter configs for complexity rules; scaffolds missing guardrails per ecosystem (ESLint, ruff, clippy, golangci-lint).
+- **ci-scaffold-agent** — Generates CI configs (GitHub Actions, GitLab CI, Azure Pipelines) mirroring the verify pipeline stages.
 - **validate-adversarial** — Three-pass adversarial review (neutral → refutation → judge synthesis with +1/-2 scoring).
 - **harness-validate-agent** — Checks structural integrity: command→agent references, template existence, memory caps, L0 headers. Generates component relationship index.
 - **spec-refactor** — Auto-spawned after each impl task's VERIFY step. Reviews touched files for reuse/quality/efficiency.
@@ -71,6 +75,9 @@ Rules control agent behavior:
 - `model-tiering.md` — Cost optimization tiers (Opus/Sonnet/Haiku) with smoke testing
 - `context-hygiene.md` — Context rot prevention with degradation detection
 - `skill-extraction-scoring.md` — 4-criteria rubric for skill extraction
+- `deterministic-enforcement.md` — Prefer linters over documentation for enforceable conventions
+- `property-testing.md` — When and how to use property-based tests in TDD
+- `self-tightening.md` — Self-improving feedback loop formalization (L0-L3 maturity)
 
 ### Templates (`kiro/settings/templates/`)
 

@@ -90,7 +90,7 @@ sdd-harness/
 ├── VERSION                       # Last harness update date (auto-managed)
 ├── projects.txt                  # Registry of installed projects (gitignored)
 │
-├── commands/kiro/                # 32 slash commands (user-facing)
+├── commands/kiro/                # 34 slash commands (user-facing)
 │   ├── spec-init.md              #   Initialize a spec workspace
 │   ├── spec-requirements.md      #   Generate EARS-format requirements
 │   ├── spec-design.md            #   Generate technical design
@@ -122,10 +122,12 @@ sdd-harness/
 │   ├── jira-solve.md             #   Fetch and route Jira tickets
 │   ├── skill-extract-scan.md     #   Analyze repo for extractable skills
 │   ├── skill-extract.md          #   Generate SKILL.md files
+│   ├── guardrails.md             #   Audit/scaffold linter complexity rules
+│   ├── ci-scaffold.md            #   Generate CI config mirroring verify pipeline
 │   ├── autoresearch-init.md      #   Interactive ML research setup
 │   └── autoresearch.md           #   Run autonomous experiment loop
 │
-├── agents/kiro/                  # 27 subagents (autonomous workers)
+├── agents/kiro/                  # 29 subagents (autonomous workers)
 │   ├── spec-requirements.md      #   Requirements generation agent
 │   ├── spec-design.md            #   Design generation agent
 │   ├── spec-tasks.md             #   Task breakdown agent
@@ -151,11 +153,13 @@ sdd-harness/
 │   ├── harness-validate-agent.md #   Structural integrity checker
 │   ├── jira-solve-agent.md       #   Jira ticket analysis agent
 │   ├── skill-extract-agent.md    #   Skill extraction agent
+│   ├── guardrails-agent.md       #   Linter complexity rule auditing/scaffolding (Haiku)
+│   ├── ci-scaffold-agent.md      #   CI config generation (Haiku)
 │   ├── autoresearch-agent.md     #   ML experiment loop agent
 │   └── autoresearch-init-agent.md#   ML research setup agent
 │
 ├── kiro/settings/                # Spec engine configuration
-│   ├── rules/                    #   20 rule files (EARS syntax, design
+│   ├── rules/                    #   22 rule files (EARS syntax, design, deterministic
 │   │   │                         #   principles, task generation, gap analysis,
 │   │   │                         #   memory conventions, agent tracing, quality gates,
 │   │   │                         #   loop safety, hook profiles, model tiering, etc.)
@@ -171,7 +175,7 @@ sdd-harness/
 │   └── jira_push_comment.py      #   Post implementation summary to Jira
 │
 ├── hooks/                        # Session lifecycle hooks
-│   ├── stop-hook.sh              #   On session exit: check for updates, memory health
+│   ├── stop-hook.sh              #   On session exit: check for updates, memory health, agent failure patterns
 │   └── prompt-hook.sh            #   On prompt submit: inject hot-memory context
 │
 ├── git-hooks/                    # Git lifecycle hooks
@@ -258,7 +262,9 @@ The core workflow enforces deliberate planning before coding, with human review 
 | `/kiro:reflect` | Extract session learnings, update memory |
 | `/kiro:learn-eval` | Quality-gated pattern evaluation with save/absorb/drop verdicts |
 | `/kiro:housekeeping` | Prune memory, archive old observations |
-| `/kiro:evolve` | Audit harness rules, detect friction, propose improvements |
+| `/kiro:evolve` | Audit harness rules, detect friction, propose improvements (includes graduation pipeline) |
+| `/kiro:guardrails` | Audit and scaffold linter complexity rules for deterministic enforcement |
+| `/kiro:ci-scaffold` | Generate CI configuration mirroring the verify pipeline |
 | `/kiro:save-session` | Save resumable session snapshot (what worked, what didn't, next step) |
 | `/kiro:resume-session` | Resume a previously saved session |
 | `/kiro:context-budget` | Analyze token consumption across steering, memory, rules |
@@ -290,7 +296,9 @@ Each command delegates to one or more autonomous subagents. Agents receive a pro
 - **`learn-eval-agent`** — Evaluates session patterns with quality gates (specificity, actionability, evidence) and deduplicates against existing knowledge
 - **`reflect-agent`** — Mines git log for observations, promotes recurring themes to patterns, updates hot-memory
 - **`housekeeping-agent`** — Archives observations to cold storage, enforces memory caps
-- **`evolve-agent`** — Measures memory health, detects friction patterns, analyzes agent trace logs, proposes rule changes
+- **`evolve-agent`** — Measures memory health, detects friction patterns, analyzes agent trace logs, proposes rule changes and linter rule graduations
+- **`guardrails-agent`** — Audits project linter configs for complexity rules, scaffolds missing guardrails per ecosystem (ESLint, ruff, clippy, golangci-lint)
+- **`ci-scaffold-agent`** — Generates CI configurations (GitHub Actions, GitLab CI, Azure Pipelines) mirroring the verify pipeline stages
 - **`doc-sync`** — Triggered by post-commit hook; finds and updates stale `.md` files after code changes; detects stale doc-to-code references
 - **`harness-updater`** — Triggered when `.claude/` files change; keeps `SDD-SETUP-GUIDE.md` current
 - **`harness-validate-agent`** — Checks structural integrity: command→agent references, template existence, memory caps, L0 headers, generates component index
@@ -421,6 +429,7 @@ Runs before every user prompt (UserPromptSubmit). Injects the contents of `hot-m
 Runs when a Claude Code session ends. Checks for:
 - Harness updates available (prompts to run `update.sh`)
 - Memory health (warns if observations exceed cap)
+- Agent failure patterns (3+ consecutive failures for the same agent in `trace.log` — suggests running `/kiro:evolve`)
 
 Respects the `SDD_PROFILE` environment variable — skipped entirely when profile is `minimal`.
 

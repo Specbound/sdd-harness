@@ -1,4 +1,16 @@
 {
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/bash /home/dalesser/.claude/sdd-harness/.claude/hooks/stop-hook.sh"
+          }
+        ]
+      }
+    ]
+  },
   "permissions": {
     "allow": [
       "Bash(find /home/dalesser/.claude/sdd-harness/commands /home/dalesser/.claude/sdd-harness/agents /home/dalesser/.claude/sdd-harness/kiro /home/dalesser/.claude/sdd-harness/scripts -name *SDD* -o -name *sdd*)",

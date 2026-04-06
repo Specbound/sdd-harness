@@ -34,6 +34,16 @@ Also scan for enforceable patterns (Step 2b):
 - Check existing linter config to avoid proposing already-enforced rules
 - Use the graduate-to-linter proposal type for enforceable patterns
 
+Also perform alignment analysis (Step 1c):
+- Parse alignment:N and structural:ok|malformed fields from trace.log
+- Compute mean alignment, structural reliability, and trends per agent
+- For agents flagged DIAGNOSE (alignment < 3.0) or FIX-FORMAT (structural < 90%),
+  invoke prompt-diagnosis-agent to produce targeted instruction change recommendations
+- Convert diagnosis recommendations into add/remove/modify-instruction proposals
+
+Also read the instruction library if it exists:
+- .claude/memory/meta/instruction-library.md
+
 JIT Strategy: Fetch codebase files when needed, not upfront.
 """
 )
@@ -44,9 +54,11 @@ JIT Strategy: Fetch codebase files when needed, not upfront.
 Show Subagent summary to user:
 
 ### Evolve Audit:
-- Scorecard (memory health metrics)
+- Memory Scorecard (memory health metrics)
+- Alignment Scorecard (per-agent alignment, structural reliability, trends)
 - Friction patterns detected
-- Proposed rule changes (for user approval)
+- Prompt diagnoses (for flagged underperforming agents)
+- Proposed changes — rule, instruction library, and tiering (for user approval)
 - Self-observations appended
 
 ## Notes
@@ -58,3 +70,6 @@ Show Subagent summary to user:
 - Now includes **graduation proposals** — conventions that can be promoted from markdown docs to deterministic linter enforcement
 - After approving a `graduate-to-linter` proposal, run `/kiro:guardrails scaffold` to apply the linter rule change
 - Graduation history tracked in `.claude/memory/meta/graduations.md`
+- Now includes **alignment analysis** — computes per-agent alignment scores and structural reliability from trace.log
+- Agents flagged `DIAGNOSE` or `FIX-FORMAT` get automatic prompt diagnosis with specific instruction change recommendations
+- After approving instruction changes, run `/kiro:harness-test regression` to verify no regressions

@@ -210,9 +210,11 @@ Create `.claude/hooks/stop-hook.sh` and make it executable:
 chmod +x .claude/hooks/stop-hook.sh
 ```
 
-The stop hook runs a single lightweight check at the end of every Claude session:
+The stop hook runs lightweight checks at the end of every Claude session:
 
-1. **Memory health check** — if `.claude/memory/observations.md` has >50 entries, prints a nudge to run `/kiro:housekeeping`.
+1. **Harness update check** — if the harness has new commits since last install, prints a nudge to run `update.sh`.
+2. **Memory health check** — if `.claude/memory/observations.md` has >50 entries, prints a nudge to run `/kiro:housekeeping`.
+3. **Agent failure pattern detection** — if `.claude/memory/trace.log` shows 3+ consecutive failures for the same agent, prints a nudge to run `/kiro:evolve` to investigate friction patterns.
 
 Doc sync and harness updates are **not** triggered here — they fire from the git post-commit hook (Step 8) instead.
 
@@ -334,7 +336,7 @@ Then seed `hot-memory.md` and `entities.md` with your project's current state.
 Conventions are defined in `.claude/kiro/settings/rules/memory-conventions.md`:
 
 - **Observations**: `- YYYY-MM-DD [tags]: text` (append-only, max 5 per reflect)
-- **Tags**: `spec`, `impl`, `design`, `debug`, `decision`, `friction`, `insight`, `pattern`
+- **Tags**: `spec`, `impl`, `design`, `debug`, `decision`, `friction`, `insight`, `pattern`, `enforceable`, `escaped`
 - **Action items**: `- [ ] task | due:YYYY-MM-DD | pri:high/medium/low | added:YYYY-MM-DD`
 - **Entities**: 3-line max per entry
 - **L0 headers**: Every memory file starts with `<!-- L0: summary (max 80 chars) -->`
@@ -375,6 +377,8 @@ Conventions are defined in `.claude/kiro/settings/rules/memory-conventions.md`:
 | `/kiro:harness-fix` | Encode a behavioral prevention rule from a specific mistake |
 | `/kiro:harness-validate` | Check structural integrity of harness installation |
 | `/kiro:harness-test` | Haiku smoke-test to expose vague prompts |
+| `/kiro:guardrails` | Audit/scaffold linter complexity rules for deterministic enforcement |
+| `/kiro:ci-scaffold` | Generate CI configuration mirroring the verify pipeline |
 | `/kiro:autoresearch-init` | Interactive ML project setup — generates program.md, train.py, prepare.py |
 | `/kiro:autoresearch [N]` | Run autonomous ML experiment loop (N iterations or continuous) |
 
@@ -399,7 +403,9 @@ Conventions are defined in `.claude/kiro/settings/rules/memory-conventions.md`:
 | `@agents-harness-updater` | git post-commit hook (when `.claude/` files committed) | Harness→guide sync |
 | `@agents-reflect` | `/kiro:reflect` | Session mining → observations, patterns, hot-memory |
 | `@agents-housekeeping` | `/kiro:housekeeping` | Memory archival, pruning, format validation |
-| `@agents-evolve` | `/kiro:evolve` | Rule audit, friction analysis, trace log analysis, improvement proposals |
+| `@agents-evolve` | `/kiro:evolve` | Rule audit, friction analysis, trace log analysis, improvement proposals, linter graduation |
+| `@agents-guardrails` | `/kiro:guardrails` | Linter complexity rule auditing and scaffolding |
+| `@agents-ci-scaffold` | `/kiro:ci-scaffold` | CI configuration generation (GitHub Actions, GitLab CI, Azure Pipelines) |
 | `@agents-harness-validate` | `/kiro:harness-validate` | Structural integrity check, component index generation |
 | `@agents-autoresearch-init` | `/kiro:autoresearch-init` | Interactive interview → file generation |
 | `@agents-autoresearch` | `/kiro:autoresearch` | Autonomous ML experiment loop |
@@ -415,7 +421,7 @@ Conventions are defined in `.claude/kiro/settings/rules/memory-conventions.md`:
 | PostToolUse (Jira comment) | Every `git push` Bash command | Posts Jira comment with branch/commits/docs summary if a `jira-solve` session is active |
 | UserPromptSubmit (Jira capture) | Every user prompt | Captures ticket ID from `/kiro:jira-solve TICKET-ID` prompts, writes to `~/.claude/state/active_jira_ticket` |
 | UserPromptSubmit (context priming) | Every user prompt | Injects hot-memory.md contents for session context |
-| Stop (memory health) | Every Claude session end | Nudges `/kiro:housekeeping` if observations >50 |
+| Stop (memory health) | Every Claude session end | Nudges `/kiro:housekeeping` if observations >50; nudges `/kiro:evolve` if agent failure patterns detected |
 | post-commit (doc sync) | Every `git commit` with non-`.md` source changes | Doc-sync: updates all `.md` files referencing changed code via `claude --print` (background) |
 | post-commit (harness updater) | Every `git commit` with `.claude/` changes (excl. memory) | Updates `SDD-SETUP-GUIDE.md` via `claude --print` (background) |
 

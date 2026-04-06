@@ -214,13 +214,43 @@ Archives old observations to glacier, enforces caps, validates formats.
 ```
 Run when the stop-hook nudges you, or periodically.
 
-### `/kiro:evolve` — Audit harness rules
-Measures memory health, detects friction patterns, proposes rule improvements.
+### `/kiro:evolve` — Audit harness rules and agent prompt quality
+Measures memory health, detects friction patterns, proposes rule improvements. Includes:
+- **Graduation pipeline** — identifies conventions suitable for promotion from docs to linter enforcement
+- **Alignment analysis** — computes per-agent alignment scores from trace.log, flags underperformers
+- **Prompt diagnosis** — for flagged agents, produces structured root cause analysis with specific instruction changes (ADD/REMOVE/SHARPEN)
+- **Data-driven tiering** — recommends model tier promotions/demotions based on alignment evidence
 
 ```
 /kiro:evolve
 ```
-Run on demand when something feels off about the workflow.
+Run on demand when something feels off about the workflow, or periodically to audit prompt quality. After approving proposals:
+- `graduate-to-linter` → run `/kiro:guardrails scaffold`
+- `add/remove/modify-instruction` → run `/kiro:harness-test regression`
+- `adjust-tier` → run `/kiro:harness-test {agent-name}` at the new tier
+
+### `/kiro:guardrails` — Audit and scaffold linter guardrails
+Checks your project's linter configuration for complexity rules and scaffolds missing guardrails. Supports ESLint (JS/TS), ruff (Python), clippy (Rust), and golangci-lint (Go).
+
+```
+/kiro:guardrails              # audit: check existing config for complexity rules
+/kiro:guardrails scaffold     # create or enhance linter config with recommended baselines
+/kiro:guardrails report       # show enforcement maturity level (L0-L3)
+```
+
+Recommended baselines: `max-lines-per-function: 40`, `complexity: 10`, `max-depth: 3`, `max-params: 4`, with zero-warning tolerance (`--max-warnings=0`).
+
+### `/kiro:ci-scaffold` — Generate CI configuration
+Generates a CI configuration that mirrors the `/kiro:verify` pipeline stages. Auto-detects platform or accepts an explicit argument.
+
+```
+/kiro:ci-scaffold             # auto-detect platform from existing config
+/kiro:ci-scaffold github      # generate GitHub Actions workflow
+/kiro:ci-scaffold gitlab      # generate GitLab CI config
+/kiro:ci-scaffold azure       # generate Azure Pipelines config
+```
+
+The generated pipeline enforces: build, type-check, lint (with zero-warning tolerance), tests, and debug artifact audit.
 
 ### `/kiro:harness-validate` — Check harness structural integrity
 Validates command→agent references, template existence, memory caps, L0 headers, and generates a component relationship index.
@@ -230,13 +260,21 @@ Validates command→agent references, template existence, memory caps, L0 header
 ```
 Run after `update.sh` or when something feels broken.
 
-### `/kiro:harness-test` — Smoke-test prompts with Haiku
+### `/kiro:harness-test` — Smoke-test and regression-test prompts
 Runs key workflows at Haiku tier to expose vague instructions. Failures indicate prompt quality issues, not model issues.
 
 ```
-/kiro:harness-test
-/kiro:harness-test steering
+/kiro:harness-test                        # smoke-test the standard suite
+/kiro:harness-test steering               # smoke-test a specific agent
+/kiro:harness-test regression             # run scenario-based regression tests
+/kiro:harness-test regression steering    # regression test a specific agent
 ```
+
+**Smoke mode** (default): Runs agents at Haiku tier and checks for structural correctness. Use after editing any agent or rule file.
+
+**Regression mode**: Runs scenarios from `.claude/memory/meta/prompt-scenarios.md`, scores alignment against expected outcomes, and flags regressions. Use after approving instruction library changes from `/kiro:evolve`.
+
+See `docs/prompt-improvement/README.md` for the full prompt optimization workflow.
 
 ### `/kiro:harness-fix` — Fix a specific agent mistake
 When you observe the agent making a repeatable behavioral mistake, this command encodes a targeted prevention rule so it never happens again. Lighter than `/kiro:evolve` — fixes one thing immediately.
@@ -352,3 +390,22 @@ For larger features, use the individual spec phases (`spec-requirements` → `sp
 /kiro:resume-session                     ← pick up where you left off
 /kiro:context-budget                     ← check if context is getting bloated
 ```
+
+### Prompt Improvement (When Agents Misbehave)
+
+Use this when agents consistently produce poor output — wrong conclusions, bad format, missing context, or misunderstanding tasks.
+
+```
+/kiro:evolve                             ← analyze alignment scores, diagnose underperformers
+                                           (review and approve instruction proposals)
+/kiro:harness-test regression            ← verify changes don't regress other scenarios
+/kiro:harness-test regression steering   ← test a specific agent after changes
+```
+
+This applies to all prompt layers — not just sub-agents:
+- **Agent prompt is wrong** → evolve diagnoses it automatically
+- **Command passes bad context** → review the command's prompt block
+- **Rule is too vague** → sharpen it or add an instruction library bullet
+- **Your feature descriptions are misunderstood** → capture effective patterns in the instruction library
+
+See `docs/prompt-improvement/README.md` for the full guide.
