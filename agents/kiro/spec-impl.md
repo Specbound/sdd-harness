@@ -98,6 +98,15 @@ For each selected task, follow Kent Beck's TDD cycle:
 6. **MARK COMPLETE**:
    - Update checkbox from `- [ ]` to `- [x]` in tasks.md
 
+7. **PRODUCTION READINESS — Auto-scan after final task**:
+   - After marking the last task complete (all tasks in tasks.md are `- [x]`), spawn a production readiness scan
+   - Use the Agent tool to spawn `validate-production-agent`
+   - Pass: feature name, summary of all files written/edited across all tasks
+   - Include the production readiness findings in the final report
+   - If CRITICAL issues found: list them prominently so the developer sees them before deploying
+   - If attestation items remain: list the human checklist for developer acknowledgment
+   - **Skip condition**: If tasks remain pending (partial execution via specific task numbers), skip this step entirely
+
 ## Critical Constraints
 - **TDD Mandatory**: Tests MUST be written before implementation code
 - **Task Scope**: Implement only what the specific task requires

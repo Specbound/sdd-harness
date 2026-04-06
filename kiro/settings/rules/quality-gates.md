@@ -28,11 +28,18 @@ Checks for N+1 queries, unbounded operations, missing indexes, blocking I/O.
 - **Optional for**: UI-only changes, configuration updates
 - **Pass criteria**: No critical performance issues detected
 
+### Gate 5: Production Readiness (`validate-production-agent`)
+Scans for deployment gaps: env config, error handling resilience, monitoring, process management, backups, staging. Generates a human attestation checklist for items only people can verify.
+- **Auto-triggered**: Runs automatically when spec-impl completes all tasks for a feature
+- **Required for**: Any deployment to staging or production
+- **Optional for**: Local-only prototypes, libraries, internal tools
+- **Pass criteria**: No critical automated findings + human attestation items listed for acknowledgment
+
 ## When to Apply
 
 - **After completing all tasks in a spec**: Gates 1-2 minimum, Gate 3 for critical features
 - **Before creating a PR**: Gates 1-2 minimum
-- **Before deployment**: Gates 1-3 recommended, Gate 4 for data-intensive services
+- **Before deployment**: Gates 1-5 required. Gate 5 auto-triggers after spec-impl completes all tasks.
 
 ## Shorthand
 
@@ -41,3 +48,4 @@ For quick reference during implementation:
 2. `/kiro:validate-impl` — Does it match the spec?
 3. `/kiro:validate-adversarial` — Can we poke holes in it?
 4. `/kiro:validate-perf` — Will it perform at scale?
+5. `validate-production-agent` — Is it production-ready? (auto-triggered)
