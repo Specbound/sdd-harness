@@ -150,6 +150,9 @@ Checks for N+1 queries, unbounded operations, blocking I/O, missing indexes, and
 /kiro:validate-perf                           # auto-detect from git diff
 ```
 
+### Production Readiness (Gate 5) — Auto-triggered
+Scans for deployment gaps (env config, containerization, resilience, observability, data safety, security posture, staging/CI) and generates a human attestation checklist. **Auto-triggered** when `/kiro:spec-impl` completes all tasks for a feature — no manual invocation needed.
+
 ---
 
 ## Documentation Sync
@@ -380,6 +383,7 @@ For larger features, use the individual spec phases (`spec-requirements` → `sp
 /kiro:validate-impl feature-x            ← Gate 2: does it match the spec?
 /kiro:validate-adversarial feature-x     ← Gate 3: can we poke holes? (optional)
 /kiro:validate-perf feature-x            ← Gate 4: will it perform? (optional)
+                                         ← Gate 5: production readiness (auto-triggered after spec-impl)
 ```
 
 ### Long Session Management

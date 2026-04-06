@@ -397,6 +397,7 @@ Conventions are defined in `.claude/kiro/settings/rules/memory-conventions.md`:
 | `@agents-validate-design` | `/kiro:validate-design` | Design quality review (with remediation) |
 | `@agents-validate-impl` | `/kiro:validate-impl` | Implementation validation (with backlink checks) |
 | `@agents-validate-adversarial` | `/kiro:validate-adversarial` | Three-pass adversarial review |
+| `@agents-validate-production` | After all impl tasks complete (auto, spawned by spec-impl agent) | Production readiness scan: env config, deployment, resilience, observability, data safety, security posture, staging/CI + human attestation checklist |
 | `@agents-steering` | `/kiro:steering` | Project memory bootstrap |
 | `@agents-steering-custom` | `/kiro:steering-custom` | Domain-specific steering |
 | `@agents-doc-sync` | git post-commit hook or `/kiro:sync-docs` | Code→doc drift prevention for committed changes |
