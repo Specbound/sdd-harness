@@ -83,8 +83,31 @@ Generate implementation tasks for the feature based on approved requirements and
   - Set `approvals.design.approved: true`
   - Update `updated_at` timestamp
 
+## Anti-Rationalization Check
+
+Read `.claude/kiro/settings/rules/anti-rationalization.md` — Task Breakdown Phase section.
+
+Watch for these traps:
+| Rationalization | Reality |
+|---|---|
+| "This is too small to break down" | Unbounded tasks expand to fill available time. |
+| "I'll just do it all in one task" | Compound tasks hide complexity. Failures are untraceable. |
+| "Breaking it down is overhead" | 5 minutes of breakdown saves hours of scope creep. |
+| "The design already covers the breakdown" | Design says WHAT; tasks say HOW MUCH and IN WHAT ORDER. |
+
+## Red Flag Check
+
+Read `.claude/kiro/settings/rules/red-flags.md` — Task Breakdown Phase section.
+
+Watch for:
+- Task title contains "and" → split it
+- No `_Requirements: X.X_` mapping → add traceability
+- All tasks sequential with no `(P)` markers → re-evaluate parallelism
+- Sub-task > 3 hours → decompose further
+
 ## Critical Constraints
 - **Follow rules strictly**: All principles in tasks-generation.md are mandatory
+- **Vertical Slicing**: Each task delivers end-to-end functionality, not horizontal layers (see tasks-generation.md principle 3)
 - **Natural Language**: Describe what to do, not code structure details
 - **Complete Coverage**: ALL requirements must map to tasks
 - **Maximum 2 Levels**: Major tasks and sub-tasks only (no deeper nesting)

@@ -98,16 +98,49 @@ For each issue:
   Fix: {specific suggestion}
 ```
 
+### Step 5: MEASURE → IDENTIFY → FIX → VERIFY → GUARD Recommendations
+
+For each CRITICAL or WARNING issue, provide a structured optimization path:
+
+```
+MEASURE: What to measure (specific metric, tool, query)
+IDENTIFY: What the bottleneck is (with evidence from the code)
+FIX: Concrete fix suggestion (specific code pattern to apply)
+VERIFY: How to confirm improvement (before/after comparison method)
+GUARD: How to prevent regression (test, alert, or CI check)
+```
+
+**Anti-rationalization check**: Read `.claude/kiro/settings/rules/anti-rationalization.md`.
+- "It's fast enough" → Fast enough for what load? Without measurement, this is a guess.
+- "We can optimize later" → Performance debt compounds. A 10ms N+1 query at 100 rows becomes 1s at 10K rows.
+- "Premature optimization" → Detecting known anti-patterns is not premature optimization. It's engineering discipline.
+
+### Concrete Targets (adapt to project context)
+
+**Web Applications** (from steering/tech.md):
+- LCP ≤ 2.5s, INP ≤ 200ms, CLS ≤ 0.1 (Core Web Vitals)
+- Bundle size < 200KB gzipped (initial load)
+- API response p99 < 500ms
+
+**Backend Services**:
+- Query response p99 < 100ms for hot paths
+- No N+1 queries on paths with > 10 items
+- Connection pool utilization < 80%
+
+**General**:
+- No unbounded operations (queries, loops, allocations) on user-controlled input
+
 ## Important Constraints
 - **Read-only**: Never modify code — report only
 - **Context-aware**: Check steering/tech.md for framework-specific patterns (e.g., Django select_related, SQLAlchemy eager loading)
 - **False positive awareness**: Flag uncertain detections as "Potential" rather than definitive
 - **Scope discipline**: Only review files in the target scope, not the entire codebase
+- **Measure before claiming**: Do not assert performance characteristics without evidence from the code
 
 ## Output Description
 
 Return a performance review report. Include:
 1. **Summary**: "{N} files reviewed, {critical} critical, {warning} warnings, {info} info"
-2. **Issues**: Detailed list grouped by severity
+2. **Issues**: Detailed list grouped by severity, each with MEASURE→GUARD path
 3. **Verdict**: PASS (no critical issues) / NEEDS ATTENTION (critical issues found)
 4. **Trace**: `validate-perf-agent | opus | {pass/fail} | files:{N} issues:{M}`

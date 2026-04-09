@@ -52,6 +52,21 @@ Example:
 "User profile feature" → mode=interactive, description="User profile feature"
 ```
 
+### Step 1.5: Idea Refinement (Interactive Mode Only)
+
+**In Interactive Mode**, assess whether the description is vague or ambiguous:
+- Fewer than 10 words with no clear functional scope → suggest refinement
+- Contains only a problem statement without solution direction → suggest refinement
+
+If refinement suggested:
+```
+💡 The description seems broad. Would you like to refine it first?
+   - Yes: Run `/kiro:idea-refine <description>` to produce a clearer brief
+   - No: Continue with current description
+```
+
+**In Automatic Mode**: Skip this step entirely — proceed directly to Phase 1.
+
 **Create TodoWrite task list**:
 ```json
 [

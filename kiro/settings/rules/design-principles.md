@@ -46,6 +46,17 @@
 - **Idempotency**: Design for retry safety
 - **Contract Visibility**: Surface API and event contracts in design.md while linking extended details from `research.md`
 
+### 8. Hyrum's Law & API Stability
+- **"All observable behaviors are commitments"**: Users will depend on undocumented behavior. Design interfaces conservatively — expose only what you intend to support.
+- **Treat public surfaces as permanent**: Once shipped, changing behavior is a breaking change even if undocumented.
+- **Backward compatibility strategy**: When evolving APIs, prefer additive changes (new fields, new endpoints) over modifications to existing ones.
+- **Deprecation path**: Never remove a public API without a documented migration path and timeline.
+
+### 9. Risk-First Ordering
+- **Tackle the hardest problem first**: Address the riskiest, most uncertain aspects of the design early — before committing to the full implementation.
+- **Prototype unknowns**: If a design decision depends on unverified assumptions (API behavior, performance characteristics, library capabilities), validate those assumptions before building on them.
+- **Fail fast, fail cheap**: Structure the design so that failures in risky areas are discovered before significant investment in dependent work.
+
 ## Documentation Standards
 
 ### Language and Tone

@@ -42,12 +42,31 @@ Read each touched file and inspect for the categories below.
 - Unnecessary iterations or redundant computations
 - Inefficient data structure choices for the use case
 
-**Security issues**:
+**Security issues** (3-tier boundary model):
+
+**ALWAYS DO** (non-negotiable — fix immediately if missing):
+- Parameterized queries for all database access (no string concatenation)
+- Input validation at system boundaries (user input, external APIs)
+- Output encoding/escaping (HTML, SQL, shell)
+- Auth checks on every new endpoint/operation
+- Secrets in environment variables or vault, never in code/config/logs
+
+**ASK FIRST** (flag for human decision — do not auto-fix):
+- Changes to authentication flows or session handling
+- Modifications to permission models or RBAC rules
+- Adding new external dependencies that handle sensitive data
+- Changing CORS, CSP, or security header configuration
+
+**NEVER DO** (if detected, report as CRITICAL):
+- Storing plaintext passwords or secrets
+- Disabling security headers or HTTPS
+- Using eval() / exec() on user-controlled input
+- Logging PII, tokens, or credentials
+
+**Additional security checks**:
 - Injection risks: SQL/NoSQL/command injection via string concatenation or template literals
 - XSS: unsafe HTML injection, unescaped user input rendered in templates
 - Path traversal: user input in file paths without sanitization
-- Auth gaps: missing authorization or ownership checks on new endpoints/operations
-- Secret leakage: API keys, tokens, or credentials in code, config, or log output
 - SSRF: user-controlled URLs reaching internal services without allowlist
 - Unsafe deserialization or weak crypto usage
 - Race conditions: check-then-act patterns, read-modify-write without atomicity, shared state without synchronization, TOCTOU file operations
@@ -92,7 +111,17 @@ echo $?
 - If exit code is non-zero: read `/tmp/refactor-test-output.txt` to diagnose, revert the failing change, and report it
 - Never surface passing test output — it wastes tokens and causes context rot
 
-### Step 5: Report (Standardized Agent Output Format)
+### Step 5: Complexity Assessment
+
+After fixing issues, assess whether the reviewed code has significant accidental complexity:
+- Over-abstraction (abstraction used in only one place)
+- Copy-paste duplication across files
+- Unnecessary indirection or wrapper functions
+- Verbose patterns that could use language idioms
+
+If **3+ complexity findings** are detected, note in the report: "Consider running `/kiro:simplify` on the affected files for behavior-preserving simplification."
+
+### Step 6: Report (Standardized Agent Output Format)
 
 Return using this structure (under 150 words total):
 
@@ -110,4 +139,8 @@ Return using this structure (under 150 words total):
 ## Issues Found
 - [Skipped findings with filepath:line and reason for skipping]
 (or "None")
+
+## Simplification Opportunity
+- [If 3+ complexity findings: "Consider `/kiro:simplify` for: {file list}"]
+(or omit section if code is clean)
 ```

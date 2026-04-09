@@ -41,10 +41,9 @@ On top of that, a hook pair auto-posts a summary comment to Jira every time you 
 ┌─ Step 4: Route to Solve Workflow ─────────────┐
 │                                                │
 │  BUG / DEFECT:                                 │
-│    → Read relevant files                       │
-│    → Trace root cause via code + git log       │
-│    → Implement fix                             │
-│    → Run tests (pytest -x)                     │
+│    → Route to /kiro:debug (6-step triage)      │
+│    → Reproduce → Localize → Reduce → Fix       │
+│    → Guard (regression test) → Verify           │
 │                                                │
 │  STORY / FEATURE / EPIC:                       │
 │    → Build spec description from Jira context  │
@@ -105,7 +104,7 @@ All scripts are stdlib-only Python — no `pip install` needed.
 
 ## Use Cases
 
-1. **Bug fixing** — `/kiro:jira-solve BUG-123` fetches the bug, finds relevant code, traces the root cause, implements the fix, and runs tests
+1. **Bug fixing** — `/kiro:jira-solve BUG-123` fetches the bug, routes through `/kiro:debug` 6-step triage (reproduce → localize → reduce → fix → guard → verify)
 2. **Feature development** — `/kiro:jira-solve STORY-456` pulls acceptance criteria from Jira and feeds them into the full SDD spec pipeline
 3. **Task execution** — `/kiro:jira-solve TASK-789` builds an implementation plan from the ticket description, asks for approval, then implements
 4. **Audit trail** — Jira comments are posted automatically at analysis start and completion, plus on every `git push`

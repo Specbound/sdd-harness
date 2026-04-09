@@ -27,6 +27,50 @@ Creates a focused steering doc for a specific domain.
 
 ---
 
+## Ideation & Debugging
+
+### `/kiro:idea-refine` — Refine a vague idea into a spec-ready brief
+Takes a rough idea through structured divergent/convergent thinking to produce a clear problem statement, proposed solution, constraints, and a paste-ready description for `/kiro:spec-init`.
+
+```
+/kiro:idea-refine "something to help users track their spending"
+/kiro:idea-refine "we need better error handling"
+```
+
+Wired into `/kiro:spec-quick` — in interactive mode, if the description is vague, you'll be prompted to refine first.
+
+### `/kiro:debug` — Systematic 6-step bug triage
+Follows: Reproduce → Localize → Reduce → Fix → Guard → Verify. Won't guess at a fix without reproduction first. Adds a regression test automatically.
+
+```
+/kiro:debug "TypeError: Cannot read property 'id' of undefined in user profile endpoint"
+/kiro:debug "intermittent 500 errors on /api/tasks when payload is empty"
+```
+
+Wired into `/kiro:jira-solve` — BUG/DEFECT tickets route through the debug methodology automatically.
+
+### `/kiro:simplify` — Behavior-preserving code simplification
+Reduces complexity while preserving identical behavior. Follows Chesterton's Fence: understands why code exists before removing it. Runs tests before AND after.
+
+```
+/kiro:simplify src/services/auth.ts
+/kiro:simplify revenue-trend-chart        # simplify files from a feature's tasks
+```
+
+Wired into spec-refactor — if 3+ complexity findings detected during self-review, you'll be prompted to run simplify.
+
+### `/kiro:ship` — Launch readiness check
+Coordinates verification → production validation → rollout planning. Generates staged rollout plan with decision thresholds and rollback procedure.
+
+```
+/kiro:ship revenue-trend-chart
+/kiro:ship                                 # general project readiness
+```
+
+Wired into `/kiro:verify` — after successful pre-pr verification, suggested as next step for production deployment.
+
+---
+
 ## Spec Workflow
 
 ### `/kiro:spec-init` — Start a new feature
@@ -365,13 +409,14 @@ See `docs/skill-extraction/README.md` for full details on scoring, workflow, and
 
 ```
 1. /kiro:steering                        ← once per project (or after big changes)
-2. /kiro:spec-init "Add feature X"       ← start the feature
+2. /kiro:idea-refine "rough idea"        ← (optional) refine vague ideas
 3. /kiro:spec-quick "Add feature X"      ← fast: requirements → design → tasks
    (review and approve each phase)
 4. /kiro:spec-impl feature-x             ← implement via TDD
 5. /kiro:verify                          ← confirm build, tests, lint all pass
 6. /kiro:validate-impl feature-x         ← confirm spec alignment
-7. /kiro:reflect                         ← capture what you learned
+7. /kiro:ship feature-x                  ← (optional) launch readiness check
+8. /kiro:reflect                         ← capture what you learned
 ```
 
 For larger features, use the individual spec phases (`spec-requirements` → `spec-design` → `spec-tasks`) instead of `spec-quick` to review each phase separately.
@@ -384,6 +429,7 @@ For larger features, use the individual spec phases (`spec-requirements` → `sp
 /kiro:validate-adversarial feature-x     ← Gate 3: can we poke holes? (optional)
 /kiro:validate-perf feature-x            ← Gate 4: will it perform? (optional)
                                          ← Gate 5: production readiness (auto-triggered after spec-impl)
+/kiro:ship feature-x                     ← Gate 6: rollout plan & decision thresholds (optional)
 ```
 
 ### Long Session Management

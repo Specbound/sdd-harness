@@ -51,6 +51,7 @@ Show the structured PASS/FAIL report to the user.
 **If READY**:
 - Code is verified and ready for next phase
 - Consider `/kiro:validate-impl` for spec alignment check
+- **For production deployment**: Run `/kiro:ship` for launch readiness check (staged rollout plan, decision thresholds, rollback procedure)
 
 **If NOT READY**:
 - Review failed stages in the report

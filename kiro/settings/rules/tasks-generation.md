@@ -34,7 +34,22 @@ Focus on capabilities and outcomes, not code structure.
 
 **End with integration tasks** to wire everything together.
 
-### 3. Flexible Task Sizing
+### 3. Vertical Slicing
+
+**Each task should deliver a thin, end-to-end slice of functionality** — not a horizontal layer.
+
+- **Good**: "Add user avatar upload with storage and display" (touches API, storage, UI — but delivers one complete capability)
+- **Bad**: "Build all API endpoints" then "Build all UI components" (horizontal layers that don't work independently)
+
+**Task title must not contain "and"**: If a task title has "and", it's two tasks. Split it.
+- Bad: "Build API and write tests" → Good: "Build avatar upload API" + "Add avatar upload tests"
+
+**File impact sizing** (heuristic, not rigid):
+- **Small** (1-2 files): Single function, config change, utility
+- **Medium** (3-5 files): Feature slice across layers
+- **Large** (5+ files): Consider decomposing further
+
+### 4. Flexible Task Sizing
 
 **Guidelines**:
 - **Major tasks**: As many sub-tasks as logically needed (group by cohesion)
@@ -43,14 +58,14 @@ Focus on capabilities and outcomes, not code structure.
 
 **Don't force arbitrary numbers** - let logical grouping determine structure.
 
-### 4. Requirements Mapping
+### 5. Requirements Mapping
 
 **End each task detail section with**:
 - `_Requirements: X.X, Y.Y_` listing **only numeric requirement IDs** (comma-separated). The value must contain only comma-separated numeric IDs — no descriptive text, parentheses, translations, or free-form labels.
 - For cross-cutting requirements, list every relevant requirement ID. All requirements MUST have numeric IDs in requirements.md. If an ID is missing, stop and correct requirements.md before generating tasks.
 - Reference components/interfaces from design.md when helpful (e.g., `_Contracts: AuthService API`)
 
-### 5. Code-Only Focus
+### 6. Code-Only Focus
 
 **Include ONLY**:
 - Coding tasks (implementation)

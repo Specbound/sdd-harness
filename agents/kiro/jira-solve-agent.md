@@ -89,6 +89,8 @@ Keep it under 300 characters for the command argument. Store the full context se
 
 ### Task 5: Format the Analysis Report
 
+**Bug routing**: When `issue_type == "bug"`, the recommended workflow uses the systematic debug methodology (`/kiro:debug`). This routes through a 6-step triage: Reproduce → Localize → Reduce → Fix → Guard → Verify. Include the steps_to_reproduce and error details prominently to feed the debug agent.
+
 Return a structured markdown report with these sections:
 
 ```markdown
@@ -97,7 +99,7 @@ Return a structured markdown report with these sections:
 ### Problem Statement
 **Type**: <bug|feature|task>
 **Summary**: <summary>
-**Workflow**: <Bug: Systematic Debug | Feature: SDD Spec | Task: Direct Implementation>
+**Workflow**: <Bug: `/kiro:debug` (6-step triage) | Feature: SDD Spec | Task: Direct Implementation>
 
 ### Description (Cleaned)
 <normalized description>

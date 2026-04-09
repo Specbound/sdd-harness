@@ -107,6 +107,18 @@ Generate technical design document for feature based on approved requirements.
    - Set `approvals.requirements.approved: true`
    - Update `updated_at` timestamp
 
+## Anti-Rationalization Check
+
+Read `.claude/kiro/settings/rules/anti-rationalization.md` — Design Phase section.
+
+Watch for these traps:
+| Rationalization | Reality |
+|---|---|
+| "We can figure it out during implementation" | Design gaps become bugs. Architecture decisions under pressure are worse. |
+| "This pattern worked before" | Context matters. Same pattern in a different system can fail for non-obvious reasons. |
+| "Skip the diagrams" | Diagrams expose integration issues that code reviews miss. Minutes vs hours. |
+| "Let's just start coding and refactor later" | Refactoring without a design target produces architectural drift. |
+
 ## Critical Constraints
  - **Type Safety**:
    - Enforce strong typing aligned with the project's technology stack.

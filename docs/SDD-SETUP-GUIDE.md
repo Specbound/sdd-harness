@@ -103,13 +103,16 @@ Create `CLAUDE.md` at the repo root. Adapt for your project:
 ## SDD Workflow
 1. `/kiro:steering`         — bootstrap/refresh project memory
 2. `/kiro:steering-custom`  — add domain-specific steering (auth, DB, API, etc.)
-3. `/kiro:spec-init`        — start a new feature
-4. `/kiro:spec-quick`       — fast path (requirements→design→tasks in one command)
-5. `/kiro:spec-impl`        — implement from approved spec
-6. `/kiro:sync-docs`        — manually trigger doc sync from last commit
-7. `/kiro:reflect`          — review session, extract patterns, update memory
-8. `/kiro:housekeeping`     — prune memory, archive old observations
-9. `/kiro:evolve`           — audit harness rules, propose improvements
+3. `/kiro:idea-refine`      — refine vague ideas into spec-ready briefs (optional)
+4. `/kiro:spec-init`        — start a new feature
+5. `/kiro:spec-quick`       — fast path (requirements→design→tasks in one command)
+6. `/kiro:spec-impl`        — implement from approved spec
+7. `/kiro:debug`            — systematic 6-step bug triage
+8. `/kiro:simplify`         — behavior-preserving code simplification
+9. `/kiro:verify`           — 6-stage verification pipeline
+10. `/kiro:ship`            — launch readiness check with rollout planning
+11. `/kiro:reflect`         — review session, extract patterns, update memory
+12. `/kiro:evolve`          — audit harness rules, propose improvements
 
 ## Rules
 - Keep context under 40% before moving from planning to implementation
@@ -359,12 +362,16 @@ Conventions are defined in `.claude/kiro/settings/rules/memory-conventions.md`:
 |---|---|
 | `/kiro:steering` | Bootstrap/refresh project memory from codebase |
 | `/kiro:steering-custom` | Add domain-specific steering (auth, database, API, etc.) |
+| `/kiro:idea-refine "rough idea"` | Refine vague ideas into clear, spec-ready briefs |
 | `/kiro:spec-init "description"` | Initialize new feature workspace in `specs/` |
 | `/kiro:spec-requirements {feature}` | Generate EARS-format requirements (subagent) |
 | `/kiro:spec-design {feature}` | Generate research notes + technical design (subagent) |
 | `/kiro:spec-tasks {feature}` | Generate P-wave parallel task list (subagent) |
 | `/kiro:spec-impl {feature}` | Implement from approved spec via TDD (subagent) |
 | `/kiro:spec-quick "description"` | Fast path: requirements→design→tasks in one command |
+| `/kiro:debug "bug description"` | Systematic 6-step bug triage (reproduce→fix→guard) |
+| `/kiro:simplify <file-or-feature>` | Behavior-preserving code simplification |
+| `/kiro:ship [feature]` | Launch readiness: verification + rollout planning |
 | `/kiro:validate-gap {feature}` | Gap analysis: requirements vs. existing code |
 | `/kiro:validate-design {feature}` | Design quality review (with remediation plan on NO-GO) |
 | `/kiro:validate-impl {feature}` | Implementation vs. spec validation (with remediation) |
@@ -392,7 +399,11 @@ Conventions are defined in `.claude/kiro/settings/rules/memory-conventions.md`:
 | `@agents-spec-design` | `/kiro:spec-design` | Research + technical design |
 | `@agents-spec-tasks` | `/kiro:spec-tasks` | P-wave task breakdown |
 | `@agents-spec-impl` | `/kiro:spec-impl` | TDD implementation per task |
-| `@agents-spec-refactor` | After each impl task (auto, spawned by spec-impl agent) | Post-task self-review: reuse, quality, efficiency checks on touched files + test re-run |
+| `@agents-spec-refactor` | After each impl task (auto, spawned by spec-impl agent) | Post-task self-review: reuse, quality, efficiency, 3-tier security checks + test re-run |
+| `@agents-idea-refine` | `/kiro:idea-refine` | Structured ideation: problem framing → divergent/convergent thinking → spec-ready brief |
+| `@agents-debug` | `/kiro:debug` or via jira-solve BUG routing | 6-step systematic debugging: reproduce → localize → reduce → fix → guard → verify |
+| `@agents-simplify` | `/kiro:simplify` or via spec-refactor complexity findings | Behavior-preserving simplification with Chesterton's Fence principle |
+| `@agents-ship` | `/kiro:ship` | Staged rollout planning with decision thresholds and rollback procedures |
 | `@agents-validate-gap` | `/kiro:validate-gap` | Requirements vs. code gap analysis |
 | `@agents-validate-design` | `/kiro:validate-design` | Design quality review (with remediation) |
 | `@agents-validate-impl` | `/kiro:validate-impl` | Implementation validation (with backlink checks) |

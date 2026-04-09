@@ -20,6 +20,7 @@ Based on [cc-sdd](https://www.npmjs.com/package/cc-sdd) (`npx cc-sdd@latest`), a
 |---|---|---|
 | `steering` | Setup | Bootstrap/refresh project memory from codebase scan |
 | `steering-custom` | Setup | Add domain-specific steering (auth, DB, API, etc.) |
+| `idea-refine` | 0. Ideation | Refine vague ideas into spec-ready briefs (wired into spec-quick) |
 | `spec-init` | 1. Init | Create spec workspace in `specs/` with metadata |
 | `spec-requirements` | 2. Requirements | Generate EARS-format requirements |
 | `spec-design` | 3. Design | Research codebase + produce technical design |
@@ -31,6 +32,9 @@ Based on [cc-sdd](https://www.npmjs.com/package/cc-sdd) (`npx cc-sdd@latest`), a
 | `validate-design` | Review | Design quality review (with remediation on NO-GO) |
 | `validate-impl` | Review | Implementation vs. spec validation (with remediation) |
 | `validate-adversarial` | Review | Three-pass adversarial review with +1/-2 scoring |
+| `debug` | Debugging | Systematic 6-step bug triage (wired into jira-solve for BUGs) |
+| `simplify` | Maintenance | Behavior-preserving code simplification (wired into spec-refactor) |
+| `ship` | Deployment | Launch readiness: verification + rollout planning (wired into verify) |
 | `sync-docs` | Maintenance | Sync `.md` files with code changes |
 | `reflect` | Memory | Mine session learnings, update observations/patterns |
 | `housekeeping` | Memory | Prune memory, archive old observations |
@@ -46,6 +50,10 @@ Based on [cc-sdd](https://www.npmjs.com/package/cc-sdd) (`npx cc-sdd@latest`), a
 Each command delegates to a specialized subagent. Agents are autonomous — they receive a prompt with file patterns, execute their protocol, and return a summary.
 
 Key agents beyond the spec pipeline:
+- **idea-refine-agent** — Pre-spec ideation with divergent/convergent thinking. Produces structured briefs for `spec-init`.
+- **debug-agent** — Systematic 6-step debugging: reproduce → localize → reduce → fix → guard → verify. Won't fix without reproduction.
+- **simplify-agent** — Behavior-preserving simplification with Chesterton's Fence. Runs tests before AND after. Documents intentional complexity.
+- **ship-agent** — Generates staged rollout plans with decision thresholds, rollback procedures, and feature flag recommendations.
 - **doc-sync** — Triggered by post-commit hook or `/kiro:sync-docs`. Diffs recent commits against `.md` files, updates stale docs, and detects stale doc-to-code references (reverse validation).
 - **harness-updater** — Triggered by post-commit hook when `.claude/` files change. Updates `SDD-SETUP-GUIDE.md`.
 - **reflect-agent** — Mines `git log` for observations, promotes patterns, updates hot-memory.
@@ -78,6 +86,9 @@ Rules control agent behavior:
 - `deterministic-enforcement.md` — Prefer linters over documentation for enforceable conventions
 - `property-testing.md` — When and how to use property-based tests in TDD
 - `self-tightening.md` — Self-improving feedback loop formalization (L0-L3 maturity)
+- `anti-rationalization.md` — Phase-specific rationalization tables with factual counterarguments
+- `red-flags.md` — Observable violation indicators by workflow phase (STOP/WARN/NOTE severity)
+- `context-engineering.md` — 5-level information hierarchy and context budget guidance
 
 ### Templates (`kiro/settings/templates/`)
 

@@ -90,7 +90,8 @@ sdd-harness/
 ├── VERSION                       # Last harness update date (auto-managed)
 ├── projects.txt                  # Registry of installed projects (gitignored)
 │
-├── commands/kiro/                # 34 slash commands (user-facing)
+├── commands/kiro/                # 38 slash commands (user-facing)
+│   ├── idea-refine.md            #   Refine vague ideas into spec-ready briefs
 │   ├── spec-init.md              #   Initialize a spec workspace
 │   ├── spec-requirements.md      #   Generate EARS-format requirements
 │   ├── spec-design.md            #   Generate technical design
@@ -101,6 +102,9 @@ sdd-harness/
 │   ├── verify.md                 #   6-stage verification pipeline (build/types/lint/test/audit/git)
 │   ├── fix-build.md              #   Surgical build error resolver (3-attempt cap)
 │   ├── checkpoint.md             #   Named workflow checkpoints (save/compare/list/restore)
+│   ├── debug.md                  #   Systematic 6-step bug triage (reproduce→fix→guard)
+│   ├── simplify.md               #   Behavior-preserving code simplification
+│   ├── ship.md                   #   Launch readiness: verification + rollout planning
 │   ├── validate-gap.md           #   Requirements vs. code gap analysis
 │   ├── validate-design.md        #   Design quality review (with remediation on NO-GO)
 │   ├── validate-impl.md          #   Implementation vs. spec validation (with remediation)
@@ -127,12 +131,17 @@ sdd-harness/
 │   ├── autoresearch-init.md      #   Interactive ML research setup
 │   └── autoresearch.md           #   Run autonomous experiment loop
 │
-├── agents/kiro/                  # 29 subagents (autonomous workers)
+├── agents/kiro/                  # 34 subagents (autonomous workers)
 │   ├── spec-requirements.md      #   Requirements generation agent
 │   ├── spec-design.md            #   Design generation agent
 │   ├── spec-tasks.md             #   Task breakdown agent
 │   ├── spec-impl.md              #   TDD implementation agent (with spec backlinks)
-│   ├── spec-refactor.md          #   Post-task code review agent
+│   ├── spec-refactor.md          #   Post-task code review agent (with 3-tier security)
+│   ├── idea-refine-agent.md      #   Pre-spec ideation agent (divergent/convergent thinking)
+│   ├── debug-agent.md            #   Systematic debugging agent (6-step triage)
+│   ├── simplify-agent.md         #   Behavior-preserving simplification (Chesterton's Fence)
+│   ├── ship-agent.md             #   Rollout planning agent (staged deployment, thresholds)
+│   ├── prompt-diagnosis-agent.md #   Agent prompt quality diagnosis
 │   ├── steering.md               #   Steering file generation agent
 │   ├── steering-custom.md        #   Custom steering agent
 │   ├── verify-agent.md           #   6-stage verification pipeline agent (Haiku)
@@ -141,7 +150,8 @@ sdd-harness/
 │   ├── validate-design.md        #   Design review agent (with remediation plans)
 │   ├── validate-impl.md          #   Implementation review agent (with backlink checks)
 │   ├── validate-adversarial.md   #   Three-pass adversarial review agent
-│   ├── validate-perf-agent.md    #   Performance anti-pattern detector (Opus)
+│   ├── validate-perf-agent.md    #   Performance anti-pattern detector (with MEASURE→GUARD cycle)
+│   ├── validate-production-agent.md # Production readiness scanner
 │   ├── save-session-agent.md     #   Session state capture agent (Haiku)
 │   ├── learn-eval-agent.md       #   Pattern quality evaluation agent (Sonnet)
 │   ├── reflect-agent.md          #   Session learning extraction agent
@@ -159,10 +169,11 @@ sdd-harness/
 │   └── autoresearch-init-agent.md#   ML research setup agent
 │
 ├── kiro/settings/                # Spec engine configuration
-│   ├── rules/                    #   22 rule files (EARS syntax, design, deterministic
-│   │   │                         #   principles, task generation, gap analysis,
-│   │   │                         #   memory conventions, agent tracing, quality gates,
-│   │   │                         #   loop safety, hook profiles, model tiering, etc.)
+│   ├── rules/                    #   25 rule files (EARS syntax, design principles,
+│   │   │                         #   task generation, gap analysis, memory conventions,
+│   │   │                         #   agent tracing, quality gates, loop safety, hook
+│   │   │                         #   profiles, model tiering, anti-rationalization,
+│   │   │                         #   red flags, context engineering, etc.)
 │   └── templates/                #   16 templates across 4 categories:
 │       ├── specs/                #     Spec phase templates (init, requirements, design, tasks)
 │       ├── steering/             #     Project knowledge templates (product, tech, structure)
@@ -242,6 +253,7 @@ The core workflow enforces deliberate planning before coding, with human review 
 
 | Command | Purpose |
 |---|---|
+| `/kiro:idea-refine` | Refine vague ideas into clear, spec-ready briefs |
 | `/kiro:spec-init` | Initialize a new spec workspace |
 | `/kiro:spec-requirements` | Generate EARS-format requirements |
 | `/kiro:spec-design` | Generate technical design with codebase research |
@@ -252,6 +264,9 @@ The core workflow enforces deliberate planning before coding, with human review 
 | `/kiro:verify` | 6-stage verification pipeline (build, types, lint, test, audit, git status) |
 | `/kiro:fix-build` | Surgical build error resolution (3-attempt cap, minimal changes) |
 | `/kiro:checkpoint` | Named workflow checkpoints (save, compare, list, restore) |
+| `/kiro:debug` | Systematic 6-step bug triage (reproduce → localize → reduce → fix → guard → verify) |
+| `/kiro:simplify` | Behavior-preserving code simplification with Chesterton's Fence principle |
+| `/kiro:ship` | Launch readiness check (verification + production validation + rollout planning) |
 | `/kiro:validate-gap` | Requirements vs. existing code gap analysis |
 | `/kiro:validate-design` | Design quality review (with remediation plan on NO-GO) |
 | `/kiro:validate-impl` | Implementation vs. spec validation (with remediation plan) |
@@ -286,8 +301,12 @@ For usage examples, see [docs/SDD-USAGE.md](docs/SDD-USAGE.md).
 
 Each command delegates to one or more autonomous subagents. Agents receive a prompt, execute their protocol, and return structured output. Key agents:
 
-- **Spec pipeline agents** — Handle requirements, design, tasks, and implementation phases
-- **`spec-refactor`** — Auto-spawned after each implementation task to review touched files for reuse, quality, and efficiency
+- **Spec pipeline agents** — Handle requirements, design, tasks, and implementation phases (all enhanced with anti-rationalization tables)
+- **`idea-refine-agent`** — Structured ideation: problem framing → divergent exploration → convergent filtering → spec-ready brief
+- **`debug-agent`** — Systematic 6-step debugging: reproduce → localize → reduce → fix → guard → verify (won't fix without reproduction)
+- **`simplify-agent`** — Behavior-preserving code simplification with Chesterton's Fence (understands why code exists before changing it)
+- **`ship-agent`** — Generates staged rollout plans with decision thresholds, rollback procedures, and feature flag recommendations
+- **`spec-refactor`** — Auto-spawned after each implementation task; reviews for reuse, quality, efficiency, and 3-tier security boundaries (Always/Ask/Never)
 - **`verify-agent`** — Runs 6-stage verification pipeline (build, types, lint, test, debug audit, git status) with structured PASS/FAIL reporting
 - **`fix-build-agent`** — Diagnoses build errors, categorizes by type, applies minimal surgical fixes with a hard 3-attempt cap
 - **`validate-adversarial`** — Three-pass adversarial review: neutral assessment → refutation → judge synthesis with asymmetric +1/-2 scoring
@@ -363,7 +382,7 @@ Connect Claude Code to your Jira board for ticket-driven development:
 ```
 
 The agent fetches the ticket, classifies it, and routes to the appropriate workflow:
-- **Bug** → Direct fix with test coverage
+- **Bug** → Systematic debugging via `/kiro:debug` (6-step triage with regression guard)
 - **Feature** → Full SDD spec pipeline (requirements → design → tasks → implement)
 - **Task** → Implementation plan and execution
 

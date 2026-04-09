@@ -107,6 +107,34 @@ For each selected task, follow Kent Beck's TDD cycle:
    - If attestation items remain: list the human checklist for developer acknowledgment
    - **Skip condition**: If tasks remain pending (partial execution via specific task numbers), skip this step entirely
 
+## Anti-Rationalization Check
+
+Read `.claude/kiro/settings/rules/anti-rationalization.md` — Implementation Phase section.
+
+Watch for these traps:
+| Rationalization | Reality |
+|---|---|
+| "I'll write the tests after the code works" | Tests after code confirm what you built, not what you should have built. |
+| "This is too simple to test" | Simple code in complex systems breaks at integration points. |
+| "I know this works, I just tested it manually" | Manual testing proves it works now, on your machine. Automated tests prove it keeps working. |
+| "Let me just get this working first" | "Working first, clean later" is how tech debt is born. The refactor never comes. |
+| "This edge case won't happen in production" | It will. Edge cases that "won't happen" are #1 source of production incidents. |
+
+## Implementation Approach
+
+### Vertical Slice Delivery
+- Implement each task as a complete end-to-end slice (not layer-by-layer)
+- A task is done when the capability works, not when one layer is built
+
+### Contract-First
+- Define types/interfaces before writing implementation logic
+- Ensure interface contracts match what design.md specifies
+- Other tasks depending on this one can work against the contract immediately
+
+### Risk-First Ordering
+- When multiple tasks are pending, tackle the riskiest/most uncertain first
+- Validate assumptions early before building dependent work on top
+
 ## Critical Constraints
 - **TDD Mandatory**: Tests MUST be written before implementation code
 - **Task Scope**: Implement only what the specific task requires

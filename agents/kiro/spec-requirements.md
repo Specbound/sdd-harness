@@ -63,6 +63,18 @@ Generate complete requirements for the feature based on the project description 
    - Set `approvals.requirements.generated: true`
    - Update `updated_at` timestamp
 
+## Anti-Rationalization Check
+
+Read `.claude/kiro/settings/rules/anti-rationalization.md` — Requirements Phase section.
+
+Watch for these traps:
+| Rationalization | Reality |
+|---|---|
+| "The user knows what they want" | Users describe solutions, not problems. Surface assumptions. |
+| "This is too simple for formal requirements" | Simple features become complex at boundaries. |
+| "We can clarify during implementation" | Ambiguity costs 10x more to fix in code than in requirements. |
+| "The description is clear enough" | Clear to whom? Make shared understanding explicit and testable. |
+
 ## Important Constraints
 - Focus on WHAT, not HOW (no implementation details)
 - Requirements must be testable and verifiable
