@@ -280,7 +280,7 @@ The core workflow enforces deliberate planning before coding, with human review 
 | `/kiro:evolve` | Audit harness rules, detect friction, propose improvements (includes graduation pipeline) |
 | `/kiro:guardrails` | Audit and scaffold linter complexity rules for deterministic enforcement |
 | `/kiro:ci-scaffold` | Generate CI configuration mirroring the verify pipeline |
-| `/kiro:save-session` | Save resumable session snapshot (what worked, what didn't, next step) |
+| `/kiro:save-session` | Save resumable session snapshot with Progress Tracker and narrative sections |
 | `/kiro:resume-session` | Resume a previously saved session |
 | `/kiro:context-budget` | Analyze token consumption across steering, memory, rules |
 | `/kiro:harness-fix` | Encode a behavioral prevention rule from a specific mistake |
@@ -303,7 +303,7 @@ Each command delegates to one or more autonomous subagents. Agents receive a pro
 
 - **Spec pipeline agents** — Handle requirements, design, tasks, and implementation phases (all enhanced with anti-rationalization tables)
 - **`idea-refine-agent`** — Structured ideation: problem framing → divergent exploration → convergent filtering → spec-ready brief
-- **`debug-agent`** — Systematic 6-step debugging: reproduce → localize → reduce → fix → guard → verify (won't fix without reproduction)
+- **`debug-agent`** — Systematic 6-step debugging: reproduce → localize → reduce → fix → guard → verify. Classifies recovery strategy (transient/LLM-recoverable/user-fixable/unexpected). Won't fix without reproduction
 - **`simplify-agent`** — Behavior-preserving code simplification with Chesterton's Fence (understands why code exists before changing it)
 - **`ship-agent`** — Generates staged rollout plans with decision thresholds, rollback procedures, and feature flag recommendations
 - **`spec-refactor`** — Auto-spawned after each implementation task; reviews for reuse, quality, efficiency, and 3-tier security boundaries (Always/Ask/Never)
@@ -311,7 +311,7 @@ Each command delegates to one or more autonomous subagents. Agents receive a pro
 - **`fix-build-agent`** — Diagnoses build errors, categorizes by type, applies minimal surgical fixes with a hard 3-attempt cap
 - **`validate-adversarial`** — Three-pass adversarial review: neutral assessment → refutation → judge synthesis with asymmetric +1/-2 scoring
 - **`validate-perf-agent`** — Detects performance anti-patterns: N+1 queries, unbounded operations, blocking I/O, missing indexes, and caching opportunities
-- **`save-session-agent`** — Captures resumable session snapshots with what worked, what failed, untried approaches, and exact next step
+- **`save-session-agent`** — Captures resumable session snapshots with a structured Progress Tracker (feature, git baseline/head, tasks completed/remaining, blockers, next action) plus narrative sections
 - **`learn-eval-agent`** — Evaluates session patterns with quality gates (specificity, actionability, evidence) and deduplicates against existing knowledge
 - **`reflect-agent`** — Mines git log for observations, promotes recurring themes to patterns, updates hot-memory
 - **`housekeeping-agent`** — Archives observations to cold storage, enforces memory caps

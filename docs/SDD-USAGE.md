@@ -230,7 +230,7 @@ Evaluates session patterns with quality scoring (specificity, actionability, evi
 ```
 
 ### `/kiro:save-session` — Save session for later
-Captures what worked, what didn't, untried approaches, file states, and the exact next step.
+Captures a structured Progress Tracker (feature, git baseline/head, tasks completed/remaining, blockers, next action) plus narrative sections: what worked, what didn't, untried approaches, file states, and the exact next step.
 
 ```
 /kiro:save-session bug-fix-auth
@@ -238,7 +238,7 @@ Captures what worked, what didn't, untried approaches, file states, and the exac
 ```
 
 ### `/kiro:resume-session` — Resume a saved session
-Loads and displays a session snapshot. You decide what to do next.
+Loads and displays a session snapshot. If the session contains a Progress Tracker, auto-orients with a Pickup Briefing (commits since save, blocker status, suggested next action). You decide what to do next.
 
 ```
 /kiro:resume-session bug-fix-auth

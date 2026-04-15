@@ -51,7 +51,7 @@ Each command delegates to a specialized subagent. Agents are autonomous — they
 
 Key agents beyond the spec pipeline:
 - **idea-refine-agent** — Pre-spec ideation with divergent/convergent thinking. Produces structured briefs for `spec-init`.
-- **debug-agent** — Systematic 6-step debugging: reproduce → localize → reduce → fix → guard → verify. Won't fix without reproduction.
+- **debug-agent** — Systematic 6-step debugging: reproduce → localize → reduce → fix → guard → verify. Classifies recovery strategy (transient/LLM-recoverable/user-fixable/unexpected). Won't fix without reproduction.
 - **simplify-agent** — Behavior-preserving simplification with Chesterton's Fence. Runs tests before AND after. Documents intentional complexity.
 - **ship-agent** — Generates staged rollout plans with decision thresholds, rollback procedures, and feature flag recommendations.
 - **doc-sync** — Triggered by post-commit hook or `/kiro:sync-docs`. Diffs recent commits against `.md` files, updates stale docs, and detects stale doc-to-code references (reverse validation).
@@ -88,7 +88,7 @@ Rules control agent behavior:
 - `self-tightening.md` — Self-improving feedback loop formalization (L0-L3 maturity)
 - `anti-rationalization.md` — Phase-specific rationalization tables with factual counterarguments
 - `red-flags.md` — Observable violation indicators by workflow phase (STOP/WARN/NOTE severity)
-- `context-engineering.md` — 5-level information hierarchy and context budget guidance
+- `context-engineering.md` — 5-level information hierarchy, context budget guidance, and ACON-based priority ordering for token reduction under context pressure
 
 ### Templates (`kiro/settings/templates/`)
 
