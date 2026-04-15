@@ -28,12 +28,22 @@ Session name: {resolved name}
 Output path: .claude/memory/sessions/session-{YYYY-MM-DD}-{name}.md
 
 Analyze the current conversation and workspace to capture:
+
+**Progress Tracker** (populate from git log and spec files):
+- Feature name and spec path (if exists)
+- Git baseline (earliest relevant commit) and HEAD commit hash
+- Tasks completed vs. remaining (with spec task IDs if applicable)
+- Blocking issues (or "None")
+- Next action (specific enough to execute without re-reading context)
+
+**Narrative sections**:
 1. What worked (with evidence — test results, build output, successful changes)
 2. What did NOT work (with exact error messages and reasons)
 3. What has NOT been tried yet (actionable approaches)
 4. Current state of modified files (from git diff and git status)
 5. The single most important next step
 
+Use the session template at .claude/kiro/settings/templates/memory/sessions/session-template.md.
 Write the session file to the output path.
 """
 )
