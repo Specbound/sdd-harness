@@ -593,6 +593,95 @@ See `docs/autoresearch/README.md` for full details.
 
 ---
 
+## GitNexus (Optional — Code Intelligence + Visual Explorer)
+
+The harness includes an optional integration with [GitNexus](https://github.com/abhigyanpatwari/GitNexus) — a zero-server code intelligence engine that builds a knowledge graph from your codebase and exposes it via MCP tools. When present, harness agents gain graph-backed context; when absent, everything works as before.
+
+### What it does
+
+GitNexus indexes your codebase into a knowledge graph (symbols, dependencies, call chains, execution flows) using Tree-sitter AST parsing. It then exposes MCP tools for querying the graph and a Web UI for visual exploration. The SDD harness integration adds:
+
+1. **Impact detection in verify pipeline** — Optional Stage 0 maps git diffs to affected processes with risk scores
+2. **Community-seeded skill extraction** — Leiden-detected functional clusters as extraction candidates
+3. **Visual exploration** — Browser-based WebGL graph for browsing connections
+
+### Components
+
+| File | Location | Purpose |
+|---|---|---|
+| `gitnexus-setup.md` | `commands/kiro/` | Install, index, configure MCP and editor integration |
+| `gitnexus-explore.md` | `commands/kiro/` | Launch Web UI to browse code connections |
+| `gitnexus-impact.md` | `commands/kiro/` | Query blast radius for current changes |
+| `gitnexus-setup-agent.md` | `agents/kiro/` | Setup agent — handles installation and configuration |
+
+### Prerequisites
+
+- Node.js 18+ (for `npx gitnexus`)
+- npm (for global installation)
+- Git initialized in the project
+
+### Setup & Usage
+
+```bash
+# Option 1: Via Claude Code command (recommended)
+/kiro:gitnexus-setup                    # Install, index, configure everything
+
+# Option 2: During harness installation
+~/.claude/sdd-harness/install.sh /path/to/project --with-gitnexus
+
+# Option 3: Manual
+npm install -g gitnexus
+gitnexus analyze                        # index the repo
+gitnexus setup                          # configure editor integration
+```
+
+### Using the Web UI
+
+```bash
+/kiro:gitnexus-explore                  # starts server + opens browser
+# Or manually:
+gitnexus serve                          # http://localhost:4567
+```
+
+The Web UI lets you:
+- Browse symbols (functions, classes, methods) in an interactive graph
+- Trace call chains from entry points through dependencies
+- Inspect process flows and which symbols participate
+- View Leiden-detected community clusters (color-coded)
+- Explore incoming/outgoing relationships with confidence scores
+
+### Using impact analysis
+
+```bash
+/kiro:gitnexus-impact                   # analyze uncommitted changes
+/kiro:gitnexus-impact --from HEAD~3     # analyze last 3 commits
+```
+
+### Enhanced agents
+
+When GitNexus is available, existing agents are automatically enhanced:
+
+- **`verify-agent`** — Adds Stage 0 (impact detection) before build/test/lint. Informational only, never blocks.
+- **`skill-extract-agent`** — Seeds extraction candidates from GitNexus community clusters before grep scanning.
+
+Both enhancements are optional and degrade gracefully.
+
+### CLAUDE.md additions
+
+Add to your project's `CLAUDE.md` if using GitNexus:
+
+```markdown
+## GitNexus
+- `/kiro:gitnexus-setup`     — one-time setup (install, index, configure MCP)
+- `/kiro:gitnexus-explore`   — launch Web UI to browse code connections
+- `/kiro:gitnexus-impact`    — query blast radius for current changes
+- `.gitnexus/` is gitignored and regenerable via `gitnexus analyze`
+```
+
+See `docs/gitnexus/README.md` for full details.
+
+---
+
 ## Context Hub (Automatic API Documentation)
 
 The harness includes [Context Hub](https://github.com/andrewyng/context-hub) as an MCP server. It provides a curated registry of LLM-optimized documentation for third-party libraries and APIs (OpenAI, Stripe, Anthropic, etc.) so agents use accurate, up-to-date API signatures instead of hallucinating from training data.

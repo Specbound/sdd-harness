@@ -19,6 +19,7 @@ One harness, many projects. Install once, keep every repo in sync.
 - [Jira Integration](#jira-integration)
 - [Skill Extraction](#skill-extraction)
 - [AutoResearch (ML Experiments)](#autoresearch-ml-experiments)
+- [GitNexus (Code Intelligence)](#gitnexus-code-intelligence)
 - [Context Hub (MCP Integration)](#context-hub-mcp-integration)
 - [Automation & Hooks](#automation--hooks)
 - [Multi-Project Management](#multi-project-management)
@@ -39,6 +40,7 @@ One harness, many projects. Install once, keep every repo in sync.
 | **Jira Integration** | [Jira REST API v2](https://developer.atlassian.com/cloud/jira/platform/rest/v2/) | Fetch tickets, route to the right workflow (bug/feature/task), auto-comment on push |
 | **Skill Extraction** | [arXiv:2603.11808](https://arxiv.org/abs/2603.11808) | Analyze repos and extract reusable `SKILL.md` files for Claude Code |
 | **AutoResearch** | [karpathy/autoresearch](https://github.com/karpathy/autoresearch) | Autonomous ML experiment loop with hypothesis-driven iteration |
+| **GitNexus** | [abhigyanpatwari/GitNexus](https://github.com/abhigyanpatwari/GitNexus) | Knowledge-graph code intelligence with visual explorer, blast radius analysis, and MCP tools |
 | **Context Hub** | [andrewyng/context-hub](https://github.com/andrewyng/context-hub) | MCP server providing curated, LLM-optimized docs for third-party libraries |
 | **Portable Installation** | Custom | Single `install.sh` bootstraps any project; `update.sh` keeps them all in sync |
 
@@ -129,7 +131,10 @@ sdd-harness/
 │   ├── guardrails.md             #   Audit/scaffold linter complexity rules
 │   ├── ci-scaffold.md            #   Generate CI config mirroring verify pipeline
 │   ├── autoresearch-init.md      #   Interactive ML research setup
-│   └── autoresearch.md           #   Run autonomous experiment loop
+│   ├── autoresearch.md           #   Run autonomous experiment loop
+│   ├── gitnexus-setup.md         #   Install GitNexus + configure MCP
+│   ├── gitnexus-explore.md       #   Launch GitNexus Web UI
+│   └── gitnexus-impact.md        #   Query blast radius via knowledge graph
 │
 ├── agents/kiro/                  # 34 subagents (autonomous workers)
 │   ├── spec-requirements.md      #   Requirements generation agent
@@ -166,7 +171,8 @@ sdd-harness/
 │   ├── guardrails-agent.md       #   Linter complexity rule auditing/scaffolding (Haiku)
 │   ├── ci-scaffold-agent.md      #   CI config generation (Haiku)
 │   ├── autoresearch-agent.md     #   ML experiment loop agent
-│   └── autoresearch-init-agent.md#   ML research setup agent
+│   ├── autoresearch-init-agent.md#   ML research setup agent
+│   └── gitnexus-setup-agent.md   #   GitNexus installation and configuration agent
 │
 ├── kiro/settings/                # Spec engine configuration
 │   ├── rules/                    #   25 rule files (EARS syntax, design principles,
@@ -203,6 +209,7 @@ sdd-harness/
     ├── memory/README.md          #   Memory architecture guide
     ├── jira/README.md            #   Jira integration setup
     ├── autoresearch/README.md    #   ML experiment loop guide
+    ├── gitnexus/README.md        #   Code intelligence + visual explorer guide
     ├── skill-extraction/README.md#   Skill extraction methodology
     └── security/                 #   Security integration docs
         └── sonar-hotspot-review.md
@@ -292,6 +299,9 @@ The core workflow enforces deliberate planning before coding, with human review 
 | `/kiro:skill-extract` | Generate `SKILL.md` files from scored plan |
 | `/kiro:autoresearch-init` | Interactive setup for ML research projects |
 | `/kiro:autoresearch` | Run autonomous ML experiment loop |
+| `/kiro:gitnexus-setup` | Install GitNexus, index repo, configure MCP + hooks |
+| `/kiro:gitnexus-explore` | Launch GitNexus Web UI to browse code connections |
+| `/kiro:gitnexus-impact` | Query blast radius of current changes via knowledge graph |
 
 For usage examples, see [docs/SDD-USAGE.md](docs/SDD-USAGE.md).
 
@@ -321,6 +331,7 @@ Each command delegates to one or more autonomous subagents. Agents receive a pro
 - **`doc-sync`** — Triggered by post-commit hook; finds and updates stale `.md` files after code changes; detects stale doc-to-code references
 - **`harness-updater`** — Triggered when `.claude/` files change; keeps `SDD-SETUP-GUIDE.md` current
 - **`harness-validate-agent`** — Checks structural integrity: command→agent references, template existence, memory caps, L0 headers, generates component index
+- **`gitnexus-setup-agent`** — Installs GitNexus, indexes the repo, configures MCP server and editor integration
 - **`jira-solve-agent`** — Analyzes ticket type and routes to the appropriate workflow
 
 ---
@@ -427,6 +438,31 @@ See [docs/autoresearch/README.md](docs/autoresearch/README.md).
 
 ---
 
+## GitNexus (Code Intelligence)
+
+Integrates [abhigyanpatwari/GitNexus](https://github.com/abhigyanpatwari/GitNexus) — a zero-server code intelligence engine that builds a knowledge graph from your codebase (symbols, dependencies, call chains, execution flows) and exposes it via MCP tools. The integration is **opt-in**: when GitNexus is present, harness agents gain graph-backed context; when absent, everything works as before.
+
+Three capabilities:
+
+1. **Impact detection** — `verify-agent` gains an optional Stage 0 that maps git diffs to affected processes with risk levels before running build/test/lint
+2. **Community-seeded skill extraction** — `skill-extract-agent` can use Leiden-detected functional clusters as extraction candidates instead of pure grep scanning
+3. **Visual exploration** — `/kiro:gitnexus-explore` launches a browser-based WebGL graph to browse symbols, call chains, and process flows
+
+```
+/kiro:gitnexus-setup              # Install, index, configure MCP (one-time)
+/kiro:gitnexus-explore            # Launch visual Web UI
+/kiro:gitnexus-impact             # Query blast radius for current changes
+```
+
+Setup can also be done during harness installation:
+```
+~/.claude/sdd-harness/install.sh /path/to/project --with-gitnexus
+```
+
+See [docs/gitnexus/README.md](docs/gitnexus/README.md).
+
+---
+
 ## Context Hub (MCP Integration)
 
 Integrates [andrewyng/context-hub](https://github.com/andrewyng/context-hub) — Andrew Ng's MCP server that provides curated, LLM-optimized documentation for third-party libraries and APIs (OpenAI, Stripe, Anthropic, etc.). Instead of Claude hallucinating API signatures or working from stale training data, Context Hub serves up-to-date, verified documentation on demand.
@@ -516,6 +552,7 @@ git push -u origin main
 | [Memory Architecture](docs/memory/README.md) | Temperature-tiered memory system guide |
 | [Jira Integration](docs/jira/README.md) | Jira setup, credentials, and troubleshooting |
 | [AutoResearch](docs/autoresearch/README.md) | ML experiment loop methodology |
+| [GitNexus](docs/gitnexus/README.md) | Code intelligence, visual explorer, and blast radius analysis |
 | [Skill Extraction](docs/skill-extraction/README.md) | Skill extraction pipeline and scoring |
 | [Sonar Integration](docs/security/sonar-hotspot-review.md) | SonarQube security hotspot review |
 

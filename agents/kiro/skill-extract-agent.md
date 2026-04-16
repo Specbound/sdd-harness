@@ -74,6 +74,17 @@ You will receive task prompts containing:
    - Read `.claude/kiro/settings/rules/skill-extraction-scoring.md`
 
 2. **Identify candidate modules**:
+
+   **GitNexus community seeding (optional):**
+   Before scanning manually, check if GitNexus is available on the target repository:
+   - Look for `.gitnexus/` directory in the repository root
+   - If present, query the GitNexus MCP `cypher` or `query` tool to retrieve Leiden-detected community clusters
+   - Each community represents a functionally-related group of symbols (files, functions, classes)
+   - Use these communities as **seed candidates** — pre-identified functional groups to evaluate
+   - Map each community to its key files, entry points, and cross-area connections
+   - If GitNexus is not available, skip this step silently and proceed with manual scanning
+
+   **Manual scanning (always runs, enhanced by seeds if available):**
    - Scan for modules that encode reusable knowledge (not just code):
      - Workflow patterns (build, deploy, test, release processes)
      - Architecture patterns with concrete implementation
@@ -82,6 +93,7 @@ You will receive task prompts containing:
      - Error handling and resilience strategies
      - Configuration and setup procedures
    - Each candidate should map to a coherent, self-contained skill
+   - If GitNexus seeds were found, merge them with manually-discovered candidates (deduplicate by file overlap)
 
 3. **Score each candidate**:
    - Apply the 4-criteria rubric (Recurrence, Code Quality, Domain Expertise, Generalizability)

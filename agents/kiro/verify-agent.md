@@ -33,7 +33,29 @@ You will receive:
 | 5. Debug Audit | - | Y | - | Y |
 | 6. Git Status | - | Y | - | Y |
 
-### Step 0: Discover Commands
+### Step 0: GitNexus Impact Detection (Optional)
+
+Before running any build/test stages, check if GitNexus MCP is available:
+
+1. Check for `.gitnexus/` directory in the project root
+2. If present, attempt to query `detect_changes` via MCP with the current git diff:
+   - Run `git diff --name-only HEAD` to get changed files
+   - If no changes, skip this step
+   - Query GitNexus `detect_changes` for affected processes and risk levels
+3. Parse the response:
+   - **HIGH risk** (depth 1, direct dependents): Flag prominently in the report
+   - **MEDIUM risk** (depth 2, likely affected): Note for awareness
+   - **LOW risk** (depth 3+, transitive): Mention briefly
+4. If GitNexus is not available or MCP query fails: skip silently (no error, no degradation)
+
+This step is always **informational** — it never causes a FAIL verdict. It adds semantic context before the mechanical checks.
+
+Include in the report as:
+```
+  0. Impact:        {DONE|SKIP}  {X high, Y medium, Z low risk | "GitNexus not available"}
+```
+
+### Step 0b: Discover Commands
 
 Read `.claude/steering/tech.md` for build/test/lint/type-check commands.
 
@@ -118,6 +140,7 @@ Run `git status --short`. Report:
 Verification Report (mode: {mode})
 ═══════════════════════════════════
 
+  0. Impact:         {DONE|SKIP}       {X high, Y medium, Z low risk | "GitNexus not available"}
   1. Build:          {PASS|FAIL|SKIP}  {details if fail}
   2. Type Check:     {PASS|FAIL|SKIP}  {details if fail}
   3. Lint:           {PASS|FAIL|SKIP}  {details if fail}

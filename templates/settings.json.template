@@ -6,7 +6,9 @@
       "Bash(pytest *)",
       "Bash(git log *)",
       "Bash(git diff *)",
-      "Bash(git status)"
+      "Bash(git status)",
+      "Bash(npx gitnexus *)",
+      "Bash(gitnexus *)"
     ],
     "deny": []
   },

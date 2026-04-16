@@ -403,6 +403,34 @@ Output: `~/.claude/skills/<name>/SKILL.md` for each extracted skill.
 
 See `docs/skill-extraction/README.md` for full details on scoring, workflow, and security.
 
+### `/kiro:gitnexus-setup` — Install and configure GitNexus code intelligence
+
+```
+/kiro:gitnexus-setup                    # install, index, configure MCP
+/kiro:gitnexus-setup --skip-embeddings  # faster indexing (no vectors)
+/kiro:gitnexus-setup --force            # force re-index
+```
+
+### `/kiro:gitnexus-explore` — Launch visual code explorer
+
+```
+/kiro:gitnexus-explore                  # opens Web UI at localhost:4567
+/kiro:gitnexus-explore --port 8080      # custom port
+```
+
+Browse symbols, call chains, process flows, and community clusters in a WebGL graph.
+
+### `/kiro:gitnexus-impact` — Query blast radius for current changes
+
+```
+/kiro:gitnexus-impact                   # analyze uncommitted changes
+/kiro:gitnexus-impact --from HEAD~3     # analyze last 3 commits
+```
+
+Maps changed code to affected execution flows with HIGH/MEDIUM/LOW risk classification. Falls back to grep-based tracing if GitNexus is not installed.
+
+See `docs/gitnexus/README.md` for full details.
+
 ---
 
 ## Typical Workflow
