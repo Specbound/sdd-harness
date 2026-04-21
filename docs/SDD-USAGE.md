@@ -372,6 +372,10 @@ Or manually: `claude /schedule delete <routine-id>` once registered.
 
 Runs from `stop-hook.sh` after each session. Scans the session's user turns for phrases like "I already told you", "as I said", "we discussed this" — each hit becomes a `[memory-gap]` observation. The Judge treats these as flagship drains (every re-explained preference is a memory the harness should have saved but didn't). Rationale: see the "Daily Maintenance" section above.
 
+### Full reference: [`docs/trust-battery/`](trust-battery/)
+
+Complete documentation of the trust-battery loop — origin, architecture diagram, rubric details, troubleshooting, and explicit non-goals. Start here if you are modifying any of the battery components.
+
 ---
 
 ## Jira Integration

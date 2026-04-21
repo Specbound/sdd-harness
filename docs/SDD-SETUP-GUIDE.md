@@ -740,6 +740,7 @@ Each harness subsystem has a detailed reference doc:
 | Cog Memory | `docs/memory/README.md` | Tier architecture, file formats, conventions, data flow |
 | Jira Integration | `docs/jira/README.md` | Hook architecture, scripts, credentials, troubleshooting |
 | AutoResearch | `docs/autoresearch/README.md` | Interview protocol, loop mechanics, agent behavior |
+| Trust Battery | `docs/trust-battery/README.md` | Nightly Judge/Reflector loop, rubric, scoreboard, opt-out, non-goals |
 | Context Hub | [github.com/andrewyng/context-hub](https://github.com/andrewyng/context-hub) | MCP server for third-party API docs (external) |
 
 ---
