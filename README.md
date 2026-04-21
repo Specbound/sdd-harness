@@ -442,11 +442,15 @@ See [docs/autoresearch/README.md](docs/autoresearch/README.md).
 
 Integrates [abhigyanpatwari/GitNexus](https://github.com/abhigyanpatwari/GitNexus) — a zero-server code intelligence engine that builds a knowledge graph from your codebase (symbols, dependencies, call chains, execution flows) and exposes it via MCP tools. The integration is **opt-in**: when GitNexus is present, harness agents gain graph-backed context; when absent, everything works as before.
 
-Three capabilities:
+Once set up, **everything is automatic** — no extra commands in your daily workflow:
 
-1. **Impact detection** — `verify-agent` gains an optional Stage 0 that maps git diffs to affected processes with risk levels before running build/test/lint
-2. **Community-seeded skill extraction** — `skill-extract-agent` can use Leiden-detected functional clusters as extraction candidates instead of pure grep scanning
-3. **Visual exploration** — `/kiro:gitnexus-explore` launches a browser-based WebGL graph to browse symbols, call chains, and process flows
+1. **PreToolUse context enrichment** — Every file read/edit by any agent is enriched with 360-degree symbol context (callers, dependencies, process participation)
+2. **Auto-reindex** — Post-commit hook keeps the knowledge graph fresh after every commit
+3. **Impact detection** — `verify-agent` Stage 0 maps git diffs to affected processes with risk levels
+4. **Blast radius in TDD** — `spec-impl` scans files-to-modify for downstream dependents before writing tests
+5. **Call chain tracing** — `debug-agent` queries GitNexus for call chains instead of manual grep
+6. **Community-seeded skill extraction** — `skill-extract-agent` uses Leiden-detected functional clusters as candidates
+7. **Visual exploration** — `/kiro:gitnexus-explore` launches a browser-based WebGL graph (the only manual command)
 
 ```
 /kiro:gitnexus-setup              # Install, index, configure MCP (one-time)

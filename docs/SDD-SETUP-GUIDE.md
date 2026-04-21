@@ -434,6 +434,8 @@ Conventions are defined in `.claude/kiro/settings/rules/memory-conventions.md`:
 | UserPromptSubmit (Jira capture) | Every user prompt | Captures ticket ID from `/kiro:jira-solve TICKET-ID` prompts, writes to `~/.claude/state/active_jira_ticket` |
 | UserPromptSubmit (context priming) | Every user prompt | Injects hot-memory.md contents for session context |
 | Stop (memory health) | Every Claude session end | Nudges `/kiro:housekeeping` if observations >50; nudges `/kiro:evolve` if agent failure patterns detected |
+| Stop (re-explanation detector) | Every Claude session end | Scans session transcript via `scripts/detect_reexplanation.py`; appends a `[memory-gap]` observation if the user had to re-explain context (once per day) |
+| Routine (daily maintenance) | Nightly per repo via Claude Code `/schedule` | Runs `/kiro:daily-maintenance` — Judge → Reflect → Housekeeping → Trust Score update. Registered automatically by `install.sh` / `update.sh`. Opt out with `SDD_SKIP_ROUTINE=1`. See `SDD-USAGE.md` → "Daily Maintenance". |
 | post-commit (doc sync) | Every `git commit` with non-`.md` source changes | Doc-sync: updates all `.md` files referencing changed code via `claude --print` (background) |
 | post-commit (harness updater) | Every `git commit` with `.claude/` changes (excl. memory) | Updates `SDD-SETUP-GUIDE.md` via `claude --print` (background) |
 
@@ -599,11 +601,17 @@ The harness includes an optional integration with [GitNexus](https://github.com/
 
 ### What it does
 
-GitNexus indexes your codebase into a knowledge graph (symbols, dependencies, call chains, execution flows) using Tree-sitter AST parsing. It then exposes MCP tools for querying the graph and a Web UI for visual exploration. The SDD harness integration adds:
+GitNexus indexes your codebase into a knowledge graph (symbols, dependencies, call chains, execution flows) using Tree-sitter AST parsing. It then exposes MCP tools for querying the graph and a Web UI for visual exploration.
 
-1. **Impact detection in verify pipeline** — Optional Stage 0 maps git diffs to affected processes with risk scores
-2. **Community-seeded skill extraction** — Leiden-detected functional clusters as extraction candidates
-3. **Visual exploration** — Browser-based WebGL graph for browsing connections
+Once set up, **everything is automatic** — no extra commands needed in your daily workflow:
+
+1. **PreToolUse context enrichment** — Every file read/edit by any agent is enriched with 360-degree symbol context (callers, dependencies, process participation)
+2. **Auto-reindex on commit** — Post-commit hook keeps the knowledge graph fresh after every commit
+3. **Impact detection in verify pipeline** — Stage 0 maps git diffs to affected processes with risk scores
+4. **Blast radius in spec-impl** — Before TDD, scans all files to be modified for downstream dependents
+5. **Call chain tracing in debug** — Localize step queries GitNexus instead of manual grep
+6. **Community-seeded skill extraction** — Leiden-detected functional clusters as extraction candidates
+7. **Visual exploration** — `/kiro:gitnexus-explore` launches browser-based WebGL graph (the only manual command)
 
 ### Components
 
@@ -657,14 +665,20 @@ The Web UI lets you:
 /kiro:gitnexus-impact --from HEAD~3     # analyze last 3 commits
 ```
 
-### Enhanced agents
+### What's automatic after setup
 
-When GitNexus is available, existing agents are automatically enhanced:
+Once GitNexus is set up, you don't need to run any extra commands. The following happen automatically:
 
-- **`verify-agent`** — Adds Stage 0 (impact detection) before build/test/lint. Informational only, never blocks.
-- **`skill-extract-agent`** — Seeds extraction candidates from GitNexus community clusters before grep scanning.
+| What | When | How |
+|---|---|---|
+| **Context enrichment** | Every file read/edit | PreToolUse hook injects callers, dependencies, processes |
+| **Reindex** | Every git commit | Post-commit hook runs `gitnexus analyze --skip-embeddings` |
+| **Impact detection** | Every `/kiro:verify` | Stage 0 maps diff to affected processes |
+| **Blast radius scan** | Every `/kiro:spec-impl` | Scans files-to-modify for downstream dependents |
+| **Call chain tracing** | Every `/kiro:debug` | Localize step queries GitNexus for call chains |
+| **Community seeding** | Every `/kiro:skill-extract-scan` | Leiden clusters as extraction candidates |
 
-Both enhancements are optional and degrade gracefully.
+All enhancements degrade gracefully — if GitNexus is removed, agents fall back to grep/glob.
 
 ### CLAUDE.md additions
 

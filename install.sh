@@ -51,7 +51,9 @@ cp -r "$HARNESS_DIR/agents/"   "$PROJECT_DIR/.claude/"
 cp -r "$HARNESS_DIR/kiro/"     "$PROJECT_DIR/.claude/"
 cp -r "$HARNESS_DIR/scripts/"  "$PROJECT_DIR/.claude/"
 cp    "$HARNESS_DIR/hooks/stop-hook.sh" "$PROJECT_DIR/.claude/hooks/"
+cp    "$HARNESS_DIR/hooks/pre-tool-use-gitnexus.sh" "$PROJECT_DIR/.claude/hooks/"
 chmod +x "$PROJECT_DIR/.claude/hooks/stop-hook.sh"
+chmod +x "$PROJECT_DIR/.claude/hooks/pre-tool-use-gitnexus.sh"
 
 # --- Set up git post-commit hook ---
 cp "$HARNESS_DIR/git-hooks/post-commit" "$PROJECT_DIR/.git/hooks/"
@@ -139,6 +141,27 @@ if [ "$WITH_GITNEXUS" = true ]; then
     echo "  WARNING: gitnexus not found. Install with: npm install -g gitnexus"
     echo "  Skipping GitNexus setup. Run /kiro:gitnexus-setup later inside Claude Code."
   fi
+fi
+
+# --- Register daily-maintenance Routine (opt-out via SDD_SKIP_ROUTINE=1) ---
+if [ "${SDD_SKIP_ROUTINE:-0}" != "1" ]; then
+  PROJECT_NAME="$(basename "$PROJECT_DIR")"
+  if command -v claude >/dev/null 2>&1; then
+    if ! claude /schedule list 2>/dev/null | grep -q "daily-maintenance.*$PROJECT_NAME"; then
+      echo "  Registering nightly /kiro:daily-maintenance Routine for $PROJECT_NAME..."
+      claude /schedule nightly "Run /kiro:daily-maintenance for $PROJECT_NAME" \
+        >/dev/null 2>&1 \
+        && echo "  Routine registered." \
+        || echo "  NOTE: /schedule command unavailable or failed — register manually:"
+    else
+      echo "  Routine already registered."
+    fi
+  else
+    echo "  NOTE: 'claude' CLI not found — to enable nightly maintenance, run inside Claude Code:"
+    echo "    /schedule nightly \"Run /kiro:daily-maintenance for $PROJECT_NAME\""
+  fi
+else
+  echo "  SDD_SKIP_ROUTINE=1 — skipping Routine registration for $PROJECT_NAME."
 fi
 
 echo ""

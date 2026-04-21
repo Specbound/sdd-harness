@@ -6,45 +6,61 @@
 
 GitNexus is a zero-server code intelligence engine that builds a knowledge graph from your codebase — symbols, dependencies, call chains, execution flows — and exposes it via MCP tools. The SDD harness integration is **opt-in**: when GitNexus is present, harness agents gain graph-backed context. When absent, everything works as before.
 
-The integration adds three capabilities:
+The integration adds six automatic capabilities and one manual command:
 
-1. **Impact detection in verify pipeline** — Graph-backed blast radius analysis before build/test/lint
-2. **Community-seeded skill extraction** — Leiden-detected functional clusters as extraction candidates
-3. **Visual exploration** — Launch the GitNexus Web UI to browse connections, call chains, and process flows in a browser
+**Automatic (wired into existing workflows — no extra commands needed):**
+
+1. **PreToolUse context enrichment** — Every file read/edit is automatically enriched with GitNexus 360-degree symbol context (callers, dependencies, process participation). Agents see the blast radius of every file they touch.
+2. **Auto-reindex on commit** — The post-commit hook re-indexes the repo after every commit so the knowledge graph stays fresh.
+3. **Impact detection in verify pipeline** — `verify-agent` Stage 0 runs `detect_changes` automatically, flagging HIGH risk semantic regressions before build/test/lint.
+4. **Blast radius in spec-impl** — Before TDD implementation, `spec-impl` scans all files it will modify for downstream dependents, writing tests that cover affected code.
+5. **Call chain tracing in debug** — `debug-agent` Step 2 (Localize) queries GitNexus for the full call chain instead of manually grepping for callers.
+6. **Community-seeded skill extraction** — `skill-extract-agent` uses Leiden-detected functional clusters as extraction candidates.
+
+**Manual (on-demand):**
+
+7. **Visual exploration** — `/kiro:gitnexus-explore` launches the GitNexus Web UI to browse connections in a browser
 
 ## How It Works
 
 ### Architecture
 
 ```
-┌─ SDD Harness ─────────────────────────────────────┐
-│                                                     │
-│  /kiro:gitnexus-setup                              │
-│    → installs gitnexus, runs initial index          │
-│    → configures MCP server in settings.json         │
-│    → registers post-commit reindex hook              │
-│                                                     │
-│  /kiro:gitnexus-explore                            │
-│    → starts gitnexus serve (HTTP backend)           │
-│    → opens Web UI in browser                        │
-│    → browse symbols, call chains, processes          │
-│                                                     │
-│  /kiro:gitnexus-impact                             │
-│    → queries GitNexus detect_changes MCP tool        │
-│    → maps current git diff to affected processes     │
-│    → reports blast radius with risk levels           │
-│                                                     │
-│  verify-agent (Stage 0 — optional)                  │
-│    → if GitNexus MCP available, detect_changes      │
-│    → flags HIGH risk semantic regressions            │
-│    → proceeds to existing build/test/lint pipeline   │
-│                                                     │
-│  skill-extract-agent (optional seeding)             │
-│    → if GitNexus MCP available, query communities   │
-│    → use clusters as extraction candidates           │
-│    → fall back to Glob+Grep scanning if unavailable  │
-│                                                     │
-└─────────────────────────────────────────────────────┘
+┌─ SDD Harness (automatic wiring) ───────────────────────────────────────┐
+│                                                                         │
+│  PreToolUse hook (every Read/Edit/MultiEdit)                           │
+│    → queries GitNexus context for the target file                       │
+│    → injects callers, dependencies, process participation               │
+│    → all agents see blast radius automatically                          │
+│                                                                         │
+│  post-commit hook (every git commit)                                    │
+│    → runs gitnexus analyze --skip-embeddings in background              │
+│    → knowledge graph stays fresh without manual reindex                  │
+│                                                                         │
+│  verify-agent (Stage 0 — automatic)                                     │
+│    → detect_changes on git diff before build/test/lint                  │
+│    → flags HIGH risk semantic regressions                               │
+│                                                                         │
+│  spec-impl (Step 1 — automatic)                                        │
+│    → scans design.md/tasks.md files for downstream dependents           │
+│    → builds dependency map before TDD cycle begins                      │
+│    → tests cover affected downstream code, not just changed code        │
+│                                                                         │
+│  debug-agent (Step 2 — automatic)                                       │
+│    → queries GitNexus context/impact for suspect symbols                │
+│    → traces full call chain instead of manual grep                      │
+│                                                                         │
+│  skill-extract-agent (Stage 2 — automatic)                              │
+│    → seeds candidates from Leiden community clusters                    │
+│    → falls back to Glob+Grep if GitNexus unavailable                    │
+│                                                                         │
+│  /kiro:gitnexus-setup (one-time, manual)                               │
+│    → installs gitnexus, indexes repo, configures MCP                    │
+│                                                                         │
+│  /kiro:gitnexus-explore (on-demand, manual)                            │
+│    → launches Web UI at localhost:4567                                   │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
          │                       │
          ▼                       ▼
 ┌─ GitNexus MCP ──┐    ┌─ GitNexus Web UI ──┐
@@ -79,12 +95,24 @@ No harness functionality degrades when GitNexus is absent.
 | `/kiro:gitnexus-explore` | Launch the Web UI to visually browse code connections |
 | `/kiro:gitnexus-impact` | Query blast radius for current changes |
 
-## Agent Enhancements
+## Automatic Agent Enhancements
 
-| Agent | Enhancement |
-|---|---|
-| `verify-agent` | Optional Stage 0: graph-backed `detect_changes` before build/test pipeline |
-| `skill-extract-agent` | Optional community seeding: Leiden clusters as extraction candidates |
+All enhancements activate automatically when `.gitnexus/` exists. No commands needed.
+
+| Agent | Enhancement | Trigger |
+|---|---|---|
+| **All agents** | 360-degree context injected on every file read/edit via PreToolUse hook | Every `Read`/`Edit`/`MultiEdit` tool call |
+| `verify-agent` | Stage 0: `detect_changes` maps git diff to affected processes with risk levels | Every `/kiro:verify` run |
+| `spec-impl` | Blast radius scan of all files to be modified; dependency map informs TDD test coverage | Every `/kiro:spec-impl` run |
+| `debug-agent` | Call chain tracing via `context`/`impact` queries in Step 2 (Localize) | Every `/kiro:debug` run |
+| `skill-extract-agent` | Leiden community clusters as extraction candidate seeds | Every `/kiro:skill-extract-scan` run |
+
+## Automatic Infrastructure
+
+| Component | Enhancement | Trigger |
+|---|---|---|
+| `post-commit` hook | Re-indexes repo (`gitnexus analyze --skip-embeddings`) | Every `git commit` |
+| `PreToolUse` hook | Queries GitNexus for file context, injects into agent conversation | Every file read/edit |
 
 ## Use Cases
 

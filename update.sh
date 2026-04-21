@@ -32,6 +32,17 @@ do_update() {
     chmod +x "$proj/.git/hooks/post-commit"
   fi
   bash "$HARNESS_DIR/generate-project-stack.sh" "$proj"
+  # Re-confirm daily-maintenance Routine (idempotent; opt-out via SDD_SKIP_ROUTINE=1)
+  if [ "${SDD_SKIP_ROUTINE:-0}" != "1" ] && command -v claude >/dev/null 2>&1; then
+    local pname
+    pname="$(basename "$proj")"
+    if ! claude /schedule list 2>/dev/null | grep -q "daily-maintenance.*$pname"; then
+      claude /schedule nightly "Run /kiro:daily-maintenance for $pname" \
+        >/dev/null 2>&1 \
+        && echo "  Routine registered." \
+        || true
+    fi
+  fi
   date -Iseconds > "$proj/.claude/.last-harness-check"
   echo "  Done."
 }

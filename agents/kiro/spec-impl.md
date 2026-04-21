@@ -47,6 +47,17 @@ Execute implementation tasks for feature using Test-Driven Development.
 - `specs/{feature}/spec.json`, `requirements.md`, `design.md`, `tasks.md`
 - **Entire `.claude/steering/` directory** for complete project memory
 
+**GitNexus blast radius scan (automatic when available)**:
+- If `.gitnexus/` exists in the project root, scan the files listed in `design.md` and `tasks.md` for dependencies:
+  - For each file that will be created or modified, query GitNexus MCP `impact` tool to get downstream dependents
+  - For each file being modified, query GitNexus MCP `context` tool to get incoming callers and outgoing calls
+  - Compile a dependency map: "changing X will affect Y, Z" with depth and confidence
+- Use this map during TDD to:
+  - Write tests that cover affected downstream code, not just the function being changed
+  - Avoid breaking callers by checking their usage patterns before modifying signatures
+  - Identify integration points that need contract-first treatment
+- If GitNexus is not available, skip silently — proceed with steering-based context only
+
 **Validate approvals**:
 - Verify tasks are approved in spec.json (stop if not, see Safety & Fallback)
 

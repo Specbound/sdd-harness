@@ -334,6 +334,46 @@ The rule is added to the appropriate agent file or rule file and distributed via
 
 ---
 
+## Daily Maintenance (Automated)
+
+### `/kiro:daily-maintenance` — Nightly orchestrator
+
+Runs the full maintenance cycle end-to-end: **Judge → Reflect → Housekeeping → Trust Score update**. Designed to run on a schedule via Claude Code [Routines](https://claude.com/blog/introducing-routines-in-claude-code), one Routine per installed project — `install.sh` and `update.sh` register this automatically.
+
+```
+/kiro:daily-maintenance
+```
+
+Pipeline:
+
+1. **`session-judge`** — independent adversarial scorer. Reads the last 24h of `observations.md` + trace log, applies the rubric in `kiro/settings/rules/session-quality-rubric.md`, emits a JSON verdict (±1 charges, -2 drains, ±4.5%/day cap). **Proposes no fixes** — if the same agent scored and improved, it would optimize for score, not work.
+2. **`/kiro:reflect`** — consumes the Judge's drains as priority signals, converts them into new memory entries or pattern promotions.
+3. **`/kiro:housekeeping`** — prunes/archives observations, enforces memory caps.
+4. **Trust Score update** — `scripts/trust_score.py` applies the Judge's `score_delta`, clamps it, rewrites the `## Harness Trust Score:` line at the top of `hot-memory.md`, appends to `.claude/memory/trust-score.jsonl`.
+5. **Memory-gap alert** — if any `[memory-gap]` observations remain unresolved after reflection, appends a `[routine-alert]` observation so the user sees it next session.
+
+Idempotent per calendar day (uses today's `[judge]` observation as the sentinel). Each step is error-isolated: a bad Judge pass does not block housekeeping.
+
+### Trust Score — observability only
+
+The `## Harness Trust Score:` line at the top of `hot-memory.md` (e.g. `42.3% (▲ +0.8 today, 7d: ▼ -1.1)`) is a single-user health signal. **It never gates harness behavior** — spec phase gates still require explicit human approval regardless of score. Adapted from @nityeshaga's "trust battery" design (April 2026) but scoped down: one battery per project (single developer), informational only, no autonomy tiers.
+
+Starts at 20% on fresh install. Daily cap ±4.5%. History lives in `.claude/memory/trust-score.jsonl` (one record per nightly run).
+
+### Opt out
+
+```
+SDD_SKIP_ROUTINE=1 ~/.claude/sdd-harness/install.sh /path/to/project
+```
+
+Or manually: `claude /schedule delete <routine-id>` once registered.
+
+### `scripts/detect_reexplanation.py` — re-explanation detector
+
+Runs from `stop-hook.sh` after each session. Scans the session's user turns for phrases like "I already told you", "as I said", "we discussed this" — each hit becomes a `[memory-gap]` observation. The Judge treats these as flagship drains (every re-explained preference is a memory the harness should have saved but didn't). Rationale: see the "Daily Maintenance" section above.
+
+---
+
 ## Jira Integration
 
 ### `/kiro:jira-solve` — Work on a Jira ticket with auto-commenting

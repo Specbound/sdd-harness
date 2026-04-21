@@ -5,6 +5,16 @@ TODAY=$(date +%Y-%m-%d)
 CHANGED=$(git diff HEAD~1 --name-only 2>/dev/null)
 if [ -z "$CHANGED" ]; then exit 0; fi
 
+# ── Hook 0: GitNexus auto-reindex (keep knowledge graph fresh) ───────────────
+# Runs only when GitNexus is installed and the repo is indexed.
+# Incremental reindex is fast (<5s for most repos), so it runs on every commit.
+if [ -d "$REPO_ROOT/.gitnexus" ]; then
+  if command -v gitnexus >/dev/null 2>&1 || npx gitnexus --version >/dev/null 2>&1; then
+    (cd "$REPO_ROOT" && npx gitnexus analyze --skip-embeddings 2>/dev/null) &
+    echo "  post-commit: GitNexus reindex running in background..."
+  fi
+fi
+
 # ── Hook 1: Doc sync (documentation drift prevention) ────────────────────────
 # Skip if only .md files changed (avoid infinite loop if docs are committed)
 NON_MD=$(echo "$CHANGED" | grep -v '\.md$' | grep -v '\.claude/')

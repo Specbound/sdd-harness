@@ -1,16 +1,4 @@
 {
-  "hooks": {
-    "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "/bin/bash /home/dalesser/.claude/sdd-harness/.claude/hooks/stop-hook.sh"
-          }
-        ]
-      }
-    ]
-  },
   "permissions": {
     "allow": [
       "Bash(find /home/dalesser/.claude/sdd-harness/commands /home/dalesser/.claude/sdd-harness/agents /home/dalesser/.claude/sdd-harness/kiro /home/dalesser/.claude/sdd-harness/scripts -name *SDD* -o -name *sdd*)",
@@ -34,12 +22,38 @@
       "Bash(curl -s \"https://raw.githubusercontent.com/sanyuan0704/sanyuan-skills/main/skills/code-review-expert/agents/agent.yaml\")",
       "Bash(curl -s \"https://raw.githubusercontent.com/sanyuan0704/sanyuan-skills/main/skills/code-review-expert/references/solid-checklist.md\")",
       "Bash(curl -s \"https://raw.githubusercontent.com/sanyuan0704/sanyuan-skills/main/skills/code-review-expert/references/security-checklist.md\")",
-      "Bash(curl -s \"https://raw.githubusercontent.com/sanyuan0704/sanyuan-skills/main/skills/code-review-expert/references/code-quality-checklist.md\")"
+      "Bash(curl -s \"https://raw.githubusercontent.com/sanyuan0704/sanyuan-skills/main/skills/code-review-expert/references/code-quality-checklist.md\")",
+      "WebFetch(domain:claude.com)",
+      "Bash(cat)",
+      "Bash(python3 /home/dalesser/.claude/sdd-harness/scripts/detect_reexplanation.py --file /tmp/re_test.txt)",
+      "Bash(python3 /home/dalesser/.claude/sdd-harness/scripts/detect_reexplanation.py --stdin)",
+      "Bash(set -e)",
+      "Bash(rm -rf ts_test)",
+      "Bash(mkdir -p ts_test/.claude/memory)",
+      "Bash(cp /home/dalesser/.claude/sdd-harness/kiro/settings/templates/memory/hot-memory.md .claude/memory/)",
+      "Bash(python3 /home/dalesser/.claude/sdd-harness/scripts/trust_score.py show)",
+      "Bash(pwd ls *)",
+      "Bash(bash -n /home/dalesser/.claude/sdd-harness/hooks/stop-hook.sh)",
+      "Bash(bash -n /home/dalesser/.claude/sdd-harness/install.sh)",
+      "Bash(bash -n /home/dalesser/.claude/sdd-harness/update.sh)"
     ],
     "additionalDirectories": [
       "/home/dalesser/.claude/sdd-harness",
       "/home/dalesser/.claude/sdd-harness/docs",
-      "/home/dalesser/.claude/sdd-harness/docs/security"
+      "/home/dalesser/.claude/sdd-harness/docs/security",
+      "/tmp"
+    ]
+  },
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/bash /home/dalesser/.claude/sdd-harness/.claude/hooks/stop-hook.sh"
+          }
+        ]
+      }
     ]
   }
 }

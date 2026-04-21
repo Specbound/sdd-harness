@@ -38,6 +38,26 @@ if [ -f "$OBS_FILE" ]; then
   fi
 fi
 
+# --- Memory-gap detection (re-explanation signal) ---
+# Scan the current session's transcript for phrases indicating the user had to
+# re-explain context — each hit = a memory the harness should have saved.
+# Runs in background; failures are silent (detector is best-effort).
+DETECTOR=".claude/scripts/detect_reexplanation.py"
+if [ -f "$DETECTOR" ] && [ -f "$OBS_FILE" ]; then
+  (
+    hits=$(python3 "$DETECTOR" --auto-transcript 2>/dev/null || echo "[]")
+    count=$(echo "$hits" | python3 -c 'import json,sys; print(len(json.load(sys.stdin)))' 2>/dev/null || echo 0)
+    if [ "$count" -gt 0 ]; then
+      today=$(date +%Y-%m-%d)
+      # Only append once per day; subsequent stops within the same day no-op.
+      if ! grep -q "^- $today \[memory-gap\]:" "$OBS_FILE" 2>/dev/null; then
+        topic=$(echo "$hits" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(", ".join(sorted({h["suggested_memory_topic"] for h in d}))[:80])' 2>/dev/null || echo "?")
+        echo "- $today [memory-gap]: $count re-explanation phrase(s) detected — topics: $topic" >> "$OBS_FILE"
+      fi
+    fi
+  ) &
+fi
+
 # --- Agent failure pattern detection (self-tightening loop) ---
 TRACE_LOG=".claude/memory/trace.log"
 if [ -f "$TRACE_LOG" ]; then
