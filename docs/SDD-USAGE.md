@@ -81,24 +81,25 @@ Creates a spec workspace in `specs/` with metadata tracking.
 ```
 
 ### `/kiro:spec-requirements` — Generate requirements
-Produces EARS-format requirements for an initialized spec.
+Produces EARS-format requirements for an initialized spec. After generation, opens a **[Proof](https://github.com/anthropics/proof) collaborative review session** — a shared URL where you annotate, comment, and approve the requirements document. The approved version is written back before proceeding.
 
 ```
 /kiro:spec-requirements revenue-trend-chart
 ```
 
 ### `/kiro:spec-design` — Generate technical design
-Researches the codebase and produces a design doc with architecture decisions.
+Researches the codebase and produces a design doc with architecture decisions. After generation, opens a **Proof collaborative review session** for annotation and approval before proceeding to tasks.
 
 ```
 /kiro:spec-design revenue-trend-chart
 ```
 
 ### `/kiro:spec-tasks` — Generate implementation tasks
-Breaks the design into parallelizable tasks with dependencies.
+Breaks the design into parallelizable tasks with dependencies. After generation, opens a **Proof collaborative review session** for approval before implementation begins. Pass `--sequential` to suppress parallel `(P)` markers when you want strictly ordered tasks.
 
 ```
 /kiro:spec-tasks revenue-trend-chart
+/kiro:spec-tasks revenue-trend-chart --sequential   # disable parallel task markers
 ```
 
 ### `/kiro:spec-quick` — Fast path (requirements → design → tasks)

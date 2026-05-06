@@ -25,8 +25,12 @@ do_update() {
   cp -r "$HARNESS_DIR/scripts/"  "$proj/.claude/"
   cp -r "$HARNESS_DIR/docs/"     "$proj/.claude/"
   mkdir -p "$proj/.claude/memory/sessions"
-  cp    "$HARNESS_DIR/hooks/stop-hook.sh" "$proj/.claude/hooks/"
+  cp    "$HARNESS_DIR/hooks/stop-hook.sh"             "$proj/.claude/hooks/"
+  cp    "$HARNESS_DIR/hooks/session-start-hook.sh"   "$proj/.claude/hooks/"
+  cp    "$HARNESS_DIR/hooks/pre-tool-use-gitnexus.sh" "$proj/.claude/hooks/"
   chmod +x "$proj/.claude/hooks/stop-hook.sh"
+  chmod +x "$proj/.claude/hooks/session-start-hook.sh"
+  chmod +x "$proj/.claude/hooks/pre-tool-use-gitnexus.sh"
   if [ -d "$proj/.git" ]; then
     cp "$HARNESS_DIR/git-hooks/post-commit" "$proj/.git/hooks/"
     chmod +x "$proj/.git/hooks/post-commit"

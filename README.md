@@ -243,11 +243,13 @@ The core workflow enforces deliberate planning before coding, with human review 
 **Standard path** (maximum control):
 ```
 /kiro:spec-init "Feature name"        # Create spec workspace
-/kiro:spec-requirements               # Generate EARS requirements → review → approve
-/kiro:spec-design                     # Generate design with codebase research → review → approve
-/kiro:spec-tasks                      # Break into parallelizable tasks → review → approve
+/kiro:spec-requirements               # Generate EARS requirements → Proof review → approve
+/kiro:spec-design                     # Generate design with codebase research → Proof review → approve
+/kiro:spec-tasks                      # Break into parallelizable tasks → Proof review → approve
 /kiro:spec-impl <spec-name>           # TDD implementation with auto self-review
 ```
+
+Each spec phase ends with a **[Proof](https://github.com/anthropics/proof) collaborative review session** — a shared URL where you annotate, comment, and approve the document before the next phase begins. Proof is installed automatically on first use.
 
 **Fast path** (one command):
 ```
@@ -272,7 +274,7 @@ The core workflow enforces deliberate planning before coding, with human review 
 | `/kiro:spec-init` | Initialize a new spec workspace |
 | `/kiro:spec-requirements` | Generate EARS-format requirements |
 | `/kiro:spec-design` | Generate technical design with codebase research |
-| `/kiro:spec-tasks` | Break design into parallelizable tasks |
+| `/kiro:spec-tasks` | Break design into parallelizable tasks (`--sequential` to disable parallel markers) |
 | `/kiro:spec-quick` | Fast path: all spec phases in one command |
 | `/kiro:spec-impl` | TDD implementation with automatic self-review |
 | `/kiro:spec-status` | Check current spec phase and progress |

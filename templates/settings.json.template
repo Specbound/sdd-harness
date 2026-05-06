@@ -8,7 +8,12 @@
       "Bash(git diff *)",
       "Bash(git status)",
       "Bash(npx gitnexus *)",
-      "Bash(gitnexus *)"
+      "Bash(gitnexus *)",
+      "Edit(docs/**)",
+      "Edit(specs/**)",
+      "Edit(.claude/docs/**)",
+      "Edit(.claude/steering/**)",
+      "Edit(.claude/memory/**)"
     ],
     "deny": []
   },

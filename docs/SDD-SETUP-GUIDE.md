@@ -161,6 +161,12 @@ Create `.claude/settings.json`:
       // Pre-approved ruff lint commands
       "Bash(ruff check:*)",
       "Bash(python -m ruff check <file>)",
+      // Edit permissions for doc sync + harness updater subagents (spawned by post-commit hook)
+      "Edit(docs/**)",
+      "Edit(specs/**)",
+      "Edit(.claude/docs/**)",
+      "Edit(.claude/steering/**)",
+      "Edit(.claude/memory/**)",
       // WebFetch for domains Claude needs to access
       "WebFetch(domain:raw.githubusercontent.com)",
       // Skill permissions (add as needed)
@@ -372,7 +378,7 @@ Conventions are defined in `.claude/kiro/settings/rules/memory-conventions.md`:
 | `/kiro:spec-init "description"` | Initialize new feature workspace in `specs/` |
 | `/kiro:spec-requirements {feature}` | Generate EARS-format requirements (subagent) |
 | `/kiro:spec-design {feature}` | Generate research notes + technical design (subagent) |
-| `/kiro:spec-tasks {feature}` | Generate P-wave parallel task list (subagent) |
+| `/kiro:spec-tasks {feature} [--sequential]` | Generate P-wave parallel task list (subagent); `--sequential` disables parallel `(P)` markers |
 | `/kiro:spec-impl {feature}` | Implement from approved spec via TDD (subagent) |
 | `/kiro:spec-quick "description"` | Fast path: requirements→design→tasks in one command |
 | `/kiro:debug "bug description"` | Systematic 6-step bug triage (reproduce→fix→guard) |
@@ -401,9 +407,9 @@ Conventions are defined in `.claude/kiro/settings/rules/memory-conventions.md`:
 
 | Agent | Trigger | Purpose |
 |---|---|---|
-| `@agents-spec-requirements` | `/kiro:spec-requirements` | EARS requirements generation |
-| `@agents-spec-design` | `/kiro:spec-design` | Research + technical design |
-| `@agents-spec-tasks` | `/kiro:spec-tasks` | P-wave task breakdown |
+| `@agents-spec-requirements` | `/kiro:spec-requirements` | EARS requirements generation; approval via Proof collaborative review session |
+| `@agents-spec-design` | `/kiro:spec-design` | Research + technical design; approval via Proof collaborative review session |
+| `@agents-spec-tasks` | `/kiro:spec-tasks` | P-wave task breakdown; approval via Proof collaborative review session |
 | `@agents-spec-impl` | `/kiro:spec-impl` | TDD implementation per task |
 | `@agents-spec-refactor` | After each impl task (auto, spawned by spec-impl agent) | Post-task self-review: reuse, quality, efficiency, 3-tier security checks + test re-run |
 | `@agents-idea-refine` | `/kiro:idea-refine` | Structured ideation: problem framing → divergent/convergent thinking → spec-ready brief |

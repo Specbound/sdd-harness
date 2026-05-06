@@ -24,7 +24,7 @@ Based on [cc-sdd](https://www.npmjs.com/package/cc-sdd) (`npx cc-sdd@latest`), a
 | `spec-init` | 1. Init | Create spec workspace in `specs/` with metadata |
 | `spec-requirements` | 2. Requirements | Generate EARS-format requirements |
 | `spec-design` | 3. Design | Research codebase + produce technical design |
-| `spec-tasks` | 4. Tasks | Break design into parallelizable task list |
+| `spec-tasks` | 4. Tasks | Break design into parallelizable task list; `--sequential` disables parallel `(P)` markers |
 | `spec-impl` | 5. Implement | TDD implementation with self-review after each task |
 | `spec-quick` | 2-4 (fast) | Requirements → Design → Tasks in one command |
 | `spec-status` | Any | Show current phase, approvals, open tasks |
@@ -110,7 +110,8 @@ Starting-point files for specs, steering docs, and memory files. Used by `spec-i
 /kiro:spec-init "Add feature X"        # create spec workspace
 /kiro:spec-requirements feature-x       # generate requirements (review + approve)
 /kiro:spec-design feature-x             # generate design (review + approve)
-/kiro:spec-tasks feature-x              # generate tasks (review + approve)
+/kiro:spec-tasks feature-x              # generate tasks → Proof review → approve
+/kiro:spec-tasks feature-x --sequential  # same, but tasks strictly ordered (no P markers)
 /kiro:spec-impl feature-x              # implement via TDD
 /kiro:reflect                           # capture session learnings
 ```
