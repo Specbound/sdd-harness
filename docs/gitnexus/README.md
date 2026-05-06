@@ -63,15 +63,22 @@ The integration adds six automatic capabilities and one manual command:
 └─────────────────────────────────────────────────────────────────────────┘
          │                       │
          ▼                       ▼
-┌─ GitNexus MCP ──┐    ┌─ GitNexus Web UI ──┐
-│ query            │    │ gitnexus serve     │
-│ context          │    │ → localhost:4567   │
-│ impact           │    │ → WebGL graph      │
-│ detect_changes   │    │ → symbol browser   │
-│ rename           │    │ → process flows    │
-│ cypher           │    └────────────────────┘
-│ list_repos       │
-└──────────────────┘
+┌─ GitNexus MCP ──────┐    ┌─ GitNexus Web UI ──┐
+│ query               │    │ gitnexus serve     │
+│ context             │    │ → localhost:4567   │
+│ impact              │    │ → WebGL graph      │
+│ detect_changes      │    │ → symbol browser   │
+│ rename              │    │ → process flows    │
+│ cypher              │    └────────────────────┘
+│ list_repos          │
+│ group_list          │
+│ group_sync          │
+│ group_contracts     │
+│ group_query         │
+│ group_status        │
+│ [prompt] detect_impact  │
+│ [prompt] generate_map   │
+└─────────────────────┘
 ```
 
 ### Graceful Degradation
@@ -94,6 +101,7 @@ No harness functionality degrades when GitNexus is absent.
 | `/kiro:gitnexus-setup` | Install GitNexus, index the repo, configure MCP + hooks |
 | `/kiro:gitnexus-explore` | Launch the Web UI to visually browse code connections |
 | `/kiro:gitnexus-impact` | Query blast radius for current changes |
+| `/kiro:gitnexus-wiki` | Generate architecture wiki from the knowledge graph |
 
 ## Automatic Agent Enhancements
 
@@ -220,6 +228,76 @@ gitnexus serve        # starts HTTP server on localhost:4567
 
 ### Browser mode (no backend)
 The Web UI also works standalone — drag-and-drop a ZIP of your repo into the browser UI at the GitNexus web app. Limited to ~5k files in pure browser mode.
+
+## Repository Groups (Multi-Repo Analysis)
+
+GitNexus can extract contracts across multiple repositories and trace cross-repo execution flows — useful when working on microservices, monorepos with sub-packages, or any system where code spans multiple repos.
+
+### Setup a group
+```bash
+gitnexus group create my-services
+gitnexus group add my-services /path/to/api-service api-service
+gitnexus group add my-services /path/to/worker-service worker-service
+```
+
+### Use it
+```bash
+gitnexus group sync my-services         # extract contracts (interfaces, shared symbols)
+gitnexus group contracts my-services    # inspect what was found
+gitnexus group query my-services "payment flow"  # search across all repos
+gitnexus group status my-services       # check index staleness
+```
+
+### MCP tools (available inside Claude)
+| Tool | What it does |
+|---|---|
+| `group_list` | List configured repository groups |
+| `group_sync` | Extract contracts and cross-match across repos |
+| `group_contracts` | Inspect extracted contracts and links |
+| `group_query` | Search execution flows across group repos |
+| `group_status` | Check staleness of repos in a group |
+
+---
+
+## Wiki Generation
+
+Generate architecture documentation from the knowledge graph:
+
+```bash
+gitnexus wiki                          # generate wiki for current repo
+gitnexus wiki /path/to/project         # specify path
+gitnexus wiki --model gpt-4o           # custom LLM
+gitnexus wiki --base-url http://...    # custom API base
+```
+
+Produces markdown docs covering symbols, processes, and execution flows — seeded from the graph rather than written manually. Use `/kiro:gitnexus-wiki` to invoke this from within the harness.
+
+The `generate_map` MCP prompt (usable directly in Claude) generates mermaid architecture diagrams from the knowledge graph without needing to run the CLI.
+
+---
+
+## Skill Generation
+
+The `--skills` flag generates repo-specific skills from the knowledge graph during indexing:
+
+```bash
+gitnexus analyze --skills
+```
+
+GitNexus uses Leiden community detection to identify functional clusters and writes skills for each cluster. These are in addition to skills the harness's own `/kiro:skill-extract-scan` produces.
+
+---
+
+## Maintenance
+
+```bash
+gitnexus status          # show index status
+gitnexus list            # list all indexed repos
+gitnexus clean           # delete current repo's index
+gitnexus clean --all --force  # delete all indexes
+```
+
+---
 
 ## Troubleshooting
 

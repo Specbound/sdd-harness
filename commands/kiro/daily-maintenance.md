@@ -1,13 +1,13 @@
 ---
-description: Nightly harness maintenance — judge, reflect, housekeep, update trust score
+description: Nightly harness maintenance — judge, reflect, housekeep, update trust score, augment skills
 allowed-tools: Read, Write, Edit, Task, Glob, Grep, Bash
 ---
 
 # Kiro Daily Maintenance — Nightly Orchestrator
 
-Wires existing harness commands + the new Judge into one pipeline. Designed to be invoked on a daily schedule via Claude Code [Routines](https://claude.com/blog/introducing-routines-in-claude-code), one Routine per installed project.
+Wires existing harness commands + the Judge into one pipeline. Designed to be invoked on a daily schedule via Claude Code [Routines](https://claude.com/blog/introducing-routines-in-claude-code), one Routine per installed project.
 
-Never edits code or specs. Only touches `.claude/memory/` and appends to observations.
+Never edits code or specs. Touches `.claude/memory/` and `~/.claude/skills/` only — skills are augmented with session learnings, not rewritten.
 
 ## Pre-check
 
@@ -124,6 +124,42 @@ Do not interpret or act on the score. It is observability only — never gates b
 
 ## Step 5 — Surface unresolved memory-gaps
 
+## Step 6 — Augment Skills
+
+Use the Task tool to invoke the Subagent:
+
+```
+Task(
+  subagent_type="skill-augment-agent",
+  description="Encode today's session learnings into relevant SKILL.md files",
+  prompt="""
+Review today's session learnings and augment relevant skills.
+
+Judge verdict from Step 1:
+<paste Judge verdict JSON here, or "no verdict" if Step 1 failed>
+
+Today's date: <today's date>
+
+Focus on:
+1. Skills invoked during today's sessions (grep trace.log and observations for [skill:*] tags)
+2. Judge drains that map to a skill domain (re-explanation → memory skills, gate bypass → verification skills, etc.)
+3. Harness-own skills (superpowers:*, kiro context) referenced in today's observations
+
+Rules:
+- Max 3 skills updated
+- Append-only — never delete existing content
+- Every change must cite a specific observation or drain
+- Each addition ≤ 150 chars
+"""
+)
+```
+
+Log the result. If skill-augment-agent errors, log `[routine-error]: skill-augment-agent failed` and continue. Skill augmentation is best-effort — it must never block trust score or gap detection.
+
+---
+
+
+
 Scan for `[memory-gap]` observations from the last 24h that have no corresponding new memory entry produced by Step 2:
 
 ```bash
@@ -157,6 +193,7 @@ Daily Maintenance complete — YYYY-MM-DD
 - Housekeeping: 0 archived, hot-memory 34/50 lines
 - Trust Score: 42.3% (▼ -1.0 today, 7d: ▲ +3.1)
 - Unresolved memory-gaps: 1 → [routine-alert] appended
+- Skills augmented: 2 (brainstorming: +1 anti-pattern, systematic-debugging: +1 learned pattern)
 ```
 
 ## Notes

@@ -18,8 +18,10 @@ One harness, many projects. Install once, keep every repo in sync.
 - [Steering (Project Knowledge)](#steering-project-knowledge)
 - [Jira Integration](#jira-integration)
 - [Skill Extraction](#skill-extraction)
+- [Prompt Mastery](#prompt-mastery)
 - [AutoResearch (ML Experiments)](#autoresearch-ml-experiments)
 - [GitNexus (Code Intelligence)](#gitnexus-code-intelligence)
+- [Privacy Filter (PII Scanning)](#privacy-filter-pii-scanning)
 - [Context Hub (MCP Integration)](#context-hub-mcp-integration)
 - [Automation & Hooks](#automation--hooks)
 - [Multi-Project Management](#multi-project-management)
@@ -41,6 +43,7 @@ One harness, many projects. Install once, keep every repo in sync.
 | **Skill Extraction** | [arXiv:2603.11808](https://arxiv.org/abs/2603.11808) | Analyze repos and extract reusable `SKILL.md` files for Claude Code |
 | **AutoResearch** | [karpathy/autoresearch](https://github.com/karpathy/autoresearch) | Autonomous ML experiment loop with hypothesis-driven iteration |
 | **GitNexus** | [abhigyanpatwari/GitNexus](https://github.com/abhigyanpatwari/GitNexus) | Knowledge-graph code intelligence with visual explorer, blast radius analysis, and MCP tools |
+| **Privacy Filter** | [openai/privacy-filter](https://github.com/openai/privacy-filter) | Local ML-based PII detection and redaction (8 categories: secrets, emails, phones, addresses, account numbers, and more). Fully on-premises via CLI or Python API |
 | **Context Hub** | [andrewyng/context-hub](https://github.com/andrewyng/context-hub) | MCP server providing curated, LLM-optimized docs for third-party libraries |
 | **Portable Installation** | Custom | Single `install.sh` bootstraps any project; `update.sh` keeps them all in sync |
 
@@ -193,7 +196,8 @@ sdd-harness/
 │
 ├── hooks/                        # Session lifecycle hooks
 │   ├── stop-hook.sh              #   On session exit: check for updates, memory health, agent failure patterns
-│   └── prompt-hook.sh            #   On prompt submit: inject hot-memory context
+│   ├── prompt-hook.sh            #   On prompt submit: inject hot-memory context
+│   └── scan-pii.sh               #   PII scanner: scan staged files or a path with OPF (exits 1 on secrets/account numbers)
 │
 ├── git-hooks/                    # Git lifecycle hooks
 │   └── post-commit               #   On commit: doc sync + harness update detection
@@ -210,7 +214,9 @@ sdd-harness/
     ├── jira/README.md            #   Jira integration setup
     ├── autoresearch/README.md    #   ML experiment loop guide
     ├── gitnexus/README.md        #   Code intelligence + visual explorer guide
+    ├── privacy-filter/README.md  #   PII scanning setup, CLI usage, integration checkpoints
     ├── skill-extraction/README.md#   Skill extraction methodology
+    ├── prompt-master/README.md   #   Prompt engineering skill with JSON prompting
     └── security/                 #   Security integration docs
         └── sonar-hotspot-review.md
 ```
@@ -421,6 +427,53 @@ See [docs/skill-extraction/README.md](docs/skill-extraction/README.md).
 
 ---
 
+## Prompt Mastery
+
+The harness ships with **prompt-master** — a prompt-writing skill (v1.7.0, 7.2k GitHub stars) that generates production-ready prompts for 30+ AI tools. Instead of pattern references or prompting theory, it routes your intent to tool-specific templates and outputs a single paste-ready prompt on the first try.
+
+### JSON Prompting
+
+The skill natively detects and generates **JSON-structured prompts** — the fastest way to eliminate the model's guessing surface:
+
+```
+"Write a tweet about dopamine detox"
+→ The model guesses tone, length, audience, style. Output feels generic.
+```
+
+```json
+{
+  "task": "write a tweet",
+  "topic": "dopamine detox",
+  "tone": "punchy and contrarian",
+  "length": "under 280 characters",
+  "style": "viral"
+}
+→ Zero guessable dimensions. Model executes instead of guessing.
+```
+
+Nested JSON locks structured outputs (threads, reports, multi-section docs):
+
+```json
+{
+  "task": "write a thread",
+  "platform": "twitter",
+  "topic": "founder productivity",
+  "structure": {
+    "hook": "curiosity-driven, under 10 words",
+    "body": "3 insights with examples",
+    "cta": "question that sparks replies"
+  }
+}
+```
+
+If you write your request as a JSON object, the skill maps keys to intent dimensions automatically and skips clarifying questions for covered ones.
+
+**Pre-installed at:** `~/.claude/skills/prompt-master/`
+
+See [docs/prompt-master/README.md](docs/prompt-master/README.md).
+
+---
+
 ## AutoResearch (ML Experiments)
 
 Adapted from [karpathy/autoresearch](https://github.com/karpathy/autoresearch) — Andrej Karpathy's tool for autonomous ML experimentation where an AI agent iterates on training code in a loop, making hypotheses, running experiments, and keeping what works. We adapted this into the harness as slash commands with an interactive setup flow and integration with our memory system so experiment results persist across sessions.
@@ -467,6 +520,36 @@ See [docs/gitnexus/README.md](docs/gitnexus/README.md).
 
 ---
 
+## Privacy Filter (PII Scanning)
+
+Integrates [openai/privacy-filter](https://github.com/openai/privacy-filter) — a 1.5B-parameter (50M active, sparse MoE) bidirectional transformer that detects and redacts PII in text across 8 categories: secrets/API keys, account numbers, emails, phone numbers, names, addresses, dates, and URLs. Runs entirely on-premises; no data leaves your machine. Apache 2.0 licensed.
+
+The integration adds two artifacts:
+
+1. **`privacy-filter` skill** — Guided workflow for installing OPF, scanning files or strings, interpreting findings by severity, and redacting before commits or external sharing
+2. **`.claude/hooks/scan-pii.sh`** — Standalone bash scanner that exits `1` on high-severity findings (`secret`, `account_number`); designed to gate `git commit` as a pre-commit hook
+
+```bash
+# Scan staged files before committing
+bash .claude/hooks/scan-pii.sh --staged
+
+# Scan a specific file or directory
+bash .claude/hooks/scan-pii.sh path/to/file.txt
+
+# Ad-hoc from CLI
+opf "my token is sk-proj-abc123" --format json
+```
+
+Wire as a git pre-commit hook to block commits with exposed secrets:
+```bash
+echo 'bash "$(git rev-parse --show-toplevel)/.claude/hooks/scan-pii.sh" --staged' \
+  >> .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit
+```
+
+See [docs/privacy-filter/README.md](docs/privacy-filter/README.md).
+
+---
+
 ## Context Hub (MCP Integration)
 
 Integrates [andrewyng/context-hub](https://github.com/andrewyng/context-hub) — Andrew Ng's MCP server that provides curated, LLM-optimized documentation for third-party libraries and APIs (OpenAI, Stripe, Anthropic, etc.). Instead of Claude hallucinating API signatures or working from stale training data, Context Hub serves up-to-date, verified documentation on demand.
@@ -503,6 +586,16 @@ Control automation intensity via `SDD_PROFILE` environment variable:
 | `strict` | Active | Active | Production-bound code, release prep |
 
 Set with: `export SDD_PROFILE=minimal` (defaults to `standard` if unset).
+
+### PII Scanner (`hooks/scan-pii.sh`)
+
+Runs OPF on a set of files and exits non-zero if high-severity PII is found. Designed for manual use or as a git pre-commit hook:
+
+- `--staged` — scan only git-staged files (use in pre-commit)
+- `<path>` — scan a file or directory (text-like files: `.md`, `.json`, `.log`, `.py`, `.ts`, `.sh`, etc.)
+- Exits `0` for clean or low-severity-only findings, `1` for `secret`/`account_number`, `2` if OPF is not installed (soft-fail to not break CI without OPF)
+
+Requires OPF: `pip install opf`.
 
 ### Git Post-Commit Hook (`git-hooks/post-commit`)
 
@@ -557,7 +650,9 @@ git push -u origin main
 | [Jira Integration](docs/jira/README.md) | Jira setup, credentials, and troubleshooting |
 | [AutoResearch](docs/autoresearch/README.md) | ML experiment loop methodology |
 | [GitNexus](docs/gitnexus/README.md) | Code intelligence, visual explorer, and blast radius analysis |
+| [Privacy Filter](docs/privacy-filter/README.md) | PII scanning setup, CLI usage, integration checkpoints, and troubleshooting |
 | [Skill Extraction](docs/skill-extraction/README.md) | Skill extraction pipeline and scoring |
+| [Prompt Master](docs/prompt-master/README.md) | Prompt engineering skill with JSON prompting, 30+ tool profiles, 14 templates |
 | [Sonar Integration](docs/security/sonar-hotspot-review.md) | SonarQube security hotspot review |
 
 ---
@@ -586,6 +681,8 @@ git push -u origin main
 | [uv](https://docs.astral.sh/uv/) | Astral | Fast Python package manager. Required runtime for autoresearch experiments and Python project tooling. |
 | [Jira REST API v2](https://developer.atlassian.com/cloud/jira/platform/rest/v2/) | Atlassian | Ticket fetching, comment posting, JQL search. Custom Python client in `scripts/` (stdlib only, no pip deps). |
 | [SonarQube](https://www.sonarsource.com/products/sonarqube/) | SonarSource | Security hotspot review integration via the `sonar-hotspot-review` skill. |
+| [OpenAI Privacy Filter](https://github.com/openai/privacy-filter) | GitHub | Local ML-based PII detection (1.5B param, 50M active). Identifies 8 categories including secrets, emails, account numbers, addresses. Fully on-premises via CLI (`opf`) or Python API. Apache 2.0. |
+| [prompt-master](https://github.com/nidhinjs/prompt-master) | GitHub (nidhinjs) | Active prompt factory for 30+ AI tools. Adapted with JSON prompting mode (Template N), JSON intent detection, and pattern 38. Pre-installed at `~/.claude/skills/prompt-master/`. |
 
 **Runtime**: Claude Code (CLI)
 **Scripts**: Python 3 (standard library only)

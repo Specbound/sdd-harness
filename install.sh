@@ -51,8 +51,10 @@ cp -r "$HARNESS_DIR/agents/"   "$PROJECT_DIR/.claude/"
 cp -r "$HARNESS_DIR/kiro/"     "$PROJECT_DIR/.claude/"
 cp -r "$HARNESS_DIR/scripts/"  "$PROJECT_DIR/.claude/"
 cp    "$HARNESS_DIR/hooks/stop-hook.sh" "$PROJECT_DIR/.claude/hooks/"
+cp    "$HARNESS_DIR/hooks/session-start-hook.sh" "$PROJECT_DIR/.claude/hooks/"
 cp    "$HARNESS_DIR/hooks/pre-tool-use-gitnexus.sh" "$PROJECT_DIR/.claude/hooks/"
 chmod +x "$PROJECT_DIR/.claude/hooks/stop-hook.sh"
+chmod +x "$PROJECT_DIR/.claude/hooks/session-start-hook.sh"
 chmod +x "$PROJECT_DIR/.claude/hooks/pre-tool-use-gitnexus.sh"
 
 # --- Set up git post-commit hook ---

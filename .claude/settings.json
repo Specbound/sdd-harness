@@ -35,16 +35,29 @@
       "Bash(pwd ls *)",
       "Bash(bash -n /home/dalesser/.claude/sdd-harness/hooks/stop-hook.sh)",
       "Bash(bash -n /home/dalesser/.claude/sdd-harness/install.sh)",
-      "Bash(bash -n /home/dalesser/.claude/sdd-harness/update.sh)"
+      "Bash(bash -n /home/dalesser/.claude/sdd-harness/update.sh)",
+      "Bash(mkdir -p /home/dalesser/.claude/skills/skill-extraction/resources)",
+      "Edit(~/.claude/skills/skill-extraction/**)"
     ],
     "additionalDirectories": [
       "/home/dalesser/.claude/sdd-harness",
       "/home/dalesser/.claude/sdd-harness/docs",
       "/home/dalesser/.claude/sdd-harness/docs/security",
-      "/tmp"
+      "/tmp",
+      "/home/dalesser/.claude/skills/skill-extraction"
     ]
   },
   "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/bash /home/dalesser/.claude/sdd-harness/.claude/hooks/session-start-hook.sh"
+          }
+        ]
+      }
+    ],
     "Stop": [
       {
         "hooks": [
