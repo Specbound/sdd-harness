@@ -175,7 +175,8 @@ sdd-harness/
 │   ├── ci-scaffold-agent.md      #   CI config generation (Haiku)
 │   ├── autoresearch-agent.md     #   ML experiment loop agent
 │   ├── autoresearch-init-agent.md#   ML research setup agent
-│   └── gitnexus-setup-agent.md   #   GitNexus installation and configuration agent
+│   ├── gitnexus-setup-agent.md   #   GitNexus installation and configuration agent
+│   └── skill-augment-agent.md    #   Post-maintenance skill improvement agent
 │
 ├── kiro/settings/                # Spec engine configuration
 │   ├── rules/                    #   25 rule files (EARS syntax, design principles,
@@ -195,7 +196,8 @@ sdd-harness/
 │   └── jira_push_comment.py      #   Post implementation summary to Jira
 │
 ├── hooks/                        # Session lifecycle hooks
-│   ├── stop-hook.sh              #   On session exit: check for updates, memory health, agent failure patterns
+│   ├── session-start-hook.sh     #   On session start: check if daily maintenance pending, inject auto-trigger
+│   ├── stop-hook.sh              #   On session exit: check for updates, memory health, re-explanation detection, agent failure patterns
 │   ├── prompt-hook.sh            #   On prompt submit: inject hot-memory context
 │   └── scan-pii.sh               #   PII scanner: scan staged files or a path with OPF (exits 1 on secrets/account numbers)
 │
@@ -339,6 +341,7 @@ Each command delegates to one or more autonomous subagents. Agents receive a pro
 - **`harness-validate-agent`** — Checks structural integrity: command→agent references, template existence, memory caps, L0 headers, generates component index
 - **`gitnexus-setup-agent`** — Installs GitNexus, indexes the repo, configures MCP server and editor integration
 - **`jira-solve-agent`** — Analyzes ticket type and routes to the appropriate workflow
+- **`skill-augment-agent`** — After each daily-maintenance run, reviews session observations and judge drains, encodes up to 3 evidence-backed improvements into relevant `SKILL.md` files (append-only, ≤150 chars each). Logs changes as `[skill-update]` observations.
 
 ---
 
@@ -562,6 +565,10 @@ See the Context Hub section in [docs/SDD-SETUP-GUIDE.md](docs/SDD-SETUP-GUIDE.md
 
 ## Automation & Hooks
 
+### Session Start Hook (`hooks/session-start-hook.sh`)
+
+Runs when a Claude Code session starts (SessionStart). Checks if today's `[judge]` sentinel is absent from `observations.md`; if so, asks Claude to run `/kiro:daily-maintenance` before responding.
+
 ### Context Priming Hook (`hooks/prompt-hook.sh`)
 
 Runs before every user prompt (UserPromptSubmit). Injects the contents of `hot-memory.md` into context so the agent always has current priorities, active specs, and recent decisions.
@@ -571,6 +578,7 @@ Runs before every user prompt (UserPromptSubmit). Injects the contents of `hot-m
 Runs when a Claude Code session ends. Checks for:
 - Harness updates available (prompts to run `update.sh`)
 - Memory health (warns if observations exceed cap)
+- Re-explanation detection (scans transcript via `scripts/detect_reexplanation.py`; appends a `[memory-gap]` observation if the user had to re-explain context)
 - Agent failure patterns (3+ consecutive failures for the same agent in `trace.log` — suggests running `/kiro:evolve`)
 
 Respects the `SDD_PROFILE` environment variable — skipped entirely when profile is `minimal`.

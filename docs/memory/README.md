@@ -71,7 +71,7 @@ Append-only session log. Each entry tagged with category.
 - 2026-03-29 [decision]: switched from REST to GraphQL for the dashboard endpoint — reduces frontend round-trips
 ```
 
-**Tags**: `spec`, `impl`, `design`, `debug`, `decision`, `friction`, `insight`, `pattern`, `enforceable`, `escaped`
+**Tags**: `spec`, `impl`, `design`, `debug`, `decision`, `friction`, `insight`, `pattern`, `enforceable`, `escaped`, `skill-update`
 
 - `enforceable` — Convention violation that could be prevented by a linter rule (feeds the evolve agent's graduation pipeline)
 - `escaped` — Bug that passed validation but was caught later in CI/production (highest priority for graduation)

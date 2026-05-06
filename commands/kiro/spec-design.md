@@ -48,17 +48,23 @@ Language: respect spec.json language for design.md/research.md outputs
 
 ## Display Result
 
-Show Subagent summary to user, then provide next step guidance:
+Show Subagent summary to user briefly (2-3 lines max).
 
-### Next Phase: Task Generation
+## Review & Approve via Proof
 
-**If Design Approved**:
-- Review generated design at `specs/$1/design.md`
-- **Optional**: Run `/kiro:validate-design $1` for interactive quality review
-- Then `/kiro:spec-tasks $1 -y` to generate implementation tasks
+After the subagent completes:
 
-**If Modifications Needed**:
-- Provide feedback and re-run `/kiro:spec-design $1`
-- Existing design used as reference (merge mode)
+1. Invoke the `proof-collaborative-review` skill with:
+   - File: `specs/$1/design.md`
+   - Title: "$1 — Design Review"
 
-**Note**: Design approval is mandatory before proceeding to task generation.
+2. The skill starts the Proof server (installing once if needed), publishes the design document, and presents a review URL. Wait for the user to finish reviewing and signal done.
+
+3. After the Proof review completes, the skill returns the final markdown. Write it back to `specs/$1/design.md`.
+
+4. Update `specs/$1/spec.json`:
+   - Set `approvals.design.approved: true`
+   - Update `updated_at` to current timestamp
+
+5. Confirm to user:
+   > ✅ Design approved. Optionally run `/kiro:validate-design $1` for quality review. Then run `/kiro:spec-tasks $1` to generate implementation tasks.

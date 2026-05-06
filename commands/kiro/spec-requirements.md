@@ -44,19 +44,23 @@ Mode: generate
 
 ## Display Result
 
-Show Subagent summary to user, then provide next step guidance:
+Show Subagent summary to user briefly (2-3 lines max).
 
-### Next Phase: Design Generation
+## Review & Approve via Proof
 
-**If Requirements Approved**:
-- Review generated requirements at `specs/$1/requirements.md`
-- **Optional Gap Analysis** (for existing codebases):
-  - Run `/kiro:validate-gap $1` to analyze implementation gap with current code
-  - Identifies existing components, integration points, and implementation strategy
-  - Recommended for brownfield projects; skip for greenfield
-- Then `/kiro:spec-design $1 [-y]` to proceed to design phase
+After the subagent completes:
 
-**If Modifications Needed**:
-- Provide feedback and re-run `/kiro:spec-requirements $1`
+1. Invoke the `proof-collaborative-review` skill with:
+   - File: `specs/$1/requirements.md`
+   - Title: "$1 — Requirements Review"
 
-**Note**: Approval is mandatory before proceeding to design phase.
+2. The skill starts the Proof server (installing once if needed), publishes the requirements document, and presents a review URL. Wait for the user to finish reviewing and signal done.
+
+3. After the Proof review completes, the skill returns the final markdown. Write it back to `specs/$1/requirements.md`.
+
+4. Update `specs/$1/spec.json`:
+   - Set `approvals.requirements.approved: true`
+   - Update `updated_at` to current timestamp
+
+5. Confirm to user:
+   > ✅ Requirements approved. Optionally run `/kiro:validate-gap $1` (brownfield projects) before proceeding. Then run `/kiro:spec-design $1` to generate the design.

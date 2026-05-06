@@ -2,7 +2,7 @@
 
 > This file is managed by the SDD harness (`sdd-harness/docs/`).
 > It is the single source of truth — do not edit copies in individual projects.
-> _Last synced: 2026-03-30_
+> _Last synced: 2026-05-06_
 
 A complete, self-contained guide to setting up the Spec-Driven Development (SDD)
 harness used in this project. Follow these steps to replicate the setup in any
@@ -187,6 +187,11 @@ Create `.claude/settings.json`:
         ]
       }
     ],
+    "SessionStart": [
+      {
+        "hooks": [{ "type": "command", "command": "/bin/bash /path/to/.claude/hooks/session-start-hook.sh" }]
+      }
+    ],
     "Stop": [
       {
         "hooks": [
@@ -218,6 +223,7 @@ The stop hook runs lightweight checks at the end of every Claude session:
 1. **Harness update check** — if the harness has new commits since last install, prints a nudge to run `update.sh`.
 2. **Memory health check** — if `.claude/memory/observations.md` has >50 entries, prints a nudge to run `/kiro:housekeeping`.
 3. **Agent failure pattern detection** — if `.claude/memory/trace.log` shows 3+ consecutive failures for the same agent, prints a nudge to run `/kiro:evolve` to investigate friction patterns.
+4. **Re-explanation detection** — runs `scripts/detect_reexplanation.py` against the session transcript; if the user re-explained context today, appends a `[memory-gap]` observation.
 
 Doc sync and harness updates are **not** triggered here — they fire from the git post-commit hook (Step 8) instead.
 
@@ -339,7 +345,7 @@ Then seed `hot-memory.md` and `entities.md` with your project's current state.
 Conventions are defined in `.claude/kiro/settings/rules/memory-conventions.md`:
 
 - **Observations**: `- YYYY-MM-DD [tags]: text` (append-only, max 5 per reflect)
-- **Tags**: `spec`, `impl`, `design`, `debug`, `decision`, `friction`, `insight`, `pattern`, `enforceable`, `escaped`
+- **Tags**: `spec`, `impl`, `design`, `debug`, `decision`, `friction`, `insight`, `pattern`, `enforceable`, `escaped`, `skill-update`
 - **Action items**: `- [ ] task | due:YYYY-MM-DD | pri:high/medium/low | added:YYYY-MM-DD`
 - **Entities**: 3-line max per entry
 - **L0 headers**: Every memory file starts with `<!-- L0: summary (max 80 chars) -->`
@@ -433,9 +439,10 @@ Conventions are defined in `.claude/kiro/settings/rules/memory-conventions.md`:
 | PostToolUse (Jira comment) | Every `git push` Bash command | Posts Jira comment with branch/commits/docs summary if a `jira-solve` session is active |
 | UserPromptSubmit (Jira capture) | Every user prompt | Captures ticket ID from `/kiro:jira-solve TICKET-ID` prompts, writes to `~/.claude/state/active_jira_ticket` |
 | UserPromptSubmit (context priming) | Every user prompt | Injects hot-memory.md contents for session context |
+| SessionStart (maintenance check) | Every Claude session start | Checks if today's `[judge]` sentinel is absent from `observations.md`; if so, asks Claude to run `/kiro:daily-maintenance` before responding |
 | Stop (memory health) | Every Claude session end | Nudges `/kiro:housekeeping` if observations >50; nudges `/kiro:evolve` if agent failure patterns detected |
 | Stop (re-explanation detector) | Every Claude session end | Scans session transcript via `scripts/detect_reexplanation.py`; appends a `[memory-gap]` observation if the user had to re-explain context (once per day) |
-| Routine (daily maintenance) | Nightly per repo via Claude Code `/schedule` | Runs `/kiro:daily-maintenance` — Judge → Reflect → Housekeeping → Trust Score update. Registered automatically by `install.sh` / `update.sh`. Opt out with `SDD_SKIP_ROUTINE=1`. See `SDD-USAGE.md` → "Daily Maintenance". |
+| Routine (daily maintenance) | Nightly per repo via Claude Code `/schedule` | Runs `/kiro:daily-maintenance` — Judge → Reflect → Housekeeping → Trust Score → Augment Skills. Registered automatically by `install.sh` / `update.sh`. Opt out with `SDD_SKIP_ROUTINE=1`. See `SDD-USAGE.md` → "Daily Maintenance". |
 | post-commit (doc sync) | Every `git commit` with non-`.md` source changes | Doc-sync: updates all `.md` files referencing changed code via `claude --print` (background) |
 | post-commit (harness updater) | Every `git commit` with `.claude/` changes (excl. memory) | Updates `SDD-SETUP-GUIDE.md` via `claude --print` (background) |
 

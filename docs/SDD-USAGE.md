@@ -338,7 +338,7 @@ The rule is added to the appropriate agent file or rule file and distributed via
 
 ### `/kiro:daily-maintenance` — Nightly orchestrator
 
-Runs the full maintenance cycle end-to-end: **Judge → Reflect → Housekeeping → Trust Score update**. Designed to run on a schedule via Claude Code [Routines](https://claude.com/blog/introducing-routines-in-claude-code), one Routine per installed project — `install.sh` and `update.sh` register this automatically.
+Runs the full maintenance cycle end-to-end: **Judge → Reflect → Housekeeping → Trust Score → Augment Skills**. Designed to run on a schedule via Claude Code [Routines](https://claude.com/blog/introducing-routines-in-claude-code), one Routine per installed project — `install.sh` and `update.sh` register this automatically.
 
 ```
 /kiro:daily-maintenance
@@ -351,6 +351,7 @@ Pipeline:
 3. **`/kiro:housekeeping`** — prunes/archives observations, enforces memory caps.
 4. **Trust Score update** — `scripts/trust_score.py` applies the Judge's `score_delta`, clamps it, rewrites the `## Harness Trust Score:` line at the top of `hot-memory.md`, appends to `.claude/memory/trust-score.jsonl`.
 5. **Memory-gap alert** — if any `[memory-gap]` observations remain unresolved after reflection, appends a `[routine-alert]` observation so the user sees it next session.
+6. **Skill augmentation** — `skill-augment-agent` reviews today's observations and judge drains, encodes up to 3 evidence-backed improvements into relevant `SKILL.md` files (append-only, ≤150 chars each). Logs each change as a `[skill-update]` observation.
 
 Idempotent per calendar day (uses today's `[judge]` observation as the sentinel). Each step is error-isolated: a bad Judge pass does not block housekeeping.
 

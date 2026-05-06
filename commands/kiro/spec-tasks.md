@@ -54,22 +54,23 @@ Instruction highlights:
 
 ## Display Result
 
-Show Subagent summary to user, then provide next step guidance:
+Show Subagent summary to user briefly (2-3 lines max).
 
-### Next Phase: Implementation
+## Review & Approve via Proof
 
-**Before Starting Implementation**:
-- **IMPORTANT**: Clear conversation history and free up context before running `/kiro:spec-impl`
-- This applies when starting first task OR switching between tasks
-- Fresh context ensures clean state and proper task focus
+After the subagent completes:
 
-**If Tasks Approved**:
-- Execute specific task: `/kiro:spec-impl $1 1.1` (recommended: clear context between each task)
-- Execute multiple tasks: `/kiro:spec-impl $1 1.1,1.2` (use cautiously, clear context between tasks)
-- Without arguments: `/kiro:spec-impl $1` (executes all pending tasks - NOT recommended due to context bloat)
+1. Invoke the `proof-collaborative-review` skill with:
+   - File: `specs/$1/tasks.md`
+   - Title: "$1 — Tasks Review"
 
-**If Modifications Needed**:
-- Provide feedback and re-run `/kiro:spec-tasks $1`
-- Existing tasks used as reference (merge mode)
+2. The skill starts the Proof server (installing once if needed), publishes the task list, and presents a review URL. Wait for the user to finish reviewing and signal done.
 
-**Note**: The implementation phase will guide you through executing tasks with appropriate context and validation.
+3. After the Proof review completes, the skill returns the final markdown. Write it back to `specs/$1/tasks.md`.
+
+4. Update `specs/$1/spec.json`:
+   - Set `approvals.tasks.approved: true`
+   - Update `updated_at` to current timestamp
+
+5. Confirm to user:
+   > ✅ Tasks approved. **Important**: clear conversation context before implementation. Then run `/kiro:spec-impl $1 1.1` to start the first task (clear context between each task for clean state).

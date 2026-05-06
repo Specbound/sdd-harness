@@ -37,7 +37,8 @@
       "Bash(bash -n /home/dalesser/.claude/sdd-harness/install.sh)",
       "Bash(bash -n /home/dalesser/.claude/sdd-harness/update.sh)",
       "Bash(mkdir -p /home/dalesser/.claude/skills/skill-extraction/resources)",
-      "Edit(~/.claude/skills/skill-extraction/**)"
+      "Edit(~/.claude/skills/skill-extraction/**)",
+      "Edit(/home/dalesser/.claude/sdd-harness/**)"
     ],
     "additionalDirectories": [
       "/home/dalesser/.claude/sdd-harness",
