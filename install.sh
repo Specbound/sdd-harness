@@ -50,12 +50,14 @@ cp -r "$HARNESS_DIR/commands/" "$PROJECT_DIR/.claude/"
 cp -r "$HARNESS_DIR/agents/"   "$PROJECT_DIR/.claude/"
 cp -r "$HARNESS_DIR/kiro/"     "$PROJECT_DIR/.claude/"
 cp -r "$HARNESS_DIR/scripts/"  "$PROJECT_DIR/.claude/"
-cp    "$HARNESS_DIR/hooks/stop-hook.sh" "$PROJECT_DIR/.claude/hooks/"
-cp    "$HARNESS_DIR/hooks/session-start-hook.sh" "$PROJECT_DIR/.claude/hooks/"
+cp    "$HARNESS_DIR/hooks/stop-hook.sh"              "$PROJECT_DIR/.claude/hooks/"
+cp    "$HARNESS_DIR/hooks/session-start-hook.sh"    "$PROJECT_DIR/.claude/hooks/"
 cp    "$HARNESS_DIR/hooks/pre-tool-use-gitnexus.sh" "$PROJECT_DIR/.claude/hooks/"
+cp    "$HARNESS_DIR/hooks/revert-detect-hook.sh"    "$PROJECT_DIR/.claude/hooks/"
 chmod +x "$PROJECT_DIR/.claude/hooks/stop-hook.sh"
 chmod +x "$PROJECT_DIR/.claude/hooks/session-start-hook.sh"
 chmod +x "$PROJECT_DIR/.claude/hooks/pre-tool-use-gitnexus.sh"
+chmod +x "$PROJECT_DIR/.claude/hooks/revert-detect-hook.sh"
 
 # --- Set up git post-commit hook ---
 cp "$HARNESS_DIR/git-hooks/post-commit" "$PROJECT_DIR/.git/hooks/"
@@ -145,25 +147,21 @@ if [ "$WITH_GITNEXUS" = true ]; then
   fi
 fi
 
-# --- Register daily-maintenance Routine (opt-out via SDD_SKIP_ROUTINE=1) ---
+# --- Remind user to register daily-maintenance Routine ---
+PROJECT_NAME="$(basename "$PROJECT_DIR")"
 if [ "${SDD_SKIP_ROUTINE:-0}" != "1" ]; then
-  PROJECT_NAME="$(basename "$PROJECT_DIR")"
-  if command -v claude >/dev/null 2>&1; then
-    if ! claude /schedule list 2>/dev/null | grep -q "daily-maintenance.*$PROJECT_NAME"; then
-      echo "  Registering nightly /kiro:daily-maintenance Routine for $PROJECT_NAME..."
-      claude /schedule nightly "Run /kiro:daily-maintenance for $PROJECT_NAME" \
-        >/dev/null 2>&1 \
-        && echo "  Routine registered." \
-        || echo "  NOTE: /schedule command unavailable or failed — register manually:"
-    else
-      echo "  Routine already registered."
-    fi
-  else
-    echo "  NOTE: 'claude' CLI not found — to enable nightly maintenance, run inside Claude Code:"
-    echo "    /schedule nightly \"Run /kiro:daily-maintenance for $PROJECT_NAME\""
-  fi
-else
-  echo "  SDD_SKIP_ROUTINE=1 — skipping Routine registration for $PROJECT_NAME."
+  echo ""
+  echo "  ┌─ Nightly Maintenance Routine ──────────────────────────────────────────┐"
+  echo "  │ Open Claude Code in this repo, then run:                              │"
+  echo "  │                                                                        │"
+  echo "  │   /kiro:setup-routine                                                 │"
+  echo "  │                                                                        │"
+  echo "  │ This registers a nightly /kiro:daily-maintenance Claude Routine that   │"
+  echo "  │ runs in Anthropic's cloud at 11pm (Israel/UTC+3) every night,         │"
+  echo "  │ whether or not your laptop is open.                                   │"
+  echo "  │                                                                        │"
+  echo "  │ Skip permanently with: SDD_SKIP_ROUTINE=1 bash install.sh             │"
+  echo "  └────────────────────────────────────────────────────────────────────────┘"
 fi
 
 echo ""
@@ -173,6 +171,7 @@ echo "Next steps:"
 echo "  1. Add to .gitignore: .claude/ specs/ CLAUDE.md (keep .claude/settings.local.json)"
 echo "  2. Customize CLAUDE.md with your project name and context"
 echo "  3. Run /kiro:steering to bootstrap project memory"
+echo "  4. Run /kiro:setup-routine to register the nightly maintenance routine"
 if [ "$WITH_GITNEXUS" = false ]; then
   echo ""
   echo "Optional: Run with --with-gitnexus to add code intelligence integration."

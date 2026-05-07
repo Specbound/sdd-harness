@@ -479,6 +479,44 @@ See `docs/gitnexus/README.md` for full details.
 
 ---
 
+## Frontend Design Quality (Impeccable)
+
+### `/impeccable-audit` — Visual design audit for UI components
+Audits frontend code across 7 domains: typography, color & contrast, spatial design, motion, interaction, responsive, and UX writing. Applies Impeccable's 27 deterministic anti-pattern rules + 12 LLM critique rules. Returns a PASS / NEEDS WORK / BLOCK verdict.
+
+```
+/impeccable-audit                            # full audit of current component
+/impeccable-audit UserCard                   # audit a named component
+/impeccable-audit focus: motion              # deep-dive on motion/animation only
+/impeccable-audit focus: accessibility       # accessibility + interaction states
+```
+
+Use before committing UI work, or when a component "looks AI-generated."
+
+### Auto-scan hook (PostToolUse)
+If `impeccable` is installed globally, every Write/Edit to a frontend file (`.tsx`, `.jsx`, `.css`, `.vue`, `.svelte`, `.html`) is automatically scanned and violations are surfaced inline. No extra commands needed.
+
+```bash
+# One-time setup
+npm install -g impeccable
+```
+
+### Key anti-patterns flagged
+
+| Pattern | Code signature |
+|---|---|
+| Gradient text | `background-clip: text` |
+| Glassmorphism | `backdrop-filter: blur()` |
+| Colored left border | `border-left: 4px solid var(--accent)` |
+| Pure white background | `background: #ffffff` |
+| Identical card grid | 3-col, same height, same padding |
+| Stale easing | `ease-in`, `ease-out` |
+| Missing focus state | No `:focus-visible` styles |
+
+See `docs/design/impeccable/impeccable.md` for the full rule set.
+
+---
+
 ## Typical Workflow
 
 ```

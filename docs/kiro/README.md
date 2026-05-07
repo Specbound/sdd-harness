@@ -89,6 +89,7 @@ Rules control agent behavior:
 - `anti-rationalization.md` — Phase-specific rationalization tables with factual counterarguments
 - `red-flags.md` — Observable violation indicators by workflow phase (STOP/WARN/NOTE severity)
 - `context-engineering.md` — 5-level information hierarchy, context budget guidance, and ACON-based priority ordering for token reduction under context pressure
+- `agent-swarm-topologies.md` — 4 coordination topologies (hierarchical/mesh/ring/star) with decision logic, model-tier integration, and anti-patterns. Applied automatically when orchestrating multi-agent tasks. Source: Ruflo.
 
 ### Templates (`kiro/settings/templates/`)
 
@@ -108,8 +109,8 @@ Starting-point files for specs, steering docs, and memory files. Used by `spec-i
 ```
 /kiro:steering                          # once per project
 /kiro:spec-init "Add feature X"        # create spec workspace
-/kiro:spec-requirements feature-x       # generate requirements (review + approve)
-/kiro:spec-design feature-x             # generate design (review + approve)
+/kiro:spec-requirements feature-x       # generate requirements → Proof review → approve
+/kiro:spec-design feature-x             # generate design → Proof review → approve
 /kiro:spec-tasks feature-x              # generate tasks → Proof review → approve
 /kiro:spec-tasks feature-x --sequential  # same, but tasks strictly ordered (no P markers)
 /kiro:spec-impl feature-x              # implement via TDD

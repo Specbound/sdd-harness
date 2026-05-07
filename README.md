@@ -22,7 +22,9 @@ One harness, many projects. Install once, keep every repo in sync.
 - [AutoResearch (ML Experiments)](#autoresearch-ml-experiments)
 - [GitNexus (Code Intelligence)](#gitnexus-code-intelligence)
 - [Privacy Filter (PII Scanning)](#privacy-filter-pii-scanning)
+- [Impeccable (Frontend Design Quality)](#impeccable-frontend-design-quality)
 - [Context Hub (MCP Integration)](#context-hub-mcp-integration)
+- [ztk (Token Compression)](#ztk-token-compression)
 - [Automation & Hooks](#automation--hooks)
 - [Multi-Project Management](#multi-project-management)
 - [Documentation Index](#documentation-index)
@@ -44,7 +46,9 @@ One harness, many projects. Install once, keep every repo in sync.
 | **AutoResearch** | [karpathy/autoresearch](https://github.com/karpathy/autoresearch) | Autonomous ML experiment loop with hypothesis-driven iteration |
 | **GitNexus** | [abhigyanpatwari/GitNexus](https://github.com/abhigyanpatwari/GitNexus) | Knowledge-graph code intelligence with visual explorer, blast radius analysis, and MCP tools |
 | **Privacy Filter** | [openai/privacy-filter](https://github.com/openai/privacy-filter) | Local ML-based PII detection and redaction (8 categories: secrets, emails, phones, addresses, account numbers, and more). Fully on-premises via CLI or Python API |
+| **Impeccable** | [pbakaus/impeccable](https://github.com/pbakaus/impeccable) | 27 deterministic anti-pattern rules + 7-domain visual design quality system. Catches AI design fingerprints in frontend code (gradient text, glassmorphism, nested cards, contrast failures). PostToolUse hook + on-demand skill |
 | **Context Hub** | [andrewyng/context-hub](https://github.com/andrewyng/context-hub) | MCP server providing curated, LLM-optimized docs for third-party libraries |
+| **ztk** | [codejunkie99/ztk](https://github.com/codejunkie99/ztk) | Global PreToolUse proxy that compresses Bash command output before it enters the context window — 78–90%+ token reduction on git, tests, file ops, and more. Automatic, zero per-project setup |
 | **Portable Installation** | Custom | Single `install.sh` bootstraps any project; `update.sh` keeps them all in sync |
 
 ---
@@ -179,11 +183,12 @@ sdd-harness/
 │   └── skill-augment-agent.md    #   Post-maintenance skill improvement agent
 │
 ├── kiro/settings/                # Spec engine configuration
-│   ├── rules/                    #   25 rule files (EARS syntax, design principles,
+│   ├── rules/                    #   26 rule files (EARS syntax, design principles,
 │   │   │                         #   task generation, gap analysis, memory conventions,
 │   │   │                         #   agent tracing, quality gates, loop safety, hook
 │   │   │                         #   profiles, model tiering, anti-rationalization,
-│   │   │                         #   red flags, context engineering, etc.)
+│   │   │                         #   red flags, context engineering, agent swarm
+│   │   │                         #   topologies, etc.)
 │   └── templates/                #   16 templates across 4 categories:
 │       ├── specs/                #     Spec phase templates (init, requirements, design, tasks)
 │       ├── steering/             #     Project knowledge templates (product, tech, structure)
@@ -199,6 +204,7 @@ sdd-harness/
 │   ├── session-start-hook.sh     #   On session start: check if daily maintenance pending, inject auto-trigger
 │   ├── stop-hook.sh              #   On session exit: check for updates, memory health, re-explanation detection, agent failure patterns
 │   ├── prompt-hook.sh            #   On prompt submit: inject hot-memory context
+│   ├── pre-tool-use-gitnexus.sh  #   On file read/edit: enrich with GitNexus symbol graph context (callers, deps, processes)
 │   └── scan-pii.sh               #   PII scanner: scan staged files or a path with OPF (exits 1 on secrets/account numbers)
 │
 ├── git-hooks/                    # Git lifecycle hooks
@@ -216,9 +222,14 @@ sdd-harness/
     ├── jira/README.md            #   Jira integration setup
     ├── autoresearch/README.md    #   ML experiment loop guide
     ├── gitnexus/README.md        #   Code intelligence + visual explorer guide
+    ├── ztk/README.md             #   Token compression proxy — filters, patches, upgrading
     ├── privacy-filter/README.md  #   PII scanning setup, CLI usage, integration checkpoints
     ├── skill-extraction/README.md#   Skill extraction methodology
     ├── prompt-master/README.md   #   Prompt engineering skill with JSON prompting
+    ├── design/                   #   Visual design quality integrations
+    │   ├── README.md             #     Design quality index + workflow overview
+    │   └── impeccable/           #     Impeccable anti-pattern detection
+    │       └── impeccable.md     #       Rules reference, skill usage, CLI setup
     └── security/                 #   Security integration docs
         └── sonar-hotspot-review.md
 ```
@@ -555,6 +566,32 @@ See [docs/privacy-filter/README.md](docs/privacy-filter/README.md).
 
 ---
 
+## Impeccable (Frontend Design Quality)
+
+Integrates [pbakaus/impeccable](https://github.com/pbakaus/impeccable) (25.6k ⭐) — a design quality system built to counter the visual and functional flaws AI coding assistants routinely produce. It provides 27 deterministic anti-pattern rules + 12 LLM critique rules across 7 design domains (typography, color, spatial, motion, interaction, responsive, UX writing).
+
+The integration adds three artifacts:
+
+1. **`impeccable-audit` skill** — Full 7-domain visual audit with PASS/NEEDS WORK/BLOCK verdict. Catches gradient text, glassmorphism, nested cards, contrast failures, stale easing curves, missing focus states, and more
+2. **`kiro/settings/rules/frontend-anti-patterns.md`** — Deterministic enforcement rules referenced by `/kiro:validate-design` and the adversarial agent when reviewing UI components
+3. **`.claude/hooks/impeccable-detect-hook.sh`** — PostToolUse hook that auto-scans `.tsx`, `.jsx`, `.css`, `.vue`, `.svelte`, `.html` files after every Write/Edit
+
+```bash
+# One-time CLI setup (enables the auto-scan hook)
+npm install -g impeccable
+
+# On-demand audit
+/impeccable-audit [component name or "focus: motion"]
+```
+
+The hook exits silently if the CLI is not installed — nothing blocks. Once installed, violations surface immediately after writing frontend files, before the next action.
+
+Key anti-patterns caught: `background-clip: text` gradient text, `backdrop-filter` glassmorphism, colored left borders, identical card grids, nested cards, pure white backgrounds (`#ffffff`), gray text on colored backgrounds, `ease-in`/`ease-out` easing, missing `:focus-visible` states.
+
+See [docs/design/impeccable/impeccable.md](docs/design/impeccable/impeccable.md).
+
+---
+
 ## Context Hub (MCP Integration)
 
 Integrates [andrewyng/context-hub](https://github.com/andrewyng/context-hub) — Andrew Ng's MCP server that provides curated, LLM-optimized documentation for third-party libraries and APIs (OpenAI, Stripe, Anthropic, etc.). Instead of Claude hallucinating API signatures or working from stale training data, Context Hub serves up-to-date, verified documentation on demand.
@@ -562,6 +599,22 @@ Integrates [andrewyng/context-hub](https://github.com/andrewyng/context-hub) —
 Runs as an MCP server via `npx -y @aisuite/chub-mcp` and is configured in the project's `.claude/settings.json`. Exposes tools like `chub_search`, `chub_get`, and `chub_list` that Claude Code can call during any workflow.
 
 See the Context Hub section in [docs/SDD-SETUP-GUIDE.md](docs/SDD-SETUP-GUIDE.md) for configuration.
+
+---
+
+## ztk (Token Compression)
+
+Integrates [codejunkie99/ztk](https://github.com/codejunkie99/ztk) — a 346KB, zero-dependency CLI proxy that intercepts Bash command output and compresses it through a multi-stage filter pipeline before it reaches the LLM context window. Claims 78–90%+ token reduction on typical development commands.
+
+A `PreToolUse` hook in `~/.claude/settings.json` rewrites matching Bash commands from `git diff` to `ztk run git diff`. The proxy captures output, applies the filter, and returns the compressed version. **Everything is automatic** — no per-project setup, no commands to invoke.
+
+Filters cover: git, all major test runners (pytest, cargo test, jest, vitest, playwright…), file ops (ls, cat, find, grep, rg…), build tools (cargo, tsc, zig, go build…), linters (ruff, mypy, eslint, clippy…), docker, kubectl, curl, gh, python3, and 25+ regex-based patterns.
+
+```bash
+ztk stats      # view cumulative token savings across all sessions
+```
+
+On Linux, ztk is built from source (Zig 0.16+) with two patches applied before the build — see [docs/ztk/README.md](docs/ztk/README.md) for the full install procedure, patch rationale, and troubleshooting.
 
 ---
 
@@ -606,6 +659,12 @@ Runs OPF on a set of files and exits non-zero if high-severity PII is found. Des
 - Exits `0` for clean or low-severity-only findings, `1` for `secret`/`account_number`, `2` if OPF is not installed (soft-fail to not break CI without OPF)
 
 Requires OPF: `pip install opf`.
+
+### Global Token Compression Hook (ztk)
+
+A `PreToolUse` hook in `~/.claude/settings.json` fires on every Bash tool call. ztk reads the JSON payload, checks if the command has a registered filter (git, test runners, file ops, linters, etc.), and if so rewrites the command to `ztk run <original>`. The proxy executes, compresses the output, and returns it. Commands without filters pass through unchanged.
+
+This is a global hook — it applies to every session and every project automatically. No per-project configuration needed.
 
 ### Git Post-Commit Hook (`git-hooks/post-commit`)
 
@@ -660,10 +719,13 @@ git push -u origin main
 | [Jira Integration](docs/jira/README.md) | Jira setup, credentials, and troubleshooting |
 | [AutoResearch](docs/autoresearch/README.md) | ML experiment loop methodology |
 | [GitNexus](docs/gitnexus/README.md) | Code intelligence, visual explorer, and blast radius analysis |
+| [ztk Token Compression](docs/ztk/README.md) | Token compression proxy — filter coverage, patch details, session memory, upgrading |
 | [Privacy Filter](docs/privacy-filter/README.md) | PII scanning setup, CLI usage, integration checkpoints, and troubleshooting |
 | [Skill Extraction](docs/skill-extraction/README.md) | Skill extraction pipeline and scoring |
 | [Prompt Master](docs/prompt-master/README.md) | Prompt engineering skill with JSON prompting, 30+ tool profiles, 14 templates |
 | [Sonar Integration](docs/security/sonar-hotspot-review.md) | SonarQube security hotspot review |
+| [Design Quality](docs/design/README.md) | Visual design quality integrations index |
+| [Impeccable](docs/design/impeccable/impeccable.md) | Anti-pattern rules, skill usage, CLI setup for frontend design quality |
 
 ---
 
@@ -693,6 +755,8 @@ git push -u origin main
 | [SonarQube](https://www.sonarsource.com/products/sonarqube/) | SonarSource | Security hotspot review integration via the `sonar-hotspot-review` skill. |
 | [OpenAI Privacy Filter](https://github.com/openai/privacy-filter) | GitHub | Local ML-based PII detection (1.5B param, 50M active). Identifies 8 categories including secrets, emails, account numbers, addresses. Fully on-premises via CLI (`opf`) or Python API. Apache 2.0. |
 | [prompt-master](https://github.com/nidhinjs/prompt-master) | GitHub (nidhinjs) | Active prompt factory for 30+ AI tools. Adapted with JSON prompting mode (Template N), JSON intent detection, and pattern 38. Pre-installed at `~/.claude/skills/prompt-master/`. |
+| [Impeccable](https://github.com/pbakaus/impeccable) | GitHub (pbakaus) | Frontend design quality system with 27 deterministic anti-pattern rules + 7-domain design principles. Integrated as a skill, harness rule, and PostToolUse hook. Apache 2.0. |
+| [ztk](https://github.com/codejunkie99/ztk) | GitHub (codejunkie99) | CLI proxy that compresses Bash output before it reaches the LLM. 346KB Zig binary. Global PreToolUse hook. Two upstream patches applied: removed `isSuspicious` newline blocker; changed `permissionDecision` from `ask` to `allow` for transparent operation. MIT. |
 
 **Runtime**: Claude Code (CLI)
 **Scripts**: Python 3 (standard library only)

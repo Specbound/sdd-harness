@@ -121,6 +121,24 @@ Every memory file starts with an L0 summary comment:
 | `/kiro:housekeeping` | When observations >50 or periodically | Archives to glacier, prunes caps, validates formats |
 | `/kiro:evolve` | On demand | Audits rules against friction patterns, proposes improvements |
 
+## Write-Time Discipline (Automatic)
+
+A `PreToolUse` hook fires before every Write/Edit to any `memory/*.md` file. It gates the write with discipline rules and Claude can revise content before committing:
+
+**Store — reusable across future tasks:**
+- Workflow patterns and process lessons
+- User preferences and collaboration style
+- Reusable procedures and heuristics
+
+**Never store — case-specific, not reusable:**
+- Task/case-specific conclusions or findings
+- Document citations or evidence from a specific run
+- Investigation outcomes, entity names, or data values
+
+**Transfer test:** "Would this lesson help a *different* future task, or only describe *this* task's results?" If the latter, write it to an artifact file instead.
+
+The canonical reference is `~/.claude/skills/agent-memory-discipline/SKILL.md`.
+
 ## Conventions
 
 Defined in `kiro/settings/rules/memory-conventions.md`:

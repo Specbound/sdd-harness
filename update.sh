@@ -25,27 +25,26 @@ do_update() {
   cp -r "$HARNESS_DIR/scripts/"  "$proj/.claude/"
   cp -r "$HARNESS_DIR/docs/"     "$proj/.claude/"
   mkdir -p "$proj/.claude/memory/sessions"
-  cp    "$HARNESS_DIR/hooks/stop-hook.sh"             "$proj/.claude/hooks/"
-  cp    "$HARNESS_DIR/hooks/session-start-hook.sh"   "$proj/.claude/hooks/"
+  cp    "$HARNESS_DIR/hooks/stop-hook.sh"              "$proj/.claude/hooks/"
+  cp    "$HARNESS_DIR/hooks/session-start-hook.sh"    "$proj/.claude/hooks/"
   cp    "$HARNESS_DIR/hooks/pre-tool-use-gitnexus.sh" "$proj/.claude/hooks/"
+  cp    "$HARNESS_DIR/hooks/revert-detect-hook.sh"    "$proj/.claude/hooks/"
+  cp    "$HARNESS_DIR/.claude/hooks/impeccable-detect-hook.sh" "$proj/.claude/hooks/"
   chmod +x "$proj/.claude/hooks/stop-hook.sh"
   chmod +x "$proj/.claude/hooks/session-start-hook.sh"
   chmod +x "$proj/.claude/hooks/pre-tool-use-gitnexus.sh"
+  chmod +x "$proj/.claude/hooks/revert-detect-hook.sh"
+  chmod +x "$proj/.claude/hooks/impeccable-detect-hook.sh"
   if [ -d "$proj/.git" ]; then
     cp "$HARNESS_DIR/git-hooks/post-commit" "$proj/.git/hooks/"
     chmod +x "$proj/.git/hooks/post-commit"
   fi
   bash "$HARNESS_DIR/generate-project-stack.sh" "$proj"
-  # Re-confirm daily-maintenance Routine (idempotent; opt-out via SDD_SKIP_ROUTINE=1)
-  if [ "${SDD_SKIP_ROUTINE:-0}" != "1" ] && command -v claude >/dev/null 2>&1; then
+  # Remind to register Routine if not already done (opt-out via SDD_SKIP_ROUTINE=1)
+  if [ "${SDD_SKIP_ROUTINE:-0}" != "1" ]; then
     local pname
     pname="$(basename "$proj")"
-    if ! claude /schedule list 2>/dev/null | grep -q "daily-maintenance.*$pname"; then
-      claude /schedule nightly "Run /kiro:daily-maintenance for $pname" \
-        >/dev/null 2>&1 \
-        && echo "  Routine registered." \
-        || true
-    fi
+    echo "  Reminder: run /kiro:setup-routine in Claude Code to ensure nightly Routine is registered for $pname."
   fi
   date -Iseconds > "$proj/.claude/.last-harness-check"
   echo "  Done."

@@ -2,7 +2,7 @@
 
 > This file is managed by the SDD harness (`sdd-harness/docs/`).
 > It is the single source of truth — do not edit copies in individual projects.
-> _Last synced: 2026-05-06_
+> _Last synced: 2026-05-07_
 
 A complete, self-contained guide to setting up the Spec-Driven Development (SDD)
 harness used in this project. Follow these steps to replicate the setup in any
@@ -16,6 +16,7 @@ new Python/uv project.
 - **Node.js** — for npx (`node --version`)
 - **uv** — Python package manager (`uv --version`)
 - **git** — initialized repo (`git status`)
+- **impeccable** _(optional, for auto frontend scan)_ — `npm install -g impeccable`
 
 ---
 
@@ -191,6 +192,15 @@ Create `.claude/settings.json`:
             "command": "echo \"$CLAUDE_TOOL_INPUT_path\" | grep -q '\\\\.py$' && uv run ruff check --fix \"$CLAUDE_TOOL_INPUT_path\" 2>/dev/null || true"
           }
         ]
+      },
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/bash /path/to/.claude/hooks/impeccable-detect-hook.sh"
+          }
+        ]
       }
     ],
     "SessionStart": [
@@ -204,6 +214,27 @@ Create `.claude/settings.json`:
           {
             "type": "command",
             "command": "/bin/bash /path/to/.claude/hooks/stop-hook.sh"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/bash /path/to/.claude/hooks/memory-discipline-hook.sh"
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/bash /path/to/.claude/hooks/compaction-discipline-hook.sh"
           }
         ]
       }
@@ -441,6 +472,7 @@ Conventions are defined in `.claude/kiro/settings/rules/memory-conventions.md`:
 | Hook | Trigger | Action |
 |---|---|---|
 | PostToolUse (lint) | Every `.py` write in Claude | `uv run ruff check --fix {file}` |
+| PostToolUse (impeccable) | Every frontend file Write/Edit (`.tsx/.jsx/.css/.vue/.svelte/.html`) | Runs `impeccable detect {file}` and surfaces anti-pattern violations. No-ops silently if CLI not installed. Requires one-time `npm install -g impeccable`. |
 | spec-refactor (internal) | After each impl task's SELF-REVIEW step (Step 5) | Spawned by spec-tdd-impl-agent; reviews touched files, fixes issues, re-runs tests |
 | PostToolUse (Jira comment) | Every `git push` Bash command | Posts Jira comment with branch/commits/docs summary if a `jira-solve` session is active |
 | UserPromptSubmit (Jira capture) | Every user prompt | Captures ticket ID from `/kiro:jira-solve TICKET-ID` prompts, writes to `~/.claude/state/active_jira_ticket` |
@@ -448,7 +480,12 @@ Conventions are defined in `.claude/kiro/settings/rules/memory-conventions.md`:
 | SessionStart (maintenance check) | Every Claude session start | Checks if today's `[judge]` sentinel is absent from `observations.md`; if so, asks Claude to run `/kiro:daily-maintenance` before responding |
 | Stop (memory health) | Every Claude session end | Nudges `/kiro:housekeeping` if observations >50; nudges `/kiro:evolve` if agent failure patterns detected |
 | Stop (re-explanation detector) | Every Claude session end | Scans session transcript via `scripts/detect_reexplanation.py`; appends a `[memory-gap]` observation if the user had to re-explain context (once per day) |
-| Routine (daily maintenance) | Nightly per repo via Claude Code `/schedule` | Runs `/kiro:daily-maintenance` — Judge → Reflect → Housekeeping → Trust Score → Augment Skills. Registered automatically by `install.sh` / `update.sh`. Opt out with `SDD_SKIP_ROUTINE=1`. See `SDD-USAGE.md` → "Daily Maintenance". |
+| PostToolUse (revert detector) | Every git revert/reset/restore Bash call | Immediately appends `[revert]` drain observation to `observations.md` — gives trust-battery Judge concrete evidence. Script: `.claude/hooks/revert-detect-hook.sh`. |
+| Routine (daily maintenance) | Nightly at 11pm Israel time (20:00 UTC) via Claude Routines | Runs `/kiro:daily-maintenance` — Judge → Reflect → Housekeeping → Trust Score → Augment Skills. Register with `/kiro:setup-routine` after install in Claude Code. Opt out with `SDD_SKIP_ROUTINE=1`. See `SDD-USAGE.md` → "Daily Maintenance". |
+| PreToolUse (ztk) | Every Bash tool call by any agent | Rewrites matching commands to `ztk run <cmd>`, compressing output before it reaches the LLM (78–90%+ token reduction). Passes through commands without filters unchanged. Global — fires in all sessions and projects. |
+| PreToolUse (GitNexus) | Every file Read/Edit by any agent | Enriches file operations with 360° symbol graph context (callers, dependencies, process participation); no-ops gracefully when GitNexus is not installed |
+| PreToolUse (memory-discipline) | Every Write/Edit to `*/memory/*.md` or `MEMORY.md` | Gates memory writes with discipline rules — valid content: workflow patterns, user preferences, reusable lessons. Invalid: case-specific facts, citations, investigation outcomes. Claude sees the rules before executing the write and can revise content. Implemented in `.claude/hooks/memory-discipline-hook.sh`. |
+| PreCompact (compaction-discipline) | Every context compaction | Injects boundary-timing principle and state-preservation checklist: compact at workflow phase boundaries (not arbitrary turn counts), preserve artifact paths, cited facts, open questions, and decisions. Use anchored iterative summarization. Implemented in `.claude/hooks/compaction-discipline-hook.sh`. |
 | post-commit (doc sync) | Every `git commit` with non-`.md` source changes | Doc-sync: updates all `.md` files referencing changed code via `claude --print` (background) |
 | post-commit (harness updater) | Every `git commit` with `.claude/` changes (excl. memory) | Updates `SDD-SETUP-GUIDE.md` via `claude --print` (background) |
 
@@ -709,6 +746,141 @@ See `docs/gitnexus/README.md` for full details.
 
 ---
 
+## Impeccable (Optional — Frontend Design Quality)
+
+The harness integrates [pbakaus/impeccable](https://github.com/pbakaus/impeccable) (25.6k ⭐) — a design quality system that catches the visual and functional flaws AI coding assistants routinely produce. Provides 27 deterministic anti-pattern rules + 12 LLM critique rules across 7 domains: typography, color, spatial design, motion, interaction, responsive, and UX writing.
+
+### What it does
+
+Three integration layers, each independent:
+
+1. **`impeccable-audit` skill** (`~/.claude/skills/impeccable-audit/SKILL.md`) — On-demand 7-domain visual audit with PASS / NEEDS WORK / BLOCK verdict. Invoke as `/impeccable-audit` or with a focus area (`/impeccable-audit focus: motion`)
+2. **`frontend-anti-patterns.md` rule** (`kiro/settings/rules/frontend-anti-patterns.md`) — Deterministic enforcement rules (AP-01 through UW-03) referenced by `/kiro:validate-design` and the adversarial agent when reviewing UI components
+3. **`impeccable-detect-hook.sh`** (`.claude/hooks/impeccable-detect-hook.sh`) — PostToolUse hook that auto-scans frontend files on every Write/Edit and surfaces violations inline
+
+### Prerequisites
+
+```bash
+npm install -g impeccable   # one-time; hook exits silently if not installed
+```
+
+Verify: `impeccable --version`
+
+### Setup
+
+The hook is already wired into `.claude/settings.json` via the PostToolUse entry above (Step 6). The skill and rules file are included in the harness and copied to every project by `update.sh`.
+
+No `install.sh` or `setup-git-hooks.sh` changes are needed.
+
+### Key anti-patterns flagged
+
+| Code pattern | Rule ID | Problem |
+|---|---|---|
+| `background-clip: text` | AP-01 | Gradient text — AI fingerprint |
+| `backdrop-filter: blur()` | AP-02 | Glassmorphism — dated, accessibility issues |
+| `border-left: Npx solid accent` | AP-03 | Colored left border — AI fingerprint |
+| `linear-gradient()` on hero/card bg | AP-04 | Gradient background — AI fingerprint |
+| Card nested inside card | AP-05 | Spatial hierarchy collapse |
+| 3-col identical card grid | AP-06 | Zero design intention |
+| `background: #ffffff` | AP-07 | Pure white — use warm off-white |
+| `ease-in` / `ease-out` | MO-01 | Stale easing — use `cubic-bezier` |
+| No `:focus-visible` | IA-01 | Accessibility failure — BLOCK |
+| Contrast < 4.5:1 | CO-01 | WCAG AA failure — BLOCK |
+
+### CLAUDE.md additions
+
+Add to your project's `CLAUDE.md` Quality Gates section:
+
+```markdown
+- impeccable detect: auto-runs on every frontend file write (requires `npm install -g impeccable`)
+- `/impeccable-audit`: on-demand visual quality audit with PASS/NEEDS WORK/BLOCK verdict
+```
+
+### Transferring to a new repo
+
+`update.sh` copies `kiro/settings/rules/frontend-anti-patterns.md` and `docs/design/` automatically. The skill lives at `~/.claude/skills/impeccable-audit/` (global, not per-project). The hook at `.claude/hooks/impeccable-detect-hook.sh` is copied by `update.sh` only if you add it to the copy list — or copy manually:
+
+```bash
+cp ~/.claude/sdd-harness/.claude/hooks/impeccable-detect-hook.sh \
+   /path/to/project/.claude/hooks/
+chmod +x /path/to/project/.claude/hooks/impeccable-detect-hook.sh
+```
+
+Then add the PostToolUse entry to the project's `.claude/settings.json` (shown in Step 6 above).
+
+See `docs/design/impeccable/impeccable.md` for the full rule set and workflow placement.
+
+---
+
+## ztk (Automatic — Token Compression)
+
+The harness includes a global integration with [ztk](https://github.com/codejunkie99/ztk) — a 346KB single-binary CLI proxy that intercepts Bash command output and compresses it before it enters the LLM context window. Claims 78–90%+ token reduction on typical development commands.
+
+### What it does
+
+A `PreToolUse` hook in `~/.claude/settings.json` intercepts every Bash tool call. If ztk has a filter for the command, it rewrites `git diff` to `ztk run git diff`, captures the output, compresses it, and returns the compressed version. Everything is automatic — no commands to invoke, no per-project setup.
+
+**Filters cover:** git (diff/status/log/add/commit/push), pytest/cargo test/go test/npm test/jest/vitest/playwright, ls/cat/find/grep/rg/wc/head/tail/tree, cargo build/check/clippy, tsc, eslint/ruff/mypy, docker, kubectl, curl, gh, jq, python3, and 25+ regex-based patterns (make, terraform, helm, brew, pip, gradle, aws, and more).
+
+### Installation (Linux — build from source)
+
+No prebuilt Linux binary is distributed. Build from source with Zig 0.16+:
+
+```bash
+# 1. Download Zig 0.16.0
+curl -fL "https://ziglang.org/download/0.16.0/zig-x86_64-linux-0.16.0.tar.xz" -o /tmp/zig.tar.xz
+tar -xf /tmp/zig.tar.xz -C /tmp/
+
+# 2. Clone ztk
+git clone https://github.com/codejunkie99/ztk /tmp/ztk-src
+cd /tmp/ztk-src
+```
+
+Apply two required patches before building:
+
+**Patch 1** — `src/proxy.zig`: Remove the `permissions.checkCommand` block (lines ~13–26). This check calls `isSuspicious()` which blocks any command with embedded newlines — including all multiline `python3 -c "..."` scripts.
+
+**Patch 2** — `src/hooks/claude_rewrite.zig`: Change `"permissionDecision\":\"ask\""` to `"permissionDecision\":\"allow\""` in `emitRewrite()`. Without this, Claude Code pops a permission dialog for every rewritten command.
+
+```bash
+# 3. Build and install
+/tmp/zig-x86_64-linux-0.16.0/zig build -Doptimize=ReleaseSmall
+mkdir -p ~/.local/bin
+cp zig-out/bin/ztk ~/.local/bin/ztk
+chmod +x ~/.local/bin/ztk
+
+# 4. Wire the global PreToolUse hook
+ztk init -g
+```
+
+The hook is written to `~/.claude/settings.json` once. All projects and sessions inherit it automatically.
+
+### macOS (Homebrew)
+
+```bash
+brew install codejunkie99/ztk/ztk
+ztk init -g
+```
+
+Note: the `permissionDecision: "ask"` patch is still needed for truly transparent operation. Either build from source or accept confirmation dialogs on rewrites.
+
+### Verifying it works
+
+```bash
+ztk stats                                    # cumulative savings
+tail -20 ~/.local/share/ztk/hook-debug.log   # live hook activity
+```
+
+The debug log shows `rewrite` for intercepted commands and `passthrough` for commands without filters.
+
+### CLAUDE.md additions
+
+No CLAUDE.md changes needed — ztk is fully automatic and global.
+
+See `docs/ztk/README.md` for full details, patch instructions, and troubleshooting.
+
+---
+
 ## Context Hub (Automatic API Documentation)
 
 The harness includes [Context Hub](https://github.com/andrewyng/context-hub) as an MCP server. It provides a curated registry of LLM-optimized documentation for third-party libraries and APIs (OpenAI, Stripe, Anthropic, etc.) so agents use accurate, up-to-date API signatures instead of hallucinating from training data.
@@ -754,7 +926,10 @@ Each harness subsystem has a detailed reference doc:
 | Jira Integration | `docs/jira/README.md` | Hook architecture, scripts, credentials, troubleshooting |
 | AutoResearch | `docs/autoresearch/README.md` | Interview protocol, loop mechanics, agent behavior |
 | Trust Battery | `docs/trust-battery/README.md` | Nightly Judge/Reflector loop, rubric, scoreboard, opt-out, non-goals |
+| ztk | `docs/ztk/README.md` | Token compression proxy — filter coverage, patch details, session memory, upgrading |
 | Context Hub | [github.com/andrewyng/context-hub](https://github.com/andrewyng/context-hub) | MCP server for third-party API docs (external) |
+| Design Quality | `docs/design/README.md` | Visual design quality integrations index |
+| Impeccable | `docs/design/impeccable/impeccable.md` | 27 anti-pattern rules, skill usage, hook setup, transfer instructions |
 
 ---
 
