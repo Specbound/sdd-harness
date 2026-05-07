@@ -38,7 +38,8 @@
       "Bash(bash -n /home/dalesser/.claude/sdd-harness/update.sh)",
       "Bash(mkdir -p /home/dalesser/.claude/skills/skill-extraction/resources)",
       "Edit(~/.claude/skills/skill-extraction/**)",
-      "Edit(/home/dalesser/.claude/sdd-harness/**)"
+      "Edit(/home/dalesser/.claude/sdd-harness/**)",
+      "Bash(git remote *)"
     ],
     "additionalDirectories": [
       "/home/dalesser/.claude/sdd-harness",
