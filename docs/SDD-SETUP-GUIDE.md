@@ -18,6 +18,8 @@ new Python/uv project.
 - **git** — initialized repo (`git status`)
 - **impeccable** _(optional, for auto frontend scan)_ — `npm install -g impeccable`
 
+**Windows users:** The recommended setup is **WSL2** — run everything from a WSL2 terminal and Claude Code will use the Linux environment. If running Claude Code natively on Windows, see the notes in Steps 6 and 8 regarding bash hooks and path differences. See [FIRST-TIME-SETUP.md](FIRST-TIME-SETUP.md) for the platform support summary.
+
 ---
 
 ## Step 1: Gitignore Configuration
@@ -140,9 +142,17 @@ Create `CLAUDE.md` at the repo root. Adapt for your project:
 
 ## Step 6: Create .claude/settings.json
 
+**Linux / macOS / WSL2:**
 ```bash
 mkdir -p .claude/hooks
 ```
+
+**Windows (PowerShell — native, no WSL2):**
+```powershell
+New-Item -ItemType Directory -Force -Path .claude\hooks
+```
+
+> **Windows hook paths**: The `command` values in the hooks below use `/bin/bash /path/to/...`. On native Windows, replace `/bin/bash` with the Git Bash path: `"C:/Program Files/Git/bin/bash.exe" /path/to/...`. On WSL2, the Linux paths work as-is.
 
 Create `.claude/settings.json`:
 
@@ -272,10 +282,18 @@ See the full script in `.claude/hooks/stop-hook.sh`.
 
 ## Step 8: Install Git Hooks
 
+**Linux / macOS / WSL2:**
 ```bash
 chmod +x scripts/setup-git-hooks.sh
 ./scripts/setup-git-hooks.sh
 ```
+
+**Windows (Git Bash):**
+```bash
+# Run from Git Bash (not PowerShell or CMD):
+./scripts/setup-git-hooks.sh
+```
+The `chmod +x` is not needed on Windows; Git Bash handles executable bit for shell scripts automatically when called via bash.
 
 This script:
 1. Installs `.git/hooks/post-commit` — triggers **both doc sync and harness updater** on every commit
@@ -369,10 +387,18 @@ in `.claude/kiro/settings/templates/memory/` if the directory doesn't exist.
 
 Or manually copy templates:
 
+**Linux / macOS / WSL2:**
 ```bash
 mkdir -p .claude/memory/meta .claude/memory/glacier
 cp .claude/kiro/settings/templates/memory/*.md .claude/memory/
 cp .claude/kiro/settings/templates/memory/meta/*.md .claude/memory/meta/
+```
+
+**Windows (PowerShell):**
+```powershell
+New-Item -ItemType Directory -Force -Path .claude\memory\meta, .claude\memory\glacier
+Copy-Item .claude\kiro\settings\templates\memory\*.md .claude\memory\
+Copy-Item .claude\kiro\settings\templates\memory\meta\*.md .claude\memory\meta\
 ```
 
 Then seed `hot-memory.md` and `entities.md` with your project's current state.
@@ -607,7 +633,9 @@ An AI agent iterates on a training script (`train.py`) guided by a research brie
 
 ### Prerequisites
 
-- `uv` — Python package manager (`curl -LsSf https://astral.sh/uv/install.sh | sh`)
+- `uv` — Python package manager
+  - Linux / macOS / WSL2: `curl -LsSf https://astral.sh/uv/install.sh | sh`
+  - Windows: `powershell -ExecutionPolicy BypassPolicy -c "irm https://astral.sh/uv/install.ps1 | iex"`
 - Python 3.10+
 - GPU recommended (CPU works but slower)
 - git initialized in the project (for experiment revert via `git checkout`)
@@ -822,7 +850,13 @@ A `PreToolUse` hook in `~/.claude/settings.json` intercepts every Bash tool call
 
 **Filters cover:** git (diff/status/log/add/commit/push), pytest/cargo test/go test/npm test/jest/vitest/playwright, ls/cat/find/grep/rg/wc/head/tail/tree, cargo build/check/clippy, tsc, eslint/ruff/mypy, docker, kubectl, curl, gh, jq, python3, and 25+ regex-based patterns (make, terraform, helm, brew, pip, gradle, aws, and more).
 
-### Installation (Linux — build from source)
+### Installation
+
+**Windows (native):** ztk has no Windows binary. Use WSL2 to get token compression — install WSL2 and follow the Linux instructions below from inside it.
+
+**macOS** — use Homebrew (see Step 1 in [FIRST-TIME-SETUP.md](FIRST-TIME-SETUP.md)).
+
+**Linux / WSL2 — build from source** (no prebuilt binary):
 
 No prebuilt Linux binary is distributed. Build from source with Zig 0.16+:
 

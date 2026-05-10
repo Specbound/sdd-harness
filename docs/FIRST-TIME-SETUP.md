@@ -5,17 +5,40 @@
 
 ---
 
+## Platform Support
+
+| Platform | Support level | Notes |
+|---|---|---|
+| **Linux** | Full | All tools supported natively |
+| **macOS** | Full | ztk via Homebrew; rest identical to Linux |
+| **Windows (WSL2)** | Full | Recommended for Windows — run all commands inside WSL2; identical to Linux |
+| **Windows (native)** | Partial | npm/Node tools work natively; ztk and bash hooks require WSL2 or Git Bash |
+
+**Windows recommendation**: Use WSL2. Install [WSL2](https://learn.microsoft.com/en-us/windows/wsl/install) (`wsl --install` in PowerShell as Administrator), then follow the Linux instructions throughout this guide from inside a WSL2 terminal.
+
+---
+
 ## Step 0: Verify Prerequisites
 
 These must already exist. Check them first:
 
+**Linux / macOS / WSL2:**
 ```bash
 claude --version    # Claude Code CLI
 node --version      # Node.js (needed for npx and npm installs)
 git --version       # git
 ```
 
+**Windows (PowerShell — if not using WSL2):**
+```powershell
+claude --version
+node --version
+git --version
+```
+
 If any are missing, install them before continuing.
+
+> On Windows without WSL2: install [Node.js](https://nodejs.org) and [Git for Windows](https://git-scm.com/download/win). Claude Code CLI installation is the same (`npm install -g @anthropic-ai/claude-code` or via the installer).
 
 ---
 
@@ -34,7 +57,15 @@ which ztk && ztk --version
 ztk init -g
 ```
 
-**If not found** — build from source (Linux only, no prebuilt binary):
+**If not found** — build from source (Linux / macOS / WSL2):
+
+**macOS** — use Homebrew:
+```bash
+brew install codejunkie99/ztk/ztk
+ztk init -g
+```
+
+**Linux / WSL2** — build from source (no prebuilt binary):
 ```bash
 # 1. Get the Zig toolchain
 curl -fL "https://ziglang.org/download/0.16.0/zig-x86_64-linux-0.16.0.tar.xz" -o /tmp/zig.tar.xz
@@ -63,6 +94,8 @@ export PATH="$HOME/.local/bin:$PATH"
 # 7. Wire the global hook
 ztk init -g
 ```
+
+**Windows (native — no WSL2)**: ztk has no Windows binary. Skip this step; token compression will not be active. To get it, install WSL2 and run the Linux instructions above inside it.
 
 `ztk init -g` writes a `PreToolUse` hook to `~/.claude/settings.json`. All projects inherit it automatically.
 
@@ -139,15 +172,33 @@ Required for autoresearch and any project using `uv`-managed Python environments
 
 ### Check if already installed
 
+**Linux / macOS / WSL2:**
 ```bash
 which uv && uv --version
+```
+
+**Windows (PowerShell):**
+```powershell
+Get-Command uv -ErrorAction SilentlyContinue; uv --version
 ```
 
 **If found** — nothing else needed.
 
 **If not found:**
+
+**Linux / macOS / WSL2:**
 ```bash
 curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+**Windows (PowerShell):**
+```powershell
+powershell -ExecutionPolicy BypassPolicy -c "irm https://astral.sh/uv/install.ps1 | iex"
+```
+
+Or via winget:
+```powershell
+winget install --id=astral-sh.uv -e
 ```
 
 ---
@@ -171,6 +222,8 @@ uv pip install opf
 ```
 
 To wire as a pre-commit hook for a project:
+
+**Linux / macOS / WSL2:**
 ```bash
 # In your project root:
 cat >> .git/hooks/pre-commit << 'EOF'
@@ -180,17 +233,33 @@ EOF
 chmod +x .git/hooks/pre-commit
 ```
 
+**Windows (Git Bash or PowerShell):**
+```powershell
+# In your project root (PowerShell):
+$hookPath = ".git\hooks\pre-commit"
+Add-Content $hookPath "#!/bin/bash"
+Add-Content $hookPath 'bash "$(git rev-parse --show-toplevel)/.claude/hooks/scan-pii.sh" --staged'
+# Git Bash handles the bash shebang; no chmod needed on Windows
+```
+
 ---
 
 ## Step 6: Per-Project Install
 
 Once global tools are in place, install the harness into each project:
 
+**Linux / macOS / WSL2:**
 ```bash
 ~/.claude/sdd-harness/install.sh /path/to/project
 # or with GitNexus in one shot:
 ~/.claude/sdd-harness/install.sh /path/to/project --with-gitnexus
 ```
+
+**Windows (native, no WSL2):** Run from Git Bash:
+```bash
+~/.claude/sdd-harness/install.sh /c/dev/my-project
+```
+Or use the WSL2 path if Claude Code is running inside WSL2.
 
 Then, inside Claude Code in the project directory, run these once:
 
@@ -223,13 +292,13 @@ specs/
 
 Run through this on a fresh machine:
 
-| Tool | Check | Install if missing | Activate |
+| Tool | Check (Linux/macOS/WSL2) | Install if missing | Activate |
 |---|---|---|---|
-| `ztk` | `which ztk` | build from source (see Step 1) | `ztk init -g` |
-| `gitnexus` | `which gitnexus` | `npm install -g gitnexus` | `/kiro:gitnexus-setup` per-project |
-| `impeccable` | `which impeccable` | `npm install -g impeccable` | automatic via hook |
-| `uv` | `which uv` | `curl -LsSf https://astral.sh/uv/install.sh \| sh` | nothing extra |
-| `opf` | `which opf` | `uv pip install opf` | wire pre-commit hook |
+| `ztk` | `which ztk` | Linux/WSL2: build from source (Step 1); macOS: `brew install codejunkie99/ztk/ztk`; Windows native: requires WSL2 | `ztk init -g` |
+| `gitnexus` | `which gitnexus` | `npm install -g gitnexus` (all platforms) | `/kiro:gitnexus-setup` per-project |
+| `impeccable` | `which impeccable` | `npm install -g impeccable` (all platforms) | automatic via hook |
+| `uv` | `which uv` | Linux/macOS/WSL2: `curl -LsSf https://astral.sh/uv/install.sh \| sh`; Windows: see Step 4 | nothing extra |
+| `opf` | `which opf` | `uv pip install opf` (all platforms) | wire pre-commit hook |
 | harness | `ls ~/.claude/sdd-harness/install.sh` | clone/copy harness | `install.sh /path/to/project` |
 
 ---
@@ -245,3 +314,6 @@ Run through this on a fresh machine:
 | GitNexus context missing in Claude | MCP not in `settings.json` or repo not indexed | Run `/kiro:gitnexus-setup` |
 | impeccable scans not appearing | Binary not in PATH | `npm install -g impeccable` |
 | Maintenance not running | `/kiro:setup-routine` not run | Run it inside Claude Code |
+| **Windows:** hooks fail with `bash: /bin/bash: No such file` | Claude Code running on native Windows; hook paths are Linux-style | Use WSL2 so Claude Code runs in Linux, or change hook commands from `/bin/bash` to the Git Bash path (`C:/Program Files/Git/bin/bash.exe`) |
+| **Windows:** `uv` not found after install | PowerShell PATH not reloaded | Restart terminal or run `. $env:USERPROFILE\.cargo\env` (or reopen shell) |
+| **Windows:** `install.sh` fails | Script requires bash | Run from Git Bash or WSL2, not PowerShell or CMD |
