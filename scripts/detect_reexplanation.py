@@ -23,6 +23,9 @@ Outputs: JSON array on stdout. Each hit:
       "suggested_memory_topic": "short topic guess"
     }
 
+Pass --emit observation to instead write a single [memory-gap] line
+suitable for direct appending to observations.md.
+
 Exit codes: 0 = ran (regardless of hits); 2 = usage error; 3 = no input found.
 """
 
@@ -31,6 +34,7 @@ import json
 import os
 import re
 import sys
+from datetime import date
 from pathlib import Path
 
 
@@ -187,7 +191,7 @@ def main() -> int:
     text, code = _load_text(args)
     if text is None:
         if args.emit == "observation":
-            return 0
+            return code
         print("[]")
         return code
     hits = scan(text)
@@ -195,7 +199,6 @@ def main() -> int:
     if args.emit == "observation":
         if not hits:
             return 0
-        from datetime import date
         topics = ", ".join(
             dict.fromkeys(h["suggested_memory_topic"] for h in hits)
         )
