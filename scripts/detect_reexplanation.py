@@ -176,14 +176,38 @@ def main() -> int:
         action="store_true",
         help="Scan most recent Claude Code transcript for cwd",
     )
+    ap.add_argument(
+        "--emit",
+        choices=["json", "observation"],
+        default="json",
+        help="Output format. 'observation' writes a single [memory-gap] line to stdout suitable for appending to observations.md.",
+    )
     args = ap.parse_args()
 
     text, code = _load_text(args)
     if text is None:
+        if args.emit == "observation":
+            return 0
         print("[]")
         return code
     hits = scan(text)
-    print(json.dumps(hits, indent=2))
+
+    if args.emit == "observation":
+        if not hits:
+            return 0
+        from datetime import date
+        topics = ", ".join(
+            dict.fromkeys(h["suggested_memory_topic"] for h in hits)
+        )
+        # Cap at ~80 chars to keep observations.md readable
+        if len(topics) > 80:
+            topics = topics[:77] + "..."
+        print(
+            f"- {date.today().isoformat()} [memory-gap]: "
+            f"{len(hits)} re-explanation hit(s) — topics: {topics}"
+        )
+    else:
+        print(json.dumps(hits, indent=2))
     return 0
 
 
