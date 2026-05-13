@@ -29,7 +29,7 @@ STATE_FILE=".claude/memory/.last-routine-run"
 
 if [ -f "$RUNNER" ]; then
   should_run=0
-  if [ ! -f "$STATE_FILE" ]; then
+  if [ ! -s "$STATE_FILE" ]; then
     should_run=1
   else
     last_epoch=$(date -d "$(cat "$STATE_FILE")" +%s 2>/dev/null || echo 0)
