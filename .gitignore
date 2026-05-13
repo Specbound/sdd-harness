@@ -1,3 +1,8 @@
 # Local machine state — never commit
 projects.txt
 VERSION
+
+# Runtime artifacts
+logs/
+__pycache__/
+*.pyc

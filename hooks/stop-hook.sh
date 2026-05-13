@@ -45,15 +45,10 @@ fi
 DETECTOR=".claude/scripts/detect_reexplanation.py"
 if [ -f "$DETECTOR" ] && [ -f "$OBS_FILE" ]; then
   (
-    hits=$(python3 "$DETECTOR" --auto-transcript 2>/dev/null || echo "[]")
-    count=$(echo "$hits" | python3 -c 'import json,sys; print(len(json.load(sys.stdin)))' 2>/dev/null || echo 0)
-    if [ "$count" -gt 0 ]; then
-      today=$(date +%Y-%m-%d)
-      # Only append once per day; subsequent stops within the same day no-op.
-      if ! grep -q "^- $today \[memory-gap\]:" "$OBS_FILE" 2>/dev/null; then
-        topic=$(echo "$hits" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(", ".join(sorted({h["suggested_memory_topic"] for h in d}))[:80])' 2>/dev/null || echo "?")
-        echo "- $today [memory-gap]: $count re-explanation phrase(s) detected — topics: $topic" >> "$OBS_FILE"
-      fi
+    today=$(date +%Y-%m-%d)
+    # Skip if today's [memory-gap] already exists (idempotency guard)
+    if ! grep -q "^- $today \[memory-gap\]:" "$OBS_FILE" 2>/dev/null; then
+      python3 "$DETECTOR" --auto-transcript --emit observation 2>/dev/null >> "$OBS_FILE" || true
     fi
   ) &
 fi
