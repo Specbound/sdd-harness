@@ -2,7 +2,7 @@
 
 > This file is managed by the SDD harness (`sdd-harness/docs/`).
 > It is the single source of truth — do not edit copies in individual projects.
-> _Last synced: 2026-05-07_
+> _Last synced: 2026-05-13_
 
 A complete, self-contained guide to setting up the Spec-Driven Development (SDD)
 harness used in this project. Follow these steps to replicate the setup in any
@@ -530,7 +530,7 @@ Conventions are defined in `.claude/kiro/settings/rules/memory-conventions.md`:
 | PostToolUse (Jira comment) | Every `git push` Bash command | Posts Jira comment with branch/commits/docs summary if a `jira-solve` session is active |
 | UserPromptSubmit (Jira capture) | Every user prompt | Captures ticket ID from `/kiro:jira-solve TICKET-ID` prompts, writes to `~/.claude/state/active_jira_ticket` |
 | UserPromptSubmit (context priming) | Every user prompt | Injects hot-memory.md contents for session context |
-| SessionStart (maintenance check) | Every Claude session start | Checks if today's `[judge]` sentinel is absent from `observations.md`; if so, asks Claude to run `/kiro:daily-maintenance` before responding |
+| SessionStart (maintenance check) | Every Claude session start | Two modes: (1) if no local `daily-runner.sh` is installed — checks if today's `[judge]` sentinel is absent from `observations.md` and asks Claude to run `/kiro:daily-maintenance`; (2) if `daily-runner.sh` is installed and stale (>24h or never ran) — fires it in the background via `nohup` silently, without consuming session context. |
 | Stop (memory health) | Every Claude session end | Nudges `/kiro:housekeeping` if observations >50; nudges `/kiro:evolve` if agent failure patterns detected |
 | Stop (re-explanation detector) | Every Claude session end | Scans session transcript via `scripts/detect_reexplanation.py`; appends a `[memory-gap]` observation if the user had to re-explain context (once per day) |
 | PostToolUse (revert detector) | Every git revert/reset/restore Bash call | Immediately appends `[revert]` drain observation to `observations.md` — gives trust-battery Judge concrete evidence. Script: `.claude/hooks/revert-detect-hook.sh`. |

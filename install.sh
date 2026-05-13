@@ -148,6 +148,19 @@ if [ "$WITH_GITNEXUS" = true ]; then
   fi
 fi
 
+# --- Auto-register global Windows scheduled task (idempotent) ---
+# When running under WSL with schtasks.exe available, ensure the daily
+# orchestrator is registered. The bootstrap is a no-op if the task already
+# exists, so this is safe to call from every install/update.
+if [ "${SDD_SKIP_ROUTINE:-0}" != "1" ] && command -v schtasks.exe >/dev/null 2>&1; then
+  if bash "$HARNESS_DIR/scripts/setup-global-orchestrator.sh"; then
+    :
+  else
+    echo "  WARNING: scheduled-task bootstrap returned non-zero; daily orchestrator may not be registered."
+    echo "  Re-run manually: bash $HARNESS_DIR/scripts/setup-global-orchestrator.sh"
+  fi
+fi
+
 # --- Remind user about local daily maintenance ---
 PROJECT_NAME="$(basename "$PROJECT_DIR")"
 if [ "${SDD_SKIP_ROUTINE:-0}" != "1" ]; then
@@ -158,13 +171,11 @@ if [ "${SDD_SKIP_ROUTINE:-0}" != "1" ]; then
   echo "  │                                                                        │"
   echo "  │ It runs the daily-maintenance + session-quality + keep-rate pipeline.  │"
   echo "  │                                                                        │"
-  echo "  │ Trigger options:                                                       │"
-  echo "  │   1. Open Claude in this repo — session-start hook fires it if >24h    │"
-  echo "  │      since last run.                                                   │"
-  echo "  │   2. Windows Task Scheduler (one-time global setup):                   │"
-  echo "  │        bash ~/.claude/sdd-harness/scripts/setup-global-orchestrator.sh │"
-  echo "  │      This fires the orchestrator for ALL repos in projects.txt daily   │"
-  echo "  │      at 11:30 IST.                                                     │"
+  echo "  │ Trigger paths (both automatic):                                        │"
+  echo "  │   1. Windows Task Scheduler — fires daily at 18:00 local (Israel)      │"
+  echo "  │      across ALL repos in projects.txt. Registered on first install.    │"
+  echo "  │   2. SessionStart hook — if >24h since last run, fires the runner in   │"
+  echo "  │      the background when you open Claude in this repo.                 │"
   echo "  │                                                                        │"
   echo "  │ Disable per-repo: rm .claude/scripts/daily-runner.sh                   │"
   echo "  │ Disable globally: schtasks.exe /Delete /TN \"SDD Daily Orchestrator\"   │"

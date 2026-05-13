@@ -201,7 +201,7 @@ sdd-harness/
 │   └── jira_push_comment.py      #   Post implementation summary to Jira
 │
 ├── hooks/                        # Session lifecycle hooks
-│   ├── session-start-hook.sh     #   On session start: check if daily maintenance pending, inject auto-trigger
+│   ├── session-start-hook.sh     #   On session start: check maintenance status; inject prompt if no runner installed, fire runner in background if installed and stale
 │   ├── stop-hook.sh              #   On session exit: check for updates, memory health, re-explanation detection, agent failure patterns
 │   ├── prompt-hook.sh            #   On prompt submit: inject hot-memory context
 │   ├── pre-tool-use-gitnexus.sh  #   On file read/edit: enrich with GitNexus symbol graph context (callers, deps, processes)
@@ -622,7 +622,7 @@ On Linux, ztk is built from source (Zig 0.16+) with two patches applied before t
 
 ### Session Start Hook (`hooks/session-start-hook.sh`)
 
-Runs when a Claude Code session starts (SessionStart). Checks if today's `[judge]` sentinel is absent from `observations.md`; if so, asks Claude to run `/kiro:daily-maintenance` before responding.
+Runs when a Claude Code session starts (SessionStart). Two modes: (1) if no local `daily-runner.sh` is installed — checks if today's `[judge]` sentinel is absent from `observations.md` and asks Claude to run `/kiro:daily-maintenance`; (2) if `daily-runner.sh` is installed and stale (>24h or never ran) — fires it in the background via `nohup` silently, without consuming session context.
 
 ### Context Priming Hook (`hooks/prompt-hook.sh`)
 

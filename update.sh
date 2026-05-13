@@ -64,5 +64,13 @@ fi
 
 # Update harness VERSION to today
 echo "$(date +%Y-%m-%d)" > "$HARNESS_DIR/VERSION"
+
+# Ensure global Windows scheduled task is registered (idempotent — skips if it
+# already exists). Honors SDD_SKIP_ROUTINE=1 to opt out.
+if [ "${SDD_SKIP_ROUTINE:-0}" != "1" ] && command -v schtasks.exe >/dev/null 2>&1; then
+  bash "$HARNESS_DIR/scripts/setup-global-orchestrator.sh" || \
+    echo "  WARNING: scheduled-task bootstrap returned non-zero."
+fi
+
 echo ""
 echo "All projects updated to harness version $(cat "$HARNESS_DIR/VERSION")."
