@@ -63,7 +63,7 @@ echo "$TIMESTAMP" > "$STATE_FILE"
 log "starting daily maintenance"
 
 # --- Invoke claude ---
-echo "$PROMPT" | claude --print --output-format text
+echo "$PROMPT" | claude --print --output-format text --permission-mode bypassPermissions
 EXIT=$?
 
 log "completed exit=$EXIT"
