@@ -1,8 +1,10 @@
 #!/bin/bash
 # One-time Windows Task Scheduler bootstrap for the SDD daily orchestrator.
-# Creates a scheduled task "SDD Daily Orchestrator" that fires at 11:30 local
-# every day. Uses "RunOnlyIfIdle=false" and "StartWhenAvailable=true" so the
-# task runs as soon as possible after a missed start.
+# Creates a scheduled task "SDD Daily Orchestrator" that fires at 18:00 local
+# every day (evening, Israel time when Windows TZ = Jerusalem). Uses
+# "RunOnlyIfIdle=false" and "StartWhenAvailable=true" so the task runs as soon
+# as possible after a missed start. The SessionStart hook is a backup catch-up
+# path: if the runner hasn't fired in >24h, opening a Claude session triggers it.
 #
 # Re-run this script to update the schedule or replace a broken task.
 
@@ -33,7 +35,7 @@ cat > "$XML_PATH" <<XML
   </RegistrationInfo>
   <Triggers>
     <CalendarTrigger>
-      <StartBoundary>2026-01-01T11:30:00</StartBoundary>
+      <StartBoundary>2026-01-01T18:00:00</StartBoundary>
       <ScheduleByDay><DaysInterval>1</DaysInterval></ScheduleByDay>
       <Enabled>true</Enabled>
     </CalendarTrigger>
@@ -76,7 +78,7 @@ schtasks.exe /Query /TN "$TASK_NAME" >/dev/null 2>&1 && \
 
 # Create from XML
 if schtasks.exe /Create /TN "$TASK_NAME" /XML "$WIN_XML_PATH" /F >/dev/null 2>&1; then
-  echo "✓ Task '$TASK_NAME' created. Daily run at 11:30 local time."
+  echo "✓ Task '$TASK_NAME' created. Daily run at 18:00 local time."
   echo "  Verify: schtasks.exe /Query /TN \"$TASK_NAME\" /V /FO LIST"
   echo "  Run now: schtasks.exe /Run /TN \"$TASK_NAME\""
   echo "  Delete:  schtasks.exe /Delete /TN \"$TASK_NAME\" /F"
