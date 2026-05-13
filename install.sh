@@ -58,6 +58,7 @@ chmod +x "$PROJECT_DIR/.claude/hooks/stop-hook.sh"
 chmod +x "$PROJECT_DIR/.claude/hooks/session-start-hook.sh"
 chmod +x "$PROJECT_DIR/.claude/hooks/pre-tool-use-gitnexus.sh"
 chmod +x "$PROJECT_DIR/.claude/hooks/revert-detect-hook.sh"
+chmod +x "$PROJECT_DIR/.claude/scripts/daily-runner.sh"
 
 # --- Set up git post-commit hook ---
 cp "$HARNESS_DIR/git-hooks/post-commit" "$PROJECT_DIR/.git/hooks/"
@@ -147,20 +148,26 @@ if [ "$WITH_GITNEXUS" = true ]; then
   fi
 fi
 
-# --- Remind user to register daily-maintenance Routine ---
+# --- Remind user about local daily maintenance ---
 PROJECT_NAME="$(basename "$PROJECT_DIR")"
 if [ "${SDD_SKIP_ROUTINE:-0}" != "1" ]; then
   echo ""
-  echo "  ┌─ Nightly Maintenance Routine ──────────────────────────────────────────┐"
-  echo "  │ Open Claude Code in this repo, then run:                              │"
+  echo "  ┌─ Local Daily Maintenance ──────────────────────────────────────────────┐"
+  echo "  │ This repo's daily runner is installed at:                              │"
+  echo "  │   .claude/scripts/daily-runner.sh                                      │"
   echo "  │                                                                        │"
-  echo "  │   /kiro:setup-routine                                                 │"
+  echo "  │ It runs the daily-maintenance + session-quality + keep-rate pipeline.  │"
   echo "  │                                                                        │"
-  echo "  │ This registers a nightly /kiro:daily-maintenance Claude Routine that   │"
-  echo "  │ runs in Anthropic's cloud at 11pm (Israel/UTC+3) every night,         │"
-  echo "  │ whether or not your laptop is open.                                   │"
+  echo "  │ Trigger options:                                                       │"
+  echo "  │   1. Open Claude in this repo — session-start hook fires it if >24h    │"
+  echo "  │      since last run.                                                   │"
+  echo "  │   2. Windows Task Scheduler (one-time global setup):                   │"
+  echo "  │        bash ~/.claude/sdd-harness/scripts/setup-global-orchestrator.sh │"
+  echo "  │      This fires the orchestrator for ALL repos in projects.txt daily   │"
+  echo "  │      at 11:30 IST.                                                     │"
   echo "  │                                                                        │"
-  echo "  │ Skip permanently with: SDD_SKIP_ROUTINE=1 bash install.sh             │"
+  echo "  │ Disable per-repo: rm .claude/scripts/daily-runner.sh                   │"
+  echo "  │ Disable globally: schtasks.exe /Delete /TN \"SDD Daily Orchestrator\"   │"
   echo "  └────────────────────────────────────────────────────────────────────────┘"
 fi
 
@@ -171,7 +178,6 @@ echo "Next steps:"
 echo "  1. Add to .gitignore: .claude/ specs/ CLAUDE.md (keep .claude/settings.local.json)"
 echo "  2. Customize CLAUDE.md with your project name and context"
 echo "  3. Run /kiro:steering to bootstrap project memory"
-echo "  4. Run /kiro:setup-routine to register the nightly maintenance routine"
 if [ "$WITH_GITNEXUS" = false ]; then
   echo ""
   echo "Optional: Run with --with-gitnexus to add code intelligence integration."
