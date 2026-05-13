@@ -43,7 +43,7 @@ fi
 # re-explain context — each hit = a memory the harness should have saved.
 # Runs in background; failures are silent (detector is best-effort).
 DETECTOR=".claude/scripts/detect_reexplanation.py"
-if [ -x "$DETECTOR" ] && [ -f "$OBS_FILE" ]; then
+if [ -f "$DETECTOR" ] && [ -f "$OBS_FILE" ]; then
   (
     today=$(date +%Y-%m-%d)
     # Skip if today's [memory-gap] already exists (idempotency guard)
