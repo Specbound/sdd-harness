@@ -22,7 +22,11 @@ SINGLE_REPO=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --dry-run) DRY_RUN=true ;;
-    --repo)    shift; SINGLE_REPO="$1" ;;
+    --repo)
+      [ $# -lt 2 ] && { echo "--repo requires a path argument" >&2; exit 2; }
+      shift
+      SINGLE_REPO="$1"
+      ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
   esac
   shift
@@ -33,8 +37,11 @@ run_one() {
   local ts="$(date -Iseconds)"
 
   if [ ! -d "$repo/.claude" ]; then
-    echo "$ts [orphan] $repo — not installed" >> "$LOG_FILE"
-    [ "$DRY_RUN" = true ] && echo "[orphan] $repo"
+    if [ "$DRY_RUN" = true ]; then
+      echo "[orphan] $repo"
+    else
+      echo "$ts [orphan] $repo — not installed" >> "$LOG_FILE"
+    fi
     return 0
   fi
 
@@ -62,7 +69,7 @@ else
     echo "projects.txt missing at $PROJECTS_FILE" >&2
     exit 1
   fi
-  while IFS= read -r repo; do
+  while IFS= read -r repo || [ -n "$repo" ]; do
     [ -z "$repo" ] && continue
     [ "${repo:0:1}" = "#" ] && continue   # allow comments
     run_one "$repo"
