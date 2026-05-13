@@ -571,3 +571,33 @@ This applies to all prompt layers — not just sub-agents:
 - **Your feature descriptions are misunderstood** → capture effective patterns in the instruction library
 
 See `docs/prompt-improvement/README.md` for the full guide.
+
+---
+
+## GBrain Patterns (Automatic Agent Protocols)
+
+Four protocols extracted from [garrytan/gbrain](https://github.com/garrytan/gbrain) fire automatically via hooks — no commands needed.
+
+### What fires automatically
+
+| Trigger | Hook | Protocol injected |
+|---|---|---|
+| Every `Agent()` call | `gbrain-agent-spawn.sh` | Model tier selection + background routing + memory-first brief |
+| Every `save_observation` | `gbrain-memory-write.sh` | Compiled-truth two-zone structure + source citation format |
+| Every `WebFetch` / `WebSearch` | `gbrain-external-search.sh` | Reminder to search claude-mem before external calls |
+
+### The four patterns
+
+**Memory-First Lookup** (`~/.claude/skills/memory-first-lookup/`) — Always run `mcp__plugin_claude-mem_mcp-search__search` before reaching for external APIs. The lookup chain: keyword search → semantic search → get_observations → external only if memory is empty.
+
+**Model Tiers** (`~/.claude/skills/model-tiers/`) — Match model to task type:
+- `haiku-4-5` for classification, validation, dedup (utility)
+- `sonnet-4-6` for generation, synthesis, agent work (default)
+- `opus-4-7` only for deep multi-step reasoning (upgrade when sonnet consistently fails)
+- Subagents always use `sonnet`, not opus — latency compounds in tool loops
+
+**Background Work Routing** (`~/.claude/skills/background-work-routing/`) — Stay inline unless a pain signal fires: gateway restart, state drop, parallel > 3, runtime > 5 min, or user frustration. Offer the switch explicitly; never switch silently.
+
+**Compiled Truth Pattern** (`~/.claude/skills/compiled-truth-pattern/`) — Every memory observation has two zones: `## State` (rewrite in place when evidence changes, each fact cited) and `## Evidence / Timeline` (append-only dated log, never edited).
+
+Full reference: `docs/gbrain-patterns/gbrain-patterns.md`

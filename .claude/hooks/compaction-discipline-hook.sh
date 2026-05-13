@@ -26,4 +26,6 @@ DO NOT over-compress:
 METHOD — use anchored iterative summarization:
   Merge new content into existing summary sections rather than regenerating from scratch.
   Structure forces preservation: dedicated sections act as checklists.
+  Rationale: full regeneration compounds LLM sampling drift — each pass moves content
+  toward the model's prior, not ground truth (faulty memory / consolidation loop pattern).
 RULES

@@ -237,6 +237,33 @@ Create `.claude/settings.json`:
             "command": "/bin/bash /path/to/.claude/hooks/memory-discipline-hook.sh"
           }
         ]
+      },
+      {
+        "matcher": "Agent",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/bash /path/to/.claude/hooks/gbrain-agent-spawn.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "mcp__plugin_claude-mem_mcp-search__save_observation",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/bash /path/to/.claude/hooks/gbrain-memory-write.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "WebFetch|WebSearch",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/bash /path/to/.claude/hooks/gbrain-external-search.sh"
+          }
+        ]
       }
     ],
     "PreCompact": [

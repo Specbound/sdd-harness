@@ -99,6 +99,33 @@
             "command": "/bin/bash /home/dalesser/.claude/sdd-harness/.claude/hooks/memory-discipline-hook.sh"
           }
         ]
+      },
+      {
+        "matcher": "Agent",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/bash /home/dalesser/.claude/sdd-harness/.claude/hooks/gbrain-agent-spawn.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "mcp__plugin_claude-mem_mcp-search__save_observation",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/bash /home/dalesser/.claude/sdd-harness/.claude/hooks/gbrain-memory-write.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "WebFetch|WebSearch",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/bash /home/dalesser/.claude/sdd-harness/.claude/hooks/gbrain-external-search.sh"
+          }
+        ]
       }
     ],
     "PreCompact": [
