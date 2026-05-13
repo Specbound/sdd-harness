@@ -32,9 +32,6 @@ if [ ! -f "$PROMPT_TEMPLATE" ]; then
   exit 1
 fi
 
-mkdir -p "$MEMORY_DIR"
-touch "$LOCK_FILE"
-
 # --- Race protection ---
 exec 200>"$LOCK_FILE"
 if ! flock -n 200; then
@@ -44,7 +41,7 @@ fi
 
 # --- Date check (cheap short-circuit) ---
 TODAY="$(date +%Y-%m-%d)"
-if [ -f "$STATE_FILE" ]; then
+if [ -s "$STATE_FILE" ]; then
   LAST_DAY="$(date -d "$(cat "$STATE_FILE")" +%Y-%m-%d 2>/dev/null || echo "")"
   if [ "$LAST_DAY" = "$TODAY" ]; then
     log "already ran today ($LAST_DAY), skipping"
@@ -52,18 +49,20 @@ if [ -f "$STATE_FILE" ]; then
   fi
 fi
 
-# --- Mark started ---
-echo "$TIMESTAMP" > "$STATE_FILE"
-log "starting daily maintenance"
-
-# --- Substitute today's date into prompt and invoke claude --print ---
-PROMPT="$(sed "s|TODAY_PLACEHOLDER|$TODAY|" "$PROMPT_TEMPLATE")"
-
+# --- Pre-flight: claude CLI must be available ---
 if ! command -v claude >/dev/null 2>&1; then
   log "claude CLI not on PATH, aborting"
   exit 1
 fi
 
+# --- Substitute today's date into prompt ---
+PROMPT="$(sed "s|TODAY_PLACEHOLDER|$TODAY|" "$PROMPT_TEMPLATE")"
+
+# --- Mark started (commits us to today; do this only after pre-flight passes) ---
+echo "$TIMESTAMP" > "$STATE_FILE"
+log "starting daily maintenance"
+
+# --- Invoke claude ---
 echo "$PROMPT" | claude --print --output-format text
 EXIT=$?
 
