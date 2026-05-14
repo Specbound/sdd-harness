@@ -595,30 +595,7 @@ def render_gitnexus(rd, companion=False):
       </div>
     </div>
   </div>
-  <script>
-  (function() {{
-    var ctrl = new AbortController();
-    var timer = setTimeout(function() {{ ctrl.abort(); }}, 2000);
-    fetch('http://localhost:4567', {{ mode: 'no-cors', signal: ctrl.signal }})
-      .then(function() {{
-        clearTimeout(timer);
-        var f = document.getElementById('gn-frame');
-        var fb = document.getElementById('gn-fallback');
-        if (f) {{ f.style.display = 'block'; }}
-        if (fb) {{ fb.style.display = 'none'; }}
-      }})
-      .catch(function() {{
-        clearTimeout(timer);
-        var st   = document.getElementById('gn-status');
-        var btn  = document.getElementById('gn-copy-btn');
-        var hint = document.getElementById('gn-copy-hint');
-        if (st)   st.textContent = 'GitNexus not running';
-        if (btn)  btn.style.display = 'block';
-        if (hint) hint.style.display = 'block';
-        {("var sbtn = document.getElementById('gn-start-btn'); if (sbtn) sbtn.style.display = 'block';" if companion else "")}
-      }});
-  }})();
-  </script>"""
+"""
 
     return f"""<div class="section-inner">
   <h2 class="section-title">GitNexus — {repo_name}</h2>
@@ -1038,9 +1015,34 @@ function show(sectionKey) {
   document.querySelectorAll('.nav-item').forEach(function(el) {
     el.classList.toggle('active', el.dataset.s === sectionKey);
   });
+  if (sectionKey === 'gitnexus') probeGitnexus();
 }
 
 function switchRepo(v) { repo = v; show(sec); }
+
+function probeGitnexus() {
+  var ctrl  = new AbortController();
+  var timer = setTimeout(function() { ctrl.abort(); }, 2500);
+  fetch('http://localhost:4567', { mode: 'no-cors', signal: ctrl.signal })
+    .then(function() {
+      clearTimeout(timer);
+      var f  = document.getElementById('gn-frame');
+      var fb = document.getElementById('gn-fallback');
+      if (f)  f.style.display = 'block';
+      if (fb) fb.style.display = 'none';
+    })
+    .catch(function() {
+      clearTimeout(timer);
+      var st   = document.getElementById('gn-status');
+      var btn  = document.getElementById('gn-copy-btn');
+      var hint = document.getElementById('gn-copy-hint');
+      var sbtn = document.getElementById('gn-start-btn');
+      if (st)   st.textContent = 'GitNexus not running';
+      if (btn)  btn.style.display  = 'block';
+      if (hint) hint.style.display = 'block';
+      if (sbtn) sbtn.style.display = 'block';
+    });
+}
 
 __GN_SERVE_FUNS__
 
