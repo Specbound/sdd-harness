@@ -4,5 +4,6 @@ VERSION
 
 # Runtime artifacts
 logs/
+.dashboard/
 __pycache__/
 *.pyc
