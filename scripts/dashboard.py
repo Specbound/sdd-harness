@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""SDD Harness Dashboard — generates a self-contained HTML file and opens it in the browser.
+"""SDD Harness Dashboard — starts a local server and opens the dashboard in the browser.
 
 Usage:
-    python ~/.claude/sdd-harness/scripts/dashboard.py [--repo /path/to/repo] [--no-open]
+    python3 ~/.claude/sdd-harness/scripts/dashboard.py [--repo /path/to/repo] [--no-open]
+    python3 ~/.claude/sdd-harness/scripts/dashboard.py --static   # write file only, no server
 """
 
 import argparse
@@ -13,16 +14,20 @@ import os
 import re
 import subprocess
 import sys
+import threading
 from datetime import datetime, timezone, timedelta
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 
-HARNESS_DIR   = Path(__file__).resolve().parent.parent
-PROJECTS_FILE = HARNESS_DIR / "projects.txt"
-DASHBOARD_DIR = HARNESS_DIR / ".dashboard"
-OUTPUT_FILE   = DASHBOARD_DIR / "index.html"
-ORCH_LOG      = HARNESS_DIR / "logs" / "orchestrator.log"
+HARNESS_DIR    = Path(__file__).resolve().parent.parent
+PROJECTS_FILE  = HARNESS_DIR / "projects.txt"
+DASHBOARD_DIR  = HARNESS_DIR / ".dashboard"
+OUTPUT_FILE    = DASHBOARD_DIR / "index.html"
+ORCH_LOG       = HARNESS_DIR / "logs" / "orchestrator.log"
+COMPANION_PORT = 4569
 
 SECTION_DEFS = [
     ("trust_battery",      "⚡", "Trust Battery"),
@@ -514,9 +519,10 @@ def render_trust_battery(rd):
   </div>
 </div>"""
 
-def render_gitnexus(rd):
+def render_gitnexus(rd, companion=False):
     gn        = rd["gitnexus"]
-    repo_name = h(Path(rd["path"]).name)
+    repo_path = rd["path"]
+    repo_name = h(Path(repo_path).name)
 
     if not gn.get("available"):
         return f"""<div class="section-inner">
@@ -555,46 +561,63 @@ def render_gitnexus(rd):
       <div class="label">indexed</div></div>
   </div>"""
 
-    iframe_html = """<div style="position:relative;border:1px solid var(--surface0);
+    serve_btn = ""
+    if companion:
+        rp_js = json.dumps(repo_path)
+        serve_btn = f"""<button id="gn-start-btn"
+           style="display:none;background:var(--mauve);color:var(--crust);border:none;
+                  border-radius:6px;padding:9px 18px;font-size:12px;font-weight:600;
+                  cursor:pointer;letter-spacing:.3px"
+           onclick="startGitnexus({rp_js})">
+        ▶ Start gitnexus serve
+      </button>"""
+
+    iframe_html = f"""<div style="position:relative;border:1px solid var(--surface0);
                           border-radius:8px;overflow:hidden;background:var(--crust)">
     <iframe id="gn-frame" src="http://localhost:4567"
-            style="width:100%;height:440px;border:none;display:block"
-            onload="onGnLoad()" onerror="showGnFallback()">
+            style="width:100%;height:440px;border:none;display:none">
     </iframe>
-    <div id="gn-fallback" style="display:none;position:absolute;inset:0;
+    <div id="gn-fallback" style="display:flex;position:relative;height:440px;
               background:var(--mantle);flex-direction:column;
               align-items:center;justify-content:center;gap:12px">
       <div style="font-size:32px">🕸</div>
-      <div style="color:var(--subtext0);font-size:13px">GitNexus graph not running</div>
+      <div id="gn-status" style="color:var(--subtext0);font-size:13px">Checking gitnexus…</div>
+      {serve_btn}
       <div id="gn-copy-btn"
-           style="background:var(--surface0);border-radius:6px;padding:8px 16px;
+           style="display:none;background:var(--surface0);border-radius:6px;padding:8px 16px;
                   font-family:monospace;font-size:12px;color:var(--text);cursor:pointer"
            onclick="navigator.clipboard.writeText('gitnexus serve');
                     this.textContent='✓ Copied!'">
         gitnexus serve  📋
       </div>
-      <div style="color:var(--overlay0);font-size:11px">
+      <div id="gn-copy-hint" style="display:none;color:var(--overlay0);font-size:11px">
         Click to copy, then run in your terminal
       </div>
     </div>
   </div>
   <script>
-    function onGnLoad() {
-      try {
+  (function() {{
+    var ctrl = new AbortController();
+    var timer = setTimeout(function() {{ ctrl.abort(); }}, 2000);
+    fetch('http://localhost:4567', {{ mode: 'no-cors', signal: ctrl.signal }})
+      .then(function() {{
+        clearTimeout(timer);
         var f = document.getElementById('gn-frame');
-        if (!f.contentDocument || !f.contentDocument.body ||
-            !f.contentDocument.body.innerHTML.trim()) {
-          showGnFallback();
-        }
-      } catch(e) { /* cross-origin means gitnexus IS running — good */ }
-    }
-    function showGnFallback() {
-      var fb = document.getElementById('gn-fallback');
-      if (fb) fb.style.display = 'flex';
-    }
-    setTimeout(function() {
-      try { onGnLoad(); } catch(e) {}
-    }, 3500);
+        var fb = document.getElementById('gn-fallback');
+        if (f) {{ f.style.display = 'block'; }}
+        if (fb) {{ fb.style.display = 'none'; }}
+      }})
+      .catch(function() {{
+        clearTimeout(timer);
+        var st   = document.getElementById('gn-status');
+        var btn  = document.getElementById('gn-copy-btn');
+        var hint = document.getElementById('gn-copy-hint');
+        if (st)   st.textContent = 'GitNexus not running';
+        if (btn)  btn.style.display = 'block';
+        if (hint) hint.style.display = 'block';
+        {("var sbtn = document.getElementById('gn-start-btn'); if (sbtn) sbtn.style.display = 'block';" if companion else "")}
+      }});
+  }})();
   </script>"""
 
     return f"""<div class="section-inner">
@@ -1019,12 +1042,14 @@ function show(sectionKey) {
 
 function switchRepo(v) { repo = v; show(sec); }
 
+__GN_SERVE_FUNS__
+
 document.addEventListener('DOMContentLoaded', function() { show('trust_battery'); });
 """
 
 # ── HTML Assembly ─────────────────────────────────────────────────────────────
 
-def build_html(repos_data, harness_data, initial_idx=0):
+def build_html(repos_data, harness_data, initial_idx=0, companion=False):
     repos = [rd["path"] for rd in repos_data]
 
     repo_opts = "\n".join(
@@ -1050,7 +1075,7 @@ def build_html(repos_data, harness_data, initial_idx=0):
     for rd in repos_data:
         sections_map[rd["path"]] = {
             "trust_battery":     render_trust_battery(rd),
-            "gitnexus":          render_gitnexus(rd),
+            "gitnexus":          render_gitnexus(rd, companion=companion),
             "hooks_history":     render_hooks_history(rd),
             "ccr_routines":      ccr_html,
             "memory_changes":    render_memory_changes(rd, harness_data),
@@ -1059,11 +1084,50 @@ def build_html(repos_data, harness_data, initial_idx=0):
             "maintenance_status": maint_html,
         }
 
-    sj  = json.dumps(sections_map, ensure_ascii=False).replace("<\/script>", r"<\/script>")
-    # Belt-and-suspenders: escape literal </script> sequences inside the JSON
-    sj  = sj.replace("</script>", r"<\/script>")
+    sj  = json.dumps(sections_map, ensure_ascii=False).replace("</script>", r"<\/script>")
     ir  = json.dumps(repos[initial_idx] if repos else "")
-    js  = JS_TEMPLATE.replace("__SECTIONS_JSON__", sj).replace("__INIT_REPO__", ir)
+
+    gn_funs = """
+function startGitnexus(repoPath) {
+  var st   = document.getElementById('gn-status');
+  var sbtn = document.getElementById('gn-start-btn');
+  var cbtn = document.getElementById('gn-copy-btn');
+  var hint = document.getElementById('gn-copy-hint');
+  if (st)   st.textContent = 'Starting gitnexus serve…';
+  if (sbtn) sbtn.style.display = 'none';
+  if (cbtn) cbtn.style.display = 'none';
+  if (hint) hint.style.display = 'none';
+  fetch('/api/gitnexus-serve?repo=' + encodeURIComponent(repoPath), { method: 'POST' })
+    .then(function() { pollGitnexus(0); })
+    .catch(function() {
+      if (st) st.textContent = 'Could not reach companion server';
+    });
+}
+function pollGitnexus(n) {
+  var st = document.getElementById('gn-status');
+  if (n > 20) {
+    if (st) st.textContent = 'Timed out — is gitnexus installed?';
+    return;
+  }
+  if (st) st.textContent = 'Waiting for gitnexus… (' + (n + 1) + '/20)';
+  var ctrl = new AbortController();
+  setTimeout(function() { ctrl.abort(); }, 1500);
+  fetch('http://localhost:4567', { mode: 'no-cors', signal: ctrl.signal })
+    .then(function() {
+      var f  = document.getElementById('gn-frame');
+      var fb = document.getElementById('gn-fallback');
+      if (f)  { f.src = 'http://localhost:4567'; f.style.display = 'block'; }
+      if (fb) { fb.style.display = 'none'; }
+    })
+    .catch(function() {
+      setTimeout(function() { pollGitnexus(n + 1); }, 1000);
+    });
+}""" if companion else ""
+
+    js  = (JS_TEMPLATE
+           .replace("__SECTIONS_JSON__", sj)
+           .replace("__INIT_REPO__", ir)
+           .replace("__GN_SERVE_FUNS__", gn_funs))
     ts  = datetime.now().strftime("%Y-%m-%d %H:%M")
 
     return f"""<!DOCTYPE html>
@@ -1094,15 +1158,67 @@ def build_html(repos_data, harness_data, initial_idx=0):
 </body>
 </html>"""
 
+# ── Companion Server ──────────────────────────────────────────────────────────
+
+class _DashboardHandler(BaseHTTPRequestHandler):
+    _html: bytes = b""
+
+    def do_GET(self):
+        if self.path.split("?")[0] == "/":
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(self._html)))
+            self.end_headers()
+            self.wfile.write(self._html)
+        else:
+            self.send_error(404)
+
+    def do_POST(self):
+        parsed = urlparse(self.path)
+        if parsed.path == "/api/gitnexus-serve":
+            qs = parse_qs(parsed.query)
+            repo_path = qs.get("repo", [""])[0]
+            if repo_path and Path(repo_path).is_dir():
+                for cmd in [["gitnexus", "serve"], ["npx", "gitnexus", "serve"]]:
+                    try:
+                        subprocess.Popen(
+                            cmd, cwd=repo_path,
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                        )
+                        break
+                    except FileNotFoundError:
+                        continue
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            self.wfile.write(b'{"ok":true}')
+        else:
+            self.send_error(404)
+
+    def log_message(self, *_args):
+        """Suppress default request logging."""
+
+
+def serve_companion(html_content: str, port: int, open_browser_fn):
+    _DashboardHandler._html = html_content.encode("utf-8")
+    httpd = HTTPServer(("127.0.0.1", port), _DashboardHandler)
+    url = f"http://localhost:{port}"
+    print(f"   Dashboard: {url}  (Ctrl+C to stop)")
+    open_browser_fn(url)
+    try:
+        httpd.serve_forever()
+    except KeyboardInterrupt:
+        print("\n   Stopped.")
+
+
 # ── Browser Open ──────────────────────────────────────────────────────────────
 
-def open_browser(path):
-    url = path.as_uri()
+def open_browser(url: str):
     try:
         with open("/proc/version") as f:
             if "microsoft" in f.read().lower():
-                for cmd in [["wslview", url],
-                            ["explorer.exe", str(path).replace("/", "\\")]]:
+                for cmd in [["wslview", url], ["explorer.exe", url]]:
                     try:
                         subprocess.Popen(cmd,
                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -1118,15 +1234,17 @@ def open_browser(path):
             return
         except FileNotFoundError:
             continue
-    print(f"  Open manually: {url}")
+    print(f"   Open manually: {url}")
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def main():
-    ap = argparse.ArgumentParser(description="SDD Harness Dashboard generator")
+    ap = argparse.ArgumentParser(description="SDD Harness Dashboard")
     ap.add_argument("--repo",    help="Pre-select a repo path or name")
     ap.add_argument("--no-open", action="store_true",
-                    help="Generate HTML without opening browser")
+                    help="Start server without opening browser")
+    ap.add_argument("--static",  action="store_true",
+                    help="Write static file to .dashboard/index.html instead of starting server")
     args = ap.parse_args()
 
     print("⬡  SDD Harness Dashboard")
@@ -1151,13 +1269,13 @@ def main():
     repos_data = []
     for repo in repos:
         repos_data.append({
-            "path":            str(repo),
-            "trust_scores":    parse_trust_scores(repo),
-            "observations":    parse_observations(repo),
-            "hooks":           list_hooks(repo),
+            "path":             str(repo),
+            "trust_scores":     parse_trust_scores(repo),
+            "observations":     parse_observations(repo),
+            "hooks":            list_hooks(repo),
             "last_routine_run": read_last_routine_run(repo),
-            "gitnexus":        gitnexus_stats(repo),
-            "memory_changes":  git_log_memory(repo),
+            "gitnexus":         gitnexus_stats(repo),
+            "memory_changes":   git_log_memory(repo),
         })
 
     skill_content, skill_age = read_skill_report()
@@ -1172,17 +1290,23 @@ def main():
     print(" done.")
     print("   Rendering...", end="", flush=True)
 
-    html_content = build_html(repos_data, harness_data, initial_idx)
+    companion = not args.static
+    html_content = build_html(repos_data, harness_data, initial_idx, companion=companion)
+    print(" done.")
 
-    DASHBOARD_DIR.mkdir(exist_ok=True)
-    OUTPUT_FILE.write_text(html_content, encoding="utf-8")
-
-    size_kb = OUTPUT_FILE.stat().st_size // 1024
-    print(f" done. ({size_kb} KB)")
-    print(f"   Output:  {OUTPUT_FILE}")
-
-    if not args.no_open:
-        open_browser(OUTPUT_FILE)
+    if args.static:
+        DASHBOARD_DIR.mkdir(exist_ok=True)
+        OUTPUT_FILE.write_text(html_content, encoding="utf-8")
+        size_kb = OUTPUT_FILE.stat().st_size // 1024
+        print(f"   Output:  {OUTPUT_FILE} ({size_kb} KB)")
+        if not args.no_open:
+            open_browser(OUTPUT_FILE.as_uri())
+    else:
+        serve_companion(
+            html_content,
+            COMPANION_PORT,
+            open_browser_fn=(lambda url: None) if args.no_open else open_browser,
+        )
         print("   Opening in browser...")
 
 if __name__ == "__main__":
