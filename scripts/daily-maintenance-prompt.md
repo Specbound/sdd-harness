@@ -11,10 +11,13 @@ Execute the three steps below in order. Each is error-isolated — if one step f
 ## Step A — Daily Maintenance (trust-battery loop)
 
 Read `.claude/commands/kiro/daily-maintenance.md` and execute its pipeline:
-1. Judge — score the last 24h of observations using `kiro/settings/rules/session-quality-rubric.md`
+1. Judge — score the last 24h of observations using `kiro/settings/rules/session-quality-rubric.md`. Write the `[judge]` observation as usual, but **do NOT call `trust_score.py apply`** — scoring is handled in step 4.
 2. Reflect — convert drains (especially [memory-gap] entries) into memory updates
 3. Housekeep — archive observations.md if >50 entries
-4. Trust Score — `python3 .claude/scripts/trust_score.py apply --delta <X> --summary "<one-line>"`
+4. Trust Score — `python3 .claude/scripts/trust_score.py auto-score`
+   This reads observations.md directly and scores mechanically from tagged signals
+   (`[session-charge]`, `[memory-gap]`, `[session-quality]`, `[keep-rate]`).
+   It is idempotent — running it twice on the same day is safe.
 5. Alert — append `[routine-alert]` if any [memory-gap] entries remain unresolved after reflect
 
 The pre-check at the top of daily-maintenance.md skips if today's `[judge]:` entry already exists. Respect that.

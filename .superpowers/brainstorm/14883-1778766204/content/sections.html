@@ -1,0 +1,91 @@
+<h2>Which sections should the dashboard include?</h2>
+<p class="subtitle">The 6 you requested are pre-selected. The rest exist in your harness data — check any you want to add.</p>
+
+<div class="options" data-multiselect>
+
+  <div class="option selected" data-choice="trust-battery" onclick="toggleSelect(this)">
+    <div class="letter">⚡</div>
+    <div class="content">
+      <h3>Trust Battery</h3>
+      <p>Arc gauge + 7-day trend chart. Charges/drains evidence from today's judge run. Source: <code>trust-score.jsonl</code></p>
+    </div>
+  </div>
+
+  <div class="option selected" data-choice="gitnexus" onclick="toggleSelect(this)">
+    <div class="letter">🕸</div>
+    <div class="content">
+      <h3>GitNexus</h3>
+      <p>Stats strip (symbols, clusters, HIGH risks, staleness) + iframe embed of localhost:4567 graph. Source: <code>gitnexus serve</code> + MCP</p>
+    </div>
+  </div>
+
+  <div class="option selected" data-choice="hooks-history" onclick="toggleSelect(this)">
+    <div class="letter">🪝</div>
+    <div class="content">
+      <h3>Hooks History</h3>
+      <p>Table of recent hook fires — which hook, when, result, any output. 12 hooks wired in your harness. Source: <code>observations.md</code> + hook log</p>
+    </div>
+  </div>
+
+  <div class="option selected" data-choice="ccr-history" onclick="toggleSelect(this)">
+    <div class="letter">📅</div>
+    <div class="content">
+      <h3>CCR Routines</h3>
+      <p>Status + last-run timeline for all scheduled routines. Shows trigger ID, schedule, last output file. Source: <code>docs/ccr-routines/README.md</code> + <code>skill-curation-report.md</code></p>
+    </div>
+  </div>
+
+  <div class="option selected" data-choice="memory-changes" onclick="toggleSelect(this)">
+    <div class="letter">🧠</div>
+    <div class="content">
+      <h3>Memory Changes</h3>
+      <p>Feed of recent writes to <code>hot-memory.md</code>, <code>observations.md</code>, and project memory files. Diff view per entry. Source: <code>/projects/*/memory/</code></p>
+    </div>
+  </div>
+
+  <div class="option selected" data-choice="skill-changes" onclick="toggleSelect(this)">
+    <div class="letter">🎯</div>
+    <div class="content">
+      <h3>Skill Changes</h3>
+      <p>Latest skill curation report — quality scores, merge/compress/delete recs, memory governance drift. Source: <code>docs/skill-curation-report.md</code></p>
+    </div>
+  </div>
+
+  <div class="option" data-choice="session-quality" onclick="toggleSelect(this)">
+    <div class="letter">📊</div>
+    <div class="content">
+      <h3>Session Quality <span style="font-size:10px;background:#cba6f722;color:#cba6f7;padding:1px 6px;border-radius:10px;margin-left:4px">recommended</span></h3>
+      <p>Daily session score (0–5), keep-rate %, re-explanation hit count. Trend over last 30 days. Source: <code>[session-quality]</code> + <code>[keep-rate]</code> tags in <code>observations.md</code></p>
+    </div>
+  </div>
+
+  <div class="option" data-choice="maintenance-status" onclick="toggleSelect(this)">
+    <div class="letter">🔧</div>
+    <div class="content">
+      <h3>Maintenance Status <span style="font-size:10px;background:#cba6f722;color:#cba6f7;padding:1px 6px;border-radius:10px;margin-left:4px">recommended</span></h3>
+      <p>Last daily-maintenance run per repo — timestamp, exit code, duration. Catch-up status. Source: <code>orchestrator.log</code> + <code>.last-routine-run</code></p>
+    </div>
+  </div>
+
+  <div class="option" data-choice="observations-feed" onclick="toggleSelect(this)">
+    <div class="letter">📋</div>
+    <div class="content">
+      <h3>Observations Feed</h3>
+      <p>Scrollable stream of all <code>observations.md</code> entries, filterable by tag: <code>[judge]</code> <code>[memory-gap]</code> <code>[revert]</code> <code>[routine-alert]</code> etc.</p>
+    </div>
+  </div>
+
+  <div class="option" data-choice="active-specs" onclick="toggleSelect(this)">
+    <div class="letter">📐</div>
+    <div class="content">
+      <h3>Active Specs</h3>
+      <p>In-flight specs from <code>hot-memory.md</code> — name, phase, next action. Quick status on what's being built. Source: <code>hot-memory.md</code> Active Specs section</p>
+    </div>
+  </div>
+
+</div>
+
+<div style="margin-top:16px;padding:12px 14px;background:#1e1e2e;border:1px solid #313244;border-radius:8px">
+  <p class="label" style="color:#a6adc8">Note</p>
+  <p style="color:#a6adc8;font-size:12px;margin:4px 0 0">Select all you want — uncheck any of the original 6 to remove them too. The sidebar order will match this list from top to bottom.</p>
+</div>

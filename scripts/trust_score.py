@@ -16,6 +16,7 @@ Usage:
 
 import argparse
 import json
+import re
 import sys
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -25,6 +26,7 @@ DEFAULT_START = 20.0
 DAILY_CAP = 4.5
 HISTORY = Path(".claude/memory/trust-score.jsonl")
 HOT_MEMORY = Path(".claude/memory/hot-memory.md")
+OBS_FILE = Path(".claude/memory/observations.md")
 SCORE_HEADER_PREFIX = "## Harness Trust Score:"
 
 
@@ -154,6 +156,84 @@ def cmd_apply(delta: float, summary: str) -> int:
     return 0
 
 
+def _tally_tags(tags: str, content: str, counts: dict) -> None:
+    if "session-charge" in tags:
+        counts["session_charges"] += 1
+    if "memory-gap" in tags:
+        counts["memory_gaps"] += 1
+    if "session-quality" in tags:
+        sq = re.search(r"Score=(\d)/5", content)
+        if sq:
+            n = int(sq.group(1))
+            if n >= 4:
+                counts["sq_high"] += 1
+            elif n <= 2:
+                counts["sq_low"] += 1
+    if "keep-rate" in tags:
+        kr = re.search(r"(\d+)%", content)
+        if kr and int(kr.group(1)) >= 80:
+            counts["kr_high"] += 1
+
+
+def _parse_observations_since(since: date) -> dict:
+    counts = {"session_charges": 0, "memory_gaps": 0,
+              "sq_high": 0, "sq_low": 0, "kr_high": 0}
+    if not OBS_FILE.is_file():
+        return counts
+    pattern = re.compile(r"^- (\d{4}-\d{2}-\d{2}) \[([^\]]+)\]:(.*)")
+    for line in OBS_FILE.read_text(encoding="utf-8").splitlines():
+        m = pattern.match(line)
+        if not m:
+            continue
+        try:
+            entry_date = date.fromisoformat(m.group(1))
+        except ValueError:
+            continue
+        if entry_date >= since:
+            _tally_tags(m.group(2), m.group(3), counts)
+    return counts
+
+
+def cmd_auto_score() -> int:
+    """Score deterministically from observation tags; no LLM Judge needed."""
+    history = load_history()
+    today = date.today()
+
+    if history and history[-1]["ts"].startswith(today.isoformat()):
+        print(json.dumps({"status": "skipped", "reason": "already applied today",
+                          "score": history[-1]["score"]}))
+        return 0
+
+    if history:
+        since = date.fromisoformat(history[-1]["ts"][:10]) + timedelta(days=1)
+    else:
+        since = today
+
+    c = _parse_observations_since(since)
+    charges = min(c["session_charges"], 3)
+    gaps = min(c["memory_gaps"], 3)
+    sq_hi = min(c["sq_high"], 1)
+    sq_lo = min(c["sq_low"], 1)
+    kr_hi = min(c["kr_high"], 1)
+
+    delta = float(charges + sq_hi + kr_hi - gaps * 2 - sq_lo)
+
+    parts = []
+    if charges:
+        parts.append(f"{charges} approval(s)")
+    if sq_hi:
+        parts.append("session-quality≥4/5")
+    if kr_hi:
+        parts.append("keep-rate≥80%")
+    if gaps:
+        parts.append(f"{gaps} re-explanation(s)")
+    if sq_lo:
+        parts.append("session-quality≤2/5")
+    summary = "auto-score: " + (", ".join(parts) if parts else "no signals detected")
+
+    return cmd_apply(delta, summary)
+
+
 def cmd_show() -> int:
     history = load_history()
     score = current_score(history)
@@ -178,12 +258,15 @@ def main() -> int:
     p_apply.add_argument("--summary", type=str, default="")
 
     sub.add_parser("show", help="Show current score")
+    sub.add_parser("auto-score", help="Score deterministically from observations.md tags")
 
     args = ap.parse_args()
     if args.cmd == "apply":
         return cmd_apply(args.delta, args.summary)
     if args.cmd == "show":
         return cmd_show()
+    if args.cmd == "auto-score":
+        return cmd_auto_score()
     return 2
 
 

@@ -2,7 +2,9 @@
 
 **Date:** 2026-05-14  
 **Status:** Implemented  
-**Output:** `scripts/dashboard.py` → `.dashboard/index.html`
+**Output:** `scripts/dashboard.py` → serves at `http://localhost:4569` (companion server mode, default); use `--static` for file output
+
+_Last synced: 2026-05-14_
 
 ---
 
@@ -10,7 +12,7 @@
 
 The SDD harness accumulates rich per-repo telemetry — trust scores, session quality signals, hook activity, CCR routine history, memory changes — but all of it is buried in append-only files and markdown documents with no visual surface. This spec defines a local browser-based dashboard that gives a glanceable, per-repo view of harness health.
 
-**Outcome:** A single Python generator script (`scripts/dashboard.py`) that reads all harness data files, renders them into a fully self-contained HTML file, and opens it in the default browser. No server, no dependencies, no pip install.
+**Outcome:** A single Python script (`scripts/dashboard.py`, stdlib only) that reads all harness data files, renders them into HTML, and serves them from an in-process HTTP server at `localhost:4569`. Default mode opens the browser automatically. Use `--static` to write `.dashboard/index.html` instead (old file-based mode). Use `--no-open` to suppress browser launch.
 
 ---
 
@@ -23,7 +25,7 @@ The SDD harness accumulates rich per-repo telemetry — trust scores, session qu
 | Trust battery | Arc gauge — semicircular arc with nubs at both ends |
 | GitNexus panel | Hybrid — stats strip + iframe embed of localhost:4567 |
 | CCR panel | Cards with alert banners — one card per routine |
-| Launch | Static generator — `python3 scripts/dashboard.py` |
+| Launch | Companion HTTP server at `localhost:4569`; use `--static` for file output |
 
 **Sections (8, in sidebar order):**
 1. ⚡ Trust Battery
@@ -50,8 +52,9 @@ python3 ~/.claude/sdd-harness/scripts/dashboard.py [--repo /path/to/repo] [--no-
 1. Discover repos from `projects.txt` at harness root
 2. Read + parse all data sources per repo into a single JSON blob
 3. Pre-render all sections for all repos into HTML strings
-4. Assemble HTML template + JSON data blob → `.dashboard/index.html`
-5. Open in browser (WSL-aware: `wslview` / `explorer.exe` / `xdg-open`)
+4. Assemble HTML template + JSON data blob into an HTML string
+5. **Server mode** (default): start `HTTPServer` on `localhost:4569`, serve HTML from memory, open browser
+5. **Static mode** (`--static`): write to `.dashboard/index.html`, open as `file://` URL
 
 Output file `.dashboard/` is gitignored.
 
@@ -118,7 +121,10 @@ Each line of trust-score.jsonl: `{"ts": "...", "delta_raw": N, "delta_applied": 
 - Stats strip (4 cells): symbols | clusters | HIGH risks | indexed N ago
   - Yellow if `.gitnexus/` mtime > 24h; red if > 72h
 - Iframe (height 420px) → `http://localhost:4567`
-  - On load failure (3.5s timeout + onerror): fallback card with "gitnexus serve" copy button
+  - On load: probes `localhost:4567` via `fetch` (no-cors, 2s timeout)
+  - If reachable: show iframe, hide fallback
+  - If not reachable (server mode): show "▶ Start gitnexus serve" button; clicking POSTs to `/api/gitnexus-serve` and polls until iframe loads. Also shows copy-to-clipboard button.
+  - If not reachable (static mode): show copy-to-clipboard button only
 
 ---
 
@@ -218,7 +224,7 @@ gap_re   = re.compile(r'\[memory-gap\].*?(\d+) .* topics?: (.+)')
 
 | File | Action |
 |---|---|
-| `scripts/dashboard.py` | New — stdlib-only generator, ~580 LOC |
+| `scripts/dashboard.py` | New — stdlib-only server + generator, ~760 LOC |
 | `.gitignore` | Added `.dashboard/` |
 | `docs/superpowers/specs/2026-05-14-harness-dashboard-design.md` | This file |
 
@@ -227,11 +233,14 @@ gap_re   = re.compile(r'\[memory-gap\].*?(\d+) .* topics?: (.+)')
 ## Running the Dashboard
 
 ```bash
-# Generate and open in browser
+# Start server and open in browser (default)
 python3 ~/.claude/sdd-harness/scripts/dashboard.py
 
-# Generate only, no browser
+# Start server without opening browser
 python3 ~/.claude/sdd-harness/scripts/dashboard.py --no-open
+
+# Write static file to .dashboard/index.html (old behavior)
+python3 ~/.claude/sdd-harness/scripts/dashboard.py --static
 
 # Pre-select a repo
 python3 ~/.claude/sdd-harness/scripts/dashboard.py --repo /mnt/c/dev/aiq-zora-ai-engine

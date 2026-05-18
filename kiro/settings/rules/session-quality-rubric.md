@@ -34,6 +34,20 @@ Daily cap: **±4.5%** (matches the source trust-battery design; prevents runaway
 - **Stale context** — harness acted on a fact that `git log` or file contents show had changed, and nobody caught it until the user did.
 - **Churn** — multiple redo cycles on the same artifact within the window (3+ edits of the same file from reflection/evolve without a clear learning captured).
 
+## Auto-scored Signals (machine-counted by `trust_score.py auto-score`)
+
+These are scored deterministically from observation tags — no Judge pass needed. The Judge may still cite them as supporting evidence, but the score is already applied mechanically.
+
+| Tag | Condition | Weight | Cap/day |
+|---|---|---|---|
+| `[session-charge]` | Any count | +1 each | 3 |
+| `[memory-gap]` | Any count | -2 each | 3 |
+| `[session-quality]` | Score ≥ 4/5 | +1 | 1 |
+| `[session-quality]` | Score ≤ 2/5 | -1 | 1 |
+| `[keep-rate]` | N ≥ 80% | +1 | 1 |
+
+`[session-charge]` entries are written automatically by the stop hook when the user's session transcript contains unambiguous approval phrases ("that's perfect", "that works!", "great work", etc.). They require no manual action.
+
 ## Judging Constraints
 
 - **No proposals.** The judge names what it sees and assigns a weight. It does not recommend fixes, rewrite memories, or edit rules. That is the reflector's job, run separately so the judge has no incentive to soften its own scoring.

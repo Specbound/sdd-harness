@@ -75,3 +75,21 @@ else
     run_one "$repo"
   done < "$PROJECTS_FILE"
 fi
+
+# --- Harness-level weekly tasks ---
+# Wednesday (DOW=3): repo drift review
+DRIFT_STATE="$HARNESS_DIR/.last-drift-review"
+DRIFT_WEEK="$(date +%Y-W%V)"
+DOW="$(date +%u)"
+
+if [ "$DOW" = "3" ] && [ "$DRY_RUN" = false ]; then
+  LAST_DRIFT_WEEK="$(cat "$DRIFT_STATE" 2>/dev/null || echo "")"
+  if [ "$LAST_DRIFT_WEEK" != "$DRIFT_WEEK" ]; then
+    ts="$(date -Iseconds)"
+    echo "$ts harness: starting drift review ($DRIFT_WEEK)" >> "$LOG_FILE"
+    echo "$DRIFT_WEEK" > "$DRIFT_STATE"
+    echo 'Use the repo-drift-review skill to sweep the SDD harness for drift. Auto-fix what you can. Write the summary to /home/dalesser/.claude/sdd-harness/docs/drift-review-report.md' | \
+      claude --print --output-format text --permission-mode bypassPermissions > /dev/null 2>&1
+    echo "$ts harness: drift review exit=$?" >> "$LOG_FILE"
+  fi
+fi

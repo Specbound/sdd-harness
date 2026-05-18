@@ -156,7 +156,7 @@ Output arrows: ▲ (up), ▼ (down), ▬ (flat). 7-day delta is `null` until the
 │                                  (once per calendar day)     │
 └──────────────────────────────────────────────────────────────┘
                              │
-                  (night, via /schedule nightly)
+         (night, via Windows Task Scheduler / SessionStart hook)
                              ▼
 ┌──────────────────────────────────────────────────────────────┐
 │ /kiro:daily-maintenance                                      │
@@ -180,15 +180,15 @@ Output arrows: ▲ (up), ▼ (down), ▬ (flat). 7-day delta is `null` until the
 └──────────────────────────────────────────────────────────────┘
 ```
 
-### Scheduling via Claude Code Routines
+### Scheduling via Windows Task Scheduler
 
-Registered by `install.sh` on project setup, re-confirmed by `update.sh`:
+Auto-registered by `install.sh` on first install (and `update.sh` on existing installs) when running under WSL with `schtasks.exe` available. No manual setup needed. To force-recreate (e.g. after editing the schedule template):
 
 ```bash
-claude /schedule nightly "Run /kiro:daily-maintenance for $PROJECT_NAME"
+bash ~/.claude/sdd-harness/scripts/setup-global-orchestrator.sh --force
 ```
 
-One Routine per repo. Each repo maintains its own memory, score history, and rubric application.
+Fires daily at 18:00 local (Israel) for all repos listed in `~/.claude/sdd-harness/projects.txt`. Each repo runs its own `daily-runner.sh`, maintaining its own memory, score history, and rubric application. A SessionStart hook provides catch-up: if the runner hasn't fired in >24h, opening any Claude session in the repo fires it silently in the background.
 
 Opt out at install time:
 
@@ -196,7 +196,7 @@ Opt out at install time:
 SDD_SKIP_ROUTINE=1 ~/.claude/sdd-harness/install.sh /path/to/project
 ```
 
-Or after the fact: `claude /schedule delete <routine-id>`.
+Or after the fact: `schtasks.exe /Delete /TN "SDD Daily Orchestrator"` (global) or `rm .claude/scripts/daily-runner.sh` (per-repo).
 
 ## Rubric at a Glance
 
@@ -255,8 +255,8 @@ Check the guard conditions in order:
 
 ### Routine not registered
 
-- `claude /schedule list` — does the Routine appear?
-- If `claude` CLI is not on PATH, `install.sh` prints manual instructions. Run the shown `/schedule nightly "..."` command inside Claude Code.
+- `schtasks.exe /Query /TN "SDD Daily Orchestrator"` — does the Windows task exist?
+- If not, run `bash ~/.claude/sdd-harness/scripts/setup-global-orchestrator.sh` from WSL (requires `schtasks.exe` on PATH). Use `--force` to recreate a broken task.
 - `SDD_SKIP_ROUTINE=1` was set during install — run `update.sh` without it to retry.
 
 ### How do I reset a bad day?

@@ -77,6 +77,10 @@
           {
             "type": "command",
             "command": "/bin/bash /home/dalesser/.claude/sdd-harness/.claude/hooks/impeccable-detect-hook.sh"
+          },
+          {
+            "type": "command",
+            "command": "/bin/bash /home/dalesser/.claude/sdd-harness/.claude/hooks/hook-added-notify.sh"
           }
         ]
       },
@@ -88,6 +92,15 @@
             "command": "/bin/bash /home/dalesser/.claude/sdd-harness/.claude/hooks/revert-detect-hook.sh"
           }
         ]
+      },
+      {
+        "matcher": "CronCreate",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/bash /home/dalesser/.claude/sdd-harness/.claude/hooks/ccr-routine-added-notify.sh"
+          }
+        ]
       }
     ],
     "PreToolUse": [
@@ -97,6 +110,10 @@
           {
             "type": "command",
             "command": "/bin/bash /home/dalesser/.claude/sdd-harness/.claude/hooks/memory-discipline-hook.sh"
+          },
+          {
+            "type": "command",
+            "command": "/bin/bash /home/dalesser/.claude/sdd-harness/.claude/hooks/protected-path-hook.sh"
           }
         ]
       },

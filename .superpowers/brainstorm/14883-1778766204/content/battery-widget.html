@@ -1,0 +1,173 @@
+<style>
+  .preview-frame {
+    background: #181825;
+    border-radius: 10px;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    min-height: 190px;
+    justify-content: center;
+  }
+  .ctp-text { color: #cdd6f4; }
+  .ctp-subtext { color: #a6adc8; }
+  .ctp-overlay0 { color: #6c7086; }
+  .ctp-green { color: #a6e3a1; }
+  .ctp-red { color: #f38ba8; }
+  .ctp-yellow { color: #f9e2af; }
+  .ctp-blue { color: #89b4fa; }
+  .ctp-mauve { color: #cba6f7; }
+</style>
+
+<h2>How should the trust battery look?</h2>
+<p class="subtitle">All shown in Deep Space theme. The battery is the hero widget — should be instantly readable at a glance.</p>
+
+<div class="cards">
+
+  <!-- Option A: Vertical AA battery -->
+  <div class="card" data-choice="vertical-battery" onclick="toggleSelect(this)">
+    <div class="card-image" style="background:#1e1e2e;padding:0;border-radius:8px 8px 0 0;overflow:hidden">
+      <div class="preview-frame">
+
+        <!-- Battery cap -->
+        <div style="display:flex;flex-direction:column;align-items:center;gap:0">
+          <div style="width:22px;height:8px;background:#a6adc8;border-radius:3px 3px 0 0;margin-bottom:-1px;z-index:1"></div>
+
+          <!-- Battery body -->
+          <div style="width:56px;height:110px;border:2.5px solid #a6e3a1;border-radius:5px;background:#1e1e2e;position:relative;overflow:hidden;box-shadow:0 0 12px #a6e3a155">
+
+            <!-- Tick marks -->
+            <div style="position:absolute;left:0;right:0;top:25%;height:1px;background:#a6e3a122"></div>
+            <div style="position:absolute;left:0;right:0;top:50%;height:1px;background:#a6e3a122"></div>
+            <div style="position:absolute;left:0;right:0;top:75%;height:1px;background:#a6e3a122"></div>
+
+            <!-- Fill (72% from bottom) -->
+            <div style="position:absolute;bottom:0;left:0;right:0;height:72%;background:linear-gradient(180deg,#a6e3a1cc,#a6e3a1ff);transition:height 0.5s;box-shadow:0 0 16px #a6e3a155 inset"></div>
+
+            <!-- Percentage text overlay -->
+            <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;z-index:2">
+              <span style="color:#1e1e2e;font-size:18px;font-weight:800;font-family:monospace;text-shadow:none">72%</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Stats below -->
+        <div style="display:flex;gap:16px;margin-top:4px">
+          <div style="text-align:center">
+            <div style="color:#a6e3a1;font-size:13px;font-weight:700">+2.5</div>
+            <div style="color:#6c7086;font-size:9px;text-transform:uppercase;letter-spacing:0.8px">today</div>
+          </div>
+          <div style="text-align:center">
+            <div style="color:#cba6f7;font-size:13px;font-weight:700">+8.0</div>
+            <div style="color:#6c7086;font-size:9px;text-transform:uppercase;letter-spacing:0.8px">7-day</div>
+          </div>
+          <div style="text-align:center">
+            <div style="color:#89b4fa;font-size:13px;font-weight:700">14d</div>
+            <div style="color:#6c7086;font-size:9px;text-transform:uppercase;letter-spacing:0.8px">streak</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A — Vertical AA Battery</h3>
+      <p>Tall upright battery with glowing fill. Classic form, unmistakable at a glance. Score overlaid inside the cell.</p>
+    </div>
+  </div>
+
+  <!-- Option B: Horizontal phone-style battery, large -->
+  <div class="card" data-choice="horizontal-battery" onclick="toggleSelect(this)">
+    <div class="card-image" style="background:#1e1e2e;padding:0;border-radius:8px 8px 0 0;overflow:hidden">
+      <div class="preview-frame" style="padding:24px 20px">
+
+        <!-- Score big -->
+        <div style="text-align:center;margin-bottom:8px">
+          <div style="color:#a6e3a1;font-size:42px;font-weight:800;font-family:monospace;line-height:1;text-shadow:0 0 20px #a6e3a155">72<span style="font-size:24px;opacity:0.7">%</span></div>
+          <div style="color:#6c7086;font-size:10px;text-transform:uppercase;letter-spacing:1.5px;margin-top:2px">trust score</div>
+        </div>
+
+        <!-- Horizontal battery -->
+        <div style="display:flex;align-items:center;gap:4px;width:100%">
+          <div style="flex:1;height:28px;border:2px solid #a6e3a1;border-radius:5px;overflow:hidden;position:relative;box-shadow:0 0 10px #a6e3a133">
+            <!-- Segment fills -->
+            <div style="position:absolute;inset:0;display:flex;gap:2px;padding:2px">
+              <div style="flex:1;background:#a6e3a1;border-radius:2px;opacity:0.9;box-shadow:0 0 6px #a6e3a188 inset"></div>
+              <div style="flex:1;background:#a6e3a1;border-radius:2px;opacity:0.9"></div>
+              <div style="flex:1;background:#a6e3a1;border-radius:2px;opacity:0.9"></div>
+              <div style="flex:1;background:#a6e3a133;border-radius:2px"></div> <!-- empty seg -->
+            </div>
+          </div>
+          <!-- Nub -->
+          <div style="width:6px;height:14px;background:#a6e3a1;border-radius:0 3px 3px 0;box-shadow:0 0 6px #a6e3a1aa"></div>
+        </div>
+
+        <!-- Charge/drain pills -->
+        <div style="display:flex;gap:8px;margin-top:10px">
+          <div style="background:#a6e3a122;border:1px solid #a6e3a144;border-radius:20px;padding:3px 10px;font-size:10px;color:#a6e3a1">▲ 3 charges</div>
+          <div style="background:#f38ba822;border:1px solid #f38ba844;border-radius:20px;padding:3px 10px;font-size:10px;color:#f38ba8">▼ 1 drain</div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B — Horizontal + Score Hero</h3>
+      <p>Big score number up top, horizontal segmented battery below. Charge/drain pills show today's evidence. Clean & bold.</p>
+    </div>
+  </div>
+
+  <!-- Option C: Radial + battery combo -->
+  <div class="card" data-choice="radial-battery" onclick="toggleSelect(this)">
+    <div class="card-image" style="background:#1e1e2e;padding:0;border-radius:8px 8px 0 0;overflow:hidden">
+      <div class="preview-frame">
+
+        <!-- Radial arc battery -->
+        <div style="position:relative;width:120px;height:70px;overflow:visible">
+          <svg width="120" height="80" viewBox="0 0 120 80" style="overflow:visible">
+            <!-- Background arc -->
+            <path d="M 10 70 A 50 50 0 0 1 110 70" fill="none" stroke="#313244" stroke-width="10" stroke-linecap="round"/>
+            <!-- Filled arc (72%) -->
+            <path d="M 10 70 A 50 50 0 0 1 110 70" fill="none" stroke="#a6e3a1" stroke-width="10" stroke-linecap="round"
+              stroke-dasharray="157" stroke-dashoffset="44"
+              style="filter:drop-shadow(0 0 6px #a6e3a1aa)"/>
+            <!-- Battery nubs at ends -->
+            <circle cx="10" cy="70" r="5" fill="#313244"/>
+            <circle cx="110" cy="70" r="5" fill="#313244"/>
+            <!-- Score text -->
+            <text x="60" y="60" text-anchor="middle" fill="#a6e3a1" font-size="22" font-weight="800" font-family="monospace">72%</text>
+            <text x="60" y="76" text-anchor="middle" fill="#6c7086" font-size="9" font-family="system-ui" letter-spacing="2">TRUST</text>
+          </svg>
+        </div>
+
+        <!-- Min/max labels -->
+        <div style="display:flex;justify-content:space-between;width:120px;margin-top:-8px">
+          <span style="color:#6c7086;font-size:9px">0%</span>
+          <span style="color:#6c7086;font-size:9px">100%</span>
+        </div>
+
+        <!-- Daily delta pill + trend -->
+        <div style="display:flex;gap:8px;align-items:center;margin-top:4px">
+          <div style="background:#a6e3a122;border:1px solid #a6e3a133;border-radius:20px;padding:3px 12px;font-size:11px;color:#a6e3a1;font-weight:600">▲ +2.5 today</div>
+          <div style="display:flex;align-items:flex-end;gap:2px;height:20px">
+            <div style="background:#a6e3a1;width:4px;height:55%;border-radius:1px;opacity:0.5"></div>
+            <div style="background:#f38ba8;width:4px;height:40%;border-radius:1px;opacity:0.7"></div>
+            <div style="background:#a6e3a1;width:4px;height:65%;border-radius:1px;opacity:0.6"></div>
+            <div style="background:#a6e3a1;width:4px;height:70%;border-radius:1px;opacity:0.7"></div>
+            <div style="background:#a6e3a1;width:4px;height:68%;border-radius:1px;opacity:0.8"></div>
+            <div style="background:#a6e3a1;width:4px;height:72%;border-radius:1px"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>C — Arc Gauge</h3>
+      <p>Semicircular arc with nubs at both ends — reads as a "battery level gauge." More compact, leaves room for the trend mini-chart right below.</p>
+    </div>
+  </div>
+
+</div>
+
+<div style="margin-top:16px;padding:12px 14px;background:#1e1e2e;border:1px solid #313244;border-radius:8px">
+  <p class="label">My recommendation</p>
+  <p style="color:#cdd6f4;font-size:13px;margin:6px 0 0">
+    <strong style="color:#a6e3a1">A (Vertical AA)</strong> — most literal to "looks like a battery." Unmistakable, glows as it fills. The score overlaid inside the cell is satisfying to read. B is a good alternative if you want the number to dominate.
+  </p>
+</div>

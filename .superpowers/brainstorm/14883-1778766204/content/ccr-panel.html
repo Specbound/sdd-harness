@@ -1,0 +1,188 @@
+<style>
+  .ctp-base { background: #181825; }
+  .ctp-mantle { background: #1e1e2e; }
+  .ctp-surface0 { background: #313244; }
+  .pill {
+    border-radius: 20px;
+    padding: 2px 8px;
+    font-size: 9px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+  }
+  .pill-ok { background: #a6e3a122; color: #a6e3a1; border: 1px solid #a6e3a144; }
+  .pill-warn { background: #f9e2af22; color: #f9e2af; border: 1px solid #f9e2af44; }
+  .pill-miss { background: #f38ba822; color: #f38ba8; border: 1px solid #f38ba844; }
+  .pill-next { background: #89b4fa22; color: #89b4fa; border: 1px solid #89b4fa44; }
+  .routine-row {
+    border: 1px solid #313244;
+    border-radius: 8px;
+    overflow: hidden;
+    font-size: 11px;
+  }
+  .routine-header {
+    background: #1e1e2e;
+    padding: 8px 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .routine-body {
+    background: #181825;
+    padding: 8px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .timeline-dot {
+    width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+  }
+</style>
+
+<h2>CCR Panel design — pick the layout</h2>
+<p class="subtitle">All variants show schedule, last run, expected next run, and missed-run alerts. The difference is density vs. detail.</p>
+
+<div class="cards">
+
+  <!-- Option A: Card-per-routine with timeline -->
+  <div class="card" data-choice="cards-timeline" onclick="toggleSelect(this)">
+    <div class="card-image" style="background:#181825;padding:10px;border-radius:8px 8px 0 0;font-family:'Segoe UI',system-ui,sans-serif;display:flex;flex-direction:column;gap:8px">
+
+      <!-- Missed routine — prominent alert -->
+      <div class="routine-row" style="border-color:#f38ba866">
+        <div class="routine-header" style="background:#f38ba811">
+          <span style="color:#f38ba8;font-size:12px">⚠</span>
+          <span style="color:#f38ba8;font-size:11px;font-weight:600">skill-curator + memory-governance</span>
+          <span class="pill pill-miss" style="margin-left:auto">MISSED</span>
+        </div>
+        <div class="routine-body" style="gap:6px">
+          <div style="display:flex;gap:16px">
+            <div><span style="color:#6c7086;font-size:9px">SCHEDULE</span><br><span style="color:#cdd6f4;font-size:10px">Mon 09:00 IDT</span></div>
+            <div><span style="color:#6c7086;font-size:9px">LAST RAN</span><br><span style="color:#f38ba8;font-size:10px">12 days ago</span></div>
+            <div><span style="color:#6c7086;font-size:9px">EXPECTED</span><br><span style="color:#f38ba8;font-size:10px">5 days overdue</span></div>
+            <div><span style="color:#6c7086;font-size:9px">OUTPUT</span><br><span style="color:#6c7086;font-size:10px">no new file</span></div>
+          </div>
+          <div style="background:#f38ba811;border:1px solid #f38ba833;border-radius:6px;padding:5px 8px;color:#f38ba8;font-size:9px">
+            💡 Possible causes: GitHub App permissions revoked · repo renamed · trigger deleted
+            <span style="color:#89b4fa;text-decoration:underline;margin-left:6px;cursor:pointer">Debug checklist →</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Healthy routine -->
+      <div class="routine-row">
+        <div class="routine-header">
+          <span style="color:#a6e3a1;font-size:12px">✓</span>
+          <span style="color:#cdd6f4;font-size:11px;font-weight:600">daily-maintenance (aiq-zora)</span>
+          <span class="pill pill-ok" style="margin-left:auto">RAN 6h AGO</span>
+        </div>
+        <div class="routine-body">
+          <div style="display:flex;gap:16px">
+            <div><span style="color:#6c7086;font-size:9px">SCHEDULE</span><br><span style="color:#cdd6f4;font-size:10px">Daily 18:00</span></div>
+            <div><span style="color:#6c7086;font-size:9px">LAST RAN</span><br><span style="color:#a6e3a1;font-size:10px">Today 18:02</span></div>
+            <div><span style="color:#6c7086;font-size:9px">NEXT</span><br><span style="color:#89b4fa;font-size:10px">Tomorrow 18:00</span></div>
+            <div><span style="color:#6c7086;font-size:9px">OUTPUT</span><br><span style="color:#cba6f7;font-size:10px;text-decoration:underline;cursor:pointer">skill-curation-report.md ↗</span></div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+    <div class="card-body">
+      <h3>A — Cards with alert banners</h3>
+      <p>One card per routine. Missed runs get a red border + inline debug suggestions. Output file is a direct link.</p>
+    </div>
+  </div>
+
+  <!-- Option B: Table with run history dots -->
+  <div class="card" data-choice="table-dots" onclick="toggleSelect(this)">
+    <div class="card-image" style="background:#181825;padding:10px;border-radius:8px 8px 0 0;font-family:'Segoe UI',system-ui,sans-serif">
+
+      <div style="color:#6c7086;font-size:9px;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">CCR Routines</div>
+
+      <!-- Table header -->
+      <div style="display:grid;grid-template-columns:140px 70px 70px 1fr 60px;gap:6px;padding:4px 6px;color:#6c7086;font-size:9px;text-transform:uppercase;letter-spacing:0.8px;border-bottom:1px solid #313244;margin-bottom:4px">
+        <span>Routine</span><span>Schedule</span><span>Last ran</span><span>History (8 runs)</span><span>Output</span>
+      </div>
+
+      <!-- Row 1 — MISSED -->
+      <div style="display:grid;grid-template-columns:140px 70px 70px 1fr 60px;gap:6px;padding:5px 6px;background:#f38ba811;border-radius:4px;margin-bottom:4px;border:1px solid #f38ba833">
+        <div>
+          <div style="color:#f38ba8;font-size:10px;font-weight:600">skill-curator</div>
+          <div style="color:#6c7086;font-size:8px">trig_018Wuof3a…</div>
+        </div>
+        <span style="color:#a6adc8;font-size:10px;align-self:center">Mon 09:00</span>
+        <span style="color:#f38ba8;font-size:10px;align-self:center">12d ago ⚠</span>
+        <div style="display:flex;align-items:center;gap:3px">
+          <div class="timeline-dot" style="background:#a6e3a1"></div>
+          <div class="timeline-dot" style="background:#a6e3a1"></div>
+          <div class="timeline-dot" style="background:#a6e3a1"></div>
+          <div class="timeline-dot" style="background:#a6e3a1"></div>
+          <div class="timeline-dot" style="background:#a6e3a1"></div>
+          <div class="timeline-dot" style="background:#f9e2af"></div>
+          <div class="timeline-dot" style="background:#a6e3a1"></div>
+          <div class="timeline-dot" style="background:#f38ba8;box-shadow:0 0 4px #f38ba8"></div>
+        </div>
+        <span style="color:#6c7086;font-size:9px;align-self:center">stale</span>
+      </div>
+
+      <!-- Row 2 — OK -->
+      <div style="display:grid;grid-template-columns:140px 70px 70px 1fr 60px;gap:6px;padding:5px 6px;border-radius:4px;margin-bottom:4px">
+        <div>
+          <div style="color:#cdd6f4;font-size:10px;font-weight:600">daily-maint (zora)</div>
+          <div style="color:#6c7086;font-size:8px">local · orchestrator</div>
+        </div>
+        <span style="color:#a6adc8;font-size:10px;align-self:center">Daily 18:00</span>
+        <span style="color:#a6e3a1;font-size:10px;align-self:center">6h ago</span>
+        <div style="display:flex;align-items:center;gap:3px">
+          <div class="timeline-dot" style="background:#a6e3a1"></div>
+          <div class="timeline-dot" style="background:#a6e3a1"></div>
+          <div class="timeline-dot" style="background:#a6e3a1"></div>
+          <div class="timeline-dot" style="background:#a6e3a1"></div>
+          <div class="timeline-dot" style="background:#a6e3a1"></div>
+          <div class="timeline-dot" style="background:#a6e3a1"></div>
+          <div class="timeline-dot" style="background:#a6e3a1"></div>
+          <div class="timeline-dot" style="background:#a6e3a1;box-shadow:0 0 4px #a6e3a1"></div>
+        </div>
+        <span style="color:#cba6f7;font-size:9px;align-self:center;text-decoration:underline;cursor:pointer">report ↗</span>
+      </div>
+
+      <!-- Row 3 — Next run coming -->
+      <div style="display:grid;grid-template-columns:140px 70px 70px 1fr 60px;gap:6px;padding:5px 6px;border-radius:4px">
+        <div>
+          <div style="color:#cdd6f4;font-size:10px;font-weight:600">daily-maint (skills)</div>
+          <div style="color:#6c7086;font-size:8px">local · orchestrator</div>
+        </div>
+        <span style="color:#a6adc8;font-size:10px;align-self:center">Daily 18:00</span>
+        <span style="color:#a6e3a1;font-size:10px;align-self:center">6h ago</span>
+        <div style="display:flex;align-items:center;gap:3px">
+          <div class="timeline-dot" style="background:#a6e3a1"></div>
+          <div class="timeline-dot" style="background:#a6e3a1"></div>
+          <div class="timeline-dot" style="background:#f38ba8"></div>
+          <div class="timeline-dot" style="background:#a6e3a1"></div>
+          <div class="timeline-dot" style="background:#a6e3a1"></div>
+          <div class="timeline-dot" style="background:#a6e3a1"></div>
+          <div class="timeline-dot" style="background:#a6e3a1"></div>
+          <div class="timeline-dot" style="background:#a6e3a1;box-shadow:0 0 4px #a6e3a1"></div>
+        </div>
+        <span style="color:#cba6f7;font-size:9px;align-self:center;text-decoration:underline;cursor:pointer">report ↗</span>
+      </div>
+
+      <div style="border-top:1px solid #313244;margin-top:8px;padding-top:6px;color:#6c7086;font-size:9px">
+        🟢 ran  🟡 partial  🔴 missed/failed  &nbsp;·&nbsp; dots = oldest → newest (right = today)
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B — Table + run-history dots</h3>
+      <p>Compact table with 8-dot history strip per routine. Missed dot is red. Click any row to expand with output + debug info.</p>
+    </div>
+  </div>
+
+</div>
+
+<div style="margin-top:14px;padding:12px 14px;background:#1e1e2e;border:1px solid #313244;border-radius:8px">
+  <p class="label">How missed runs are detected</p>
+  <p style="color:#a6adc8;font-size:12px;margin:4px 0 0">
+    For <strong style="color:#cdd6f4">CCR routines</strong>: compare <code style="background:#313244;padding:1px 4px;border-radius:3px">git log --follow docs/skill-curation-report.md</code> last commit date vs. expected schedule window. If overdue by &gt;25% of the interval, flag MISSED.<br>
+    For <strong style="color:#cdd6f4">local daily routines</strong>: read <code style="background:#313244;padding:1px 4px;border-radius:3px">.last-routine-run</code> timestamp vs. now.
+  </p>
+</div>

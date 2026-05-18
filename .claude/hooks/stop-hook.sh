@@ -38,19 +38,29 @@ if [ -f "$OBS_FILE" ]; then
   fi
 fi
 
-# --- Memory-gap detection (re-explanation signal) ---
-# Scan the current session's transcript for phrases indicating the user had to
-# re-explain context. Each hit = a memory the harness should have saved.
+# --- Session signal detection (drain + charge) ---
+# Drain: re-explanation phrases the user had to say → [memory-gap]
+# Charge: unambiguous approval phrases → [session-charge]
+# Both write at most once per calendar day (idempotent).
 DETECTOR="$HOME/.claude/sdd-harness/scripts/detect_reexplanation.py"
 if [ -f "$DETECTOR" ] && [ -f "$OBS_FILE" ]; then
   (
-    hits=$(python3 "$DETECTOR" --auto-transcript 2>/dev/null || echo "[]")
-    count=$(echo "$hits" | python3 -c 'import json,sys; print(len(json.load(sys.stdin)))' 2>/dev/null || echo 0)
-    if [ "$count" -gt 0 ]; then
-      today=$(date +%Y-%m-%d)
-      if ! grep -q "^- $today \[memory-gap\]:" "$OBS_FILE" 2>/dev/null; then
-        topic=$(echo "$hits" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(", ".join(sorted({h["suggested_memory_topic"] for h in d}))[:80])' 2>/dev/null || echo "?")
-        echo "- $today [memory-gap]: $count re-explanation phrase(s) detected — topics: $topic" >> "$OBS_FILE"
+    today=$(date +%Y-%m-%d)
+
+    # Drain
+    drain_hits=$(python3 "$DETECTOR" --auto-transcript --mode drain 2>/dev/null || echo "[]")
+    drain_count=$(echo "$drain_hits" | python3 -c 'import json,sys; print(len(json.load(sys.stdin)))' 2>/dev/null || echo 0)
+    if [ "$drain_count" -gt 0 ] && ! grep -q "^- $today \[memory-gap\]:" "$OBS_FILE" 2>/dev/null; then
+      topic=$(echo "$drain_hits" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(", ".join(sorted({h["suggested_memory_topic"] for h in d}))[:80])' 2>/dev/null || echo "?")
+      echo "- $today [memory-gap]: $drain_count re-explanation phrase(s) detected — topics: $topic" >> "$OBS_FILE"
+    fi
+
+    # Charge
+    if ! grep -q "^- $today \[session-charge\]:" "$OBS_FILE" 2>/dev/null; then
+      charge_hits=$(python3 "$DETECTOR" --auto-transcript --mode charge 2>/dev/null || echo "[]")
+      charge_count=$(echo "$charge_hits" | python3 -c 'import json,sys; print(len(json.load(sys.stdin)))' 2>/dev/null || echo 0)
+      if [ "$charge_count" -gt 0 ]; then
+        echo "- $today [session-charge]: $charge_count approval signal(s) detected in session" >> "$OBS_FILE"
       fi
     fi
   ) &

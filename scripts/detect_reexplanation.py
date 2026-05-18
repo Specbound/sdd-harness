@@ -1,112 +1,137 @@
 #!/usr/bin/env python3
-"""
-Re-explanation detector for the SDD harness.
+"""Session signal detector for the SDD harness.
 
-Scans user turns for phrases indicating the user had to re-explain context
-the agent should already have remembered. Emits memory-gap candidates as
-JSON for consumption by session-judge and /kiro:reflect.
+Uses Claude Haiku to identify two signal types in a session transcript:
+  DRAIN  — user had to re-explain context the AI should have remembered,
+            or expressed frustration at a repeated mistake
+  CHARGE — user clearly approved of the AI's output
 
-Rationale: every re-explained preference is a memory the agent should have
-saved but didn't. Catching these automatically turns drift into a signal.
+LLM-based: catches implicit friction and satisfaction that regex misses.
+("that works but..." is not a charge; "you're doing it again" is a drain.)
 
 Inputs (one of):
     --file PATH            Scan a plain-text file
     --stdin                Scan stdin
     --auto-transcript      Find most recent Claude Code session transcript
-                           for the current working directory and scan its
-                           user messages.
+                           for the current working directory
 
-Outputs: JSON array on stdout. Each hit:
-    {
-      "phrase": "I already told you",
-      "context": "... 100-char window around the hit ...",
-      "suggested_memory_topic": "short topic guess"
-    }
+Output filter (--mode):
+    drain   (default) — emit drain signals only
+    charge            — emit charge signals only
+    all               — emit both
 
-Pass --emit observation to instead write a single [memory-gap] line
-suitable for direct appending to observations.md.
+Output format (--emit):
+    json         JSON array of hits (default)
+    observation  Single observation line for observations.md
 
 Exit codes: 0 = ran (regardless of hits); 2 = usage error; 3 = no input found.
 """
 
 import argparse
 import json
-import os
-import re
 import sys
 from datetime import date
 from pathlib import Path
 
+MODEL = "claude-haiku-4-5-20251001"
 
-RE_EXPLANATION_PATTERNS = [
-    r"\bI (?:already|just) (?:told|said|mentioned)\b",
-    r"\bas I (?:said|mentioned|told you)\b",
-    r"\bwe (?:already )?(?:discussed|covered) this\b",
-    r"\bremember(?: that)? I (?:said|told you)\b",
-    r"\bstop (?:asking|doing)\b",
-    r"\blike I (?:said|told you)\b",
-    r"\bhow many times\b",
-    r"\bI(?:'ve| have) (?:told|said) (?:you|this)\b",
-    r"\b(?:again|repeatedly)[,:]? (?:I|we) (?:told|said|explained)\b",
-]
+DETECTION_PROMPT = """\
+You are a session quality analyzer for a single-developer AI coding harness.
 
-COMPILED = [re.compile(p, re.IGNORECASE) for p in RE_EXPLANATION_PATTERNS]
+Analyze the user messages below and identify two signal types.
 
-CONTEXT_CHARS = 120
-TOPIC_STOPWORDS = {
-    "the", "a", "an", "to", "of", "in", "on", "for", "with", "that", "this",
-    "is", "was", "it", "and", "or", "but", "as", "at", "by", "be", "been",
-    "i", "you", "we", "they", "he", "she", "your", "my", "our", "their",
-    "already", "told", "said", "mentioned", "discussed", "covered",
-    "remember", "stop", "asking", "doing", "like", "how", "many", "times",
-    "again", "repeatedly", "explained", "have",
+**DRAIN signals** — the user had to re-explain something the AI should already \
+have known, OR expressed frustration at a repeated mistake. Catch both \
+explicit ("I already told you", "stop doing that") and implicit signals \
+("you're still doing that thing I asked you to stop", "this is wrong again", \
+"no, that's not what I meant", "I keep having to explain this").
+
+**CHARGE signals** — the user gave unambiguous approval of the AI's output. \
+Clear satisfaction only — not ambiguous acknowledgment. Strong signals: \
+"perfect", "exactly what I needed", "great work", "that works!", "yes exactly". \
+Do NOT count: standalone "ok" / "sure" / "yes" / "got it", anything with a \
+"but" immediately following it, or phrasing that implies partial approval.
+
+Respond ONLY with valid JSON, no prose before or after:
+{
+  "charges": [
+    {"context": "<verbatim excerpt, max 40 words>", "reason": "<one phrase>"}
+  ],
+  "drains": [
+    {"context": "<verbatim excerpt, max 40 words>", "reason": "<one phrase>"}
+  ]
 }
 
-
-def extract_topic(context: str) -> str:
-    """Extract a short noun-phrase-ish topic hint from the hit context."""
-    tokens = re.findall(r"[A-Za-z][A-Za-z0-9_\-]{2,}", context)
-    candidates = [
-        t for t in tokens
-        if t.lower() not in TOPIC_STOPWORDS and not t.isupper()
-    ]
-    # Prefer tokens with uppercase (likely proper nouns / identifiers) or
-    # tokens >= 5 chars that aren't stopwords.
-    scored = []
-    for t in candidates:
-        score = 0
-        if any(c.isupper() for c in t[1:]):
-            score += 2
-        if len(t) >= 5:
-            score += 1
-        if "_" in t or "-" in t:
-            score += 1
-        scored.append((score, t))
-    scored.sort(reverse=True)
-    top = [t for _, t in scored[:3]]
-    return " ".join(top) if top else "(unclear)"
+USER MESSAGES:
+---
+{text}
+---"""
 
 
-def scan(text: str) -> list[dict]:
-    hits: list[dict] = []
-    seen_spans: list[tuple[int, int]] = []
-    for pattern in COMPILED:
-        for m in pattern.finditer(text):
-            start, end = m.span()
-            # Dedupe only *overlapping* spans from other patterns matching the
-            # same phrase; distinct phrases near each other are separate hits.
-            if any(not (end <= s or start >= e) for s, e in seen_spans):
-                continue
-            seen_spans.append((start, end))
-            ctx_start = max(0, start - CONTEXT_CHARS)
-            ctx_end = min(len(text), end + CONTEXT_CHARS)
-            context = text[ctx_start:ctx_end].replace("\n", " ").strip()
-            hits.append({
-                "phrase": m.group(0),
-                "context": context,
-                "suggested_memory_topic": extract_topic(context),
-            })
-    return hits
+def _parse_llm_response(raw: str) -> tuple[list[dict], list[dict]]:
+    start = raw.find("{")
+    end = raw.rfind("}") + 1
+    if start == -1 or end == 0:
+        return [], []
+    data = json.loads(raw[start:end])
+
+    def _normalize(items: list) -> list[dict]:
+        return [
+            {
+                "phrase": h.get("context", ""),
+                "context": h.get("context", ""),
+                "suggested_memory_topic": h.get("reason", ""),
+            }
+            for h in (items or [])
+            if isinstance(h, dict)
+        ]
+
+    return _normalize(data.get("charges", [])), _normalize(data.get("drains", []))
+
+
+def _call_llm(text: str) -> tuple[list[dict], list[dict]]:
+    prompt = DETECTION_PROMPT.replace("{text}", text[:6000])
+    raw = None
+
+    # Try anthropic SDK first (faster, no subprocess overhead)
+    try:
+        import anthropic  # type: ignore
+        client = anthropic.Anthropic()
+        msg = client.messages.create(
+            model=MODEL,
+            max_tokens=1024,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        raw = msg.content[0].text.strip()
+    except ImportError:
+        pass  # SDK not installed — fall through to CLI
+    except Exception as e:
+        print(f"WARN: SDK call failed ({e}); trying CLI.", file=sys.stderr)
+
+    # Fall back to claude --print CLI
+    if raw is None:
+        import subprocess
+        try:
+            result = subprocess.run(
+                ["claude", "--print", "--output-format", "text"],
+                input=prompt,
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+            if result.returncode != 0:
+                print(f"WARN: claude CLI exited {result.returncode}; no signals.", file=sys.stderr)
+                return [], []
+            raw = result.stdout.strip()
+        except Exception as e:
+            print(f"WARN: CLI call failed ({e}); no signals detected.", file=sys.stderr)
+            return [], []
+
+    try:
+        return _parse_llm_response(raw)
+    except (json.JSONDecodeError, KeyError) as e:
+        print(f"WARN: JSON parse failed ({e}); raw={raw[:200]}", file=sys.stderr)
+        return [], []
 
 
 def find_latest_transcript() -> Path | None:
@@ -115,11 +140,9 @@ def find_latest_transcript() -> Path | None:
     if not base.is_dir():
         return None
     cwd = Path.cwd().resolve()
-    # Claude Code encodes the cwd as path with slashes → dashes, leading dash.
     encoded = "-" + str(cwd).replace("/", "-")
     project_dir = base / encoded
     if not project_dir.is_dir():
-        # Fall back: pick the most recent project dir overall.
         candidates = [p for p in base.iterdir() if p.is_dir()]
         if not candidates:
             return None
@@ -140,7 +163,6 @@ def read_user_turns_from_jsonl(path: Path) -> str:
             rec = json.loads(line)
         except json.JSONDecodeError:
             continue
-        # Only scan user turns — we're looking for what the human typed.
         role = rec.get("role") or rec.get("type")
         if role != "user":
             continue
@@ -155,8 +177,6 @@ def read_user_turns_from_jsonl(path: Path) -> str:
 
 
 def _load_text(args) -> tuple[str | None, int]:
-    """Resolve input source to text. Returns (text, exit_code). text=None means
-    no input was available (caller should emit [] and exit 0)."""
     if args.stdin:
         return sys.stdin.read(), 0
     if args.file:
@@ -168,6 +188,37 @@ def _load_text(args) -> tuple[str | None, int]:
     if path is None:
         return None, 0
     return read_user_turns_from_jsonl(path), 0
+
+
+_MODE_META = {
+    "drain":  ("memory-gap",      "re-explanation hit(s)"),
+    "charge": ("session-charge",  "approval signal(s)"),
+    "all":    ("session-signal",  "signal(s)"),
+}
+
+
+def _select_hits(mode: str, charges: list, drains: list) -> list:
+    if mode == "drain":
+        return drains
+    if mode == "charge":
+        return charges
+    return charges + drains
+
+
+def _emit(hits: list, mode: str, emit: str) -> None:
+    if emit == "observation":
+        if not hits:
+            return
+        obs_tag, hit_label = _MODE_META[mode]
+        topics = ", ".join(dict.fromkeys(h["suggested_memory_topic"] for h in hits))
+        if len(topics) > 80:
+            topics = topics[:77] + "..."
+        print(
+            f"- {date.today().isoformat()} [{obs_tag}]: "
+            f"{len(hits)} {hit_label} — {topics}"
+        )
+    else:
+        print(json.dumps(hits, indent=2))
 
 
 def main() -> int:
@@ -184,33 +235,24 @@ def main() -> int:
         "--emit",
         choices=["json", "observation"],
         default="json",
-        help="Output format. 'observation' writes a single [memory-gap] line to stdout suitable for appending to observations.md.",
+        help="json = array; observation = single line for observations.md",
+    )
+    ap.add_argument(
+        "--mode",
+        choices=["drain", "charge", "all"],
+        default="drain",
+        help="Which signals to emit (default: drain)",
     )
     args = ap.parse_args()
 
     text, code = _load_text(args)
     if text is None:
-        if args.emit == "observation":
-            return code
         print("[]")
         return code
-    hits = scan(text)
 
-    if args.emit == "observation":
-        if not hits:
-            return 0
-        topics = ", ".join(
-            dict.fromkeys(h["suggested_memory_topic"] for h in hits)
-        )
-        # Cap at ~80 chars to keep observations.md readable
-        if len(topics) > 80:
-            topics = topics[:77] + "..."
-        print(
-            f"- {date.today().isoformat()} [memory-gap]: "
-            f"{len(hits)} re-explanation hit(s) — topics: {topics}"
-        )
-    else:
-        print(json.dumps(hits, indent=2))
+    charges, drains = _call_llm(text)
+    hits = _select_hits(args.mode, charges, drains)
+    _emit(hits, args.mode, args.emit)
     return 0
 
 

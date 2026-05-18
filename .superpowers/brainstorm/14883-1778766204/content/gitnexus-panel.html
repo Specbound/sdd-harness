@@ -1,0 +1,215 @@
+<style>
+  body { font-family: 'Segoe UI', system-ui, sans-serif; }
+  .frame {
+    background: #181825;
+    border-radius: 10px;
+    overflow: hidden;
+    height: 210px;
+    display: flex;
+    flex-direction: column;
+    font-size: 11px;
+  }
+  .panel-header {
+    background: #1e1e2e;
+    border-bottom: 1px solid #313244;
+    padding: 8px 12px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-shrink: 0;
+  }
+  .panel-title { color: #cdd6f4; font-size: 12px; font-weight: 600; }
+  .tag {
+    background: #313244;
+    color: #a6adc8;
+    border-radius: 20px;
+    padding: 2px 8px;
+    font-size: 9px;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+  }
+  .btn {
+    background: #cba6f7;
+    color: #1e1e2e;
+    border-radius: 6px;
+    padding: 3px 10px;
+    font-size: 10px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .stat-row {
+    display: flex;
+    gap: 12px;
+    padding: 8px 12px;
+    border-bottom: 1px solid #313244;
+    flex-shrink: 0;
+  }
+  .stat { text-align: center; }
+  .stat .val { color: #cba6f7; font-size: 14px; font-weight: 700; }
+  .stat .lbl { color: #6c7086; font-size: 9px; text-transform: uppercase; letter-spacing: 0.8px; }
+</style>
+
+<h2>How should the GitNexus panel work?</h2>
+<p class="subtitle">GitNexus runs its own Sigma.js WebGL graph at localhost:4567. The question is how to integrate it.</p>
+
+<div class="cards">
+
+  <!-- Option A: Full iframe embed -->
+  <div class="card" data-choice="iframe-embed" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding:0;border-radius:8px 8px 0 0;overflow:hidden">
+      <div class="frame">
+        <div class="panel-header">
+          <span class="panel-title">🕸 GitNexus</span>
+          <div style="display:flex;gap:6px;align-items:center">
+            <div style="width:6px;height:6px;border-radius:50%;background:#a6e3a1;box-shadow:0 0 6px #a6e3a1"></div>
+            <span style="color:#a6e3a1;font-size:9px">running</span>
+            <div class="btn">⤢ fullscreen</div>
+          </div>
+        </div>
+        <!-- Simulated iframe content — force-directed graph -->
+        <div style="flex:1;background:#0d0d1a;position:relative;overflow:hidden">
+          <!-- Simulated WebGL graph -->
+          <svg width="100%" height="100%" viewBox="0 0 300 150">
+            <!-- Edges -->
+            <line x1="100" y1="60" x2="150" y2="40" stroke="#cba6f733" stroke-width="1"/>
+            <line x1="100" y1="60" x2="80" y2="100" stroke="#89b4fa33" stroke-width="1"/>
+            <line x1="150" y1="40" x2="200" y2="60" stroke="#a6e3a133" stroke-width="1.5"/>
+            <line x1="150" y1="40" x2="170" y2="90" stroke="#cba6f733" stroke-width="1"/>
+            <line x1="200" y1="60" x2="230" y2="40" stroke="#a6e3a133" stroke-width="1"/>
+            <line x1="200" y1="60" x2="220" y2="100" stroke="#89b4fa33" stroke-width="1"/>
+            <line x1="80" y1="100" x2="60" y2="120" stroke="#cba6f733" stroke-width="0.5"/>
+            <line x1="80" y1="100" x2="110" y2="120" stroke="#89b4fa33" stroke-width="0.5"/>
+            <line x1="170" y1="90" x2="150" y2="120" stroke="#a6e3a133" stroke-width="0.5"/>
+            <line x1="220" y1="100" x2="240" y2="120" stroke="#cba6f733" stroke-width="0.5"/>
+            <line x1="50" y1="50" x2="80" y2="100" stroke="#94e2d533" stroke-width="1"/>
+            <line x1="50" y1="50" x2="100" y2="60" stroke="#94e2d533" stroke-width="1"/>
+            <!-- Cluster A — purple (auth/core) -->
+            <circle cx="100" cy="60" r="7" fill="#cba6f7" opacity="0.9" style="filter:drop-shadow(0 0 4px #cba6f7aa)"/>
+            <circle cx="80" cy="100" r="5" fill="#cba6f7" opacity="0.7"/>
+            <circle cx="60" cy="120" r="3" fill="#cba6f7" opacity="0.5"/>
+            <!-- Cluster B — green (data layer) -->
+            <circle cx="150" cy="40" r="9" fill="#a6e3a1" opacity="0.9" style="filter:drop-shadow(0 0 5px #a6e3a1aa)"/>
+            <circle cx="200" cy="60" r="6" fill="#a6e3a1" opacity="0.8"/>
+            <circle cx="230" cy="40" r="4" fill="#a6e3a1" opacity="0.6"/>
+            <circle cx="170" cy="90" r="4" fill="#a6e3a1" opacity="0.6"/>
+            <circle cx="150" cy="120" r="3" fill="#a6e3a1" opacity="0.5"/>
+            <!-- Cluster C — blue (API) -->
+            <circle cx="220" cy="100" r="5" fill="#89b4fa" opacity="0.8"/>
+            <circle cx="240" cy="120" r="3" fill="#89b4fa" opacity="0.6"/>
+            <circle cx="110" cy="120" r="3" fill="#89b4fa" opacity="0.5"/>
+            <!-- Cluster D — teal (utils) -->
+            <circle cx="50" cy="50" r="5" fill="#94e2d5" opacity="0.8"/>
+            <!-- Labels -->
+            <text x="100" y="57" text-anchor="middle" fill="#fff" font-size="5" font-family="monospace">auth.py</text>
+            <text x="150" y="37" text-anchor="middle" fill="#fff" font-size="5" font-family="monospace">engine.py</text>
+            <text x="200" y="57" text-anchor="middle" fill="#fff" font-size="5" font-family="monospace">db.py</text>
+          </svg>
+          <div style="position:absolute;bottom:6px;right:8px;color:#6c7086;font-size:9px">47 nodes · 4 clusters · live</div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A — Full Embed</h3>
+      <p>Iframe embed of localhost:4567 directly in the panel. The actual Sigma.js graph, live. When GitNexus isn't running, shows a "start it" prompt.</p>
+    </div>
+  </div>
+
+  <!-- Option B: Stats card + Launch button -->
+  <div class="card" data-choice="stats-launch" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding:0;border-radius:8px 8px 0 0;overflow:hidden">
+      <div class="frame" style="justify-content:space-between">
+        <div class="panel-header">
+          <span class="panel-title">🕸 GitNexus</span>
+          <span class="tag">indexed 2h ago</span>
+        </div>
+        <div class="stat-row">
+          <div class="stat"><div class="val">47</div><div class="lbl">symbols</div></div>
+          <div class="stat"><div class="val">4</div><div class="lbl">clusters</div></div>
+          <div class="stat"><div class="val">12</div><div class="lbl">processes</div></div>
+          <div class="stat"><div class="val">3</div><div class="lbl">HIGH risks</div></div>
+        </div>
+        <!-- Community cluster legend -->
+        <div style="padding:8px 12px;display:flex;flex-direction:column;gap:4px;flex:1">
+          <div style="color:#6c7086;font-size:9px;text-transform:uppercase;letter-spacing:1px;margin-bottom:2px">Clusters</div>
+          <div style="display:flex;align-items:center;gap:6px"><div style="width:8px;height:8px;border-radius:50%;background:#cba6f7"></div><span style="color:#a6adc8;font-size:10px">auth / core</span><span style="color:#6c7086;font-size:9px;margin-left:auto">14 sym</span></div>
+          <div style="display:flex;align-items:center;gap:6px"><div style="width:8px;height:8px;border-radius:50%;background:#a6e3a1"></div><span style="color:#a6adc8;font-size:10px">data layer</span><span style="color:#6c7086;font-size:9px;margin-left:auto">18 sym</span></div>
+          <div style="display:flex;align-items:center;gap:6px"><div style="width:8px;height:8px;border-radius:50%;background:#89b4fa"></div><span style="color:#a6adc8;font-size:10px">API handlers</span><span style="color:#6c7086;font-size:9px;margin-left:auto">9 sym</span></div>
+          <div style="display:flex;align-items:center;gap:6px"><div style="width:8px;height:8px;border-radius:50%;background:#94e2d5"></div><span style="color:#a6adc8;font-size:10px">utils / shared</span><span style="color:#6c7086;font-size:9px;margin-left:auto">6 sym</span></div>
+        </div>
+        <div style="padding:8px 12px;border-top:1px solid #313244">
+          <div class="btn" style="text-align:center;background:#cba6f7;color:#1e1e2e;border-radius:6px;padding:5px">⤢ Open Graph in New Tab → localhost:4567</div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B — Stats + Launch</h3>
+      <p>Stats and cluster legend inline. "Open graph" button pops GitNexus in a new tab. No iframe complexity.</p>
+    </div>
+  </div>
+
+  <!-- Option C: Hybrid — stats header + iframe below -->
+  <div class="card" data-choice="hybrid" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding:0;border-radius:8px 8px 0 0;overflow:hidden">
+      <div class="frame">
+        <div class="panel-header">
+          <span class="panel-title">🕸 GitNexus</span>
+          <div style="display:flex;gap:6px;align-items:center">
+            <div style="width:6px;height:6px;border-radius:50%;background:#a6e3a1;box-shadow:0 0 6px #a6e3a1"></div>
+            <span style="color:#a6e3a1;font-size:9px">live</span>
+          </div>
+        </div>
+        <!-- Stats strip -->
+        <div style="display:flex;gap:0;border-bottom:1px solid #313244;flex-shrink:0">
+          <div style="flex:1;padding:5px 8px;text-align:center;border-right:1px solid #313244">
+            <div style="color:#cba6f7;font-size:12px;font-weight:700">47</div>
+            <div style="color:#6c7086;font-size:8px;text-transform:uppercase">symbols</div>
+          </div>
+          <div style="flex:1;padding:5px 8px;text-align:center;border-right:1px solid #313244">
+            <div style="color:#a6e3a1;font-size:12px;font-weight:700">4</div>
+            <div style="color:#6c7086;font-size:8px;text-transform:uppercase">clusters</div>
+          </div>
+          <div style="flex:1;padding:5px 8px;text-align:center;border-right:1px solid #313244">
+            <div style="color:#f38ba8;font-size:12px;font-weight:700">3</div>
+            <div style="color:#6c7086;font-size:8px;text-transform:uppercase">high risk</div>
+          </div>
+          <div style="flex:1;padding:5px 8px;text-align:center">
+            <div style="color:#89b4fa;font-size:12px;font-weight:700">2h</div>
+            <div style="color:#6c7086;font-size:8px;text-transform:uppercase">ago</div>
+          </div>
+        </div>
+        <!-- iframe preview -->
+        <div style="flex:1;background:#0d0d1a;position:relative;overflow:hidden">
+          <svg width="100%" height="100%" viewBox="0 0 300 120">
+            <line x1="100" y1="45" x2="150" y2="30" stroke="#cba6f733" stroke-width="1"/>
+            <line x1="100" y1="45" x2="80" y2="80" stroke="#89b4fa33" stroke-width="1"/>
+            <line x1="150" y1="30" x2="200" y2="50" stroke="#a6e3a133" stroke-width="1.5"/>
+            <line x1="150" y1="30" x2="170" y2="75" stroke="#cba6f733" stroke-width="1"/>
+            <line x1="200" y1="50" x2="230" y2="30" stroke="#a6e3a133" stroke-width="1"/>
+            <line x1="200" y1="50" x2="220" y2="85" stroke="#89b4fa33" stroke-width="1"/>
+            <circle cx="100" cy="45" r="7" fill="#cba6f7" opacity="0.9" style="filter:drop-shadow(0 0 4px #cba6f7aa)"/>
+            <circle cx="80" cy="80" r="5" fill="#cba6f7" opacity="0.6"/>
+            <circle cx="150" cy="30" r="9" fill="#a6e3a1" opacity="0.9" style="filter:drop-shadow(0 0 5px #a6e3a1aa)"/>
+            <circle cx="200" cy="50" r="6" fill="#a6e3a1" opacity="0.8"/>
+            <circle cx="230" cy="30" r="4" fill="#a6e3a1" opacity="0.6"/>
+            <circle cx="170" cy="75" r="4" fill="#a6e3a1" opacity="0.6"/>
+            <circle cx="220" cy="85" r="5" fill="#89b4fa" opacity="0.8"/>
+            <circle cx="50" cy="40" r="5" fill="#94e2d5" opacity="0.8"/>
+          </svg>
+          <div style="position:absolute;bottom:4px;right:6px;color:#6c7086;font-size:8px">iframe → localhost:4567  ⤢</div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>C — Hybrid (my pick)</h3>
+      <p>Stats strip at top for at-a-glance numbers, then the actual GitNexus iframe below. Best of both — context + full graph.</p>
+    </div>
+  </div>
+
+</div>
+
+<div style="margin-top:16px;padding:12px 14px;background:#1e1e2e;border:1px solid #313244;border-radius:8px">
+  <p class="label">My recommendation</p>
+  <p style="color:#cdd6f4;font-size:13px;margin:6px 0 0">
+    <strong style="color:#94e2d5">C (Hybrid)</strong> — gives you at-a-glance numbers (symbols, clusters, risk count, staleness) without losing the actual graph. When GitNexus isn't running, the iframe area shows a "run <code style="background:#313244;padding:1px 4px;border-radius:3px">gitnexus serve</code>" prompt with a copy button.
+  </p>
+</div>
