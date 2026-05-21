@@ -370,9 +370,14 @@ SDD_SKIP_ROUTINE=1 ~/.claude/sdd-harness/install.sh /path/to/project
 
 Or after install: `schtasks.exe /Delete /TN "SDD Daily Orchestrator"` (global) or `rm .claude/scripts/daily-runner.sh` (per-repo).
 
-### `scripts/detect_reexplanation.py` — re-explanation detector
+### `scripts/detect_reexplanation.py` — session signal detector
 
-Runs from `stop-hook.sh` after each session. Scans the session's user turns for phrases like "I already told you", "as I said", "we discussed this" — each hit becomes a `[memory-gap]` observation. The Judge treats these as flagship drains (every re-explained preference is a memory the harness should have saved but didn't). Rationale: see the "Daily Maintenance" section above.
+Runs from `stop-hook.sh` after each session. Uses Claude Haiku to analyse user turns for two signal types:
+
+- **Drain signals** — user had to re-explain context the AI should have saved (explicit: "I already told you"; implicit: "you're still doing that thing I asked you to stop"). Each drain → `[memory-gap]` observation. The Judge treats these as flagship drains.
+- **Charge signals** — user gave unambiguous approval ("that's perfect", "exactly what I needed", "great work"). Each charge → `[session-charge]` observation. The rubric auto-scores these as +1 each.
+
+Both types are written at most once per calendar day. The auto-scoring table in `kiro/settings/rules/session-quality-rubric.md` applies these mechanically — no Judge pass needed.
 
 ### Full reference: [`docs/trust-battery/`](trust-battery/)
 
@@ -476,6 +481,52 @@ Browse symbols, call chains, process flows, and community clusters in a WebGL gr
 Maps changed code to affected execution flows with HIGH/MEDIUM/LOW risk classification. Falls back to grep-based tracing if GitNexus is not installed.
 
 See `docs/gitnexus/README.md` for full details.
+
+---
+
+## Raindrop Workshop (Automatic Agent Tracing)
+
+All registered repos emit traces automatically whenever agents run. No commands needed — just open the dashboard Workshop tab.
+
+### Dashboard Workshop tab
+
+```bash
+python3 ~/.claude/sdd-harness/scripts/dashboard.py
+# → Workshop tab in the sidebar
+```
+
+| Action | How |
+|---|---|
+| Start Workshop | Click **Start raindrop workshop** button (or run `raindrop workshop` in terminal) |
+| View traces | Workshop UI loads at `/workshop/` in the dashboard |
+| Filter by repo | Use the `event=` label in Workshop sidebar (e.g. `aiq-zora-ai-engine`) |
+| Run eval loop | Click **Run Eval Loop** — costs ~5k–30k tokens, always manual |
+
+### What fires automatically
+
+Traces emit whenever an instrumented agent processes a request:
+
+| Repo | Trigger |
+|---|---|
+| `aiq-zora-ai-engine` | Any call to `AgentPipelineGraph.process()` |
+| `aiq-zora-agent-skills` | Any call to `DailyNewsHandler.handle()` |
+| `aiq-purina-salesorderintelligence-poc` | Any `/chat` request via `query_portal.py` |
+
+### Self-Healing Eval Loop
+
+Triggered manually from the dashboard. Claude reads Workshop traces, writes `pytest` assertions from them, runs the tests, and auto-fixes failures (max 3 cycles). Budget ~5k–30k tokens.
+
+Skill: `~/.claude/skills/raindrop-eval-loop/SKILL.md`
+
+### Instrumenting a new repo
+
+```bash
+/raindrop-instrument-agent
+```
+
+Or register the repo with the harness and `install.sh` handles it automatically.
+
+See `docs/raindrop/README.md` for full details and troubleshooting.
 
 ---
 

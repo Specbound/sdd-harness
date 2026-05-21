@@ -8,6 +8,35 @@ CCR (Claude Code Routines) are scheduled remote agents that run on a cron schedu
 
 ## Active Routines
 
+### Bi-Weekly Harness Health (CLAUDE.md Review + Skill Repair)
+**ID:** `trig_014LpmVohefGRmySvBzaJsxk`
+**Schedule:** 1st and 15th of each month at 9:00 AM IDT (06:00 UTC) — cron `0 6 1,15 * *`
+**Status:** Active (first run: 2026-06-01)
+**Repo:** `dansashalesser/sdd-harness` (requires Claude GitHub App installed)
+
+**What it does:** A combined routine covering two phases per run:
+
+1. **CLAUDE.md review** — Audits all CLAUDE.md files across registered repos for stale instructions, over-constraining rules from pre-Claude-4.x habits, and model-assumption drift. Writes findings to `docs/claudemd-review-report.md`. Deloitte repos (aiq-zora-\*) are private and may be inaccessible; the report notes which repos need local follow-up via `/claudemd-review`.
+
+2. **Iterative skill repair** — Reads the most recent `docs/skill-curation-report.md` for skills flagged as low-quality, then applies a three-phase Review→Repair→Validate loop (up to 3 iterations per skill, max 3 skills per run). Uses the SkillOS 4-dimension quality gate as the rubric. Stalled skills (delta not shrinking) are surfaced in the report for human review. Appends a `## Iterative Repair Run — [date]` section to `docs/skill-curation-report.md`.
+
+**Output:**
+- `docs/claudemd-review-report.md` — CLAUDE.md staleness findings
+- `docs/skill-curation-report.md` — appended repair run section
+- Any repaired `SKILL.md` files committed directly to the repo
+
+**How to use:** After the routine runs, `git pull` and read both report files. Stalled skills listed in the repair report need manual intervention — invoke the `iterative-repair-loop` skill locally with domain context the automated run couldn't supply.
+
+**Known limitation:** Deloitte repos (aiq-zora-\*) are private GitHub repos — CCR can't authenticate without org-level GitHub App install. Run `/claudemd-review` locally for those repos.
+
+**Prerequisites:**
+- GitHub App must be installed on `dansashalesser/sdd-harness` → https://claude.ai/code/onboarding?magic=github-app-setup
+- For Deloitte repos: org-level GitHub App install (requires IT approval)
+
+**Why it exists:** CLAUDE.md instructions drift with model releases; bi-weekly auditing catches stale constraints before they limit Claude's behavior. Skill repair closes the loop between the Monday skill-curator audit (which identifies problems) and actual fixes — the iterative pattern ensures each repair is validated, not just applied blindly.
+
+---
+
 ### Weekly Skill-Curator + Memory Governance
 **ID:** `trig_018Wuof3a3z9vzacVX83sbga`
 **Schedule:** Every Monday at 9:00 AM IDT (06:00 UTC) — cron `0 6 * * 1`

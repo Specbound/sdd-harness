@@ -72,5 +72,11 @@ if [ "${SDD_SKIP_ROUTINE:-0}" != "1" ] && command -v schtasks.exe >/dev/null 2>&
     echo "  WARNING: scheduled-task bootstrap returned non-zero."
 fi
 
+# Refresh Raindrop Workshop wiring (env vars + venv installs) for all repos.
+echo ""
+echo "Refreshing Raindrop Workshop setup..."
+bash "$HARNESS_DIR/scripts/raindrop-setup.sh" || \
+  echo "  WARNING: raindrop-setup.sh returned non-zero — re-run manually if needed."
+
 echo ""
 echo "All projects updated to harness version $(cat "$HARNESS_DIR/VERSION")."

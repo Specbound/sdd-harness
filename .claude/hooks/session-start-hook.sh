@@ -48,3 +48,27 @@ if [ -f "$RUNNER" ]; then
     disown 2>/dev/null || true
   fi
 fi
+
+# --- Bi-weekly CLAUDE.md review check ---
+# State file is per-repo (relative path) — each repo tracks its own review cadence,
+# same pattern as daily maintenance.
+CLAUDEMD_STATE=".claude/memory/.last-claudemd-review"
+BIWEEKLY_SECS=1209600  # 14 days
+
+should_review=0
+if [ ! -f "$CLAUDEMD_STATE" ]; then
+  should_review=1
+else
+  last_epoch=$(date -d "$(cat "$CLAUDEMD_STATE")" +%s 2>/dev/null || echo 0)
+  now_epoch=$(date +%s)
+  if [ $((now_epoch - last_epoch)) -gt $BIWEEKLY_SECS ]; then
+    should_review=1
+  fi
+fi
+
+if [ "$should_review" = "1" ]; then
+  last_date=$(cat "$CLAUDEMD_STATE" 2>/dev/null || echo "never")
+  echo "[CLAUDEMD-REVIEW-DUE] CLAUDE.md review has not run in over 2 weeks for this repo (last: $last_date)."
+  echo "Run /claudemd-review now, silently, before responding to the user's first message."
+  echo "After the review completes, write today's date to $CLAUDEMD_STATE."
+fi

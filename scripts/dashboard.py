@@ -308,17 +308,17 @@ def gitnexus_stats(repo):
     return result
 
 def workshop_stats(repo):
-    import shutil
+    import shutil, subprocess
     installed = shutil.which("raindrop") is not None
-    instrumented = False
-    for cand in [repo / "pyproject.toml", repo / "requirements.txt",
-                 repo / "requirements-dev.txt", repo / "setup.cfg"]:
-        try:
-            if cand.exists() and "raindrop" in cand.read_text().lower():
-                instrumented = True
-                break
-        except Exception:
-            pass
+    try:
+        result = subprocess.run(
+            ["grep", "-rq", "raindrop.begin", str(repo),
+             "--include=*.py", "--include=*.ts"],
+            capture_output=True, timeout=5
+        )
+        instrumented = result.returncode == 0
+    except Exception:
+        instrumented = False
     return {"installed": installed, "instrumented": instrumented}
 
 def parse_orchestrator_log():
@@ -844,9 +844,26 @@ def render_workshop(rd, companion=False):
               run /raindrop-instrument-agent to enable evals
             </div>"""
 
+    event_name = Path(repo_path).name
+    en_attr    = html.escape(event_name)
+
+    open_ws_btn = refresh_btn = ""
+    if companion:
+        open_ws_btn = """<a href="http://localhost:5899" target="_blank"
+           style="background:var(--surface0);color:var(--text);text-decoration:none;
+                  border-radius:6px;padding:9px 14px;font-size:12px;font-weight:600;
+                  white-space:nowrap;flex-shrink:0">
+            ↗ Full UI
+          </a>"""
+        refresh_btn = """<button
+           style="background:transparent;color:var(--subtext0);border:1px solid var(--surface0);
+                  border-radius:6px;padding:9px 14px;font-size:12px;cursor:pointer;
+                  white-space:nowrap;flex-shrink:0"
+           onclick="loadWorkshopRuns()">↺</button>"""
+
     header_html = f"""<div style="display:flex;align-items:center;background:var(--base);
                            border-bottom:1px solid var(--surface0);padding:8px 12px;
-                           flex-shrink:0;gap:12px">
+                           flex-shrink:0;gap:8px">
     <div style="flex:1;display:grid;grid-template-columns:repeat(3,1fr);gap:1px;
                 background:var(--surface0);border-radius:6px;overflow:hidden">
       <div style="background:var(--base);padding:8px 10px;text-align:center">
@@ -860,53 +877,37 @@ def render_workshop(rd, companion=False):
         <div class="label">SDK</div></div>
     </div>
     {eval_btn_html}
+    {open_ws_btn}
+    {refresh_btn}
   </div>"""
 
-    iframe_src = f"http://localhost:4569/workshop/" if companion else ""
-    iframe_height = "calc(100vh - 74px)"
+    eval_note = (
+        "The <strong style='color:var(--text)'>Run Eval Loop</strong> button launches a Claude session "
+        "that replays recent Workshop runs against a self-healing test harness — useful for catching "
+        "regressions after code changes. Requires the repo to be instrumented first."
+        if ws.get("instrumented") else
+        "The <strong style='color:var(--text)'>SDK badge</strong> above shows <em>not instrumented</em> — "
+        "run <code>/instrument-agent</code> in that repo's Claude session to wire up tracing, then "
+        "restart the app. The <strong>Run Eval Loop</strong> button will appear once instrumented."
+    )
+    desc = section_desc(
+        "<strong style='color:var(--text)'>Raindrop Workshop</strong> captures AI agent traces for "
+        f"<code>{h(event_name)}</code> — each run records the input sent to the agent, the LLM and tool "
+        "calls it made, and its final output. Runs appear here automatically whenever the app is invoked "
+        "with Workshop running. Filter is scoped to this repo's <code>event_name</code> so switching "
+        "repos shows only that repo's traces. " + eval_note,
+        icon="🔬", color="var(--teal)"
+    )
 
-    start_btn = ""
-    if companion:
-        start_btn = f"""<button id="ws-start-btn"
-           style="display:none;background:var(--teal);color:var(--crust);border:none;
-                  border-radius:6px;padding:9px 18px;font-size:12px;font-weight:600;
-                  cursor:pointer;letter-spacing:.3px"
-           onclick="startWorkshop()">
-        ▶ Start raindrop workshop
-      </button>"""
-
-    iframe_html = f"""<div style="position:relative;overflow:hidden;background:var(--crust);
-                          flex:1;min-height:0">
-    <iframe id="ws-frame" data-src="{html.escape(iframe_src)}"
-            style="width:100%;height:{iframe_height};border:none;display:none">
-    </iframe>
-    <div id="ws-fallback" style="display:flex;height:{iframe_height};
-              background:var(--mantle);flex-direction:column;
-              align-items:center;justify-content:center;gap:12px">
-      <div style="font-size:32px">🔬</div>
-      <div id="ws-status" style="color:var(--subtext0);font-size:13px">Checking Workshop…</div>
-      {start_btn}
-      <div id="ws-copy-btn"
-           style="display:none;background:var(--surface0);border-radius:6px;padding:8px 16px;
-                  font-family:monospace;font-size:12px;color:var(--text);cursor:pointer"
-           onclick="navigator.clipboard.writeText('raindrop workshop');
-                    this.textContent='✓ Copied!'">
-        raindrop workshop  📋
-      </div>
-      <button id="ws-retry-btn"
-           style="display:none;background:transparent;color:var(--subtext0);
-                  border:1px solid var(--surface0);border-radius:6px;
-                  padding:6px 14px;font-size:11px;cursor:pointer;margin-top:4px"
-           onclick="_wsProbing=false;probeWorkshop();this.style.display='none';
-                    document.getElementById('ws-status').textContent='Checking Workshop…'">
-        ↺ Retry
-      </button>
-    </div>
-  </div>"""
+    runs_panel = f"""<div id="ws-runs-panel" data-event-name="{en_attr}"
+      style="flex:1;overflow-y:auto;min-height:0;background:var(--mantle)">
+      <div style="color:var(--subtext0);padding:40px;text-align:center">Loading…</div>
+    </div>"""
 
     return f"""<div style="display:flex;flex-direction:column;height:100vh;overflow:hidden">
   {header_html}
-  {iframe_html}
+  <div style="padding:12px 16px 0;flex-shrink:0">{desc}</div>
+  {runs_panel}
 </div>"""
 
 def render_hooks_history(rd):
@@ -1820,10 +1821,6 @@ function show(sectionKey) {
   var oldFrame = document.getElementById('gn-frame');
   if (oldFrame && oldFrame.src) { oldFrame.src = ''; }
   _gnProbing = false;
-  var oldWsFrame = document.getElementById('ws-frame');
-  if (oldWsFrame && oldWsFrame.src) { oldWsFrame.src = ''; }
-  _wsProbing = false;
-
   sec = sectionKey;
   var d = SD[repo];
   document.getElementById('panel').innerHTML =
@@ -1833,7 +1830,7 @@ function show(sectionKey) {
     el.classList.toggle('active', el.dataset.s === sectionKey);
   });
   if (sectionKey === 'gitnexus') probeGitnexus();
-  if (sectionKey === 'workshop') probeWorkshop();
+  if (sectionKey === 'workshop') loadWorkshopRuns();
 }
 
 function switchRepo(v) { repo = v; show(sec); }
@@ -1974,76 +1971,121 @@ function pollGitnexus(n) {
 }""" if companion else ""
 
     workshop_funs = """
-var _wsProbing = false;
-function probeWorkshop() {
-  if (_wsProbing) return;
-  _wsProbing = true;
-  var ctrl  = new AbortController();
-  var timer = setTimeout(function() { ctrl.abort(); }, 2500);
-  fetch('http://localhost:5899', { mode: 'no-cors', signal: ctrl.signal })
-    .then(function() {
-      clearTimeout(timer);
-      _wsProbing = false;
-      var f  = document.getElementById('ws-frame');
-      var fb = document.getElementById('ws-fallback');
-      if (f)  { f.src = f.dataset.src || 'http://localhost:5899'; f.style.display = 'block'; }
-      if (fb) fb.style.display = 'none';
-    })
-    .catch(function() {
-      clearTimeout(timer);
-      _wsProbing = false;
-      var st   = document.getElementById('ws-status');
-      var cbtn = document.getElementById('ws-copy-btn');
-      var sbtn = document.getElementById('ws-start-btn');
-      var rbtn = document.getElementById('ws-retry-btn');
-      if (st)   st.textContent = 'Workshop not running';
-      if (cbtn) cbtn.style.display = 'block';
-      if (sbtn) sbtn.style.display = 'block';
-      if (rbtn) rbtn.style.display = 'block';
-    });
+function _wsOpen()       { window.open('http://localhost:5899', '_blank'); }
+function _wsHover(el,on) { el.style.background = on ? 'var(--surface0)' : ''; }
+function _wsCopy(el)     { navigator.clipboard.writeText('raindrop workshop'); el.textContent = '✓ Copied!'; }
+
+function loadWorkshopRuns() {
+  var panel = document.getElementById('ws-runs-panel');
+  if (!panel) return;
+  var eventName = panel.dataset.eventName || '';
+  panel.innerHTML = '<div style="color:var(--subtext0);padding:40px;text-align:center">Loading…</div>';
+  fetch('/api/workshop-runs?event_name=' + encodeURIComponent(eventName))
+    .then(function(r) { if (!r.ok) throw new Error('offline'); return r.json(); })
+    .then(function(runs) { _wsRenderRuns(runs, panel, eventName); })
+    .catch(function() { _wsRenderOffline(panel); });
 }
+
+function _wsRelTime(ms) {
+  var d = Date.now() - ms;
+  if (d < 60000)   return Math.round(d / 1000) + 's ago';
+  if (d < 3600000) return Math.round(d / 60000) + 'm ago';
+  if (d < 86400000) return Math.round(d / 3600000) + 'h ago';
+  return new Date(ms).toLocaleDateString();
+}
+
+function _wsEsc(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function _wsRenderRuns(runs, panel, eventName) {
+  if (!runs.length) {
+    panel.innerHTML =
+      '<div style="color:var(--subtext0);padding:40px;text-align:center">' +
+      '<div style="font-size:28px;margin-bottom:8px">🔬</div>' +
+      '<div>No runs yet for <code style="color:var(--text)">' + _wsEsc(eventName) + '</code></div>' +
+      '<div style="margin-top:8px;font-size:11px;color:var(--overlay0)">Run the app and a trace will appear here.</div>' +
+      '</div>';
+    return;
+  }
+  var shown = Math.min(runs.length, 50);
+  var rows = runs.slice(0, shown).map(function(r) {
+    var ts     = _wsRelTime(r.started_at);
+    var input  = '';
+    try { input = (JSON.parse(r.metadata || '{}').input || '').slice(0, 80); } catch(e) {}
+    if (!input) input = '(no input)';
+    var status = r.finished
+      ? '<span style="color:var(--green)">&#x2713;</span>'
+      : '<span style="color:var(--yellow)">⧗ live</span>';
+    var user   = _wsEsc(r.user_id || '–');
+    var convo  = r.convo_id ? '<span style="color:var(--overlay0)">' + _wsEsc(r.convo_id) + '</span>' : '';
+    var spans  = r.span_count || 0;
+    return '<tr style="border-bottom:1px solid var(--surface0);cursor:pointer"'
+      + ' onclick="_wsOpen()" onmouseenter="_wsHover(this,true)" onmouseleave="_wsHover(this,false)">' +
+      '<td style="padding:10px 12px;color:var(--subtext1);font-size:11px;white-space:nowrap">' + ts + '</td>' +
+      '<td style="padding:10px 12px;max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px">' + _wsEsc(input) + '</td>' +
+      '<td style="padding:10px 12px;font-size:11px;color:var(--subtext1)">' + user + (convo ? '<br>' + convo : '') + '</td>' +
+      '<td style="padding:10px 8px;font-size:11px;text-align:center">' + status + '</td>' +
+      '<td style="padding:10px 12px;font-size:11px;color:var(--overlay0);text-align:right">' + spans + '</td>' +
+      '</tr>';
+  }).join('');
+  panel.innerHTML =
+    '<div style="padding:8px 12px;font-size:11px;color:var(--subtext0);' +
+    'border-bottom:1px solid var(--surface0);display:flex;justify-content:space-between;align-items:center">' +
+    '<span>Showing ' + shown + ' of ' + runs.length + ' runs — click a row to open in Workshop</span>' +
+    '<span style="color:var(--overlay0)">' + _wsEsc(eventName) + '</span></div>' +
+    '<table style="width:100%;border-collapse:collapse"><thead>' +
+    '<tr style="background:var(--base)">' +
+    '<th style="padding:6px 12px;text-align:left;font-size:10px;color:var(--overlay0);font-weight:500">TIME</th>' +
+    '<th style="padding:6px 12px;text-align:left;font-size:10px;color:var(--overlay0);font-weight:500">INPUT</th>' +
+    '<th style="padding:6px 12px;text-align:left;font-size:10px;color:var(--overlay0);font-weight:500">USER / SESSION</th>' +
+    '<th style="padding:6px 8px;font-size:10px;color:var(--overlay0);font-weight:500">OK</th>' +
+    '<th style="padding:6px 12px;text-align:right;font-size:10px;color:var(--overlay0);font-weight:500">SPANS</th>' +
+    '</tr></thead><tbody>' + rows + '</tbody></table>';
+}
+
+function _wsRenderOffline(panel) {
+  panel.innerHTML =
+    '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;' +
+    'height:240px;gap:12px;padding:40px;text-align:center">' +
+    '<div style="font-size:32px">🔬</div>' +
+    '<div style="color:var(--subtext0);font-size:13px">Workshop not running</div>' +
+    '<button style="background:var(--teal);color:var(--crust);border:none;border-radius:6px;' +
+    'padding:9px 18px;font-size:12px;font-weight:600;cursor:pointer" ' +
+    'onclick="startWorkshop()">▶ Start raindrop workshop</button>' +
+    '<div style="background:var(--surface0);border-radius:6px;padding:8px 16px;' +
+    'font-family:monospace;font-size:12px;color:var(--text);cursor:pointer" ' +
+    'onclick="_wsCopy(this)">raindrop workshop  📋</div>' +
+    '</div>';
+}
+
 function startWorkshop() {
-  var st   = document.getElementById('ws-status');
-  var sbtn = document.getElementById('ws-start-btn');
-  var cbtn = document.getElementById('ws-copy-btn');
-  if (st)   st.textContent = 'Starting Workshop…';
-  if (sbtn) sbtn.style.display = 'none';
-  if (cbtn) cbtn.style.display = 'none';
+  var panel = document.getElementById('ws-runs-panel');
+  if (panel) panel.innerHTML = '<div style="color:var(--subtext0);padding:40px;text-align:center">Starting Workshop…</div>';
   fetch('/api/workshop-start', { method: 'POST' })
-    .then(function() { pollWorkshop(0); })
+    .then(function() { _wsPollThenLoad(0); })
     .catch(function() {
-      if (st) st.textContent = 'Could not reach companion server';
+      if (panel) panel.innerHTML = '<div style="color:var(--red);padding:40px;text-align:center">Could not reach companion server</div>';
     });
 }
-function pollWorkshop(n) {
-  var st = document.getElementById('ws-status');
-  if (n > 20) { if (st) st.textContent = 'Timed out — is raindrop installed?'; return; }
-  if (st) st.textContent = 'Waiting for Workshop… (' + (n + 1) + '/20)';
-  var ctrl = new AbortController();
-  setTimeout(function() { ctrl.abort(); }, 1500);
-  fetch('http://localhost:5899', { mode: 'no-cors', signal: ctrl.signal })
-    .then(function() {
-      var f  = document.getElementById('ws-frame');
-      var fb = document.getElementById('ws-fallback');
-      if (f)  { f.src = f.dataset.src || 'http://localhost:5899'; f.style.display = 'block'; }
-      if (fb) fb.style.display = 'none';
-    })
-    .catch(function() { setTimeout(function() { pollWorkshop(n + 1); }, 1000); });
+
+function _wsPollThenLoad(n) {
+  if (n > 20) { var panel = document.getElementById('ws-runs-panel'); if (panel) _wsRenderOffline(panel); return; }
+  fetch('/api/workshop-runs')
+    .then(function(r) { if (r.ok) loadWorkshopRuns(); else throw new Error(); })
+    .catch(function() { setTimeout(function() { _wsPollThenLoad(n + 1); }, 1000); });
 }
+
 function runEvalLoop(repoPath, repoName) {
   var btn = document.getElementById('ws-eval-btn');
   if (btn) { btn.disabled = true; btn.textContent = '⚗ Starting…'; }
   fetch('/api/workshop-eval?repo=' + encodeURIComponent(repoPath), { method: 'POST' })
     .then(function(r) { return r.json(); })
-    .then(function(d) {
+    .then(function() {
       if (btn) { btn.textContent = '✓ Running in terminal'; }
-      setTimeout(function() {
-        if (btn) { btn.disabled = false; btn.textContent = '⚗ Run Eval Loop'; }
-      }, 8000);
+      setTimeout(function() { if (btn) { btn.disabled = false; btn.textContent = '⚗ Run Eval Loop'; } }, 8000);
     })
-    .catch(function() {
-      if (btn) { btn.disabled = false; btn.textContent = '⚗ Run Eval Loop'; }
-    });
+    .catch(function() { if (btn) { btn.disabled = false; btn.textContent = '⚗ Run Eval Loop'; } });
 }""" if companion else ""
 
     js  = (JS_TEMPLATE
@@ -2153,7 +2195,7 @@ def _run_workshop_eval(repo_path: str) -> None:
         f"for the repository '{repo_name}' at {repo_path}. "
         f"Workshop is running at http://localhost:5899."
     )
-    env = {**os.environ, "RAINDROP_LOCAL_DEBUGGER": "http://localhost:5899"}
+    env = {**os.environ, "RAINDROP_LOCAL_DEBUGGER": "http://localhost:5899/v1/"}
     for cmd in [["claude", "--print", prompt], ["claude-code", "--print", prompt]]:
         try:
             subprocess.Popen(
@@ -2182,6 +2224,27 @@ class _DashboardHandler(BaseHTTPRequestHandler):
             self.wfile.write(self._html)
         elif parsed.path.startswith("/gn/") or parsed.path == "/gn":
             self._proxy_gitnexus(parsed)
+        elif parsed.path == "/api/workshop-runs":
+            qs         = parse_qs(parsed.query)
+            event_name = qs.get("event_name", [""])[0]
+            try:
+                req = UrlRequest(f"http://127.0.0.1:{self.WS_PORT}/api/runs")
+                with urlopen(req, timeout=3) as resp:
+                    all_runs = json.loads(resp.read())
+                if event_name:
+                    all_runs = [r for r in all_runs if r.get("event_name") == event_name]
+                body = json.dumps(all_runs).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.end_headers()
+                self.wfile.write(body)
+            except Exception:
+                self.send_response(503)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.end_headers()
+                self.wfile.write(b'{"error":"workshop-offline"}')
         elif parsed.path.startswith("/workshop/") or parsed.path == "/workshop":
             self._proxy_workshop(parsed)
         else:

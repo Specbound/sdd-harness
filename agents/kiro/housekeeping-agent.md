@@ -76,6 +76,27 @@ If `hot-memory.md` exceeds 50 lines:
 2. Condense verbose entries
 3. Verify remaining content is current and accurate
 
+### Step 3.5: Review Auto-learned Entries
+
+Scan `hot-memory.md` for lines tagged `[auto-learn, YYYY-MM-DD]`. These are
+probationary facts written by the micro-reflect stop hook. Apply this lifecycle:
+
+**Keep** — entry is less than 7 days old. No action.
+
+**Promote** — entry is 7+ days old AND there is reinforcing evidence (any of):
+- A `[memory-gap]` observation from a different day touches the same topic
+- The fact is referenced or consistent with an existing entry in `meta/patterns.md`
+- The fact appears relevant to current active work in hot-memory
+
+When promoting: copy the fact as a new entry in `meta/patterns.md` (if under the
+70-line cap), then remove it from hot-memory.
+
+**Remove** — entry is 7+ days old AND no reinforcing evidence. Delete the line.
+Do not archive to glacier — these entries are lightweight and ephemeral by design.
+
+After reviewing all `[auto-learn]` entries, if the `## Auto-learned` section is
+now empty, remove the section header too.
+
 ### Step 4: Condense Patterns
 
 If `meta/patterns.md` exceeds 70 lines:

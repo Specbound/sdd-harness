@@ -40,14 +40,15 @@ Hook output is injected into Claude's context as system messages — Claude read
 
 1. **Harness update check** — compares the harness repo's latest commit timestamp to `.claude/.last-harness-check`. Prints a `Run: update.sh` nudge if the harness has changes since last install.
 2. **Memory health** — counts entries in `observations.md`. If >50, suggests `/kiro:housekeeping` to prune before the file bloats.
-3. **Re-explanation detection** — runs `scripts/detect_reexplanation.py` on the session transcript. Phrases like "as I mentioned before" or "you already know this" indicate Claude lost context it should have saved. Appends a `[memory-gap]` observation listing the implied topics.
+3. **Session signal detection** — runs `scripts/detect_reexplanation.py` on the session transcript in two passes (Haiku-based LLM). Drain pass: phrases like "I already told you", "you’re doing it again" → appends a `[memory-gap]` observation. Charge pass: unambiguous approval like "that’s perfect", "great work" → appends a `[session-charge]` observation. Both are written at most once per calendar day.
 4. **Agent failure pattern** — scans `trace.log` for 3+ consecutive failures for the same agent type. Surfaces a `/kiro:evolve` nudge to investigate the friction pattern.
 
 **Why it's needed:** Session-end is the only consistent window to look back at what happened without adding latency to the conversation. These checks surface problems that accumulate across sessions rather than within them.
 
 **Output / side effect:**
 - Text nudges printed to Claude's context (harness update, housekeeping)
-- Appends `[memory-gap]` entries to `observations.md` (async, non-blocking)
+- Appends `[memory-gap]` drain entries to `observations.md` (async, non-blocking)
+- Appends `[session-charge]` charge entries to `observations.md` (async, non-blocking)
 
 **Respects:** `SDD_PROFILE=minimal` env var — skips entirely.
 
@@ -172,6 +173,24 @@ Hook output is injected into Claude's context as system messages — Claude read
 
 ---
 
+### `protected-path-hook.sh`
+**Event:** `PreToolUse` — **Matcher:** `Write|Edit`
+
+**Purpose:** Guards writes to sensitive files. When a write targets a known-sensitive path, Claude is shown a confirmation banner and must pause to ask the user before proceeding.
+
+**Paths covered:**
+- `.env` and `.env.*` variants
+- Cryptographic keys and certs: `.pem`, `.key`, `.p12`, `.pfx`, `.cert`, `.crt`, `.jks`, `.keystore`
+- Credentials files: `credentials`, `.secrets`, `secrets`
+- AWS credentials: `.aws/credentials`, `.aws/config`
+- SSH directory: `.ssh/`
+
+**Why it is needed:** LLM agents can write to any path they have access to. A misrouted write to `.env` or `.aws/credentials` could silently overwrite secrets. This hook adds an explicit human confirmation step before any write to a known-sensitive path pattern.
+
+**Output:** Confirmation required banner (`╔══ Protected Path — Confirmation Required ══╗`) injected into Claude's context before the write. Claude must pause and explicitly ask the user before proceeding.
+
+---
+
 ## Hook Wiring Reference
 
 From `.claude/settings.json`:
@@ -180,6 +199,7 @@ From `.claude/settings.json`:
 SessionStart   → session-start-hook.sh
 Stop           → stop-hook.sh
 PreToolUse     Write|Edit                                    → memory-discipline-hook.sh
+PreToolUse     Write|Edit                                    → protected-path-hook.sh
 PreToolUse     Agent                                         → gbrain-agent-spawn.sh
 PreToolUse     mcp__plugin_claude-mem_mcp-search__save_obs  → gbrain-memory-write.sh
 PreToolUse     WebFetch|WebSearch                            → gbrain-external-search.sh

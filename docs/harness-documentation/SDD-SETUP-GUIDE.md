@@ -2,7 +2,7 @@
 
 > This file is managed by the SDD harness (`sdd-harness/docs/`).
 > It is the single source of truth — do not edit copies in individual projects.
-> _Last synced: 2026-05-13_
+> _Last synced: _
 
 A complete, self-contained guide to setting up the Spec-Driven Development (SDD)
 harness used in this project. Follow these steps to replicate the setup in any
@@ -137,6 +137,8 @@ Create `CLAUDE.md` at the repo root. Adapt for your project:
 - memory reflect: after significant sessions (spec completion, major impl)
 - memory housekeeping: when observations.md exceeds 50 entries
 ```
+
+> After creating this file, run `/codebase-legibility` inside Claude Code to complete the setup: subdirectory CLAUDE.md files for services and modules, `.claudeignore` for noise exclusion, and a codebase map if the repo has many top-level directories.
 
 ---
 
@@ -297,7 +299,7 @@ The stop hook runs lightweight checks at the end of every Claude session:
 1. **Harness update check** — if the harness has new commits since last install, prints a nudge to run `update.sh`.
 2. **Memory health check** — if `.claude/memory/observations.md` has >50 entries, prints a nudge to run `/kiro:housekeeping`.
 3. **Agent failure pattern detection** — if `.claude/memory/trace.log` shows 3+ consecutive failures for the same agent, prints a nudge to run `/kiro:evolve` to investigate friction patterns.
-4. **Re-explanation detection** — runs `scripts/detect_reexplanation.py` against the session transcript; if the user re-explained context today, appends a `[memory-gap]` observation.
+4. **Session signal detection** — runs `scripts/detect_reexplanation.py` against the session transcript (Haiku-based LLM). Drain signals append a `[memory-gap]` observation; charge signals (unambiguous approval) append a `[session-charge]` observation. Both at most once per calendar day.
 
 Doc sync and harness updates are **not** triggered here — they fire from the git post-commit hook (Step 8) instead.
 
@@ -532,12 +534,13 @@ Conventions are defined in `.claude/kiro/settings/rules/memory-conventions.md`:
 | UserPromptSubmit (context priming) | Every user prompt | Injects hot-memory.md contents for session context |
 | SessionStart (maintenance check) | Every Claude session start | Two modes: (1) if no local `daily-runner.sh` is installed — checks if today's `[judge]` sentinel is absent from `observations.md` and asks Claude to run `/kiro:daily-maintenance`; (2) if `daily-runner.sh` is installed and stale (>24h or never ran) — fires it in the background via `nohup` silently, without consuming session context. |
 | Stop (memory health) | Every Claude session end | Nudges `/kiro:housekeeping` if observations >50; nudges `/kiro:evolve` if agent failure patterns detected |
-| Stop (re-explanation detector) | Every Claude session end | Scans session transcript via `scripts/detect_reexplanation.py`; appends a `[memory-gap]` observation if the user had to re-explain context (once per day) |
+| Stop (session signal detector) | Every Claude session end | Runs `scripts/detect_reexplanation.py` (Haiku LLM); appends `[memory-gap]` observation for drain signals (re-explanation) and `[session-charge]` for charge signals (approval). Each written at most once per day. |
 | PostToolUse (revert detector) | Every git revert/reset/restore Bash call | Immediately appends `[revert]` drain observation to `observations.md` — gives trust-battery Judge concrete evidence. Script: `.claude/hooks/revert-detect-hook.sh`. |
 | Windows Task Scheduler + SessionStart (daily maintenance) | Nightly at 18:00 local (Israel); SessionStart catch-up if >24h stale | Runs per-repo `daily-runner.sh` → `/kiro:daily-maintenance` — Judge → Reflect → Housekeeping → Trust Score → Augment Skills. Auto-registered by `install.sh` / `update.sh` (WSL + schtasks.exe). Opt out: `SDD_SKIP_ROUTINE=1` at install time; `schtasks.exe /Delete /TN "SDD Daily Orchestrator"` globally; `rm .claude/scripts/daily-runner.sh` per-repo. See `SDD-USAGE.md` → "Daily Maintenance". |
 | PreToolUse (ztk) | Every Bash tool call by any agent | Rewrites matching commands to `ztk run <cmd>`, compressing output before it reaches the LLM (78–90%+ token reduction). Passes through commands without filters unchanged. Global — fires in all sessions and projects. |
 | PreToolUse (GitNexus) | Every file Read/Edit by any agent | Enriches file operations with 360° symbol graph context (callers, dependencies, process participation); no-ops gracefully when GitNexus is not installed |
 | PreToolUse (memory-discipline) | Every Write/Edit to `*/memory/*.md` or `MEMORY.md` | Gates memory writes with discipline rules — valid content: workflow patterns, user preferences, reusable lessons. Invalid: case-specific facts, citations, investigation outcomes. Claude sees the rules before executing the write and can revise content. Implemented in `.claude/hooks/memory-discipline-hook.sh`. |
+| PreToolUse (protected path) | Every Write/Edit to a sensitive path (`.env`, crypto keys, credentials, `.aws/`, `.ssh/`) | Injects a confirmation banner; Claude must pause and ask the user before proceeding. Prevents accidental overwrites of secrets files. Implemented in `.claude/hooks/protected-path-hook.sh`. |
 | PreCompact (compaction-discipline) | Every context compaction | Injects boundary-timing principle and state-preservation checklist: compact at workflow phase boundaries (not arbitrary turn counts), preserve artifact paths, cited facts, open questions, and decisions. Use anchored iterative summarization. Implemented in `.claude/hooks/compaction-discipline-hook.sh`. |
 | post-commit (doc sync) | Every `git commit` with non-`.md` source changes | Doc-sync: updates all `.md` files referencing changed code via `claude --print` (background) |
 | post-commit (harness updater) | Every `git commit` with `.claude/` changes (excl. memory) | Updates `SDD-SETUP-GUIDE.md` via `claude --print` (background) |
@@ -801,6 +804,78 @@ See `docs/gitnexus/README.md` for full details.
 
 ---
 
+## Raindrop Workshop (Automatic — AI-Agent Tracing)
+
+The harness integrates [Raindrop Workshop](https://raindrop.sh) — a local AI-agent debugger that captures every LLM call, tool invocation, and latency trace from your agents. All registered repos are auto-instrumented. Traces are free; the self-healing eval loop is user-triggered and costs tokens.
+
+### What it does
+
+Three integration layers:
+
+1. **Workshop tab in the harness dashboard** — per-repo trace viewer, start/stop Workshop, trigger the eval loop
+2. **Auto-instrumentation** — entry points in all registered repos emit traces with `event=repo-name` for per-repo filtering
+3. **Self-healing eval loop** — reads traces → writes pytest assertions → runs → auto-fixes (max 3 cycles)
+
+### Setup (automatic after CLI install)
+
+`install.sh` and `update.sh` call `scripts/raindrop-setup.sh` automatically. That script:
+- Adds `RAINDROP_LOCAL_DEBUGGER=http://localhost:5899` to `~/.claude/settings.json` and `~/.bashrc` — **no repo `.env` files are touched**
+- Installs `raindrop-ai` in each registered repo's detected virtualenv (`.venv/`, `venv/`, or `uv`-managed)
+
+The only manual step is installing the CLI binary (once, globally):
+
+```bash
+curl -fsSL https://raindrop.sh/install | bash
+source ~/.bashrc
+```
+
+### Using the Workshop tab
+
+```bash
+# Start the harness dashboard
+python3 ~/.claude/sdd-harness/scripts/dashboard.py
+
+# In the browser: click Workshop → select repo → Start raindrop workshop
+# Traces appear in real-time as agents run
+# Click "Run Eval Loop" to trigger the self-healing cycle
+```
+
+### Instrumented repos
+
+| Repo | Entry point | `event=` label |
+|---|---|---|
+| `aiq-zora-ai-engine` | `AgentPipelineGraph.process()` | `aiq-zora-ai-engine` |
+| `aiq-zora-agent-skills` | `DailyNewsHandler.handle()` | `aiq-zora-agent-skills` |
+| `aiq-purina-salesorderintelligence-poc` | `event_generator()` in `query_portal.py` | `aiq-purina-salesorderintelligence-poc` |
+
+All instrumentation uses graceful fallback — if `raindrop-ai` is not installed, the code is a silent no-op.
+
+### Adding a new repo
+
+```bash
+# Install harness into the new repo (wires raindrop automatically)
+~/.claude/sdd-harness/install.sh /path/to/new-repo
+
+# Or instrument an existing registered repo
+/raindrop-instrument-agent
+```
+
+### CLAUDE.md additions
+
+Add to your project's `CLAUDE.md` if using Raindrop Workshop:
+
+```markdown
+## Raindrop Workshop
+- Traces fire automatically when agents run (free)
+- View in harness dashboard → Workshop tab
+- `event=repo-name` for per-repo filtering
+- Run eval loop from dashboard (costs tokens — always manual)
+```
+
+See `docs/raindrop/README.md` for full details, instrumentation patterns, and troubleshooting.
+
+---
+
 ## Impeccable (Optional — Frontend Design Quality)
 
 The harness integrates [pbakaus/impeccable](https://github.com/pbakaus/impeccable) (25.6k ⭐) — a design quality system that catches the visual and functional flaws AI coding assistants routinely produce. Provides 27 deterministic anti-pattern rules + 12 LLM critique rules across 7 domains: typography, color, spatial design, motion, interaction, responsive, and UX writing.
@@ -991,6 +1066,7 @@ Each harness subsystem has a detailed reference doc:
 | Context Hub | [github.com/andrewyng/context-hub](https://github.com/andrewyng/context-hub) | MCP server for third-party API docs (external) |
 | Design Quality | `docs/design/README.md` | Visual design quality integrations index |
 | Impeccable | `docs/design/impeccable/impeccable.md` | 27 anti-pattern rules, skill usage, hook setup, transfer instructions |
+| Raindrop Workshop | `docs/raindrop/README.md` | AI-agent tracing — instrumented repos, eval loop, dashboard tab, troubleshooting |
 
 ---
 

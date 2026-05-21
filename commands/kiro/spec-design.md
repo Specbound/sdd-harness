@@ -67,4 +67,4 @@ After the subagent completes:
    - Update `updated_at` to current timestamp
 
 5. Confirm to user:
-   > ✅ Design approved. Optionally run `/kiro:validate-design $1` for quality review. Then run `/kiro:spec-tasks $1` to generate implementation tasks.
+   > ✅ Design approved. Optionally run `/kiro:validate-design $1` for quality review. Then run `/kiro:spec-grill $1` to align domain language before tasks.

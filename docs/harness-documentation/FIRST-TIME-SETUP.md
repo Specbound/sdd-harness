@@ -106,7 +106,52 @@ ztk stats    # shows cumulative savings (starts at 0 on fresh install)
 
 ---
 
-## Step 2: GitNexus (Code Intelligence)
+## Step 2: Raindrop Workshop (Agent Tracing)
+
+Raindrop Workshop is the harness's built-in AI-agent debugger. It captures every LLM call, tool invocation, and latency trace and streams them to `localhost:5899`. The harness auto-instruments all registered repos and exposes Workshop as a tab in the dashboard — **no per-repo `.env` changes needed**.
+
+### Check if already installed
+
+```bash
+which raindrop && raindrop --version
+```
+
+**If found** — nothing else needed. Run `raindrop workshop` to confirm it starts.
+
+**If not found** — install the CLI (global binary):
+
+```bash
+curl -fsSL https://raindrop.sh/install | bash
+```
+
+### Python SDK
+
+The harness wires this automatically via `raindrop-setup.sh` during `install.sh` / `update.sh`. It:
+
+- Installs `raindrop-ai` in each registered repo's virtualenv (`.venv/`, `venv/`, or `uv`-managed)
+- Adds `RAINDROP_LOCAL_DEBUGGER=http://localhost:5899` to `~/.claude/settings.json` (Claude env)
+- Adds the same export to `~/.bashrc` (shell env for user-run servers)
+
+To run it manually (idempotent):
+
+```bash
+bash ~/.claude/sdd-harness/scripts/raindrop-setup.sh
+source ~/.bashrc
+```
+
+**Verify:**
+```bash
+# Workshop starts on port 5899
+raindrop workshop &
+# Open harness dashboard → Workshop tab
+python3 ~/.claude/sdd-harness/scripts/dashboard.py
+```
+
+See `docs/raindrop/README.md` for full details on tracing, the eval loop, and troubleshooting.
+
+---
+
+## Step 3: GitNexus (Code Intelligence)
 
 GitNexus is optional but recommended for large repos. It enriches file reads/edits with dependency and blast-radius context via a PreToolUse hook.
 
@@ -145,7 +190,7 @@ This indexes the repo (`.gitnexus/`), adds the MCP server to `.claude/settings.j
 
 ---
 
-## Step 3: impeccable (Frontend Design QA)
+## Step 4: impeccable (Frontend Design QA)
 
 Automatically flags design anti-patterns when Claude writes frontend files (`.tsx`, `.jsx`, `.css`, etc.). The hook silently skips if the binary isn't installed — no errors, just no scans.
 
@@ -166,7 +211,7 @@ That's it — the hook in `.claude/hooks/impeccable-detect-hook.sh` picks it up 
 
 ---
 
-## Step 4: uv (Python Package Manager)
+## Step 5: uv (Python Package Manager)
 
 Required for autoresearch and any project using `uv`-managed Python environments.
 
@@ -203,7 +248,7 @@ winget install --id=astral-sh.uv -e
 
 ---
 
-## Step 5: Privacy Filter / opf (PII Scanning)
+## Step 6: Privacy Filter / opf (PII Scanning)
 
 Optional. Blocks commits containing secrets, emails, account numbers, etc.
 
@@ -244,7 +289,7 @@ Add-Content $hookPath 'bash "$(git rev-parse --show-toplevel)/.claude/hooks/scan
 
 ---
 
-## Step 6: Per-Project Install
+## Step 7: Per-Project Install
 
 Once global tools are in place, install the harness into each project:
 
@@ -266,6 +311,7 @@ Then, inside Claude Code in the project directory, run these once:
 ```
 /kiro:steering         # scans codebase, generates steering/product.md, tech.md, structure.md
 /kiro:setup-routine    # registers nightly maintenance (runs in Anthropic's cloud at 11pm)
+/codebase-legibility   # sets up CLAUDE.md hierarchy, .claudeignore, and codebase map
 ```
 
 Update `.gitignore` to exclude harness files:
@@ -295,9 +341,10 @@ Run through this on a fresh machine:
 | Tool | Check (Linux/macOS/WSL2) | Install if missing | Activate |
 |---|---|---|---|
 | `ztk` | `which ztk` | Linux/WSL2: build from source (Step 1); macOS: `brew install codejunkie99/ztk/ztk`; Windows native: requires WSL2 | `ztk init -g` |
+| `raindrop` | `which raindrop` | `curl -fsSL https://raindrop.sh/install \| bash` (all platforms) | automatic via `install.sh`; see Step 2 |
 | `gitnexus` | `which gitnexus` | `npm install -g gitnexus` (all platforms) | `/kiro:gitnexus-setup` per-project |
 | `impeccable` | `which impeccable` | `npm install -g impeccable` (all platforms) | automatic via hook |
-| `uv` | `which uv` | Linux/macOS/WSL2: `curl -LsSf https://astral.sh/uv/install.sh \| sh`; Windows: see Step 4 | nothing extra |
+| `uv` | `which uv` | Linux/macOS/WSL2: `curl -LsSf https://astral.sh/uv/install.sh \| sh`; Windows: see Step 5 | nothing extra |
 | `opf` | `which opf` | `uv pip install opf` (all platforms) | wire pre-commit hook |
 | harness | `ls ~/.claude/sdd-harness/install.sh` | clone/copy harness | `install.sh /path/to/project` |
 
@@ -308,6 +355,9 @@ Run through this on a fresh machine:
 | Symptom | Cause | Fix |
 |---|---|---|
 | `ztk: command not found` in hook | `~/.local/bin` not in PATH | Add `export PATH="$HOME/.local/bin:$PATH"` to `~/.bashrc` |
+| Workshop tab shows "not installed" | `raindrop` CLI missing | `curl -fsSL https://raindrop.sh/install \| bash` |
+| No traces appearing in Workshop | `RAINDROP_LOCAL_DEBUGGER` not in env | Run `source ~/.bashrc`; or re-run `raindrop-setup.sh` |
+| `raindrop-ai` import error at agent startup | SDK not installed in venv | `bash ~/.claude/sdd-harness/scripts/raindrop-setup.sh` |
 | Permission dialog on every Bash call | ztk built without the `"ask"→"allow"` patch | Rebuild with patch applied |
 | Bash commands blocked with "command denied" | ztk built without the `isSuspicious` removal patch | Rebuild with patch applied |
 | Hook not firing at all | `ztk init -g` not run | Run `ztk init -g` |

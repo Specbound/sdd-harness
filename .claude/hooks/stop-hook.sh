@@ -43,7 +43,9 @@ fi
 # Charge: unambiguous approval phrases → [session-charge]
 # Both write at most once per calendar day (idempotent).
 DETECTOR="$HOME/.claude/sdd-harness/scripts/detect_reexplanation.py"
-if [ -f "$DETECTOR" ] && [ -f "$OBS_FILE" ]; then
+# Skip detector in headless/print sessions to prevent recursive spawning.
+# daily-runner.sh sets SDD_HEADLESS=1 before invoking claude --print.
+if [ -f "$DETECTOR" ] && [ -f "$OBS_FILE" ] && [ "${SDD_HEADLESS:-0}" != "1" ]; then
   (
     today=$(date +%Y-%m-%d)
 
@@ -53,6 +55,13 @@ if [ -f "$DETECTOR" ] && [ -f "$OBS_FILE" ]; then
     if [ "$drain_count" -gt 0 ] && ! grep -q "^- $today \[memory-gap\]:" "$OBS_FILE" 2>/dev/null; then
       topic=$(echo "$drain_hits" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(", ".join(sorted({h["suggested_memory_topic"] for h in d}))[:80])' 2>/dev/null || echo "?")
       echo "- $today [memory-gap]: $drain_count re-explanation phrase(s) detected — topics: $topic" >> "$OBS_FILE"
+    fi
+
+    # Micro-reflect: immediately ingest drain context into hot-memory as [auto-learn] entries.
+    # These are probationary — housekeeping promotes or removes them within 7 days.
+    MICRO_REFLECT="$HOME/.claude/sdd-harness/scripts/micro_reflect.py"
+    if [ -f "$MICRO_REFLECT" ] && [ "$drain_count" -gt 0 ] && [ -f ".claude/memory/hot-memory.md" ]; then
+      echo "$drain_hits" | python3 "$MICRO_REFLECT" 2>/dev/null
     fi
 
     # Charge

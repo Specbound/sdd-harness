@@ -98,6 +98,16 @@ if ! grep -qF "$PROJECT_DIR" "$HARNESS_DIR/projects.txt" 2>/dev/null; then
   echo "  Registered in $HARNESS_DIR/projects.txt"
 fi
 
+# --- Raindrop Workshop setup (idempotent) ---
+echo ""
+echo "Setting up Raindrop Workshop tracing..."
+if bash "$HARNESS_DIR/scripts/raindrop-setup.sh"; then
+  :
+else
+  echo "  WARNING: raindrop-setup.sh returned non-zero."
+  echo "  Re-run manually: bash $HARNESS_DIR/scripts/raindrop-setup.sh"
+fi
+
 # --- Optional: GitNexus integration ---
 if [ "$WITH_GITNEXUS" = true ]; then
   echo ""
@@ -194,3 +204,7 @@ if [ "$WITH_GITNEXUS" = false ]; then
   echo "Optional: Run with --with-gitnexus to add code intelligence integration."
   echo "  Or run /kiro:gitnexus-setup inside Claude Code later."
 fi
+echo ""
+echo "Raindrop Workshop: CLI install still required (one-time, manual):"
+echo "  curl -fsSL https://raindrop.sh/install | bash"
+echo "  Then reload your shell:  source ~/.bashrc"
