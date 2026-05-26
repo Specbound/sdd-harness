@@ -1,3 +1,4 @@
-/mnt/c/dev/aiq-zora-ai-engine
-/home/dalesser/aiq-purina-salesorderintelligence-poc
-/mnt/c/dev/aiq-zora-agent-skills
+/Users/dansasha/Documents/daa-llm-evaluation
+/Users/dansasha/Documents/whisper-pipeline
+/Users/dansasha/Documents/video-automation
+/Users/dansasha/Documents/caresync-vercel

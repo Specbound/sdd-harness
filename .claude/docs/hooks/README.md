@@ -1,0 +1,200 @@
+# SDD Harness — Hooks Reference
+
+All hooks live in `.claude/hooks/` and are wired in `.claude/settings.json`.
+Hook output is injected into Claude's context as system messages — Claude reads it before acting.
+
+**Hook types used in this harness:**
+
+| Type | When it fires |
+|---|---|
+| `SessionStart` | Once, before the first user message in each session |
+| `Stop` | Once, when Claude finishes responding (end of turn) |
+| `PreToolUse` | Before a specific tool is invoked |
+| `PostToolUse` | After a specific tool returns |
+| `PreCompact` | Before context compaction summarizes the conversation |
+
+---
+
+## Active Event Hooks
+
+### `session-start-hook.sh`
+**Event:** `SessionStart` — **Matcher:** _(all sessions)_
+
+**Purpose:** Ensures the daily maintenance pipeline doesn't go unrun. Checks whether today's `[judge]` sentinel exists in `observations.md`. If the local `daily-runner.sh` is installed and its state file is stale (>24h or missing), fires the runner in the background without blocking session start. If no local runner is installed and maintenance is overdue, injects a reminder for Claude to run `/kiro:daily-maintenance` interactively.
+
+**Why it's needed:** The Task Scheduler fires at 11:30 IST daily, but the machine may be off or the WSL session closed at that time. The session-start hook is the catch-up path that guarantees maintenance runs at least once per developer day, with zero user friction.
+
+**Output / side effect:**
+- Nothing, if maintenance is current (happy path)
+- `[SDD-MAINTENANCE-CATCHUP]` — silently fires `daily-runner.sh` in background via `nohup`
+- `[SDD-MAINTENANCE-DUE]` — injected reminder to run `/kiro:daily-maintenance` (no local runner case)
+
+**Respects:** `SDD_PROFILE=minimal` env var — skips entirely in minimal profile.
+
+---
+
+### `stop-hook.sh`
+**Event:** `Stop` — **Matcher:** _(all sessions)_
+
+**Purpose:** Four end-of-session health checks, all lightweight:
+
+1. **Harness update check** — compares the harness repo's latest commit timestamp to `.claude/.last-harness-check`. Prints a `Run: update.sh` nudge if the harness has changes since last install.
+2. **Memory health** — counts entries in `observations.md`. If >50, suggests `/kiro:housekeeping` to prune before the file bloats.
+3. **Re-explanation detection** — runs `scripts/detect_reexplanation.py` on the session transcript. Phrases like "as I mentioned before" or "you already know this" indicate Claude lost context it should have saved. Appends a `[memory-gap]` observation listing the implied topics.
+4. **Agent failure pattern** — scans `trace.log` for 3+ consecutive failures for the same agent type. Surfaces a `/kiro:evolve` nudge to investigate the friction pattern.
+
+**Why it's needed:** Session-end is the only consistent window to look back at what happened without adding latency to the conversation. These checks surface problems that accumulate across sessions rather than within them.
+
+**Output / side effect:**
+- Text nudges printed to Claude's context (harness update, housekeeping)
+- Appends `[memory-gap]` entries to `observations.md` (async, non-blocking)
+
+**Respects:** `SDD_PROFILE=minimal` env var — skips entirely.
+
+---
+
+### `memory-discipline-hook.sh`
+**Event:** `PreToolUse` — **Matcher:** `Write|Edit`
+
+**Purpose:** Gates any write to a memory file (`.claude/memory/*.md` or `MEMORY.md`) with discipline rules, printed before the write executes. Claude sees the rules and can revise the content before proceeding.
+
+**Rules enforced:**
+- Store only reusable patterns, preferences, and heuristics — not case-specific findings
+- Transfer test: "Would this help a _different_ future task?" If not → write to an artifact, not memory
+
+**Why it's needed:** Without a gate, Claude naturally stores investigation outcomes and entity-specific facts in memory. These pollute future context with stale, non-transferable data and cause the memory system to drift toward a case-log rather than a reusable knowledge base.
+
+**Output:** Rules banner (`╔══ Memory Discipline Gate ══╗`) injected before the write executes.
+
+---
+
+### `impeccable-detect-hook.sh`
+**Event:** `PostToolUse` — **Matcher:** `Write|Edit`
+
+**Purpose:** Runs [Impeccable](https://github.com/nicholasgasior/impeccable) anti-pattern detector on the written file immediately after any Write or Edit to a frontend file (`tsx`, `jsx`, `css`, `scss`, `less`, `vue`, `svelte`, `html`).
+
+**Why it's needed:** Frontend anti-patterns (e.g., CSS property ordering, accessible-name violations, layout anti-patterns) accumulate silently across edits. Catching them at write time, rather than at PR review, costs far fewer tokens and less rework.
+
+**Output:** Anti-pattern warnings with severity; green check if clean. Fails silently if Impeccable is not installed — install with `npm install -g impeccable`.
+
+---
+
+### `revert-detect-hook.sh`
+**Event:** `PostToolUse` — **Matcher:** `Bash`
+
+**Purpose:** Immediately appends a `[revert]` drain observation to `observations.md` when Claude runs `git revert`, `git reset --hard/--mixed/HEAD`, or `git restore --` / `git checkout --`.
+
+**Why it's needed:** The trust-battery Judge scores session quality at the end of each day. Revert events are significant negative signals (they indicate a plan that had to be walked back). Without real-time capture, the Judge has to infer reverts from transcript analysis — less reliable and potentially missed. Writing the observation at the moment the command runs gives the Judge concrete, timestamped evidence.
+
+**Output / side effect:** Appends `YYYY-MM-DD [revert]: git-revert|git-reset|git-restore — <command>` to `observations.md`. De-duplicates within the same day.
+
+---
+
+### `gbrain-agent-spawn.sh`
+**Event:** `PreToolUse` — **Matcher:** `Agent`
+
+**Purpose:** Injects model-tier selection and background-routing guidance before every subagent spawn. Part of the GBrain patterns suite.
+
+**Rules enforced:**
+- **Model tiers:** Haiku for classification/validation, Sonnet for generation/synthesis (default), Opus only for high-stakes deep reasoning. Subagents should default to Sonnet — latency compounds in loops and Opus rarely adds value there.
+- **Background routing:** Inline unless a pain signal fires (gateway restart, dropped state, >3 parallel agents, >5 min expected runtime, user frustration).
+- **Memory-first brief:** Run `mcp__plugin_claude-mem_mcp-search__search` before writing the agent prompt, to avoid re-discovering known context.
+
+**Why it's needed:** Without guidance, the default is to pick whatever model feels right (often Opus) and always run inline. Both choices compound token cost and latency across multi-agent sessions without a commensurate quality benefit.
+
+**Output:** GBrain protocol banner injected before the Agent tool executes.
+
+---
+
+### `gbrain-external-search.sh`
+**Event:** `PreToolUse` — **Matcher:** `WebFetch|WebSearch`
+
+**Purpose:** Reminds Claude to check `claude-mem` before calling external APIs. Part of the GBrain patterns suite.
+
+**Why it's needed:** External web calls are expensive (tokens + latency) and often unnecessary — prior research sessions have already fetched and stored the relevant content in memory. A quick memory search first can avoid the external call entirely.
+
+**Output:** 4-step memory-first checklist: search → semantic search if thin → get_observations for hits → external only if nothing useful found.
+
+---
+
+### `gbrain-memory-write.sh`
+**Event:** `PreToolUse` — **Matcher:** `mcp__plugin_claude-mem_mcp-search__save_observation`
+
+**Purpose:** Injects compiled-truth structure guidance before every MCP memory write. Part of the GBrain patterns suite.
+
+**Rules enforced:**
+- **STATE zone (top):** Current synthesis. Rewrite in place when new evidence arrives. Every fact needs a source citation.
+- **EVIDENCE / TIMELINE zone (bottom):** Append-only dated log. Never edit past entries.
+- Source precedence: user statements > compiled truth > timeline entries > external sources.
+
+**Why it's needed:** Without structure guidance, observations tend to be pure append-only logs. Over time, the STATE zone drifts (stale facts never get updated) while the TIMELINE grows unboundedly. The two-zone pattern keeps the current understanding clean and the historical record intact.
+
+**Output:** Compiled-truth pattern banner injected before the save_observation call.
+
+---
+
+### `compaction-discipline-hook.sh`
+**Event:** `PreCompact` — **Matcher:** _(all compactions)_
+
+**Purpose:** Injects boundary-timing and state-preservation principles before every context compaction.
+
+**Rules enforced:**
+- **Timing:** Compact at workflow boundaries (end of phase, task completion) — not arbitrary message counts.
+- **Preserve:** Working state, open questions, artifact paths, unresolved concerns, decisions + rationale.
+- **Do not over-compress:** Never strip file paths, function names, error messages, specific values.
+- **Method:** Merge new content into existing summary sections — do not regenerate from scratch.
+
+**Why it's needed:** Default compaction regenerates the summary from scratch on each pass. Research on consolidation loop failure modes ([faulty-memory](https://dylanzsz.github.io/faulty-memory/)) shows that full regeneration causes LLM sampling drift — each pass shifts content toward the model's prior, away from ground truth. Anchored iterative summarization (merge, not regenerate) is the mitigation.
+
+**Output:** Compaction discipline banner injected before compaction executes.
+
+---
+
+### `hook-added-notify.sh`
+**Event:** `PostToolUse` — **Matcher:** `Write|Edit`
+
+**Purpose:** Detects when a new hook file is written to `.claude/hooks/` and injects a reminder into Claude's context to document it in this file before the session ends.
+
+**Why it's needed:** Hook files are written infrequently, which means documentation often lags. A real-time reminder at the moment of creation ensures the docs stay in sync without requiring a separate workflow step.
+
+**Output:** Documentation reminder banner if the written file path matches `*.claude/hooks/*.sh` and the hook is not yet listed in `docs/hooks/README.md`.
+
+---
+
+### `ccr-routine-added-notify.sh`
+**Event:** `PostToolUse` — **Matcher:** `CronCreate`
+
+**Purpose:** Fires after every `CronCreate` tool call and injects a reminder to document the new routine in `docs/ccr-routines/README.md` before the session ends.
+
+**Why it's needed:** CCR routines run remotely and asynchronously — if they're not documented at creation time, it's easy to forget what they do, why they exist, and how to disable them. This hook closes the gap between "routine created" and "routine documented."
+
+**Output:** Documentation reminder banner with the routine name and schedule extracted from the tool call.
+
+---
+
+## Hook Wiring Reference
+
+From `.claude/settings.json`:
+
+```
+SessionStart   → session-start-hook.sh
+Stop           → stop-hook.sh
+PreToolUse     Write|Edit                                    → memory-discipline-hook.sh
+PreToolUse     Agent                                         → gbrain-agent-spawn.sh
+PreToolUse     mcp__plugin_claude-mem_mcp-search__save_obs  → gbrain-memory-write.sh
+PreToolUse     WebFetch|WebSearch                            → gbrain-external-search.sh
+PostToolUse    Write|Edit                                    → impeccable-detect-hook.sh
+PostToolUse    Write|Edit                                    → hook-added-notify.sh
+PostToolUse    Bash                                          → revert-detect-hook.sh
+PostToolUse    CronCreate                                    → ccr-routine-added-notify.sh
+PreCompact     (all)                                         → compaction-discipline-hook.sh
+```
+
+---
+
+## Adding a New Hook
+
+1. Write the script to `.claude/hooks/<name>.sh` and `chmod +x` it.
+2. Add the wiring entry to `.claude/settings.json` under the appropriate event.
+3. Document it in this file (the `hook-added-notify.sh` hook will remind you if you forget).
+4. Update the Wiring Reference table above.

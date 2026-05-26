@@ -20,12 +20,9 @@ except Exception:
 [[ -z "$CMD" ]] && exit 0
 
 REVERT_TYPE=""
-if   echo "$CMD" | grep -qE "git revert\b"; then
-  REVERT_TYPE="git-revert"
-elif echo "$CMD" | grep -qE "git reset\b" && echo "$CMD" | grep -qE "(--hard|--mixed|HEAD)"; then
-  REVERT_TYPE="git-reset"
-elif echo "$CMD" | grep -qE "git (restore|checkout)\b" && echo "$CMD" | grep -qE "\s--(\s|$)"; then
-  REVERT_TYPE="git-restore"
+if   echo "$CMD" | grep -qE "git revert\b";                       then REVERT_TYPE="git-revert"
+elif echo "$CMD" | grep -qE "git reset\b.*(--hard|--mixed|HEAD)"; then REVERT_TYPE="git-reset"
+elif echo "$CMD" | grep -qE "git (restore|checkout)\s+--";        then REVERT_TYPE="git-restore"
 fi
 
 [[ -z "$REVERT_TYPE" ]] && exit 0

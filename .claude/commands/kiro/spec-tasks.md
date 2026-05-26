@@ -1,0 +1,76 @@
+---
+description: Generate implementation tasks for a specification
+allowed-tools: Read, Task
+argument-hint: <feature-name> [-y] [--sequential]
+---
+
+# Implementation Tasks Generator
+
+## Parse Arguments
+- Feature name: `$1`
+- Auto-approve flag: `$2` (optional, "-y")
+- Sequential mode flag: `$3` (optional, "--sequential")
+
+## Validate
+Check that design has been completed:
+- Verify `specs/$1/` exists
+- Verify `specs/$1/design.md` exists
+- Determine `sequential = ($3 == "--sequential")`
+
+If validation fails, inform user to complete design phase first.
+
+## Invoke Subagent
+
+Delegate task generation to spec-tasks-agent:
+
+Use the Task tool to invoke the Subagent with file path patterns:
+
+```
+Task(
+  subagent_type="spec-tasks-agent",
+  description="Generate implementation tasks",
+  prompt="""
+Feature: $1
+Spec directory: specs/$1/
+Auto-approve: {true if $2 == "-y", else false}
+Sequential mode: {true if sequential else false}
+
+File patterns to read:
+- specs/$1/*.{json,md}
+- .claude/steering/*.md
+- .claude/kiro/settings/rules/tasks-generation.md
+- .claude/kiro/settings/rules/tasks-parallel-analysis.md (include only when sequential mode is false)
+- .claude/kiro/settings/templates/specs/tasks.md
+
+Mode: {generate or merge based on tasks.md existence}
+Instruction highlights:
+- Map all requirements to tasks and list requirement IDs only (comma-separated) without extra narration
+- Promote single actionable sub-tasks to major tasks and keep container summaries concise
+- Apply `(P)` markers only when parallel criteria met (omit in sequential mode)
+- Mark optional acceptance-criteria-focused test coverage subtasks with `- [ ]*` only when deferrable post-MVP
+"""
+)
+```
+
+## Display Result
+
+Show Subagent summary to user briefly (2-3 lines max).
+
+## Review & Approve via Proof
+
+After the subagent completes:
+
+1. Invoke the `proof-collaborative-review` skill with:
+   - File: `specs/$1/tasks.md`
+   - Title: "$1 — Tasks Review"
+
+2. The skill starts the Proof server (installing once if needed), publishes the task list, and presents a review URL. Wait for the user to finish reviewing and signal done.
+
+3. After the Proof review completes, the skill returns the final markdown. Write it back to `specs/$1/tasks.md`.
+
+4. Update `specs/$1/spec.json`:
+   - Set `approvals.tasks.approved: true`
+   - Update `updated_at` to current timestamp
+
+5. Confirm to user:
+   > ✅ Tasks approved. **Important**: clear conversation context before implementation. Then run `/kiro:spec-impl $1 1.1` to start the first task (clear context between each task for clean state).

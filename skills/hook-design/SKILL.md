@@ -1,0 +1,100 @@
+---
+name: hook-design
+description: "Framework for deciding what becomes a Claude Code hook: lifecycle events, signal words, hook vs. prompt judgment, and adoption strategy. Invoked automatically during skill-extraction."
+risk: safe
+source: local
+---
+
+# Hook Design
+
+Reference framework for deciding when a capability should be a Claude Code hook vs. a prompt, skill, or config change.
+
+## Core Principle
+
+> Use prompts for guidance. Use hooks for behavior that should run every time.
+
+Hooks provide **deterministic enforcement** at known lifecycle points. Prompts provide **reasoning guidance** that may or may not be followed.
+
+## When to Use a Hook
+
+**Signal words that indicate a hook:**
+
+| Word in requirement | Hook event |
+|---|---|
+| "always" | PreToolUse or PostToolUse |
+| "never" / "block" | PreToolUse (exit 2 to hard-block, exit 0 + warning to soft-gate) |
+| "record" / "log" / "audit" | PostToolUse or Stop |
+| "run" / "verify" / "validate" | PostToolUse |
+| "before X, check Y" | PreToolUse |
+| "after X, do Y" | PostToolUse |
+| "at session start" | SessionStart |
+| "at session end" | Stop |
+
+**Use a hook when:** the behavior is required unconditionally, regardless of reasoning or conversational context.  
+**Use a prompt/skill when:** the behavior is guidance that should adapt to context.
+
+## Six Lifecycle Events
+
+| Event | Fires when | Harness examples |
+|---|---|---|
+| `SessionStart` | Session opens, before first message | `session-start-hook.sh` (maintenance catch-up) |
+| `UserPromptSubmit` | User sends a message, before model processes | Context routing, prompt inspection |
+| `PreToolUse` | Before a tool call executes | `protected-path-hook.sh`, `pre-tool-use-gitnexus.sh` |
+| `PostToolUse` | After a tool call succeeds | `impeccable-detect-hook.sh`, `revert-detect-hook.sh` |
+| `Stop` | When Claude finishes a turn | `stop-hook.sh` (health checks) |
+| `PreCompact` | Before context compaction | `compaction-discipline-hook.sh` |
+
+## Hook Strength
+
+| Exit code | Effect |
+|---|---|
+| 0 | Allow — Claude sees any stdout output as context before the tool runs |
+| 2 | Block — tool call is cancelled; stdout shown as the reason |
+
+**Soft gate (ask user):** Exit 0 + output a `⚠️ CONFIRMATION REQUIRED:` banner. Claude reads it and must explicitly ask the user before proceeding.  
+**Hard block:** Exit 2 + output reason. Tool call is unconditionally cancelled.
+
+Use soft gates when the action is sometimes legitimate. Use hard blocks only for actions that should never happen under any circumstance.
+
+## Harness Hook Conventions
+
+- Hook source files live in `~/.claude/sdd-harness/hooks/` and get installed to `<project>/.claude/hooks/`
+- Parse tool input from stdin: `EVENT=$(cat)` then extract `tool_input` fields with python3
+- Use `set -euo pipefail` at the top
+- Register in `<project>/.claude/settings.json` under the appropriate event + matcher
+- Multiple hooks can share the same event + matcher — they run sequentially
+
+**Stdin parsing pattern:**
+
+```bash
+EVENT=$(cat)
+FILE_PATH=$(echo "$EVENT" | python3 -c "
+import json, sys
+try:
+    e = json.load(sys.stdin)
+    inp = e.get('tool_input', {})
+    print(inp.get('file_path', inp.get('path', '')))
+except Exception:
+    print('')
+" 2>/dev/null || echo "")
+```
+
+## Adoption Order (low to high complexity)
+
+1. **Protected-path enforcement** — PreToolUse Write|Edit, file-path matching, soft gate or hard block
+2. **Content quality gates** — PostToolUse Write|Edit, run linters/scanners on written files
+3. **Command policy** — PreToolUse Bash, block destructive shell patterns
+4. **Post-action state persistence** — PostToolUse Bash, run tests, write `.hook-state/` JSON
+5. **Completion gates** — Stop reads state file, blocks if quality gate failed
+6. **Context routing** — UserPromptSubmit, keyword matching, inject invariants per topic
+
+## Evaluating Hook Candidates
+
+For each capability extracted from a resource, ask:
+
+1. Should this run **every time** the trigger fires, not just when Claude reasons it should?
+2. Does it describe an **enforcement pattern** — block, log, validate, always, never?
+3. Is it **lifecycle-aware** — on-save, on-session-start, on-finish?
+4. Would a **prompt or skill fail** to reliably enforce this (e.g., Claude could forget or skip it)?
+
+If yes to any → propose a hook. Pick the event from the table above, choose soft gate vs. hard block based on whether the action is ever legitimate.

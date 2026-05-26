@@ -8,6 +8,40 @@ HARNESS_DIR="$(cd "$(dirname "$0")" && pwd)"
 WITH_GITNEXUS=false
 SKIP_EMBEDDINGS=false
 
+# ---------------------------------------------------------------------------
+# OS detection — used for platform-specific behaviour throughout this script.
+# ---------------------------------------------------------------------------
+detect_os() {
+  case "$(uname -s 2>/dev/null)" in
+    Darwin)           echo "macos"   ;;
+    Linux)
+      if grep -qi microsoft /proc/version 2>/dev/null; then
+        echo "wsl"
+      else
+        echo "linux"
+      fi ;;
+    MINGW*|MSYS*|CYGWIN*) echo "gitbash" ;;
+    *)                echo "unknown" ;;
+  esac
+}
+SDD_OS="$(detect_os)"
+
+# ---------------------------------------------------------------------------
+# sync_dir <src> <dst_parent>
+# Copies src as dst_parent/$(basename src), replacing any prior copy.
+#
+# Why not plain `cp -r src/ dst/`?
+#   macOS (BSD cp): trailing slash on the source dumps the *contents* of src
+#   into dst instead of creating dst/src/. Linux/WSL/Git Bash (GNU cp) do not
+#   have this problem, but they do double-nest when dst/src already exists.
+#   rm-then-copy is idempotent and identical across all platforms.
+# ---------------------------------------------------------------------------
+sync_dir() {
+  local src="$1" dst_parent="$2"
+  rm -rf "$dst_parent/$(basename "$src")"
+  cp -r "$src" "$dst_parent/"
+}
+
 # Parse arguments — positional first, then flags
 POSITIONAL_ARGS=()
 for arg in "$@"; do
@@ -21,7 +55,7 @@ done
 PROJECT_DIR="${POSITIONAL_ARGS[0]:-$(pwd)}"
 PROJECT_DIR="$(realpath "$PROJECT_DIR")"
 
-echo "Installing SDD harness into: $PROJECT_DIR"
+echo "Installing SDD harness into: $PROJECT_DIR  (OS: $SDD_OS)"
 
 # --- Validate ---
 if [ ! -d "$PROJECT_DIR/.git" ]; then
@@ -29,27 +63,32 @@ if [ ! -d "$PROJECT_DIR/.git" ]; then
   exit 1
 fi
 
-# --- Create directory structure ---
-mkdir -p "$PROJECT_DIR/.claude/commands/kiro"
-mkdir -p "$PROJECT_DIR/.claude/agents/kiro"
-mkdir -p "$PROJECT_DIR/.claude/kiro/settings/rules"
-mkdir -p "$PROJECT_DIR/.claude/kiro/settings/templates/memory/meta/glacier"
-mkdir -p "$PROJECT_DIR/.claude/kiro/settings/templates/specs"
-mkdir -p "$PROJECT_DIR/.claude/kiro/settings/templates/steering"
-mkdir -p "$PROJECT_DIR/.claude/kiro/settings/templates/steering-custom"
+# --- Create directory structure (only dirs not managed by cp below) ---
 mkdir -p "$PROJECT_DIR/.claude/hooks"
 mkdir -p "$PROJECT_DIR/.claude/memory/meta/glacier"
 mkdir -p "$PROJECT_DIR/.claude/memory/sessions"
 mkdir -p "$PROJECT_DIR/.claude/docs"
-mkdir -p "$PROJECT_DIR/.claude/scripts"
 mkdir -p "$PROJECT_DIR/.claude/steering"
+mkdir -p "$PROJECT_DIR/.claude/commands"
 mkdir -p "$PROJECT_DIR/specs"
 
 # --- Copy harness files ---
-cp -r "$HARNESS_DIR/commands/" "$PROJECT_DIR/.claude/"
-cp -r "$HARNESS_DIR/agents/"   "$PROJECT_DIR/.claude/"
-cp -r "$HARNESS_DIR/kiro/"     "$PROJECT_DIR/.claude/"
-cp -r "$HARNESS_DIR/scripts/"  "$PROJECT_DIR/.claude/"
+sync_dir "$HARNESS_DIR/commands/kiro" "$PROJECT_DIR/.claude/commands"
+sync_dir "$HARNESS_DIR/agents"        "$PROJECT_DIR/.claude"
+sync_dir "$HARNESS_DIR/kiro"          "$PROJECT_DIR/.claude"
+sync_dir "$HARNESS_DIR/scripts"       "$PROJECT_DIR/.claude"
+
+# --- Install harness skills globally ---
+if [ -d "$HARNESS_DIR/skills" ]; then
+  mkdir -p "$HOME/.claude/skills"
+  for skill_dir in "$HARNESS_DIR/skills"/*/; do
+    [ -d "$skill_dir" ] || continue
+    sync_dir "$skill_dir" "$HOME/.claude/skills"
+  done
+  echo "  Harness skills installed to ~/.claude/skills/"
+fi
+# glacier/ is empty in the harness source; create it explicitly after kiro sync
+mkdir -p "$PROJECT_DIR/.claude/kiro/settings/templates/memory/meta/glacier"
 cp    "$HARNESS_DIR/hooks/stop-hook.sh"              "$PROJECT_DIR/.claude/hooks/"
 cp    "$HARNESS_DIR/hooks/session-start-hook.sh"    "$PROJECT_DIR/.claude/hooks/"
 cp    "$HARNESS_DIR/hooks/pre-tool-use-gitnexus.sh" "$PROJECT_DIR/.claude/hooks/"
