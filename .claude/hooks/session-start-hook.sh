@@ -8,6 +8,12 @@ if [ "$SDD_PROFILE" = "minimal" ]; then
   exit 0
 fi
 
+# Clear com.apple.macl from hooks so subprocesses can execute them.
+# This attribute is set when Claude Code's Write/Edit tools modify files,
+# blocking subsequent subprocess reads. session-start-hook itself stays
+# macl-free because update.sh always refreshes it via cp (not Write tool).
+[ "$(uname)" = "Darwin" ] && xattr -cr .claude/hooks/ 2>/dev/null || true
+
 OBS_FILE=".claude/memory/observations.md"
 today=$(date +%Y-%m-%d)
 
