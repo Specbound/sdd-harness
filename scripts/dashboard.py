@@ -6,6 +6,8 @@ Usage:
     python3 ~/.claude/sdd-harness/scripts/dashboard.py --static   # write file only, no server
 """
 
+from __future__ import annotations
+
 import argparse
 import html
 import json
@@ -41,6 +43,7 @@ SECTION_DEFS = [
     ("memory_changes",     "🧠", "Memory Changes"),
     ("skill_changes",      "🎯", "Skill Changes"),
     ("session_quality",    "📊", "Session Quality"),
+    ("context_health",     "🧵", "Context Health"),
     ("maintenance_status", "🔧", "Maintenance Status"),
     ("automation_audit",   "🤖", "Automation Audit"),
 ]
@@ -309,7 +312,17 @@ def gitnexus_stats(repo):
 
 def workshop_stats(repo):
     import shutil, subprocess
-    installed = shutil.which("raindrop") is not None
+    # shutil.which only searches $PATH, which omits ~/.raindrop/bin in non-login
+    # shells (e.g. when dashboard.py is launched by a hook or IDE).
+    # Also probe known install locations directly.
+    _known = [
+        os.path.expanduser("~/.raindrop/bin/raindrop"),
+        "/usr/local/bin/raindrop",
+        "/opt/homebrew/bin/raindrop",
+    ]
+    installed = shutil.which("raindrop") is not None or any(
+        os.path.isfile(p) and os.access(p, os.X_OK) for p in _known
+    )
     try:
         result = subprocess.run(
             ["grep", "-rq", "raindrop.begin", str(repo),
@@ -452,6 +465,23 @@ def parse_ccr_routines():
             "next_run":       next_run_str,
         })
     return sorted(routines, key=lambda r: (r["miss_status"] not in ("missed","warn"), r["miss_status"] != "missed"))
+
+def parse_session_history(repo):
+    """Read .claude/memory/.session-history — list of ISO timestamps, one per session end."""
+    f = repo / ".claude" / "memory" / ".session-history"
+    if not f.exists():
+        return []
+    sessions = []
+    for line in f.read_text().splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            dt = datetime.fromisoformat(line.replace("Z", "+00:00"))
+            sessions.append(dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc))
+        except Exception:
+            continue
+    return sorted(sessions)
 
 def read_skill_report():
     report = HARNESS_DIR / "docs" / "skill-curation-report.md"
@@ -1031,7 +1061,7 @@ def render_ccr_routines(hd):
           align-items:center">
       <span style="color:var(--blue)">ℹ</span>
       CCR routines run against the <strong style="color:var(--text)">sdd-harness</strong> repo on GitHub — they are harness-wide, not per-repo.
-      Local daily maintenance (judge / reflect / keep-rate) runs via Task Scheduler and is shown in <em>Maintenance Status</em>.
+      Local daily maintenance (judge / reflect / keep-rate) runs via local system scheduler and is shown in <em>Maintenance Status</em>.
     </div>"""
 
     cards = ""
@@ -1110,9 +1140,9 @@ def render_ccr_routines(hd):
     cards += f"""<div style="border:1px solid var(--surface0);border-radius:8px;
                     padding:10px 14px;background:rgba(49,50,68,0.3);margin-top:4px">
     <div style="color:var(--subtext0);font-size:11px;font-weight:600;margin-bottom:3px">
-      📋 Local Daily Maintenance (Task Scheduler)</div>
+      📋 Local Daily Maintenance</div>
     <div style="color:var(--overlay0);font-size:11px">
-      Runs via Windows Task Scheduler / session-start hook catch-up.
+      Runs via local system scheduler (launchd / cron / schtasks) with session-start hook catch-up.
       See <strong>Maintenance Status</strong> for per-repo run history.</div>
   </div>"""
 
@@ -1447,6 +1477,102 @@ def render_session_quality(rd):
   {glossary}
 </div>"""
 
+def render_context_health(rd):
+    sessions = rd.get("session_history", [])
+    if not sessions:
+        return empty_state(
+            "No session history yet. Sessions are logged at stop time once "
+            "the stop hook has run at least once."
+        )
+
+    cutoff_7d  = NOW - timedelta(days=7)
+    cutoff_30d = NOW - timedelta(days=30)
+    recent_7d  = [s for s in sessions if s >= cutoff_7d]
+    recent_30d = [s for s in sessions if s >= cutoff_30d]
+
+    last_session = sessions[-1]
+    sessions_per_day_7d = len(recent_7d) / 7
+    total_shown = len(recent_30d)
+
+    freq_color = (
+        "#a6e3a1" if sessions_per_day_7d <= 3 else
+        "#f9e2af" if sessions_per_day_7d <= 6 else
+        "#f38ba8"
+    )
+    freq_label = (
+        "healthy" if sessions_per_day_7d <= 3 else
+        "moderate" if sessions_per_day_7d <= 6 else
+        "high — consider /compact"
+    )
+
+    summary = f"""<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px">
+    <div class="stat-card">
+      <div class="stat-val" style="color:{freq_color}">{len(recent_7d)}</div>
+      <div class="stat-lbl">sessions (last 7d)</div></div>
+    <div class="stat-card">
+      <div class="stat-val" style="color:{freq_color}">{sessions_per_day_7d:.1f}</div>
+      <div class="stat-lbl">sessions / day</div></div>
+    <div class="stat-card">
+      <div class="stat-val" style="color:var(--subtext1)">{rel_time(last_session.isoformat())}</div>
+      <div class="stat-lbl">last session</div></div>
+  </div>"""
+
+    freq_badge = badge(freq_label, "ok" if sessions_per_day_7d <= 3 else "warn" if sessions_per_day_7d <= 6 else "missed")
+    status_line = (
+        f'<div style="margin-bottom:16px;font-size:12px;color:var(--subtext0)">'
+        f'Frequency: {freq_badge}&nbsp; '
+        f'<span style="color:var(--overlay1)">({total_shown} sessions tracked in last 30d)</span>'
+        f'</div>'
+    )
+
+    bars = ""
+    if recent_7d:
+        day_counts: dict[str, int] = {}
+        for s in recent_7d:
+            day_str = s.strftime("%Y-%m-%d")
+            day_counts[day_str] = day_counts.get(day_str, 0) + 1
+        max_count = max(day_counts.values(), default=1)
+        for s in sorted(day_counts):
+            cnt = day_counts[s]
+            bh = max(4, int(cnt / max_count * 44))
+            bc = "#a6e3a1" if cnt <= 3 else "#f9e2af" if cnt <= 6 else "#f38ba8"
+            bars += (
+                f'<div title="{h(s)}: {cnt} session(s)" style="flex:1;display:flex;flex-direction:column;'
+                f'align-items:center;justify-content:flex-end;gap:2px;min-width:14px">'
+                f'<div style="font-size:8px;color:{bc};font-weight:600">{cnt}</div>'
+                f'<div style="background:{bc};height:{bh}px;width:100%;border-radius:2px 2px 0 0;opacity:0.85"></div>'
+                f'</div>'
+            )
+    chart = (
+        f'<div class="label" style="margin-bottom:6px">Sessions per day (last 7d)</div>'
+        f'<div style="display:flex;align-items:flex-end;gap:3px;height:64px;margin-bottom:16px">{bars}</div>'
+    ) if bars else ""
+
+    tips = """<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-top:16px">
+    <div style="background:var(--surface0);border-radius:6px;padding:10px 12px;font-size:11px">
+      <div style="color:var(--blue);font-weight:600;margin-bottom:4px">🗜 Compact heavy contexts</div>
+      <div style="color:var(--subtext0);line-height:1.55">
+        Run <code style="font-size:10px">/compact</code> when a session grows deep to
+        summarize context and prevent quality degradation. Use <code style="font-size:10px">/kiro:context-budget</code>
+        for a structured context health check.
+      </div>
+    </div>
+    <div style="background:var(--surface0);border-radius:6px;padding:10px 12px;font-size:11px">
+      <div style="color:var(--teal);font-weight:600;margin-bottom:4px">🪵 Subagents protect main context</div>
+      <div style="color:var(--subtext0);line-height:1.55">
+        Delegate research-heavy work to subagents so findings return as a summary,
+        not as hundreds of tool-call lines. Use
+        <code style="font-size:10px">/superpowers:dispatching-parallel-agents</code>.
+      </div>
+    </div>
+  </div>"""
+
+    return f"""<div class="section-inner">
+  <h2 class="section-title">Context Health</h2>
+  {section_desc("Tracks session frequency as a proxy for context load. High session counts often indicate heavy contexts that benefit from <code>/compact</code> or subagent delegation.", icon="🧵", color="var(--teal)")}
+  {summary}{status_line}{chart}{tips}
+</div>"""
+
 def render_maintenance_status(selected_rd, all_repos_data, hd):
     runs = hd.get("orchestrator_runs", [])
     latest = {}
@@ -1456,14 +1582,14 @@ def render_maintenance_status(selected_rd, all_repos_data, hd):
             latest[p] = run
 
     ccr_note = section_desc(
-        "<strong style='color:var(--text)'>Local daily maintenance</strong> — runs via Windows Task Scheduler "
+        "<strong style='color:var(--text)'>Local daily maintenance</strong> — runs via local system scheduler "
         "(judge · reflect · keep-rate · housekeep · augment). "
         "Not a CCR routine: it needs direct access to "
         "<code>.claude/memory/</code> which Anthropic's cloud cannot reach. "
         "Full per-event history is in <em>Automation Audit</em>."
     )
 
-    SCHED_HOUR  = 18   # Windows Task Scheduler fires daily-orchestrator.sh at 18:00
+    SCHED_HOUR  = 18   # daily-orchestrator.sh fires at 18:00 via local system scheduler
     GRACE_SECS  = 2 * 3600  # 2h grace after scheduled time before OVERDUE
 
     def _repo_card(rd, compact=False):
@@ -1500,7 +1626,7 @@ def render_maintenance_status(selected_rd, all_repos_data, hd):
             elif run_status == "pending":
                 next_hint = f"Scheduled today at {SCHED_HOUR:02d}:00"
             else:
-                next_hint = f"Was due at {SCHED_HOUR:02d}:00 today — check Task Scheduler"
+                next_hint = f"Was due at {SCHED_HOUR:02d}:00 today — check local system scheduler"
         else:
             run_str   = "never run"
             run_col   = "var(--overlay0)"
@@ -1923,6 +2049,7 @@ def build_html(repos_data, harness_data, initial_idx=0, companion=False):
             "memory_changes":     render_memory_changes(rd, harness_data),
             "skill_changes":      skill_html,
             "session_quality":    render_session_quality(rd),
+            "context_health":     render_context_health(rd),
             "maintenance_status": render_maintenance_status(rd, repos_data, harness_data),
             "automation_audit":   render_automation_audit(rd, harness_data),
         }
@@ -2228,7 +2355,7 @@ class _DashboardHandler(BaseHTTPRequestHandler):
             qs         = parse_qs(parsed.query)
             event_name = qs.get("event_name", [""])[0]
             try:
-                req = UrlRequest(f"http://127.0.0.1:{self.WS_PORT}/api/runs")
+                req = UrlRequest(f"http://localhost:{self.WS_PORT}/api/runs")
                 with urlopen(req, timeout=3) as resp:
                     all_runs = json.loads(resp.read())
                 if event_name:
@@ -2258,7 +2385,9 @@ class _DashboardHandler(BaseHTTPRequestHandler):
         # Build target path (strip /gn prefix)
         gn_path = parsed.path[3:] or "/"
         target_qs = urlencode({k: v[0] for k, v in qs_params.items()})
-        target_url = f"http://127.0.0.1:{self.GN_PORT}{gn_path}"
+        # Use "localhost" not "127.0.0.1": gitnexus serve binds to the IPv6
+        # loopback (::1) on macOS, which 127.0.0.1 (IPv4-only) cannot reach.
+        target_url = f"http://localhost:{self.GN_PORT}{gn_path}"
         if target_qs:
             target_url += f"?{target_qs}"
 
@@ -2278,7 +2407,7 @@ class _DashboardHandler(BaseHTTPRequestHandler):
         # For HTML: rewrite absolute /assets/ and /api/ URLs to point at gitnexus,
         # then inject the auto-repo-select script.
         if b"text/html" in content_type.encode() and b"</head>" in content:
-            gn_origin = f"http://127.0.0.1:{self.GN_PORT}"
+            gn_origin = f"http://localhost:{self.GN_PORT}"
             # Rewrite absolute-path references so browser fetches from gitnexus, not 4569
             content = content.replace(b'href="/', f'href="{gn_origin}/'.encode())
             content = content.replace(b'src="/',  f'src="{gn_origin}/'.encode())
@@ -2313,7 +2442,7 @@ class _DashboardHandler(BaseHTTPRequestHandler):
     def _proxy_workshop(self, parsed):
         """Proxy to raindrop workshop UI at port 5899."""
         ws_path = parsed.path[9:] or "/"  # strip /workshop prefix
-        target_url = f"http://127.0.0.1:{self.WS_PORT}{ws_path}"
+        target_url = f"http://localhost:{self.WS_PORT}{ws_path}"
         if parsed.query:
             target_url += f"?{parsed.query}"
 
@@ -2331,7 +2460,7 @@ class _DashboardHandler(BaseHTTPRequestHandler):
             return
 
         if b"text/html" in content_type.encode() and b"</head>" in content:
-            ws_origin = f"http://127.0.0.1:{self.WS_PORT}"
+            ws_origin = f"http://localhost:{self.WS_PORT}"
             content = content.replace(b'href="/', f'href="{ws_origin}/'.encode())
             content = content.replace(b'src="/',  f'src="{ws_origin}/'.encode())
 
@@ -2455,6 +2584,7 @@ def main():
             "workshop":         workshop_stats(repo),
             "memory_changes":   git_log_memory(repo),
             "memory_cards":     read_memory_file_cards(repo),
+            "session_history":  parse_session_history(repo),
         })
 
     skill_content, skill_age = read_skill_report()

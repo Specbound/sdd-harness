@@ -5,16 +5,17 @@
 #   bootstrap.sh                          # check/install global tools only
 #   bootstrap.sh /path/to/project         # also install harness into a project
 #   bootstrap.sh /path/to/project --yes   # non-interactive (install everything)
-#   bootstrap.sh --skip-ztk --skip-opf   # skip specific tools
+#   bootstrap.sh --skip-rtk --skip-opf   # skip specific tools
 #
 # Flags:
 #   --yes / -y        Non-interactive: answer "yes" to every install prompt
 #   --with-gitnexus   Index the project repo with GitNexus during install
-#   --skip-ztk        Skip ztk token-compression setup
+#   --skip-rtk        Skip RTK token-compression setup
 #   --skip-gitnexus   Skip GitNexus install
 #   --skip-impeccable Skip impeccable install
 #   --skip-uv         Skip uv install
 #   --skip-opf        Skip opf install
+#   --skip-power-tools  Skip ripgrep/fd/jq install
 set -e
 
 HARNESS_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -23,21 +24,25 @@ HARNESS_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR=""
 YES=false
 WITH_GITNEXUS=false
-SKIP_ZTK=false
+SKIP_RTK=false
 SKIP_GITNEXUS=false
+SKIP_WORKSHOP=false
 SKIP_IMPECCABLE=false
 SKIP_UV=false
 SKIP_OPF=false
+SKIP_POWER_TOOLS=false
 
 for arg in "$@"; do
   case "$arg" in
-    --yes|-y)          YES=true ;;
-    --with-gitnexus)   WITH_GITNEXUS=true ;;
-    --skip-ztk)        SKIP_ZTK=true ;;
-    --skip-gitnexus)   SKIP_GITNEXUS=true ;;
-    --skip-impeccable) SKIP_IMPECCABLE=true ;;
-    --skip-uv)         SKIP_UV=true ;;
-    --skip-opf)        SKIP_OPF=true ;;
+    --yes|-y)              YES=true ;;
+    --with-gitnexus)       WITH_GITNEXUS=true ;;
+    --skip-rtk)            SKIP_RTK=true ;;
+    --skip-gitnexus)       SKIP_GITNEXUS=true ;;
+    --skip-workshop)       SKIP_WORKSHOP=true ;;
+    --skip-impeccable)     SKIP_IMPECCABLE=true ;;
+    --skip-uv)             SKIP_UV=true ;;
+    --skip-opf)            SKIP_OPF=true ;;
+    --skip-power-tools)    SKIP_POWER_TOOLS=true ;;
     --*)               echo "Unknown flag: $arg" >&2; exit 1 ;;
     *)                 PROJECT_DIR="$arg" ;;
   esac
@@ -122,93 +127,94 @@ if [ "$PREREQ_FAIL" = true ]; then
   exit 1
 fi
 
-# ── Step 1: ztk ───────────────────────────────────────────────────────────────
-section "Step 1: ztk (Bash output token compression)"
+# ── Step 0b: Power tools (ripgrep, fd, jq) ───────────────────────────────────
+section "Step 0b: Power Tools (ripgrep · fd · jq)"
+# These tools dramatically improve Claude's file search speed and JSON parsing.
+# When present, Claude uses them automatically instead of slower find/grep/cat.
 
-if [ "$SKIP_ZTK" = true ]; then
-  warn "Skipping ztk  (--skip-ztk)"
-elif command -v ztk >/dev/null 2>&1; then
-  ok "ztk already installed  ($(ztk --version 2>&1 | head -1))"
+if [ "$SKIP_POWER_TOOLS" = true ]; then
+  warn "Skipping power tools  (--skip-power-tools)"
+else
+  POWER_MISSING=()
+  for tool in rg fd jq; do
+    if command -v "$tool" >/dev/null 2>&1; then
+      ver="$($tool --version 2>&1 | head -1)"
+      ok "$tool  ($ver)"
+    else
+      warn "$tool not found"
+      POWER_MISSING+=("$tool")
+    fi
+  done
+
+  if [ "${#POWER_MISSING[@]}" -gt 0 ]; then
+    case "$OS" in
+      macos)
+        install_map=( ["rg"]="ripgrep" ["fd"]="fd" ["jq"]="jq" )
+        brew_pkgs=()
+        for t in "${POWER_MISSING[@]}"; do
+          brew_pkgs+=("${install_map[$t]:-$t}")
+        done
+        if confirm "Install missing power tools via Homebrew? (${brew_pkgs[*]})"; then
+          brew install "${brew_pkgs[@]}"
+          ok "Power tools installed"
+        else
+          warn "Skipped power tools"
+        fi
+        ;;
+      linux|wsl)
+        apt_map=( ["rg"]="ripgrep" ["fd"]="fd-find" ["jq"]="jq" )
+        apt_pkgs=()
+        for t in "${POWER_MISSING[@]}"; do
+          apt_pkgs+=("${apt_map[$t]:-$t}")
+        done
+        if confirm "Install missing power tools via apt? (${apt_pkgs[*]})"; then
+          sudo apt-get install -y "${apt_pkgs[@]}"
+          # fd-find installs as 'fdfind' on Ubuntu; create alias if needed
+          if command -v fdfind >/dev/null 2>&1 && ! command -v fd >/dev/null 2>&1; then
+            mkdir -p "$HOME/.local/bin"
+            ln -sf "$(command -v fdfind)" "$HOME/.local/bin/fd"
+            ok "fd symlinked from fdfind"
+          fi
+          ok "Power tools installed"
+        else
+          warn "Skipped power tools"
+        fi
+        ;;
+      *)
+        warn "Unknown OS — install manually: ripgrep, fd, jq"
+        ;;
+    esac
+  fi
+fi
+
+# ── Step 1: RTK ───────────────────────────────────────────────────────────────
+section "Step 1: RTK (Bash output token compression)"
+
+if [ "$SKIP_RTK" = true ]; then
+  warn "Skipping RTK  (--skip-rtk)"
+elif command -v rtk >/dev/null 2>&1; then
+  ok "RTK already installed  ($(rtk --version 2>&1 | head -1))"
   info "Re-wiring global hook to ensure it's active..."
-  ztk init -g 2>/dev/null && ok "Global hook active" || warn "ztk init -g failed — run it manually"
+  rtk init -g --auto-patch 2>/dev/null && ok "Global hook active" || warn "rtk init -g failed — run it manually"
 else
   case "$OS" in
-    macos)
-      if confirm "Install ztk via Homebrew?"; then
-        brew install codejunkie99/ztk/ztk
-        ztk init -g
-        ok "ztk installed and global hook wired"
+    macos|linux|wsl)
+      if confirm "Install RTK via Homebrew?"; then
+        brew install rtk
+        rtk init -g --auto-patch
+        ok "RTK installed and global hook wired"
       else
-        warn "Skipped ztk"
-      fi
-      ;;
-
-    linux|wsl)
-      warn "Linux/WSL: ztk must be built from source (no prebuilt binary)."
-      warn "This downloads ~50MB Zig toolchain and takes ~5 minutes."
-      if confirm "Build and install ztk from source?"; then
-        ZIG_VER="0.16.0"
-        ZIG_ARCHIVE="zig-${ARCH}-linux-${ZIG_VER}"
-        ZIG_DIR="/tmp/${ZIG_ARCHIVE}"
-        ZTK_SRC="/tmp/ztk-src-$$"
-
-        # 1. Zig toolchain
-        if [ ! -x "${ZIG_DIR}/zig" ]; then
-          info "Downloading Zig ${ZIG_VER} (${ARCH})..."
-          curl -fL "https://ziglang.org/download/${ZIG_VER}/${ZIG_ARCHIVE}.tar.xz" \
-               -o /tmp/zig.tar.xz
-          tar -xf /tmp/zig.tar.xz -C /tmp/
-        else
-          info "Zig toolchain already cached at ${ZIG_DIR}"
-        fi
-
-        # 2. Clone source
-        info "Cloning ztk source..."
-        git clone https://github.com/codejunkie99/ztk "${ZTK_SRC}"
-        pushd "${ZTK_SRC}" >/dev/null
-
-        # 3. Apply required patches (without these: blocked commands + permission dialogs)
-        info "Applying patches..."
-        perl -pi -e \
-          's/permissions\.checkCommand\(cmd_str, &\.\{\}, allocator\);//g' \
-          src/proxy.zig
-        perl -pi -e \
-          's/permissionDecision: "ask"/permissionDecision: "allow"/g' \
-          src/hooks/claude_rewrite.zig
-
-        # 4. Build
-        info "Building ztk (ReleaseSmall)..."
-        "${ZIG_DIR}/zig" build -Doptimize=ReleaseSmall
-
-        # 5. Install to ~/.local/bin
-        mkdir -p "$HOME/.local/bin"
-        cp zig-out/bin/ztk "$HOME/.local/bin/ztk"
-        chmod +x "$HOME/.local/bin/ztk"
-        popd >/dev/null
-        rm -rf "${ZTK_SRC}"
-
-        # 6. Ensure ~/.local/bin is in PATH
-        if ! echo "$PATH" | tr ':' '\n' | grep -qx "$HOME/.local/bin"; then
-          warn "~/.local/bin not in PATH — adding to ~/.bashrc"
-          echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$HOME/.bashrc"
-          export PATH="$HOME/.local/bin:$PATH"
-        fi
-
-        # 7. Wire global hook
-        ztk init -g
-        ok "ztk built, installed to ~/.local/bin, and global hook wired"
-      else
-        warn "Skipped ztk"
+        warn "Skipped RTK"
       fi
       ;;
 
     gitbash)
-      warn "ztk has no Windows binary. Install WSL2 to get token compression."
-      warn "Skipping ztk on Git Bash."
+      warn "RTK on Windows native: install via winget or use WSL2."
+      warn "Skipping RTK on Git Bash."
       ;;
 
     *)
-      warn "Unknown OS — skipping ztk. Install manually per FIRST-TIME-SETUP.md."
+      warn "Unknown OS — skipping RTK. Install manually per FIRST-TIME-SETUP.md."
       ;;
   esac
 fi
@@ -229,6 +235,47 @@ else
   else
     warn "Skipped GitNexus"
   fi
+fi
+
+# ── Step 2b: Raindrop Workshop (local dev instrumentation) ───────────────────
+section "Step 2b: Raindrop Workshop"
+
+if [ "$SKIP_WORKSHOP" = true ]; then
+  warn "Skipping Raindrop Workshop  (--skip-workshop)"
+elif command -v raindrop >/dev/null 2>&1; then
+  ok "Raindrop Workshop already installed"
+else
+  case "$OS" in
+    gitbash)
+      warn "Raindrop Workshop install requires bash with curl. Run from WSL2 or macOS."
+      ;;
+    *)
+      if confirm "Install Raindrop Workshop?"; then
+        # Download first, then run — piping curl directly into bash fails for this
+        # script because it uses set -euo pipefail and reads a manifest mid-stream.
+        local _tmp
+        _tmp="$(mktemp /tmp/raindrop-install-XXXXXX.sh)"
+        curl -fsSL https://raindrop.sh/install -o "$_tmp"
+        bash "$_tmp"
+        rm -f "$_tmp"
+
+        # Ensure ~/.raindrop/bin is on PATH for this session and future ones
+        export PATH="$HOME/.raindrop/bin:$PATH"
+        for rc in "$HOME/.zshrc" "$HOME/.bashrc"; do
+          if [ -f "$rc" ] && ! grep -qF '.raindrop/bin' "$rc"; then
+            echo 'export PATH="$HOME/.raindrop/bin:$PATH"' >> "$rc"
+            info "Added ~/.raindrop/bin to PATH in $rc"
+          fi
+        done
+
+        command -v raindrop >/dev/null 2>&1 \
+          && ok "Raindrop Workshop installed  ($(raindrop --version 2>&1))" \
+          || warn "raindrop binary not found after install — check ~/.raindrop/bin"
+      else
+        warn "Skipped Raindrop Workshop"
+      fi
+      ;;
+  esac
 fi
 
 # ── Step 3: impeccable ────────────────────────────────────────────────────────
@@ -311,9 +358,33 @@ run_install() {
     warn "Directory not found: $proj  (skipping)"
     return
   fi
-  INSTALL_FLAGS=""
-  [ "$WITH_GITNEXUS" = true ] && INSTALL_FLAGS="--with-gitnexus"
-  bash "$HARNESS_DIR/install.sh" "$proj" $INSTALL_FLAGS
+  # Always index GitNexus during bootstrap (the dashboard needs it per-repo)
+  bash "$HARNESS_DIR/install.sh" "$proj" --with-gitnexus
+}
+
+index_gitnexus() {
+  # Index any registered repo that doesn't have a .gitnexus/ directory yet.
+  # Called after the install loop so repos installed in this run are also covered.
+  [ -s "$PROJECTS_FILE" ] || return
+  local indexed=0 skipped=0
+  while IFS= read -r proj || [ -n "$proj" ]; do
+    [ -n "$proj" ] || continue
+    if [ ! -d "$proj" ]; then
+      warn "Directory not found: $proj  (skipping GitNexus index)"
+      continue
+    fi
+    if [ -d "$proj/.gitnexus" ]; then
+      ok "$(basename "$proj")  already indexed"
+      skipped=$((skipped+1))
+    else
+      info "Indexing $(basename "$proj")..."
+      (cd "$proj" && npx gitnexus analyze) \
+        && ok "$(basename "$proj")  indexed" \
+        || warn "$(basename "$proj")  index failed — run /kiro:gitnexus-setup inside Claude Code"
+      indexed=$((indexed+1))
+    fi
+  done < "$PROJECTS_FILE"
+  echo "  $indexed repo(s) indexed, $skipped already had an index."
 }
 
 if [ -n "$PROJECT_DIR" ]; then
@@ -351,6 +422,18 @@ else
   warn "No project path given and projects.txt is empty."
   warn "Run:  $HARNESS_DIR/install.sh /path/to/your/project"
   warn "      (registers the project in projects.txt automatically)"
+fi
+
+# ── GitNexus per-repo indexing ────────────────────────────────────────────────
+# Runs after the install loop so every project (including pre-existing ones)
+# gets indexed. Skipped if gitnexus is not available.
+if [ "$SKIP_GITNEXUS" = false ] && { command -v gitnexus >/dev/null 2>&1 || npx gitnexus --version >/dev/null 2>&1; }; then
+  section "Step 6b: GitNexus per-repo indexing"
+  if confirm "Index any un-indexed repos with GitNexus?"; then
+    index_gitnexus
+  else
+    warn "Skipped — run /kiro:gitnexus-setup inside Claude Code for each repo"
+  fi
 fi
 
 # ── Done ──────────────────────────────────────────────────────────────────────

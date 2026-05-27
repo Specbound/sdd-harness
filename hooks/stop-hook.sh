@@ -9,7 +9,7 @@ if [ "$SDD_PROFILE" = "minimal" ]; then
   exit 0
 fi
 
-HARNESS_DIR="$HOME/.claude/sdd-harness"
+HARNESS_DIR="{{HARNESS_DIR}}"
 LAST_CHECK_FILE=".claude/.last-harness-check"
 
 # --- Harness update check ---
@@ -51,6 +51,15 @@ if [ -f "$DETECTOR" ] && [ -f "$OBS_FILE" ]; then
       python3 "$DETECTOR" --auto-transcript --emit observation 2>/dev/null >> "$OBS_FILE" || true
     fi
   ) &
+fi
+
+# --- Session depth tracking (context health) ---
+SESSION_HISTORY=".claude/memory/.session-history"
+if [ -d ".claude/memory" ]; then
+  echo "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$SESSION_HISTORY"
+  if [ -f "$SESSION_HISTORY" ]; then
+    tail -30 "$SESSION_HISTORY" > "${SESSION_HISTORY}.tmp" && mv "${SESSION_HISTORY}.tmp" "$SESSION_HISTORY"
+  fi
 fi
 
 # --- Agent failure pattern detection (self-tightening loop) ---

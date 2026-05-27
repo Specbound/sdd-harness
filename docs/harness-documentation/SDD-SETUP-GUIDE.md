@@ -2,7 +2,8 @@
 
 > This file is managed by the SDD harness (`sdd-harness/docs/`).
 > It is the single source of truth — do not edit copies in individual projects.
-> _Last synced: _
+> _Last synced: 2026-05-27_
+
 
 A complete, self-contained guide to setting up the Spec-Driven Development (SDD)
 harness used in this project. Follow these steps to replicate the setup in any
@@ -102,6 +103,7 @@ Create `CLAUDE.md` at the repo root. Adapt for your project:
 - `specs/` — read when working on or near a feature that has a spec
 - `.claude/docs/` — read when the user asks how to replicate or explain the SDD setup
 - Context Hub MCP tools (`chub_search`, `chub_get`) — available automatically for third-party API docs
+- `ERRORS.md` — check before suggesting solutions to problems; log approaches that took 2+ attempts
 
 ## SDD Workflow
 1. `/kiro:steering`         — bootstrap/refresh project memory
@@ -128,6 +130,8 @@ Create `CLAUDE.md` at the repo root. Adapt for your project:
 - Observations are append-only; never edit past entries
 - Hot memory stays under 50 lines; patterns under 70 lines
 - Each fact lives in ONE file; reference via paths, don't duplicate
+- Before any significant task, show 2-3 approaches and wait for confirmation before proceeding
+- Maintain `ERRORS.md`: when an approach takes 2+ attempts, log what failed, what worked, and why
 
 ## Quality Gates (automated)
 - `ruff check`: on every `.py` file write
@@ -136,6 +140,12 @@ Create `CLAUDE.md` at the repo root. Adapt for your project:
 - harness guide sync: at end of any session where harness files changed
 - memory reflect: after significant sessions (spec completion, major impl)
 - memory housekeeping: when observations.md exceeds 50 entries
+
+## Post-Task Convention
+After any coding task, end with:
+- **Files changed**: list every file touched
+- **What changed**: one line per file
+- **Not touched**: files intentionally left alone (if relevant)
 ```
 
 > After creating this file, run `/codebase-legibility` inside Claude Code to complete the setup: subdirectory CLAUDE.md files for services and modules, `.claudeignore` for noise exclusion, and a codebase map if the repo has many top-level directories.
@@ -237,6 +247,10 @@ Create `.claude/settings.json`:
           {
             "type": "command",
             "command": "/bin/bash /path/to/.claude/hooks/memory-discipline-hook.sh"
+          },
+          {
+            "type": "command",
+            "command": "/bin/bash /path/to/.claude/hooks/skill-validate-hook.sh"
           }
         ]
       },
@@ -300,6 +314,7 @@ The stop hook runs lightweight checks at the end of every Claude session:
 2. **Memory health check** — if `.claude/memory/observations.md` has >50 entries, prints a nudge to run `/kiro:housekeeping`.
 3. **Agent failure pattern detection** — if `.claude/memory/trace.log` shows 3+ consecutive failures for the same agent, prints a nudge to run `/kiro:evolve` to investigate friction patterns.
 4. **Session signal detection** — runs `scripts/detect_reexplanation.py` against the session transcript (Haiku-based LLM). Drain signals append a `[memory-gap]` observation; charge signals (unambiguous approval) append a `[session-charge]` observation. Both at most once per calendar day.
+5. **Session depth tracking** — appends an ISO timestamp to `.claude/memory/.session-history` (kept to the last 30 entries). This file feeds the dashboard's **Context Health** section, which shows sessions/week, sessions/day trend, and tips for `/compact` and subagent delegation.
 
 Doc sync and harness updates are **not** triggered here — they fire from the git post-commit hook (Step 8) instead.
 
@@ -535,12 +550,14 @@ Conventions are defined in `.claude/kiro/settings/rules/memory-conventions.md`:
 | SessionStart (maintenance check) | Every Claude session start | Two modes: (1) if no local `daily-runner.sh` is installed — checks if today's `[judge]` sentinel is absent from `observations.md` and asks Claude to run `/kiro:daily-maintenance`; (2) if `daily-runner.sh` is installed and stale (>24h or never ran) — fires it in the background via `nohup` silently, without consuming session context. |
 | Stop (memory health) | Every Claude session end | Nudges `/kiro:housekeeping` if observations >50; nudges `/kiro:evolve` if agent failure patterns detected |
 | Stop (session signal detector) | Every Claude session end | Runs `scripts/detect_reexplanation.py` (Haiku LLM); appends `[memory-gap]` observation for drain signals (re-explanation) and `[session-charge]` for charge signals (approval). Each written at most once per day. |
+| Stop (session depth tracking) | Every Claude session end | Appends ISO timestamp to `.claude/memory/.session-history` (max 30 entries). Powers the dashboard **Context Health** section — sessions/week, sessions/day trend chart, last session time, and `/compact` tips. |
 | PostToolUse (revert detector) | Every git revert/reset/restore Bash call | Immediately appends `[revert]` drain observation to `observations.md` — gives trust-battery Judge concrete evidence. Script: `.claude/hooks/revert-detect-hook.sh`. |
-| Windows Task Scheduler + SessionStart (daily maintenance) | Nightly at 18:00 local (Israel); SessionStart catch-up if >24h stale | Runs per-repo `daily-runner.sh` → `/kiro:daily-maintenance` — Judge → Reflect → Housekeeping → Trust Score → Augment Skills. Auto-registered by `install.sh` / `update.sh` (WSL + schtasks.exe). Opt out: `SDD_SKIP_ROUTINE=1` at install time; `schtasks.exe /Delete /TN "SDD Daily Orchestrator"` globally; `rm .claude/scripts/daily-runner.sh` per-repo. See `SDD-USAGE.md` → "Daily Maintenance". |
-| PreToolUse (ztk) | Every Bash tool call by any agent | Rewrites matching commands to `ztk run <cmd>`, compressing output before it reaches the LLM (78–90%+ token reduction). Passes through commands without filters unchanged. Global — fires in all sessions and projects. |
+| OS scheduler + SessionStart (daily maintenance) | Nightly at 18:00 local; SessionStart catch-up if >24h stale | Runs per-repo `daily-runner.sh` → `/kiro:daily-maintenance` — Judge → Reflect → Housekeeping → Trust Score → Augment Skills. Auto-registered by `install.sh` / `update.sh` per platform: **macOS** → launchd LaunchAgent (`~/Library/LaunchAgents/com.sdd.daily-orchestrator.plist`); **WSL/Windows** → Windows Task Scheduler (`schtasks.exe`); **Linux** → crontab (`sdd-daily-orchestrator` entry). Opt out: `SDD_SKIP_ROUTINE=1` at install/update time; `rm .claude/scripts/daily-runner.sh` per-repo. See `SDD-USAGE.md` → "Daily Maintenance". |
+| PreToolUse (RTK) | Every Bash tool call by any agent | Rewrites matching commands to `rtk <cmd>`, compressing output before it reaches the LLM (60–90%+ token reduction). Passes through commands without filters unchanged. Global — fires in all sessions and projects. |
 | PreToolUse (GitNexus) | Every file Read/Edit by any agent | Enriches file operations with 360° symbol graph context (callers, dependencies, process participation); no-ops gracefully when GitNexus is not installed |
 | PreToolUse (memory-discipline) | Every Write/Edit to `*/memory/*.md` or `MEMORY.md` | Gates memory writes with discipline rules — valid content: workflow patterns, user preferences, reusable lessons. Invalid: case-specific facts, citations, investigation outcomes. Claude sees the rules before executing the write and can revise content. Implemented in `.claude/hooks/memory-discipline-hook.sh`. |
 | PreToolUse (protected path) | Every Write/Edit to a sensitive path (`.env`, crypto keys, credentials, `.aws/`, `.ssh/`) | Injects a confirmation banner; Claude must pause and ask the user before proceeding. Prevents accidental overwrites of secrets files. Implemented in `.claude/hooks/protected-path-hook.sh`. |
+| PreToolUse (skill-validate) | Every Write to `~/.claude/skills/<name>/SKILL.md` | Validates skill frontmatter before writing: `name:` must be kebab-case and match the file path slug; `description:` must exist and be ≥25 chars; warns on vague description starters. Exit 2 hard-blocks on errors. Implemented in `.claude/hooks/skill-validate-hook.sh`. |
 | PreCompact (compaction-discipline) | Every context compaction | Injects boundary-timing principle and state-preservation checklist: compact at workflow phase boundaries (not arbitrary turn counts), preserve artifact paths, cited facts, open questions, and decisions. Use anchored iterative summarization. Implemented in `.claude/hooks/compaction-discipline-hook.sh`. |
 | post-commit (doc sync) | Every `git commit` with non-`.md` source changes | Doc-sync: updates all `.md` files referencing changed code via `claude --print` (background) |
 | post-commit (harness updater) | Every `git commit` with `.claude/` changes (excl. memory) | Updates `SDD-SETUP-GUIDE.md` via `claude --print` (background) |
@@ -940,80 +957,53 @@ Then add the PostToolUse entry to the project's `.claude/settings.json` (shown i
 
 See `docs/design/impeccable/impeccable.md` for the full rule set and workflow placement.
 
+For code-level quality rules (HTML semantics, CSS patterns, JS idioms), see `docs/design/README.md` — the `frontend-code-quality` and `frontend-performance` skills complement impeccable's visual quality layer. No installation required.
+
 ---
 
-## ztk (Automatic — Token Compression)
+## RTK (Automatic — Token Compression)
 
-The harness includes a global integration with [ztk](https://github.com/codejunkie99/ztk) — a 346KB single-binary CLI proxy that intercepts Bash command output and compresses it before it enters the LLM context window. Claims 78–90%+ token reduction on typical development commands.
+The harness includes a global integration with [RTK](https://github.com/rtk-ai/rtk) (Rust Token Killer) — a single-binary CLI proxy that intercepts Bash command output and compresses it before it enters the LLM context window. 60–90%+ token reduction on typical development commands.
 
 ### What it does
 
-A `PreToolUse` hook in `~/.claude/settings.json` intercepts every Bash tool call. If ztk has a filter for the command, it rewrites `git diff` to `ztk run git diff`, captures the output, compresses it, and returns the compressed version. Everything is automatic — no commands to invoke, no per-project setup.
+A `PreToolUse` hook in `~/.claude/settings.json` intercepts every Bash tool call. If RTK has a filter for the command, it rewrites `git diff` to `rtk git diff`, captures the output, compresses it, and returns the compressed version. Everything is automatic — no commands to invoke, no per-project setup.
 
-**Filters cover:** git (diff/status/log/add/commit/push), pytest/cargo test/go test/npm test/jest/vitest/playwright, ls/cat/find/grep/rg/wc/head/tail/tree, cargo build/check/clippy, tsc, eslint/ruff/mypy, docker, kubectl, curl, gh, jq, python3, and 25+ regex-based patterns (make, terraform, helm, brew, pip, gradle, aws, and more).
+**Filters cover 100+ commands:** git (diff/status/log/add/commit/push), pytest/cargo test/go test/jest/vitest/playwright/rspec, ls/find/grep/diff/tree, cargo build/check/clippy, tsc, eslint/ruff/mypy/golangci-lint/rubocop, docker, kubectl, aws, curl, gh, pnpm, pip, prisma, and more.
 
 ### Installation
 
-**Windows (native):** ztk has no Windows binary. Use WSL2 to get token compression — install WSL2 and follow the Linux instructions below from inside it.
-
-**macOS** — use Homebrew (see Step 1 in [FIRST-TIME-SETUP.md](FIRST-TIME-SETUP.md)).
-
-**Linux / WSL2 — build from source** (no prebuilt binary):
-
-No prebuilt Linux binary is distributed. Build from source with Zig 0.16+:
+**macOS / Linux / WSL2** — use Homebrew:
 
 ```bash
-# 1. Download Zig 0.16.0
-curl -fL "https://ziglang.org/download/0.16.0/zig-x86_64-linux-0.16.0.tar.xz" -o /tmp/zig.tar.xz
-tar -xf /tmp/zig.tar.xz -C /tmp/
-
-# 2. Clone ztk
-git clone https://github.com/codejunkie99/ztk /tmp/ztk-src
-cd /tmp/ztk-src
+brew install rtk
+rtk init -g --auto-patch
 ```
 
-Apply two required patches before building:
-
-**Patch 1** — `src/proxy.zig`: Remove the `permissions.checkCommand` block (lines ~13–26). This check calls `isSuspicious()` which blocks any command with embedded newlines — including all multiline `python3 -c "..."` scripts.
-
-**Patch 2** — `src/hooks/claude_rewrite.zig`: Change `"permissionDecision\":\"ask\""` to `"permissionDecision\":\"allow\""` in `emitRewrite()`. Without this, Claude Code pops a permission dialog for every rewritten command.
+**Linux without Homebrew:**
 
 ```bash
-# 3. Build and install
-/tmp/zig-x86_64-linux-0.16.0/zig build -Doptimize=ReleaseSmall
-mkdir -p ~/.local/bin
-cp zig-out/bin/ztk ~/.local/bin/ztk
-chmod +x ~/.local/bin/ztk
-
-# 4. Wire the global PreToolUse hook
-ztk init -g
+curl -fsSL https://rtk-ai.app/install.sh | sh
+rtk init -g --auto-patch
 ```
+
+**Windows (native):** RTK has no native Windows binary. Use WSL2 to get token compression.
 
 The hook is written to `~/.claude/settings.json` once. All projects and sessions inherit it automatically.
-
-### macOS (Homebrew)
-
-```bash
-brew install codejunkie99/ztk/ztk
-ztk init -g
-```
-
-Note: the `permissionDecision: "ask"` patch is still needed for truly transparent operation. Either build from source or accept confirmation dialogs on rewrites.
 
 ### Verifying it works
 
 ```bash
-ztk stats                                    # cumulative savings
-tail -20 ~/.local/share/ztk/hook-debug.log   # live hook activity
+rtk gain              # cumulative savings
+rtk gain --history    # per-command breakdown
+rtk hook check git status   # preview a rewrite (dry-run)
 ```
-
-The debug log shows `rewrite` for intercepted commands and `passthrough` for commands without filters.
 
 ### CLAUDE.md additions
 
-No CLAUDE.md changes needed — ztk is fully automatic and global.
+No CLAUDE.md changes needed — RTK is fully automatic and global.
 
-See `docs/ztk/README.md` for full details, patch instructions, and troubleshooting.
+See [docs/context-management/rtk/README.md](../context-management/rtk/README.md) for filter coverage, configuration (`exclude_commands`), and troubleshooting.
 
 ---
 
@@ -1062,11 +1052,13 @@ Each harness subsystem has a detailed reference doc:
 | Jira Integration | `docs/jira/README.md` | Hook architecture, scripts, credentials, troubleshooting |
 | AutoResearch | `docs/autoresearch/README.md` | Interview protocol, loop mechanics, agent behavior |
 | Trust Battery | `docs/trust-battery/README.md` | Nightly Judge/Reflector loop, rubric, scoreboard, opt-out, non-goals |
-| ztk | `docs/ztk/README.md` | Token compression proxy — filter coverage, patch details, session memory, upgrading |
+| RTK | `docs/context-management/rtk/README.md` | Token compression proxy — filter coverage, configuration, upgrading |
 | Context Hub | [github.com/andrewyng/context-hub](https://github.com/andrewyng/context-hub) | MCP server for third-party API docs (external) |
-| Design Quality | `docs/design/README.md` | Visual design quality integrations index |
+| Design Quality | `docs/design/README.md` | Frontend quality integrations index — visual design (Impeccable) + code quality skills (`frontend-code-quality`, `frontend-performance`) |
 | Impeccable | `docs/design/impeccable/impeccable.md` | 27 anti-pattern rules, skill usage, hook setup, transfer instructions |
 | Raindrop Workshop | `docs/raindrop/README.md` | AI-agent tracing — instrumented repos, eval loop, dashboard tab, troubleshooting |
+| Skill Extraction | `docs/skill-extraction/README.md` | Methodology for mining skills/hooks/commands from external repos and docs |
+| Evaluation | `docs/evaluation/README.md` | LLM evaluation skills — general agent rubrics (`evaluation`) and A/B funnel methodology (`llm-eval-funnel`) |
 
 ---
 

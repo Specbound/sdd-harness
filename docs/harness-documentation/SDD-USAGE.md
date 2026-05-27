@@ -339,7 +339,7 @@ The rule is added to the appropriate agent file or rule file and distributed via
 
 ### `/kiro:daily-maintenance` — Nightly orchestrator
 
-Runs the full maintenance cycle end-to-end: **Judge → Reflect → Housekeeping → Trust Score → Augment Skills**. Designed to run on a schedule via Windows Task Scheduler (daily at 18:00 local) with a SessionStart hook as catch-up — both registered automatically by `install.sh` and `update.sh` on WSL systems with `schtasks.exe` available.
+Runs the full maintenance cycle end-to-end: **Judge → Reflect → Housekeeping → Trust Score → Augment Skills**. Designed to run on a schedule (daily at 18:00 local) with a SessionStart hook as catch-up — both registered automatically by `install.sh` and `update.sh` for the current platform (launchd on macOS, crontab on Linux, Windows Task Scheduler on WSL).
 
 ```
 /kiro:daily-maintenance
@@ -368,7 +368,7 @@ Starts at 20% on fresh install. Daily cap ±4.5%. History lives in `.claude/memo
 SDD_SKIP_ROUTINE=1 ~/.claude/sdd-harness/install.sh /path/to/project
 ```
 
-Or after install: `schtasks.exe /Delete /TN "SDD Daily Orchestrator"` (global) or `rm .claude/scripts/daily-runner.sh` (per-repo).
+Or after install, disable per platform (global): `launchctl unload -w ~/Library/LaunchAgents/com.sdd.daily-orchestrator.plist` (macOS), `crontab -l | grep -vF sdd-daily-orchestrator | crontab -` (Linux), `schtasks.exe /Delete /TN "SDD Daily Orchestrator" /F` (WSL). Per-repo: `rm .claude/scripts/daily-runner.sh`.
 
 ### `scripts/detect_reexplanation.py` — session signal detector
 

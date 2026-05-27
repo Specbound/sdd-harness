@@ -1,6 +1,6 @@
 # lean-ctx — Token-Efficient File Reading & Code Analysis
 
-> MCP server that compresses file-read and code-analysis token costs. Works alongside ztk (which handles shell output). Together they cover the full context surface: ztk owns Bash outputs, lean-ctx owns file reads and AST analysis.
+> MCP server that compresses file-read and code-analysis token costs. Works alongside RTK (which handles shell output). Together they cover the full context surface: RTK owns Bash outputs, lean-ctx owns file reads and AST analysis.
 
 ## What It Is
 
@@ -17,15 +17,15 @@ Claude → Read(auth.ts)                 Claude → ctx_read("auth.ts", "signatu
 
 Re-reads of files already in the cache cost ~13 tokens regardless of file size.
 
-## Relationship to ztk
+## Relationship to RTK
 
 | Layer | Tool | Approach | Automation |
 |---|---|---|---|
-| Bash output | **ztk** | PreToolUse hook rewrites shell commands | Fully automatic |
+| Bash output | **RTK** | PreToolUse hook rewrites shell commands | Fully automatic |
 | File reads | **lean-ctx** | MCP tools replace Read/Grep | Claude chooses intentionally |
 | Code analysis | **lean-ctx** | ctx_graph / ctx_symbol / ctx_callgraph | Claude chooses intentionally |
 
-They are complementary. **Do not use `ctx_shell`** — ztk already handles shell compression automatically and transparently.
+They are complementary. **Do not use `ctx_shell`** — RTK already handles shell compression automatically and transparently.
 
 ## Core Tools
 
@@ -52,18 +52,25 @@ They are complementary. **Do not use `ctx_shell`** — ztk already handles shell
 
 ## Read Modes
 
-| Mode | Use when |
-|---|---|
-| `auto` | Unsure — system picks optimal |
-| `full` | About to edit this file |
-| `map` | Need exports + deps, not implementation |
-| `signatures` | API surface only (functions, types, interfaces) |
-| `diff` | Re-reading after an edit |
-| `aggressive` | Large file, context only, need max compression |
-| `entropy` | Highlight high-signal / high-entropy fragments |
-| `task` | Active task set defined — filters to task-relevant content |
-| `reference` | Quote-friendly minimal excerpts |
-| `lines:N-M` | Specific line range (e.g. `lines:40-80`) |
+| Mode | Use when | Pruning analogy |
+|---|---|---|
+| `auto` | Unsure — system picks optimal | — |
+| `full` | About to edit this file | No pruning |
+| `map` | Need exports + deps, not implementation | Chunk-level (logical unit boundaries) |
+| `signatures` | API surface only (functions, types, interfaces) | Chunk-level — best for code files |
+| `diff` | Re-reading after an edit | Delta pruning |
+| `aggressive` | Large file, context only, need max compression | Token-level — highest compression ratio |
+| `entropy` | Highlight high-signal / high-entropy fragments | Attention-mimicking — scores by information density |
+| `task` | Active task set defined — filters to task-relevant content | Query-aware — best precision for accuracy-critical work |
+| `reference` | Quote-friendly minimal excerpts | Sentence-level — best for prose and documentation |
+| `lines:N-M` | Specific line range (e.g. `lines:40-80`) | Manual range selection |
+
+**Decision guide** (from [Redis context pruning research](https://redis.io/blog/context-pruning-llm-tokens/)):
+- **Code files** → `signatures` or `map`. Chunk-level beats token-level for code — broken syntax is worse than verbosity.
+- **Prose / docs** → `reference`. Sentence-level: keeps topic sentences, drops elaboration.
+- **Accuracy-critical tasks** → `task`. Query-aware filtering preserves only what's relevant to the current question.
+- **Unknown or mixed content** → `aggressive` or `entropy`. Entropy mode mimics attention-head scoring without requiring model internals access.
+- **Re-reading after edit** → `diff` or `ctx_delta`. Pays ~13 tokens regardless of file size.
 
 ## Installation
 
@@ -88,13 +95,13 @@ claude mcp add lean-ctx lean-ctx -- --mcp
 
 Verify with `claude mcp list`.
 
-### Shell Hook (optional — skip if ztk is installed)
+### Shell Hook (optional — skip if RTK is installed)
 
 ```bash
 lean-ctx setup --shell
 ```
 
-This installs a `~/.zshenv` interceptor for `ctx_shell`. **Not needed** — ztk's PreToolUse hook already provides superior shell compression automatically.
+This installs a `~/.zshenv` interceptor for `ctx_shell`. **Not needed** — RTK's PreToolUse hook already provides superior shell compression automatically.
 
 ## ctx_graph vs gitnexus
 
@@ -129,4 +136,4 @@ The MCP server registration in `settings.json` does not need to change between v
 | `ctx_*` tools not available in Claude | lean-ctx not registered as MCP server | Add to `mcpServers` in `~/.claude/settings.json` |
 | `lean-ctx: command not found` | Binary not in PATH | Ensure install dir is in `$PATH` |
 | MCP server fails to start | lean-ctx not installed | Run the installer first |
-| `ctx_shell` and ztk both active | Double-processing | Disable lean-ctx's shell hook; rely on ztk |
+| `ctx_shell` and RTK both active | Double-processing | Disable lean-ctx's shell hook; rely on RTK |

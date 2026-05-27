@@ -10,9 +10,9 @@
 | Platform | Support level | Notes |
 |---|---|---|
 | **Linux** | Full | All tools supported natively |
-| **macOS** | Full | ztk via Homebrew; rest identical to Linux |
+| **macOS** | Full | RTK via Homebrew; rest identical to Linux |
 | **Windows (WSL2)** | Full | Recommended for Windows — run all commands inside WSL2; identical to Linux |
-| **Windows (native)** | Partial | npm/Node tools work natively; ztk and bash hooks require WSL2 or Git Bash |
+| **Windows (native)** | Partial | npm/Node tools work natively; bash hooks require WSL2 or Git Bash |
 
 **Windows recommendation**: Use WSL2. Install [WSL2](https://learn.microsoft.com/en-us/windows/wsl/install) (`wsl --install` in PowerShell as Administrator), then follow the Linux instructions throughout this guide from inside a WSL2 terminal.
 
@@ -42,71 +42,118 @@ If any are missing, install them before continuing.
 
 ---
 
-## Step 1: ztk (Token Compression)
+## Step 0b: Power Tools (ripgrep, fd, jq)
 
-ztk is the most impactful global tool — it compresses all Bash output by 78–90% before it reaches Claude.
+These optional CLI tools dramatically improve Claude's file search speed and JSON parsing. When present, Claude uses them automatically instead of slower `find`/`grep`/`cat`.
+
+| Tool | Install check | What it does |
+|---|---|---|
+| `rg` (ripgrep) | `which rg` | Fast recursive search; replaces grep |
+| `fd` | `which fd` | Fast file finder; replaces find |
+| `jq` | `which jq` | JSON parsing and filtering |
+
+**macOS (Homebrew):**
+```bash
+brew install ripgrep fd jq
+```
+
+**Linux / WSL2 (apt):**
+```bash
+sudo apt-get install -y ripgrep fd-find jq
+# fd-find installs as 'fdfind'; create an alias:
+mkdir -p ~/.local/bin
+ln -sf "$(which fdfind)" ~/.local/bin/fd
+```
+
+Skip with: `bootstrap.sh --skip-power-tools`
+
+---
+
+## Step 1: RTK (Token Compression)
+
+RTK is the most impactful global tool — it compresses all Bash output by 60–90% before it reaches Claude.
 
 ### Check if already installed
 
 ```bash
-which ztk && ztk --version
+which rtk && rtk --version
 ```
 
 **If found** — just wire the global hook (one command):
 ```bash
-ztk init -g
+rtk init -g --auto-patch
 ```
 
-**If not found** — build from source (Linux / macOS / WSL2):
+**If not found** — install via Homebrew (macOS, Linux, WSL2):
 
-**macOS** — use Homebrew:
 ```bash
-brew install codejunkie99/ztk/ztk
-ztk init -g
+brew install rtk
+rtk init -g --auto-patch
 ```
 
-**Linux / WSL2** — build from source (no prebuilt binary):
+**Linux without Homebrew:**
 ```bash
-# 1. Get the Zig toolchain
-curl -fL "https://ziglang.org/download/0.16.0/zig-x86_64-linux-0.16.0.tar.xz" -o /tmp/zig.tar.xz
-tar -xf /tmp/zig.tar.xz -C /tmp/
-
-# 2. Clone source
-git clone https://github.com/codejunkie99/ztk /tmp/ztk-src
-cd /tmp/ztk-src
-
-# 3. Apply required patches before building:
-#    In src/proxy.zig     — remove: permissions.checkCommand(cmd_str, &.{}, allocator)
-#    In src/hooks/claude_rewrite.zig — change: permissionDecision: "ask" → "allow"
-#    (without these patches: blocked commands + permission dialogs on every Bash call)
-
-# 4. Build
-/tmp/zig-x86_64-linux-0.16.0/zig build -Doptimize=ReleaseSmall
-
-# 5. Install
-mkdir -p ~/.local/bin
-cp zig-out/bin/ztk ~/.local/bin/ztk
-chmod +x ~/.local/bin/ztk
-
-# 6. Ensure ~/.local/bin is in PATH (add to ~/.bashrc if not already there)
-export PATH="$HOME/.local/bin:$PATH"
-
-# 7. Wire the global hook
-ztk init -g
+curl -fsSL https://rtk-ai.app/install.sh | sh
+rtk init -g --auto-patch
 ```
 
-**Windows (native — no WSL2)**: ztk has no Windows binary. Skip this step; token compression will not be active. To get it, install WSL2 and run the Linux instructions above inside it.
+**Windows (native — no WSL2)**: RTK has no native Windows binary. Skip this step; token compression will not be active. To get it, install WSL2 and run the Linux instructions above inside it.
 
-`ztk init -g` writes a `PreToolUse` hook to `~/.claude/settings.json`. All projects inherit it automatically.
+`rtk init -g` writes a `PreToolUse` hook to `~/.claude/settings.json`. All projects inherit it automatically.
 
 **Verify:**
 ```bash
-ztk stats    # shows cumulative savings (starts at 0 on fresh install)
+rtk gain    # shows cumulative savings (starts at 0 on fresh install)
 ```
 
 ---
 
-## Step 2: GitNexus (Code Intelligence)
+## Step 2: Raindrop Workshop (Agent Tracing)
+
+Raindrop Workshop is the harness's built-in AI-agent debugger. It captures every LLM call, tool invocation, and latency trace and streams them to `localhost:5899`. The harness auto-instruments all registered repos and exposes Workshop as a tab in the dashboard — **no per-repo `.env` changes needed**.
+
+### Check if already installed
+
+```bash
+which raindrop && raindrop --version
+```
+
+**If found** — nothing else needed. Run `raindrop workshop` to confirm it starts.
+
+**If not found** — install the CLI (global binary):
+
+```bash
+curl -fsSL https://raindrop.sh/install | bash
+```
+
+### Python SDK
+
+The harness wires this automatically via `raindrop-setup.sh` during `install.sh` / `update.sh`. It:
+
+- Installs `raindrop-ai` in each registered repo's virtualenv (`.venv/`, `venv/`, or `uv`-managed)
+- Adds `RAINDROP_LOCAL_DEBUGGER=http://localhost:5899` to `~/.claude/settings.json` (Claude env)
+- Adds the same export to `~/.bashrc` (shell env for user-run servers)
+
+To run it manually (idempotent):
+
+```bash
+bash ~/.claude/sdd-harness/scripts/raindrop-setup.sh
+source ~/.bashrc
+```
+
+**Verify:**
+```bash
+# Workshop starts on port 5899
+raindrop workshop &
+# Open harness dashboard → Workshop tab
+python3 ~/.claude/sdd-harness/scripts/dashboard.py
+```
+
+See `docs/raindrop/README.md` for full details on tracing, the eval loop, and troubleshooting.
+
+---
+
+## Step 3: GitNexus (Code Intelligence)
 
 GitNexus is optional but recommended for large repos. It enriches file reads/edits with dependency and blast-radius context via a PreToolUse hook.
 
@@ -145,7 +192,7 @@ This indexes the repo (`.gitnexus/`), adds the MCP server to `.claude/settings.j
 
 ---
 
-## Step 3: impeccable (Frontend Design QA)
+## Step 4: impeccable (Frontend Design QA)
 
 Automatically flags design anti-patterns when Claude writes frontend files (`.tsx`, `.jsx`, `.css`, etc.). The hook silently skips if the binary isn't installed — no errors, just no scans.
 
@@ -166,7 +213,7 @@ That's it — the hook in `.claude/hooks/impeccable-detect-hook.sh` picks it up 
 
 ---
 
-## Step 4: uv (Python Package Manager)
+## Step 5: uv (Python Package Manager)
 
 Required for autoresearch and any project using `uv`-managed Python environments.
 
@@ -203,7 +250,7 @@ winget install --id=astral-sh.uv -e
 
 ---
 
-## Step 5: Privacy Filter / opf (PII Scanning)
+## Step 6: Privacy Filter / opf (PII Scanning)
 
 Optional. Blocks commits containing secrets, emails, account numbers, etc.
 
@@ -244,7 +291,7 @@ Add-Content $hookPath 'bash "$(git rev-parse --show-toplevel)/.claude/hooks/scan
 
 ---
 
-## Step 6: Per-Project Install
+## Step 7: Per-Project Install
 
 Once global tools are in place, install the harness into each project:
 
@@ -266,6 +313,7 @@ Then, inside Claude Code in the project directory, run these once:
 ```
 /kiro:steering         # scans codebase, generates steering/product.md, tech.md, structure.md
 /kiro:setup-routine    # registers nightly maintenance (runs in Anthropic's cloud at 11pm)
+/codebase-legibility   # sets up CLAUDE.md hierarchy, .claudeignore, and codebase map
 ```
 
 Update `.gitignore` to exclude harness files:
@@ -294,10 +342,12 @@ Run through this on a fresh machine:
 
 | Tool | Check (Linux/macOS/WSL2) | Install if missing | Activate |
 |---|---|---|---|
-| `ztk` | `which ztk` | Linux/WSL2: build from source (Step 1); macOS: `brew install codejunkie99/ztk/ztk`; Windows native: requires WSL2 | `ztk init -g` |
+| `rg`, `fd`, `jq` | `which rg && which fd && which jq` | macOS: `brew install ripgrep fd jq`; Linux/WSL2: `apt-get install ripgrep fd-find jq` (see Step 0b) | automatic |
+| `rtk` | `which rtk` | macOS/Linux/WSL2: `brew install rtk`; Linux no-brew: `curl -fsSL https://rtk-ai.app/install.sh \| sh`; Windows native: requires WSL2 | `rtk init -g --auto-patch` |
+| `raindrop` | `which raindrop` | `curl -fsSL https://raindrop.sh/install \| bash` (all platforms) | automatic via `install.sh`; see Step 2 |
 | `gitnexus` | `which gitnexus` | `npm install -g gitnexus` (all platforms) | `/kiro:gitnexus-setup` per-project |
 | `impeccable` | `which impeccable` | `npm install -g impeccable` (all platforms) | automatic via hook |
-| `uv` | `which uv` | Linux/macOS/WSL2: `curl -LsSf https://astral.sh/uv/install.sh \| sh`; Windows: see Step 4 | nothing extra |
+| `uv` | `which uv` | Linux/macOS/WSL2: `curl -LsSf https://astral.sh/uv/install.sh \| sh`; Windows: see Step 5 | nothing extra |
 | `opf` | `which opf` | `uv pip install opf` (all platforms) | wire pre-commit hook |
 | harness | `ls ~/.claude/sdd-harness/install.sh` | clone/copy harness | `install.sh /path/to/project` |
 
@@ -307,13 +357,20 @@ Run through this on a fresh machine:
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| `ztk: command not found` in hook | `~/.local/bin` not in PATH | Add `export PATH="$HOME/.local/bin:$PATH"` to `~/.bashrc` |
-| Permission dialog on every Bash call | ztk built without the `"ask"→"allow"` patch | Rebuild with patch applied |
-| Bash commands blocked with "command denied" | ztk built without the `isSuspicious` removal patch | Rebuild with patch applied |
-| Hook not firing at all | `ztk init -g` not run | Run `ztk init -g` |
+| `rtk: command not found` in hook | RTK not installed or not in PATH | `brew install rtk` |
+| Workshop tab shows "not installed" | `raindrop` CLI missing | `curl -fsSL https://raindrop.sh/install \| bash` |
+| No traces appearing in Workshop | `RAINDROP_LOCAL_DEBUGGER` not in env | Run `source ~/.bashrc`; or re-run `raindrop-setup.sh` |
+| `raindrop-ai` import error at agent startup | SDK not installed in venv | `bash ~/.claude/sdd-harness/scripts/raindrop-setup.sh` |
+| Permission dialog on every Bash call | Old `ztk rewrite` hook still present | Replace with `rtk hook claude` in `~/.claude/settings.json` |
+| Hook not firing at all | `rtk init -g` not run | Run `rtk init -g --auto-patch` |
 | GitNexus context missing in Claude | MCP not in `settings.json` or repo not indexed | Run `/kiro:gitnexus-setup` |
 | impeccable scans not appearing | Binary not in PATH | `npm install -g impeccable` |
 | Maintenance not running | `/kiro:setup-routine` not run | Run it inside Claude Code |
+| Local daily maintenance not running (macOS) | LaunchAgent not loaded | `launchctl list com.sdd.daily-orchestrator` to check; re-run `install.sh` or `update.sh` to re-register |
+| Local daily maintenance not running (Linux) | Cron entry missing | `crontab -l \| grep sdd-daily` to check; re-run `install.sh` or `update.sh` to re-register |
+| Local daily maintenance not running (WSL) | Task Scheduler entry missing | `schtasks.exe /Query /TN "SDD Daily Orchestrator"` to check; re-run `install.sh` to re-register |
 | **Windows:** hooks fail with `bash: /bin/bash: No such file` | Claude Code running on native Windows; hook paths are Linux-style | Use WSL2 so Claude Code runs in Linux, or change hook commands from `/bin/bash` to the Git Bash path (`C:/Program Files/Git/bin/bash.exe`) |
 | **Windows:** `uv` not found after install | PowerShell PATH not reloaded | Restart terminal or run `. $env:USERPROFILE\.cargo\env` (or reopen shell) |
 | **Windows:** `install.sh` fails | Script requires bash | Run from Git Bash or WSL2, not PowerShell or CMD |
+
+_Last synced: 2026-05-27_

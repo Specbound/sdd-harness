@@ -1,7 +1,7 @@
 #!/bin/bash
 # ──────────────────────────────────────────────────────────
 # Update all registered projects:
-#   ~/.claude/sdd-harness/update.sh
+#   ok 
 #
 # Update a single project:
 #   ~/.claude/sdd-harness/update.sh /path/to/project
@@ -74,7 +74,8 @@ do_update() {
   sync_dir "$HARNESS_DIR/scripts"       "$proj/.claude"
   sync_dir "$HARNESS_DIR/docs"          "$proj/.claude"
   mkdir -p "$proj/.claude/memory/sessions"
-  cp    "$HARNESS_DIR/hooks/stop-hook.sh"              "$proj/.claude/hooks/"
+  sed "s|{{HARNESS_DIR}}|$HARNESS_DIR|g" "$HARNESS_DIR/hooks/stop-hook.sh" \
+    > "$proj/.claude/hooks/stop-hook.sh"
   cp    "$HARNESS_DIR/hooks/session-start-hook.sh"    "$proj/.claude/hooks/"
   cp    "$HARNESS_DIR/hooks/pre-tool-use-gitnexus.sh" "$proj/.claude/hooks/"
   cp    "$HARNESS_DIR/hooks/revert-detect-hook.sh"    "$proj/.claude/hooks/"
@@ -84,19 +85,30 @@ do_update() {
   chmod +x "$proj/.claude/hooks/pre-tool-use-gitnexus.sh"
   chmod +x "$proj/.claude/hooks/revert-detect-hook.sh"
   chmod +x "$proj/.claude/hooks/impeccable-detect-hook.sh"
+  [ "$(uname)" = "Darwin" ] && xattr -cr "$proj/.claude/hooks/" 2>/dev/null || true
   if [ -d "$proj/.git" ]; then
     cp "$HARNESS_DIR/git-hooks/post-commit" "$proj/.git/hooks/"
     chmod +x "$proj/.git/hooks/post-commit"
   fi
-  # --- Sync harness skills globally (runs once per update, not per project) ---
-  if [ -d "$HARNESS_DIR/skills" ] && [ "${_SDD_SKILLS_SYNCED:-0}" != "1" ]; then
-    mkdir -p "$HOME/.claude/skills"
-    for skill_dir in "$HARNESS_DIR/skills"/*/; do
-      [ -d "$skill_dir" ] || continue
-      sync_dir "$skill_dir" "$HOME/.claude/skills"
-    done
-    export _SDD_SKILLS_SYNCED=1
-    echo "  Harness skills synced to ~/.claude/skills/"
+  # --- Sync harness skills + global commands (runs once per update, not per project) ---
+  if [ "${_SDD_GLOBAL_SYNCED:-0}" != "1" ]; then
+    if [ -d "$HARNESS_DIR/skills" ]; then
+      mkdir -p "$HOME/.claude/skills"
+      for skill_dir in "$HARNESS_DIR/skills"/*/; do
+        [ -d "$skill_dir" ] || continue
+        sync_dir "$skill_dir" "$HOME/.claude/skills"
+      done
+      echo "  Harness skills synced to ~/.claude/skills/"
+    fi
+    if [ -d "$HARNESS_DIR/commands/global" ]; then
+      mkdir -p "$HOME/.claude/commands"
+      for cmd_file in "$HARNESS_DIR/commands/global"/*.md; do
+        [ -f "$cmd_file" ] || continue
+        cp "$cmd_file" "$HOME/.claude/commands/"
+      done
+      echo "  Global commands synced to ~/.claude/commands/"
+    fi
+    export _SDD_GLOBAL_SYNCED=1
   fi
 
   bash "$HARNESS_DIR/generate-project-stack.sh" "$proj"
@@ -123,13 +135,45 @@ else
 fi
 
 # Update harness VERSION to today
+# Keep the harness's own .claude/ in sync with the source hooks and scripts.
+# NOTE: stop-hook.sh is intentionally NOT synced here — .claude/hooks/stop-hook.sh is the
+# harness-specific version (with memory-gap detection, HARNESS_DIR auto-detection, etc.)
+# while hooks/stop-hook.sh is the simpler version installed into other projects.
+cp "$HARNESS_DIR/hooks/session-start-hook.sh"    "$HARNESS_DIR/.claude/hooks/session-start-hook.sh"
+cp "$HARNESS_DIR/hooks/revert-detect-hook.sh"    "$HARNESS_DIR/.claude/hooks/revert-detect-hook.sh"
+cp "$HARNESS_DIR/hooks/pre-tool-use-gitnexus.sh" "$HARNESS_DIR/.claude/hooks/pre-tool-use-gitnexus.sh"
+cp "$HARNESS_DIR/scripts/daily-runner.sh"        "$HARNESS_DIR/.claude/scripts/daily-runner.sh"
+chmod +x "$HARNESS_DIR/.claude/hooks/"*.sh "$HARNESS_DIR/.claude/scripts/daily-runner.sh"
+[ "$(uname)" = "Darwin" ] && xattr -cr "$HARNESS_DIR/.claude/" 2>/dev/null || true
+
+# Regenerate the harness's own settings.json from the template.
+# Substitutes {{HARNESS_DIR}} with the actual path so hook commands use absolute paths —
+# Claude Code's hook runner does not set CWD to the project directory.
+sed "s|{{HARNESS_DIR}}|$HARNESS_DIR|g" "$HARNESS_DIR/templates/settings.harness.json.template" \
+  > "$HARNESS_DIR/.claude/settings.json"
+echo "  Harness settings.json regenerated (paths resolved to $HARNESS_DIR)."
+
 echo "$(date +%Y-%m-%d)" > "$HARNESS_DIR/VERSION"
 
-# Ensure global Windows scheduled task is registered (idempotent — skips if it
-# already exists). Honors SDD_SKIP_ROUTINE=1 to opt out.
-if [ "${SDD_SKIP_ROUTINE:-0}" != "1" ] && command -v schtasks.exe >/dev/null 2>&1; then
-  bash "$HARNESS_DIR/scripts/setup-global-orchestrator.sh" || \
-    echo "  WARNING: scheduled-task bootstrap returned non-zero."
+# Ensure daily orchestrator is registered (idempotent, OS-aware).
+# Honors SDD_SKIP_ROUTINE=1 to opt out.
+if [ "${SDD_SKIP_ROUTINE:-0}" != "1" ]; then
+  case "$SDD_OS" in
+    wsl|gitbash)
+      if command -v schtasks.exe >/dev/null 2>&1; then
+        bash "$HARNESS_DIR/scripts/setup-global-orchestrator.sh" || \
+          echo "  WARNING: scheduled-task bootstrap returned non-zero."
+      fi
+      ;;
+    macos)
+      bash "$HARNESS_DIR/scripts/setup-mac-orchestrator.sh" || \
+        echo "  WARNING: launchd registration returned non-zero."
+      ;;
+    linux)
+      bash "$HARNESS_DIR/scripts/setup-linux-orchestrator.sh" || \
+        echo "  WARNING: crontab registration returned non-zero."
+      ;;
+  esac
 fi
 
 # Refresh Raindrop Workshop wiring (env vars + venv installs) for all repos.

@@ -9,7 +9,9 @@ if [ "$SDD_PROFILE" = "minimal" ]; then
   exit 0
 fi
 
-HARNESS_DIR="$HOME/.claude/sdd-harness"
+# Detect harness root from this script's location (works with absolute or relative invocation).
+_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+HARNESS_DIR="$(cd "$_SCRIPT_DIR/../.." && pwd)"
 LAST_CHECK_FILE=".claude/.last-harness-check"
 
 # --- Harness update check ---
@@ -42,7 +44,7 @@ fi
 # Drain: re-explanation phrases the user had to say → [memory-gap]
 # Charge: unambiguous approval phrases → [session-charge]
 # Both write at most once per calendar day (idempotent).
-DETECTOR="$HOME/.claude/sdd-harness/scripts/detect_reexplanation.py"
+DETECTOR="$HARNESS_DIR/scripts/detect_reexplanation.py"
 # Skip detector in headless/print sessions to prevent recursive spawning.
 # daily-runner.sh sets SDD_HEADLESS=1 before invoking claude --print.
 if [ -f "$DETECTOR" ] && [ -f "$OBS_FILE" ] && [ "${SDD_HEADLESS:-0}" != "1" ]; then
@@ -59,7 +61,7 @@ if [ -f "$DETECTOR" ] && [ -f "$OBS_FILE" ] && [ "${SDD_HEADLESS:-0}" != "1" ]; 
 
     # Micro-reflect: immediately ingest drain context into hot-memory as [auto-learn] entries.
     # These are probationary — housekeeping promotes or removes them within 7 days.
-    MICRO_REFLECT="$HOME/.claude/sdd-harness/scripts/micro_reflect.py"
+    MICRO_REFLECT="$HARNESS_DIR/scripts/micro_reflect.py"
     if [ -f "$MICRO_REFLECT" ] && [ "$drain_count" -gt 0 ] && [ -f ".claude/memory/hot-memory.md" ]; then
       echo "$drain_hits" | python3 "$MICRO_REFLECT" 2>/dev/null
     fi
@@ -73,6 +75,18 @@ if [ -f "$DETECTOR" ] && [ -f "$OBS_FILE" ] && [ "${SDD_HEADLESS:-0}" != "1" ]; 
       fi
     fi
   ) &
+fi
+
+# --- Session depth tracking (context health) ---
+# Appends an ISO timestamp to .claude/memory/.session-history so the dashboard
+# can show session frequency and prompt context-management habits.
+SESSION_HISTORY=".claude/memory/.session-history"
+if [ -d ".claude/memory" ]; then
+  echo "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$SESSION_HISTORY"
+  # Keep only the last 30 entries
+  if [ -f "$SESSION_HISTORY" ]; then
+    tail -30 "$SESSION_HISTORY" > "${SESSION_HISTORY}.tmp" && mv "${SESSION_HISTORY}.tmp" "$SESSION_HISTORY"
+  fi
 fi
 
 # --- Agent failure pattern detection (self-tightening loop) ---

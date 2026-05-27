@@ -1,6 +1,7 @@
 # Local machine state — never commit
 projects.txt
 VERSION
+.claude/settings.json
 
 # Runtime artifacts
 logs/

@@ -24,7 +24,7 @@ One harness, many projects. Install once, keep every repo in sync.
 - [Privacy Filter (PII Scanning)](#privacy-filter-pii-scanning)
 - [Impeccable (Frontend Design Quality)](#impeccable-frontend-design-quality)
 - [Context Hub (MCP Integration)](#context-hub-mcp-integration)
-- [ztk (Token Compression)](#ztk-token-compression)
+- [RTK (Token Compression)](#rtk-token-compression)
 - [Automation & Hooks](#automation--hooks)
 - [Multi-Project Management](#multi-project-management)
 - [Documentation Index](#documentation-index)
@@ -48,7 +48,7 @@ One harness, many projects. Install once, keep every repo in sync.
 | **Privacy Filter** | [openai/privacy-filter](https://github.com/openai/privacy-filter) | Local ML-based PII detection and redaction (8 categories: secrets, emails, phones, addresses, account numbers, and more). Fully on-premises via CLI or Python API |
 | **Impeccable** | [pbakaus/impeccable](https://github.com/pbakaus/impeccable) | 27 deterministic anti-pattern rules + 7-domain visual design quality system. Catches AI design fingerprints in frontend code (gradient text, glassmorphism, nested cards, contrast failures). PostToolUse hook + on-demand skill |
 | **Context Hub** | [andrewyng/context-hub](https://github.com/andrewyng/context-hub) | MCP server providing curated, LLM-optimized docs for third-party libraries |
-| **ztk** | [codejunkie99/ztk](https://github.com/codejunkie99/ztk) | Global PreToolUse proxy that compresses Bash command output before it enters the context window — 78–90%+ token reduction on git, tests, file ops, and more. Automatic, zero per-project setup |
+| **RTK** | [rtk-ai/rtk](https://github.com/rtk-ai/rtk) | Global PreToolUse proxy that compresses Bash command output before it enters the context window — 78–90%+ token reduction on git, tests, file ops, and more. Automatic, zero per-project setup |
 | **Portable Installation** | Custom | Single `install.sh` bootstraps any project; `update.sh` keeps them all in sync |
 
 ---
@@ -222,7 +222,7 @@ sdd-harness/
     ├── jira/README.md            #   Jira integration setup
     ├── autoresearch/README.md    #   ML experiment loop guide
     ├── gitnexus/README.md        #   Code intelligence + visual explorer guide
-    ├── ztk/README.md             #   Token compression proxy — filters, patches, upgrading
+    ├── rtk/README.md             #   Token compression proxy — filter coverage, upgrading
     ├── privacy-filter/README.md  #   PII scanning setup, CLI usage, integration checkpoints
     ├── skill-extraction/README.md#   Skill extraction methodology
     ├── prompt-master/README.md   #   Prompt engineering skill with JSON prompting
@@ -602,19 +602,21 @@ See the Context Hub section in [docs/SDD-SETUP-GUIDE.md](docs/SDD-SETUP-GUIDE.md
 
 ---
 
-## ztk (Token Compression)
+## RTK (Token Compression)
 
-Integrates [codejunkie99/ztk](https://github.com/codejunkie99/ztk) — a 346KB, zero-dependency CLI proxy that intercepts Bash command output and compresses it through a multi-stage filter pipeline before it reaches the LLM context window. Claims 78–90%+ token reduction on typical development commands.
+Integrates [rtk-ai/rtk](https://github.com/rtk-ai/rtk) (Rust Token Killer) — a single-binary CLI proxy that intercepts Bash command output and compresses it through a multi-stage filter pipeline before it reaches the LLM context window. 60–90%+ token reduction on typical development commands.
 
-A `PreToolUse` hook in `~/.claude/settings.json` rewrites matching Bash commands from `git diff` to `ztk run git diff`. The proxy captures output, applies the filter, and returns the compressed version. **Everything is automatic** — no per-project setup, no commands to invoke.
+A `PreToolUse` hook in `~/.claude/settings.json` rewrites matching Bash commands from `git diff` to `rtk git diff`. The proxy captures output, applies the filter, and returns the compressed version. **Everything is automatic** — no per-project setup, no commands to invoke.
 
-Filters cover: git, all major test runners (pytest, cargo test, jest, vitest, playwright…), file ops (ls, cat, find, grep, rg…), build tools (cargo, tsc, zig, go build…), linters (ruff, mypy, eslint, clippy…), docker, kubectl, curl, gh, python3, and 25+ regex-based patterns.
+Filters cover 100+ commands: git, all major test runners (pytest, cargo test, jest, vitest, playwright…), file ops (ls, find, grep, diff…), build tools (cargo, tsc, go build, next build…), linters (ruff, mypy, eslint, clippy, golangci-lint…), docker, kubectl, aws, gh, pnpm, pip, and more.
 
 ```bash
-ztk stats      # view cumulative token savings across all sessions
+rtk gain              # view cumulative token savings across all sessions
+rtk gain --history    # per-command breakdown
+rtk discover          # scan session history for missed opportunities
 ```
 
-On Linux, ztk is built from source (Zig 0.16+) with two patches applied before the build — see [docs/ztk/README.md](docs/ztk/README.md) for the full install procedure, patch rationale, and troubleshooting.
+Install: `brew install rtk && rtk init -g`. See [docs/context-management/rtk/README.md](docs/context-management/rtk/README.md) for filter coverage, configuration, and troubleshooting.
 
 ---
 
@@ -660,9 +662,9 @@ Runs OPF on a set of files and exits non-zero if high-severity PII is found. Des
 
 Requires OPF: `pip install opf`.
 
-### Global Token Compression Hook (ztk)
+### Global Token Compression Hook (RTK)
 
-A `PreToolUse` hook in `~/.claude/settings.json` fires on every Bash tool call. ztk reads the JSON payload, checks if the command has a registered filter (git, test runners, file ops, linters, etc.), and if so rewrites the command to `ztk run <original>`. The proxy executes, compresses the output, and returns it. Commands without filters pass through unchanged.
+A `PreToolUse` hook in `~/.claude/settings.json` fires on every Bash tool call. RTK reads the JSON payload, checks if the command has a registered filter (git, test runners, file ops, linters, etc.), and if so rewrites the command to `rtk <cmd>`. The proxy executes, compresses the output, and returns it. Commands without filters pass through unchanged.
 
 This is a global hook — it applies to every session and every project automatically. No per-project configuration needed.
 
@@ -719,7 +721,7 @@ git push -u origin main
 | [Jira Integration](docs/jira/README.md) | Jira setup, credentials, and troubleshooting |
 | [AutoResearch](docs/autoresearch/README.md) | ML experiment loop methodology |
 | [GitNexus](docs/gitnexus/README.md) | Code intelligence, visual explorer, and blast radius analysis |
-| [ztk Token Compression](docs/ztk/README.md) | Token compression proxy — filter coverage, patch details, session memory, upgrading |
+| [RTK Token Compression](docs/context-management/rtk/README.md) | Token compression proxy — filter coverage, configuration, upgrading |
 | [Privacy Filter](docs/privacy-filter/README.md) | PII scanning setup, CLI usage, integration checkpoints, and troubleshooting |
 | [Skill Extraction](docs/skill-extraction/README.md) | Skill extraction pipeline and scoring |
 | [Prompt Master](docs/prompt-master/README.md) | Prompt engineering skill with JSON prompting, 30+ tool profiles, 14 templates |
@@ -756,7 +758,7 @@ git push -u origin main
 | [OpenAI Privacy Filter](https://github.com/openai/privacy-filter) | GitHub | Local ML-based PII detection (1.5B param, 50M active). Identifies 8 categories including secrets, emails, account numbers, addresses. Fully on-premises via CLI (`opf`) or Python API. Apache 2.0. |
 | [prompt-master](https://github.com/nidhinjs/prompt-master) | GitHub (nidhinjs) | Active prompt factory for 30+ AI tools. Adapted with JSON prompting mode (Template N), JSON intent detection, and pattern 38. Pre-installed at `~/.claude/skills/prompt-master/`. |
 | [Impeccable](https://github.com/pbakaus/impeccable) | GitHub (pbakaus) | Frontend design quality system with 27 deterministic anti-pattern rules + 7-domain design principles. Integrated as a skill, harness rule, and PostToolUse hook. Apache 2.0. |
-| [ztk](https://github.com/codejunkie99/ztk) | GitHub (codejunkie99) | CLI proxy that compresses Bash output before it reaches the LLM. 346KB Zig binary. Global PreToolUse hook. Two upstream patches applied: removed `isSuspicious` newline blocker; changed `permissionDecision` from `ask` to `allow` for transparent operation. MIT. |
+| [RTK](https://github.com/rtk-ai/rtk) | GitHub (rtk-ai) | CLI proxy that compresses Bash output before it reaches the LLM. Rust binary, 100+ command filters. Global PreToolUse hook via `rtk hook claude`. Apache 2.0. |
 
 **Runtime**: Claude Code (CLI)
 **Scripts**: Python 3 (standard library only)

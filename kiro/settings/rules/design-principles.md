@@ -170,6 +170,12 @@ graph TB
 - **Edges** – show data or control flow direction.
 - **Groups** – using Mermaid subgraphs to cluster related components is allowed; use it sparingly for clarity.
 
+### 10. AI Integration Complexity Ladder
+- **Start at the minimum viable level**: When the feature is an AI workflow, automation, or agent, load the `progressive-complexity-ladder` skill before scoping requirements.
+- **One real capability at a time**: Requirements for the current spec cover only one level. Higher levels are future specs.
+- **Mark higher levels out-of-scope**: Add an explicit "Out of scope" section to requirements.md naming the levels not addressed.
+- **Anti-pattern**: Designing for level 6 when level 2 solves the problem. Vault/memory structures should only be introduced when re-learning context between runs becomes demonstrably expensive.
+
 ## Quality Metrics
 ### Design Completeness Checklist
 - All requirements addressed

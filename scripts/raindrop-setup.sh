@@ -177,5 +177,8 @@ done < "$PROJECTS_FILE"
 echo ""
 echo "Raindrop setup complete."
 echo "  Reload your shell or run: source ~/.bashrc"
-echo "  Then install the CLI (one-time): curl -fsSL https://raindrop.sh/install | bash"
+if ! command -v raindrop >/dev/null 2>&1 && [ ! -x "$HOME/.raindrop/bin/raindrop" ]; then
+  echo "  Raindrop CLI not found — install via bootstrap.sh or:"
+  echo "    curl -fsSL https://raindrop.sh/install | bash"
+fi
 echo "  Auto-instrument logs: /tmp/raindrop-instrument-<repo>.log"

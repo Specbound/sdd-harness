@@ -1,0 +1,136 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ruff check *)",
+      "Bash(ruff check --fix *)",
+      "Bash(pytest *)",
+      "Bash(git log *)",
+      "Bash(git diff *)",
+      "Bash(git status)",
+      "Bash(git remote *)",
+      "Bash(npx gitnexus *)",
+      "Bash(gitnexus *)",
+      "Bash(bash install.sh *)",
+      "Bash(bash update.sh *)",
+      "Bash(bash bootstrap.sh *)",
+      "Bash(bash generate-project-stack.sh *)",
+      "Edit(docs/**)",
+      "Edit(specs/**)",
+      "Edit(.claude/**)",
+      "Edit(hooks/**)",
+      "Edit(scripts/**)",
+      "Edit(templates/**)",
+      "Edit(kiro/**)",
+      "Edit(agents/**)"
+    ],
+    "deny": [],
+    "additionalDirectories": ["/tmp"]
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash {{HARNESS_DIR}}/.claude/hooks/session-start-hook.sh"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash {{HARNESS_DIR}}/.claude/hooks/stop-hook.sh"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash {{HARNESS_DIR}}/.claude/hooks/impeccable-detect-hook.sh"
+          },
+          {
+            "type": "command",
+            "command": "bash {{HARNESS_DIR}}/.claude/hooks/hook-added-notify.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash {{HARNESS_DIR}}/.claude/hooks/revert-detect-hook.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "CronCreate",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash {{HARNESS_DIR}}/.claude/hooks/ccr-routine-added-notify.sh"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash {{HARNESS_DIR}}/.claude/hooks/memory-discipline-hook.sh"
+          },
+          {
+            "type": "command",
+            "command": "bash {{HARNESS_DIR}}/.claude/hooks/protected-path-hook.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "Agent",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash {{HARNESS_DIR}}/.claude/hooks/gbrain-agent-spawn.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "mcp__plugin_claude-mem_mcp-search__save_observation",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash {{HARNESS_DIR}}/.claude/hooks/gbrain-memory-write.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "WebFetch|WebSearch",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash {{HARNESS_DIR}}/.claude/hooks/gbrain-external-search.sh"
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash {{HARNESS_DIR}}/.claude/hooks/compaction-discipline-hook.sh"
+          }
+        ]
+      }
+    ]
+  }
+}

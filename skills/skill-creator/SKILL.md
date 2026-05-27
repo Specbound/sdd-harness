@@ -104,6 +104,8 @@ After generating the file, run these checks:
 **Structural checks:**
 - Frontmatter present and valid YAML
 - `name`, `description`, `risk` fields populated
+- `name:` is kebab-case and matches the directory name under `~/.claude/skills/`
+- Description ≥ 25 characters and does not start with a vague phrase (`a skill that`, `this skill`, `skill for`, `use this skill`, `provides`)
 - Description ≤ 200 characters
 - At least one named workflow phase
 
@@ -111,6 +113,8 @@ After generating the file, run these checks:
 - No second-person ("you should", "you can") — use imperative
 - No vague trigger ("use when helpful") — triggers must be specific
 - No dead tool references (verify any `Skill(...)` calls exist in the available skill list)
+
+**Note:** When writing to `~/.claude/skills/<name>/SKILL.md`, the `skill-validate-hook.sh` PreToolUse hook will run automatically. Fix any errors it reports before the write proceeds — a hard block (exit 2) means the frontmatter must be corrected first.
 
 ### Phase 4b: SkillOS Quality Gate
 

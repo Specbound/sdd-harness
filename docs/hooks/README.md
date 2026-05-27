@@ -36,19 +36,21 @@ Hook output is injected into Claude's context as system messages — Claude read
 ### `stop-hook.sh`
 **Event:** `Stop` — **Matcher:** _(all sessions)_
 
-**Purpose:** Four end-of-session health checks, all lightweight:
+**Purpose:** Five end-of-session health checks, all lightweight:
 
-1. **Harness update check** — compares the harness repo's latest commit timestamp to `.claude/.last-harness-check`. Prints a `Run: update.sh` nudge if the harness has changes since last install.
+1. **Harness update check** — compares the harness repo’s latest commit timestamp to `.claude/.last-harness-check`. Prints a `Run: update.sh` nudge if the harness has changes since last install.
 2. **Memory health** — counts entries in `observations.md`. If >50, suggests `/kiro:housekeeping` to prune before the file bloats.
 3. **Session signal detection** — runs `scripts/detect_reexplanation.py` on the session transcript in two passes (Haiku-based LLM). Drain pass: phrases like "I already told you", "you’re doing it again" → appends a `[memory-gap]` observation. Charge pass: unambiguous approval like "that’s perfect", "great work" → appends a `[session-charge]` observation. Both are written at most once per calendar day.
 4. **Agent failure pattern** — scans `trace.log` for 3+ consecutive failures for the same agent type. Surfaces a `/kiro:evolve` nudge to investigate the friction pattern.
+5. **Session depth tracking** — appends an ISO timestamp to `.claude/memory/.session-history`, keeping the last 30 entries. This file is read by the dashboard’s **Context Health** section to show sessions/week, a sessions/day trend chart, and tips for `/compact` and subagent delegation.
 
-**Why it's needed:** Session-end is the only consistent window to look back at what happened without adding latency to the conversation. These checks surface problems that accumulate across sessions rather than within them.
+**Why it’s needed:** Session-end is the only consistent window to look back at what happened without adding latency to the conversation. These checks surface problems that accumulate across sessions rather than within them. Session depth tracking gives the dashboard a lightweight signal for context load without requiring transcript analysis.
 
 **Output / side effect:**
-- Text nudges printed to Claude's context (harness update, housekeeping)
+- Text nudges printed to Claude’s context (harness update, housekeeping)
 - Appends `[memory-gap]` drain entries to `observations.md` (async, non-blocking)
 - Appends `[session-charge]` charge entries to `observations.md` (async, non-blocking)
+- Appends ISO timestamp to `.claude/memory/.session-history` (always, at session end)
 
 **Respects:** `SDD_PROFILE=minimal` env var — skips entirely.
 
@@ -137,17 +139,35 @@ Hook output is injected into Claude's context as system messages — Claude read
 ### `compaction-discipline-hook.sh`
 **Event:** `PreCompact` — **Matcher:** _(all compactions)_
 
-**Purpose:** Injects boundary-timing and state-preservation principles before every context compaction.
+**Purpose:** Injects boundary-timing, state-preservation, and domain-aware compression principles before every context compaction.
 
 **Rules enforced:**
 - **Timing:** Compact at workflow boundaries (end of phase, task completion) — not arbitrary message counts.
 - **Preserve:** Working state, open questions, artifact paths, unresolved concerns, decisions + rationale.
 - **Do not over-compress:** Never strip file paths, function names, error messages, specific values.
+- **Domain-aware strategy:** Code → chunk-level (keep signatures, drop implementations already acted on). Prose → sentence-level (keep topic sentences, drop elaboration). RAG results → query-aware (filter to last user intent). Conversation → keep decisions and user corrections, drop filler. Tool output → keep errors and key metrics, drop passing output.
 - **Method:** Merge new content into existing summary sections — do not regenerate from scratch.
 
-**Why it's needed:** Default compaction regenerates the summary from scratch on each pass. Research on consolidation loop failure modes ([faulty-memory](https://dylanzsz.github.io/faulty-memory/)) shows that full regeneration causes LLM sampling drift — each pass shifts content toward the model's prior, away from ground truth. Anchored iterative summarization (merge, not regenerate) is the mitigation.
+**Why it's needed:** Default compaction regenerates the summary from scratch on each pass. Research on consolidation loop failure modes ([faulty-memory](https://dylanzsz.github.io/faulty-memory/)) shows that full regeneration causes LLM sampling drift — each pass shifts content toward the model's prior, away from ground truth. Anchored iterative summarization (merge, not regenerate) is the mitigation. Domain-specific strategy selection is grounded in [Redis context pruning research](https://redis.io/blog/context-pruning-llm-tokens/) showing chunk-level pruning outperforms token-level for code (preserves syntactic validity), while sentence-level is better for prose.
 
 **Output:** Compaction discipline banner injected before compaction executes.
+
+---
+
+### `lean-ctx-nudge-hook.sh`
+**Event:** `PostToolUse` — **Matcher:** `Read`
+
+**Purpose:** After every Read tool call on a large file (≥16 KB ≈ 4,000 tokens), prints a one-line suggestion for the optimal `ctx_read` mode from lean-ctx, along with the token cost context.
+
+**Mode selection logic:**
+- Code files (`.py`, `.ts`, `.js`, `.go`, `.rs`, etc.) → `signatures` mode (~3–5% of full-file tokens)
+- Prose / docs (`.md`, `.txt`, `.rst`) → `reference` mode (quote-ready excerpts)
+- Unknown types → `aggressive` mode (maximum compression)
+- Data formats (`.json`, `.yaml`, `.toml`, `.lock`) → silently skipped (lean-ctx intentionally skips these)
+
+**Why it's needed:** RTK handles Bash output compression automatically, and lean-ctx handles file reads — but only if Claude chooses `ctx_read` over the built-in Read tool. Without a nudge, Claude defaults to Read and pays full token cost for large files. This hook closes that gap by surfacing the right `ctx_read` mode immediately after an expensive Read, so the next re-read or similar file uses the efficient path. The mode guidance follows [Redis context pruning research](https://redis.io/blog/context-pruning-llm-tokens/): chunk-level for code, sentence-level for prose, query-aware (`task` mode) for precision work.
+
+**Output:** `╔══ lean-ctx Opportunity (~N tokens) ══╗` banner with the recommended mode and alternatives. Exits silently for files under threshold.
 
 ---
 
@@ -191,6 +211,31 @@ Hook output is injected into Claude's context as system messages — Claude read
 
 ---
 
+### `skill-validate-hook.sh`
+**Event:** `PreToolUse` — **Matcher:** `Write|Edit`
+
+**Purpose:** Quality gate for skill file authoring. Before any Write to `~/.claude/skills/<name>/SKILL.md`, validates that the YAML frontmatter is structurally correct and meets quality thresholds. Hard-blocks (exit 2) on errors; warns (exit 0) on vague phrasing.
+
+**Rules enforced:**
+- `name:` field must exist and be kebab-case (`[a-z][a-z0-9-]*`)
+- `name:` value must match the file path slug (e.g. `name: my-skill` in `~/.claude/skills/my-skill/SKILL.md`)
+- `description:` field must exist and be at least 25 characters
+- Warns if description starts with vague starters: `a skill that`, `this skill`, `skill for`, `use this skill`, `provides`
+
+**Exit codes:**
+- `0` — valid (or file not in skills dir — hook is a no-op)
+- `0` with warning banner — valid but description starts with a vague phrase
+- `2` — hard block: one or more errors must be fixed before write proceeds
+
+**Why it is needed:** Skill descriptions are the primary signal Claude uses to decide when to activate a skill. Vague, too-short, or mismatched names silently degrade trigger accuracy across all sessions. Catching these at write time is zero-cost compared to diagnosing misfired or missed skill activations later.
+
+**Output:**
+- On error: `╔══ Skill Quality Gate — BLOCKED ══╗` banner listing each error with the required frontmatter format
+- On warning only: `╔══ Skill Quality Gate — WARNING ══╗` banner with advisory message
+- On pass: no output (silent)
+
+---
+
 ## Hook Wiring Reference
 
 From `.claude/settings.json`:
@@ -200,6 +245,7 @@ SessionStart   → session-start-hook.sh
 Stop           → stop-hook.sh
 PreToolUse     Write|Edit                                    → memory-discipline-hook.sh
 PreToolUse     Write|Edit                                    → protected-path-hook.sh
+PreToolUse     Write|Edit                                    → skill-validate-hook.sh
 PreToolUse     Agent                                         → gbrain-agent-spawn.sh
 PreToolUse     mcp__plugin_claude-mem_mcp-search__save_obs  → gbrain-memory-write.sh
 PreToolUse     WebFetch|WebSearch                            → gbrain-external-search.sh
@@ -207,6 +253,7 @@ PostToolUse    Write|Edit                                    → impeccable-dete
 PostToolUse    Write|Edit                                    → hook-added-notify.sh
 PostToolUse    Bash                                          → revert-detect-hook.sh
 PostToolUse    CronCreate                                    → ccr-routine-added-notify.sh
+PostToolUse    Read                                          → lean-ctx-nudge-hook.sh
 PreCompact     (all)                                         → compaction-discipline-hook.sh
 ```
 
@@ -218,3 +265,6 @@ PreCompact     (all)                                         → compaction-disc
 2. Add the wiring entry to `.claude/settings.json` under the appropriate event.
 3. Document it in this file (the `hook-added-notify.sh` hook will remind you if you forget).
 4. Update the Wiring Reference table above.
+
+_Last synced: 2026-05-27_
+

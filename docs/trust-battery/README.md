@@ -151,7 +151,7 @@ Output arrows: ▲ (up), ▼ (down), ▬ (flat). 7-day delta is `null` until the
 │                                  (once per calendar day)     │
 └──────────────────────────────────────────────────────────────┘
                              │
-         (night, via Windows Task Scheduler / SessionStart hook)
+         (night, via local system scheduler / SessionStart hook)
                              ▼
 ┌──────────────────────────────────────────────────────────────┐
 │ /kiro:daily-maintenance                                      │
@@ -175,15 +175,17 @@ Output arrows: ▲ (up), ▼ (down), ▬ (flat). 7-day delta is `null` until the
 └──────────────────────────────────────────────────────────────┘
 ```
 
-### Scheduling via Windows Task Scheduler
+### Scheduling (OS-aware, auto-registered)
 
-Auto-registered by `install.sh` on first install (and `update.sh` on existing installs) when running under WSL with `schtasks.exe` available. No manual setup needed. To force-recreate (e.g. after editing the schedule template):
+Auto-registered by `install.sh` on first install (and `update.sh` on existing installs). No manual setup needed. The platform-specific scheduler:
 
-```bash
-bash ~/.claude/sdd-harness/scripts/setup-global-orchestrator.sh --force
-```
+| OS | Scheduler | Force-recreate |
+|---|---|---|
+| **macOS** | launchd LaunchAgent | `bash ~/.claude/sdd-harness/scripts/setup-mac-orchestrator.sh --force` |
+| **Linux** | crontab | `bash ~/.claude/sdd-harness/scripts/setup-linux-orchestrator.sh --force` |
+| **WSL / Windows** | Windows Task Scheduler | `bash ~/.claude/sdd-harness/scripts/setup-global-orchestrator.sh --force` |
 
-Fires daily at 18:00 local (Israel) for all repos listed in `~/.claude/sdd-harness/projects.txt`. Each repo runs its own `daily-runner.sh`, maintaining its own memory, score history, and rubric application. A SessionStart hook provides catch-up: if the runner hasn't fired in >24h, opening any Claude session in the repo fires it silently in the background.
+Fires daily at 18:00 local for all repos listed in `~/.claude/sdd-harness/projects.txt`. Each repo runs its own `daily-runner.sh`, maintaining its own memory, score history, and rubric application. A SessionStart hook provides catch-up: if the runner hasn't fired in >24h, opening any Claude session in the repo fires it silently in the background.
 
 Opt out at install time:
 
@@ -191,7 +193,7 @@ Opt out at install time:
 SDD_SKIP_ROUTINE=1 ~/.claude/sdd-harness/install.sh /path/to/project
 ```
 
-Or after the fact: `schtasks.exe /Delete /TN "SDD Daily Orchestrator"` (global) or `rm .claude/scripts/daily-runner.sh` (per-repo).
+Or after the fact (per platform, global): `launchctl unload -w ~/Library/LaunchAgents/com.sdd.daily-orchestrator.plist` (macOS), `crontab -l | grep -vF sdd-daily-orchestrator | crontab -` (Linux), `schtasks.exe /Delete /TN "SDD Daily Orchestrator" /F` (WSL). Per-repo: `rm .claude/scripts/daily-runner.sh`.
 
 ## Rubric at a Glance
 
@@ -250,8 +252,10 @@ Check the guard conditions in order:
 
 ### Routine not registered
 
-- `schtasks.exe /Query /TN "SDD Daily Orchestrator"` — does the Windows task exist?
-- If not, run `bash ~/.claude/sdd-harness/scripts/setup-global-orchestrator.sh` from WSL (requires `schtasks.exe` on PATH). Use `--force` to recreate a broken task.
+Check per platform:
+- **macOS**: `launchctl list com.sdd.daily-orchestrator` — listed? If not, re-run `update.sh` or run `bash ~/.claude/sdd-harness/scripts/setup-mac-orchestrator.sh --force`.
+- **Linux**: `crontab -l | grep sdd-daily-orchestrator` — present? If not, re-run `update.sh` or run `bash ~/.claude/sdd-harness/scripts/setup-linux-orchestrator.sh --force`.
+- **WSL**: `schtasks.exe /Query /TN "SDD Daily Orchestrator"` — present? If not, run `bash ~/.claude/sdd-harness/scripts/setup-global-orchestrator.sh --force` from WSL.
 - `SDD_SKIP_ROUTINE=1` was set during install — run `update.sh` without it to retry.
 
 ### How do I reset a bad day?

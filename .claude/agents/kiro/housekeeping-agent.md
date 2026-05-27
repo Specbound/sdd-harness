@@ -94,12 +94,29 @@ Check all memory files for:
 - **Entity format**: 3-line max per entry
 - **Stale action items**: Flag items open >2 weeks
 
+### Step 5.5: Archive Old Daily Briefs
+
+Check `.claude/memory/daily/` for brief files older than 30 days:
+1. List all `YYYY-MM-DD-brief.md` files in that directory
+2. For briefs where the date is >30 days ago, append them to a glacier archive file:
+   `.claude/memory/glacier/daily-briefs-YYYY-MM.md` (one file per month)
+3. Add YAML frontmatter on first creation:
+   ```yaml
+   ---
+   archived: YYYY-MM-DD
+   source: daily/
+   month: YYYY-MM
+   ---
+   ```
+4. Delete the original files after archiving
+
 ### Step 6: Flag Stale Items
 
 Identify and report:
 - Action items open >14 days
 - Entities with `last:` date >30 days old
 - Observations referencing files that no longer exist
+- Daily briefs not yet archived (>30 days old)
 
 ### Step 7: Rebuild Glacier Index
 
@@ -124,6 +141,7 @@ Chat summary only (files updated directly):
 ## Archived
 - Observations: N entries → glacier/observations-YYYY-MM-DD.md
 - Action items: N entries archived
+- Daily briefs: N files → glacier/daily-briefs-YYYY-MM.md (or "None — all within 30 days")
 
 ## Pruned
 - hot-memory.md: N → M lines

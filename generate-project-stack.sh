@@ -39,7 +39,7 @@ if [ -f "$REPO/pyproject.toml" ]; then
     | grep -oE '"[a-zA-Z][a-zA-Z0-9_-]+"' \
     | tr -d '"' \
     | head -10 \
-    | paste -sd ',' | sed 's/,/, /g')
+    | paste -sd ',' - | sed 's/,/, /g')
 
   # Poetry dependencies fallback
   if [ -z "$key_deps" ]; then
@@ -50,7 +50,7 @@ if [ -f "$REPO/pyproject.toml" ]; then
     ' "$REPO/pyproject.toml" \
       | grep -iv '^python$' \
       | head -10 \
-      | paste -sd ',' | sed 's/,/, /g')
+      | paste -sd ',' - | sed 's/,/, /g')
   fi
 
   # Test command: check pytest.ini first, then pyproject.toml [tool.pytest.ini_options]
@@ -73,7 +73,7 @@ elif [ -f "$REPO/requirements.txt" ]; then
     | grep -v '^\s*$' \
     | sed 's/[>=<!].*//' \
     | head -10 \
-    | paste -sd ',' | sed 's/,/, /g')
+    | paste -sd ',' - | sed 's/,/, /g')
   test_cmd="pytest"
 fi
 
@@ -127,7 +127,7 @@ for compose_file in \
   if [ -f "$compose_file" ]; then
     services=$(grep -E '^  [a-zA-Z][a-zA-Z0-9_-]+:' "$compose_file" \
       | sed 's/\s*//; s/://' \
-      | paste -sd ', ')
+      | paste -sd ',' - | sed 's/,/, /g')
     break
   fi
 done

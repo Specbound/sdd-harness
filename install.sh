@@ -87,9 +87,20 @@ if [ -d "$HARNESS_DIR/skills" ]; then
   done
   echo "  Harness skills installed to ~/.claude/skills/"
 fi
+
+# --- Install global commands ---
+if [ -d "$HARNESS_DIR/commands/global" ]; then
+  mkdir -p "$HOME/.claude/commands"
+  for cmd_file in "$HARNESS_DIR/commands/global"/*.md; do
+    [ -f "$cmd_file" ] || continue
+    cp "$cmd_file" "$HOME/.claude/commands/"
+  done
+  echo "  Global commands installed to ~/.claude/commands/"
+fi
 # glacier/ is empty in the harness source; create it explicitly after kiro sync
 mkdir -p "$PROJECT_DIR/.claude/kiro/settings/templates/memory/meta/glacier"
-cp    "$HARNESS_DIR/hooks/stop-hook.sh"              "$PROJECT_DIR/.claude/hooks/"
+sed "s|{{HARNESS_DIR}}|$HARNESS_DIR|g" "$HARNESS_DIR/hooks/stop-hook.sh" \
+  > "$PROJECT_DIR/.claude/hooks/stop-hook.sh"
 cp    "$HARNESS_DIR/hooks/session-start-hook.sh"    "$PROJECT_DIR/.claude/hooks/"
 cp    "$HARNESS_DIR/hooks/pre-tool-use-gitnexus.sh" "$PROJECT_DIR/.claude/hooks/"
 cp    "$HARNESS_DIR/hooks/revert-detect-hook.sh"    "$PROJECT_DIR/.claude/hooks/"
@@ -122,11 +133,17 @@ if [ ! -f "$PROJECT_DIR/CLAUDE.md" ]; then
   echo "  CLAUDE.md created from template — customize for your project."
 fi
 
-# --- settings.json template (skip if exists) ---
+# --- settings.json for target project (skip if exists) ---
 if [ ! -f "$PROJECT_DIR/.claude/settings.json" ]; then
   cp "$HARNESS_DIR/templates/settings.json.template" "$PROJECT_DIR/.claude/settings.json"
   echo "  .claude/settings.json created from template — review and customize."
 fi
+
+# --- Regenerate harness's own settings.json with absolute paths ---
+# Always regenerate so hook paths reflect the actual harness location on this machine.
+sed "s|{{HARNESS_DIR}}|$HARNESS_DIR|g" "$HARNESS_DIR/templates/settings.harness.json.template" \
+  > "$HARNESS_DIR/.claude/settings.json"
+echo "  Harness settings.json generated (paths resolved to $HARNESS_DIR)."
 
 # --- Record install timestamp ---
 date -Iseconds > "$PROJECT_DIR/.claude/.last-harness-check"
@@ -197,17 +214,24 @@ if [ "$WITH_GITNEXUS" = true ]; then
   fi
 fi
 
-# --- Auto-register global Windows scheduled task (idempotent) ---
-# When running under WSL with schtasks.exe available, ensure the daily
-# orchestrator is registered. The bootstrap is a no-op if the task already
-# exists, so this is safe to call from every install/update.
-if [ "${SDD_SKIP_ROUTINE:-0}" != "1" ] && command -v schtasks.exe >/dev/null 2>&1; then
-  if bash "$HARNESS_DIR/scripts/setup-global-orchestrator.sh"; then
-    :
-  else
-    echo "  WARNING: scheduled-task bootstrap returned non-zero; daily orchestrator may not be registered."
-    echo "  Re-run manually: bash $HARNESS_DIR/scripts/setup-global-orchestrator.sh"
-  fi
+# --- Auto-register daily orchestrator (idempotent, OS-aware) ---
+if [ "${SDD_SKIP_ROUTINE:-0}" != "1" ]; then
+  case "$SDD_OS" in
+    wsl|gitbash)
+      if command -v schtasks.exe >/dev/null 2>&1; then
+        bash "$HARNESS_DIR/scripts/setup-global-orchestrator.sh" || \
+          echo "  WARNING: scheduled-task bootstrap returned non-zero; daily orchestrator may not be registered."
+      fi
+      ;;
+    macos)
+      bash "$HARNESS_DIR/scripts/setup-mac-orchestrator.sh" || \
+        echo "  WARNING: launchd registration returned non-zero; daily orchestrator may not be registered."
+      ;;
+    linux)
+      bash "$HARNESS_DIR/scripts/setup-linux-orchestrator.sh" || \
+        echo "  WARNING: crontab registration returned non-zero; daily orchestrator may not be registered."
+      ;;
+  esac
 fi
 
 # --- Remind user about local daily maintenance ---
@@ -221,13 +245,19 @@ if [ "${SDD_SKIP_ROUTINE:-0}" != "1" ]; then
   echo "  │ It runs the daily-maintenance + session-quality + keep-rate pipeline.  │"
   echo "  │                                                                        │"
   echo "  │ Trigger paths (both automatic):                                        │"
-  echo "  │   1. Windows Task Scheduler — fires daily at 18:00 local (Israel)      │"
-  echo "  │      across ALL repos in projects.txt. Registered on first install.    │"
+  echo "  │   1. OS scheduler — fires daily at 18:00 local across ALL repos:       │"
+  echo "  │        macOS   : launchd LaunchAgent (~/Library/LaunchAgents/)         │"
+  echo "  │        WSL     : Windows Task Scheduler (schtasks.exe)                 │"
+  echo "  │        Linux   : crontab (crontab -l)                                  │"
+  echo "  │      Registered automatically on first install per platform.           │"
   echo "  │   2. SessionStart hook — if >24h since last run, fires the runner in   │"
   echo "  │      the background when you open Claude in this repo.                 │"
   echo "  │                                                                        │"
   echo "  │ Disable per-repo: rm .claude/scripts/daily-runner.sh                   │"
-  echo "  │ Disable globally: schtasks.exe /Delete /TN \"SDD Daily Orchestrator\"   │"
+  echo "  │ Disable globally (macOS): launchctl unload -w                          │"
+  echo "  │   ~/Library/LaunchAgents/com.sdd.daily-orchestrator.plist              │"
+  echo "  │ Disable globally (WSL): schtasks.exe /Delete /TN \"SDD Daily\"          │"
+  echo "  │ Disable globally (Linux): crontab -e  # remove sdd-daily-orchestrator  │"
   echo "  └────────────────────────────────────────────────────────────────────────┘"
 fi
 
@@ -243,7 +273,12 @@ if [ "$WITH_GITNEXUS" = false ]; then
   echo "Optional: Run with --with-gitnexus to add code intelligence integration."
   echo "  Or run /kiro:gitnexus-setup inside Claude Code later."
 fi
-echo ""
-echo "Raindrop Workshop: CLI install still required (one-time, manual):"
-echo "  curl -fsSL https://raindrop.sh/install | bash"
-echo "  Then reload your shell:  source ~/.bashrc"
+# Check for raindrop CLI in common locations (subshell may not have full PATH)
+if command -v raindrop >/dev/null 2>&1 || [ -x "$HOME/.raindrop/bin/raindrop" ]; then
+  echo "  Raindrop Workshop CLI: installed."
+else
+  echo ""
+  echo "Raindrop Workshop CLI not found. Install it once with:"
+  echo "  bash ~/.claude/sdd-harness/bootstrap.sh --skip-rtk --skip-gitnexus --skip-impeccable --skip-uv --skip-opf"
+  echo "  (or manually: curl -fsSL https://raindrop.sh/install | bash)"
+fi

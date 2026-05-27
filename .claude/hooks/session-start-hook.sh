@@ -35,9 +35,9 @@ if [ -f "$RUNNER" ]; then
   if [ ! -s "$STATE_FILE" ]; then
     should_run=1
   else
-    last_epoch=$(date -d "$(cat "$STATE_FILE")" +%s 2>/dev/null || echo 0)
-    now_epoch=$(date +%s)
-    if [ $((now_epoch - last_epoch)) -gt 86400 ]; then
+    # Extract YYYY-MM-DD prefix from ISO timestamp (portable; avoids GNU-only date -d).
+    last_day="$(cut -dT -f1 "$STATE_FILE" 2>/dev/null || echo "")"
+    if [ "$last_day" != "$(date +%Y-%m-%d)" ]; then
       should_run=1
     fi
   fi
@@ -53,15 +53,20 @@ fi
 # State file is per-repo (relative path) — each repo tracks its own review cadence,
 # same pattern as daily maintenance.
 CLAUDEMD_STATE=".claude/memory/.last-claudemd-review"
-BIWEEKLY_SECS=1209600  # 14 days
+BIWEEKLY_DAYS=14
 
 should_review=0
 if [ ! -f "$CLAUDEMD_STATE" ]; then
   should_review=1
 else
-  last_epoch=$(date -d "$(cat "$CLAUDEMD_STATE")" +%s 2>/dev/null || echo 0)
-  now_epoch=$(date +%s)
-  if [ $((now_epoch - last_epoch)) -gt $BIWEEKLY_SECS ]; then
+  # Compare dates using Python3 (portable epoch math; avoids GNU-only date -d).
+  days_since=$(python3 -c "
+import datetime, sys
+ts = open('$CLAUDEMD_STATE').read().strip()[:10]
+delta = datetime.date.today() - datetime.date.fromisoformat(ts)
+print(delta.days)
+" 2>/dev/null || echo 999)
+  if [ "$days_since" -ge "$BIWEEKLY_DAYS" ] 2>/dev/null; then
     should_review=1
   fi
 fi

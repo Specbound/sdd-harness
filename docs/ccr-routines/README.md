@@ -57,13 +57,23 @@ CCR (Claude Code Routines) are scheduled remote agents that run on a cron schedu
 
 ---
 
-## Local Daily Maintenance (Task Scheduler)
+## Local Daily Maintenance (OS Scheduler)
 
 This is not a CCR routine — it runs locally on the developer machine.
 
-**Mechanism:** Windows Task Scheduler entry `SDD Daily Orchestrator` fires at 11:30 IST every day. It runs `~/.claude/sdd-harness/scripts/daily-orchestrator.sh`, which loops over every repo listed in `~/.claude/sdd-harness/scripts/projects.txt` and calls each repo's `.claude/scripts/daily-runner.sh`.
+**Mechanism:** An OS-level scheduler fires `~/.claude/sdd-harness/scripts/daily-orchestrator.sh` at 18:00 local time every day. The orchestrator loops over every repo listed in `~/.claude/sdd-harness/projects.txt` and calls each repo's `.claude/scripts/daily-runner.sh`.
 
-**Catch-up path:** If the machine is off at 11:30 IST, `session-start-hook.sh` fires the per-repo runner in the background the next time Claude opens in that repo (if the state file `.claude/memory/.last-routine-run` is >24h stale or missing). See `docs/hooks/README.md → session-start-hook.sh`.
+**Platform-specific scheduler:**
+
+| OS | Scheduler | Registered by | Remove with |
+|---|---|---|---|
+| **macOS** | launchd LaunchAgent | `install.sh` / `update.sh` | `launchctl unload -w ~/Library/LaunchAgents/com.sdd.daily-orchestrator.plist` |
+| **WSL / Windows** | Windows Task Scheduler | `install.sh` / `update.sh` | `schtasks.exe /Delete /TN "SDD Daily Orchestrator" /F` |
+| **Linux** | crontab | `install.sh` / `update.sh` | `crontab -l \| grep -vF sdd-daily-orchestrator \| crontab -` |
+
+Registration is automatic and idempotent — `install.sh` and `update.sh` both call the appropriate setup script for the current OS. Re-running is safe.
+
+**Catch-up path:** If the machine is off at the scheduled time, `session-start-hook.sh` fires the per-repo runner in the background the next time Claude opens in that repo (if the state file `.claude/memory/.last-routine-run` is >24h stale or missing). See `docs/hooks/README.md → session-start-hook.sh`.
 
 **Per-repo runner:** `.claude/scripts/daily-runner.sh` — template at `~/.claude/sdd-harness/scripts/daily-runner.sh`. Self-contained; runs `claude --print --permission-mode bypassPermissions` with the daily maintenance prompt.
 
@@ -76,7 +86,7 @@ This is not a CCR routine — it runs locally on the developer machine.
 - **Step D:** Housekeep — prune observations.md if it exceeds 50 entries
 - **Step E:** Augment — check skill audit queue for pending additions
 
-**One-time setup:** Run `~/.claude/sdd-harness/scripts/setup-global-orchestrator.sh` on a new machine to register the Task Scheduler entry.
+**Opt-out:** Set `SDD_SKIP_ROUTINE=1` before running `install.sh` or `update.sh` to skip registration entirely. To disable per-repo: `rm .claude/scripts/daily-runner.sh`.
 
 ---
 
