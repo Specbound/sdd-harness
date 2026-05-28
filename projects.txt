@@ -1,4 +1,0 @@
-/Users/dansasha/Documents/daa-llm-evaluation
-/Users/dansasha/Documents/whisper-pipeline
-/Users/dansasha/Documents/video-automation
-/Users/dansasha/Documents/caresync-vercel
