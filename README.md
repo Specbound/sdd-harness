@@ -24,9 +24,10 @@ One harness, many projects. Install once, keep every repo in sync.
 - [Privacy Filter (PII Scanning)](#privacy-filter-pii-scanning)
 - [Impeccable (Frontend Design Quality)](#impeccable-frontend-design-quality)
 - [Context Hub (MCP Integration)](#context-hub-mcp-integration)
-- [RTK (Token Compression)](#rtk-token-compression)
+- [ztk (Token Compression)](#ztk-token-compression)
 - [Automation & Hooks](#automation--hooks)
 - [Multi-Project Management](#multi-project-management)
+- [Local Dashboard](#local-dashboard)
 - [Documentation Index](#documentation-index)
 - [Design Principles](#design-principles)
 - [Built With](#built-with)
@@ -48,7 +49,7 @@ One harness, many projects. Install once, keep every repo in sync.
 | **Privacy Filter** | [openai/privacy-filter](https://github.com/openai/privacy-filter) | Local ML-based PII detection and redaction (8 categories: secrets, emails, phones, addresses, account numbers, and more). Fully on-premises via CLI or Python API |
 | **Impeccable** | [pbakaus/impeccable](https://github.com/pbakaus/impeccable) | 27 deterministic anti-pattern rules + 7-domain visual design quality system. Catches AI design fingerprints in frontend code (gradient text, glassmorphism, nested cards, contrast failures). PostToolUse hook + on-demand skill |
 | **Context Hub** | [andrewyng/context-hub](https://github.com/andrewyng/context-hub) | MCP server providing curated, LLM-optimized docs for third-party libraries |
-| **RTK** | [rtk-ai/rtk](https://github.com/rtk-ai/rtk) | Global PreToolUse proxy that compresses Bash command output before it enters the context window — 78–90%+ token reduction on git, tests, file ops, and more. Automatic, zero per-project setup |
+| **ztk** | [codejunkie99/ztk](https://github.com/codejunkie99/ztk) | Global PreToolUse proxy that compresses Bash command output before it enters the context window — 78–90%+ token reduction on git, tests, file ops, and more. Automatic, zero per-project setup |
 | **Portable Installation** | Custom | Single `install.sh` bootstraps any project; `update.sh` keeps them all in sync |
 
 ---
@@ -99,13 +100,14 @@ sdd-harness/
 ├── VERSION                       # Last harness update date (auto-managed)
 ├── projects.txt                  # Registry of installed projects (gitignored)
 │
-├── commands/kiro/                # 38 slash commands (user-facing)
+├── commands/kiro/                # 39 slash commands (user-facing)
 │   ├── idea-refine.md            #   Refine vague ideas into spec-ready briefs
 │   ├── spec-init.md              #   Initialize a spec workspace
 │   ├── spec-requirements.md      #   Generate EARS-format requirements
 │   ├── spec-design.md            #   Generate technical design
 │   ├── spec-tasks.md             #   Break design into parallelizable tasks
-│   ├── spec-quick.md             #   Fast path: requirements → design → tasks
+│   ├── spec-quick.md             #   Fast path: requirements → design → grill → tasks
+│   ├── spec-grill.md             #   Domain grilling session (interactive terminology + decision alignment)
 │   ├── spec-impl.md              #   TDD implementation of tasks
 │   ├── spec-status.md            #   Check spec phase and progress
 │   ├── verify.md                 #   6-stage verification pipeline (build/types/lint/test/audit/git)
@@ -198,11 +200,16 @@ sdd-harness/
 ├── scripts/                      # Utility scripts (Python, stdlib only)
 │   ├── jira_client.py            #   Jira REST API client (PAT + Basic Auth)
 │   ├── jira_capture_ticket.py    #   Capture active ticket from session context
-│   └── jira_push_comment.py      #   Post implementation summary to Jira
+│   ├── jira_push_comment.py      #   Post implementation summary to Jira
+│   ├── micro_reflect.py          #   Called by stop hook on drain signals; extracts durable facts → [auto-learn] entries in hot-memory.md
+│   ├── detect_reexplanation.py   #   Haiku-based session signal detector (drain/charge classification)
+│   ├── trust_score.py            #   Applies Judge score delta to hot-memory.md trust score line
+│   ├── dashboard.py              #   Local harness dashboard with Workshop tab
+│   └── raindrop-setup.sh         #   Auto-installs raindrop-ai in registered repo virtualenvs
 │
 ├── hooks/                        # Session lifecycle hooks
-│   ├── session-start-hook.sh     #   On session start: check maintenance status; inject prompt if no runner installed, fire runner in background if installed and stale
-│   ├── stop-hook.sh              #   On session exit: check for updates, memory health, re-explanation detection, agent failure patterns
+│   ├── session-start-hook.sh     #   On session start: check maintenance status (daily runner); also checks bi-weekly CLAUDE.md review cadence per repo
+│   ├── stop-hook.sh              #   On session exit: check for updates, memory health, re-explanation detection + micro-reflect, agent failure patterns; skips detector when SDD_HEADLESS=1
 │   ├── prompt-hook.sh            #   On prompt submit: inject hot-memory context
 │   ├── pre-tool-use-gitnexus.sh  #   On file read/edit: enrich with GitNexus symbol graph context (callers, deps, processes)
 │   └── scan-pii.sh               #   PII scanner: scan staged files or a path with OPF (exits 1 on secrets/account numbers)
@@ -222,7 +229,7 @@ sdd-harness/
     ├── jira/README.md            #   Jira integration setup
     ├── autoresearch/README.md    #   ML experiment loop guide
     ├── gitnexus/README.md        #   Code intelligence + visual explorer guide
-    ├── rtk/README.md             #   Token compression proxy — filter coverage, upgrading
+    ├── ztk/README.md             #   Token compression proxy — filters, patches, upgrading
     ├── privacy-filter/README.md  #   PII scanning setup, CLI usage, integration checkpoints
     ├── skill-extraction/README.md#   Skill extraction methodology
     ├── prompt-master/README.md   #   Prompt engineering skill with JSON prompting
@@ -256,6 +263,7 @@ The core workflow enforces deliberate planning before coding, with human review 
 /kiro:spec-init "Feature name"        # Create spec workspace
 /kiro:spec-requirements               # Generate EARS requirements → Proof review → approve
 /kiro:spec-design                     # Generate design with codebase research → Proof review → approve
+/kiro:spec-grill <spec-name>           # Domain grilling session → align terminology, update docs inline → approve
 /kiro:spec-tasks                      # Break into parallelizable tasks → Proof review → approve
 /kiro:spec-impl <spec-name>           # TDD implementation with auto self-review
 ```
@@ -285,6 +293,7 @@ Each spec phase ends with a **[Proof](https://github.com/anthropics/proof) colla
 | `/kiro:spec-init` | Initialize a new spec workspace |
 | `/kiro:spec-requirements` | Generate EARS-format requirements |
 | `/kiro:spec-design` | Generate technical design with codebase research |
+| `/kiro:spec-grill` | Interactive domain grilling session — aligns terminology, updates requirements + design, writes ADRs |
 | `/kiro:spec-tasks` | Break design into parallelizable tasks (`--sequential` to disable parallel markers) |
 | `/kiro:spec-quick` | Fast path: all spec phases in one command |
 | `/kiro:spec-impl` | TDD implementation with automatic self-review |
@@ -602,21 +611,19 @@ See the Context Hub section in [docs/SDD-SETUP-GUIDE.md](docs/SDD-SETUP-GUIDE.md
 
 ---
 
-## RTK (Token Compression)
+## ztk (Token Compression)
 
-Integrates [rtk-ai/rtk](https://github.com/rtk-ai/rtk) (Rust Token Killer) — a single-binary CLI proxy that intercepts Bash command output and compresses it through a multi-stage filter pipeline before it reaches the LLM context window. 60–90%+ token reduction on typical development commands.
+Integrates [codejunkie99/ztk](https://github.com/codejunkie99/ztk) — a 346KB, zero-dependency CLI proxy that intercepts Bash command output and compresses it through a multi-stage filter pipeline before it reaches the LLM context window. Claims 78–90%+ token reduction on typical development commands.
 
-A `PreToolUse` hook in `~/.claude/settings.json` rewrites matching Bash commands from `git diff` to `rtk git diff`. The proxy captures output, applies the filter, and returns the compressed version. **Everything is automatic** — no per-project setup, no commands to invoke.
+A `PreToolUse` hook in `~/.claude/settings.json` rewrites matching Bash commands from `git diff` to `ztk run git diff`. The proxy captures output, applies the filter, and returns the compressed version. **Everything is automatic** — no per-project setup, no commands to invoke.
 
-Filters cover 100+ commands: git, all major test runners (pytest, cargo test, jest, vitest, playwright…), file ops (ls, find, grep, diff…), build tools (cargo, tsc, go build, next build…), linters (ruff, mypy, eslint, clippy, golangci-lint…), docker, kubectl, aws, gh, pnpm, pip, and more.
+Filters cover: git, all major test runners (pytest, cargo test, jest, vitest, playwright…), file ops (ls, cat, find, grep, rg…), build tools (cargo, tsc, zig, go build…), linters (ruff, mypy, eslint, clippy…), docker, kubectl, curl, gh, python3, and 25+ regex-based patterns.
 
 ```bash
-rtk gain              # view cumulative token savings across all sessions
-rtk gain --history    # per-command breakdown
-rtk discover          # scan session history for missed opportunities
+ztk stats      # view cumulative token savings across all sessions
 ```
 
-Install: `brew install rtk && rtk init -g`. See [docs/context-management/rtk/README.md](docs/context-management/rtk/README.md) for filter coverage, configuration, and troubleshooting.
+On Linux, ztk is built from source (Zig 0.16+) with two patches applied before the build — see [docs/ztk/README.md](docs/ztk/README.md) for the full install procedure, patch rationale, and troubleshooting.
 
 ---
 
@@ -624,7 +631,7 @@ Install: `brew install rtk && rtk init -g`. See [docs/context-management/rtk/REA
 
 ### Session Start Hook (`hooks/session-start-hook.sh`)
 
-Runs when a Claude Code session starts (SessionStart). Two modes: (1) if no local `daily-runner.sh` is installed — checks if today's `[judge]` sentinel is absent from `observations.md` and asks Claude to run `/kiro:daily-maintenance`; (2) if `daily-runner.sh` is installed and stale (>24h or never ran) — fires it in the background via `nohup` silently, without consuming session context.
+Runs when a Claude Code session starts (SessionStart). Two modes: (1) if no local `daily-runner.sh` is installed — checks if today's `[judge]` sentinel is absent from `observations.md` and asks Claude to run `/kiro:daily-maintenance`; (2) if `daily-runner.sh` is installed and stale (>24h or never ran) — fires it in the background via `nohup` silently, without consuming session context. Also checks if the per-repo CLAUDE.md review is >2 weeks stale (`.claude/memory/.last-claudemd-review`) and asks Claude to run `/claudemd-review` if so.
 
 ### Context Priming Hook (`hooks/prompt-hook.sh`)
 
@@ -635,7 +642,7 @@ Runs before every user prompt (UserPromptSubmit). Injects the contents of `hot-m
 Runs when a Claude Code session ends. Checks for:
 - Harness updates available (prompts to run `update.sh`)
 - Memory health (warns if observations exceed cap)
-- Re-explanation detection (scans transcript via `scripts/detect_reexplanation.py`; appends a `[memory-gap]` observation if the user had to re-explain context)
+- Re-explanation detection (scans transcript via `scripts/detect_reexplanation.py`; appends a `[memory-gap]` observation for drains, `[session-charge]` for approvals; calls `scripts/micro_reflect.py` on drains to write `[auto-learn]` facts to `hot-memory.md`; skipped when `SDD_HEADLESS=1`)
 - Agent failure patterns (3+ consecutive failures for the same agent in `trace.log` — suggests running `/kiro:evolve`)
 
 Respects the `SDD_PROFILE` environment variable — skipped entirely when profile is `minimal`.
@@ -662,9 +669,9 @@ Runs OPF on a set of files and exits non-zero if high-severity PII is found. Des
 
 Requires OPF: `pip install opf`.
 
-### Global Token Compression Hook (RTK)
+### Global Token Compression Hook (ztk)
 
-A `PreToolUse` hook in `~/.claude/settings.json` fires on every Bash tool call. RTK reads the JSON payload, checks if the command has a registered filter (git, test runners, file ops, linters, etc.), and if so rewrites the command to `rtk <cmd>`. The proxy executes, compresses the output, and returns it. Commands without filters pass through unchanged.
+A `PreToolUse` hook in `~/.claude/settings.json` fires on every Bash tool call. ztk reads the JSON payload, checks if the command has a registered filter (git, test runners, file ops, linters, etc.), and if so rewrites the command to `ztk run <original>`. The proxy executes, compresses the output, and returns it. Commands without filters pass through unchanged.
 
 This is a global hook — it applies to every session and every project automatically. No per-project configuration needed.
 
@@ -710,6 +717,36 @@ git push -u origin main
 
 ---
 
+## Local Dashboard
+
+A browser-based dashboard that shows trust battery, GitNexus stats, hooks history, CCR routines, memory and skill changes, session quality, and maintenance status across all registered repos.
+
+```bash
+python3 ~/.claude/sdd-harness/scripts/dashboard.py
+```
+
+This starts a local HTTP server on `http://localhost:4569` and opens the dashboard in your browser. On WSL it uses `wslview` or `explorer.exe` to open the URL.
+
+**Options:**
+
+| Flag | Description |
+|---|---|
+| `--repo <name\|path>` | Pre-select a specific repo on load |
+| `--no-open` | Start the server without opening the browser |
+| `--static` | Write a static `~/.claude/sdd-harness/.dashboard/index.html` instead of starting a server |
+
+```bash
+# Open dashboard scoped to a specific repo
+python3 ~/.claude/sdd-harness/scripts/dashboard.py --repo aiq-zora-ai-engine
+
+# Generate a static file (no server, no browser)
+python3 ~/.claude/sdd-harness/scripts/dashboard.py --static --no-open
+```
+
+Requires at least one project registered in `projects.txt` (added automatically by `install.sh`). The companion server on port 4569 stays alive until you press `Ctrl+C`.
+
+---
+
 ## Documentation Index
 
 | Document | Description |
@@ -721,7 +758,7 @@ git push -u origin main
 | [Jira Integration](docs/jira/README.md) | Jira setup, credentials, and troubleshooting |
 | [AutoResearch](docs/autoresearch/README.md) | ML experiment loop methodology |
 | [GitNexus](docs/gitnexus/README.md) | Code intelligence, visual explorer, and blast radius analysis |
-| [RTK Token Compression](docs/context-management/rtk/README.md) | Token compression proxy — filter coverage, configuration, upgrading |
+| [ztk Token Compression](docs/ztk/README.md) | Token compression proxy — filter coverage, patch details, session memory, upgrading |
 | [Privacy Filter](docs/privacy-filter/README.md) | PII scanning setup, CLI usage, integration checkpoints, and troubleshooting |
 | [Skill Extraction](docs/skill-extraction/README.md) | Skill extraction pipeline and scoring |
 | [Prompt Master](docs/prompt-master/README.md) | Prompt engineering skill with JSON prompting, 30+ tool profiles, 14 templates |
@@ -758,7 +795,7 @@ git push -u origin main
 | [OpenAI Privacy Filter](https://github.com/openai/privacy-filter) | GitHub | Local ML-based PII detection (1.5B param, 50M active). Identifies 8 categories including secrets, emails, account numbers, addresses. Fully on-premises via CLI (`opf`) or Python API. Apache 2.0. |
 | [prompt-master](https://github.com/nidhinjs/prompt-master) | GitHub (nidhinjs) | Active prompt factory for 30+ AI tools. Adapted with JSON prompting mode (Template N), JSON intent detection, and pattern 38. Pre-installed at `~/.claude/skills/prompt-master/`. |
 | [Impeccable](https://github.com/pbakaus/impeccable) | GitHub (pbakaus) | Frontend design quality system with 27 deterministic anti-pattern rules + 7-domain design principles. Integrated as a skill, harness rule, and PostToolUse hook. Apache 2.0. |
-| [RTK](https://github.com/rtk-ai/rtk) | GitHub (rtk-ai) | CLI proxy that compresses Bash output before it reaches the LLM. Rust binary, 100+ command filters. Global PreToolUse hook via `rtk hook claude`. Apache 2.0. |
+| [ztk](https://github.com/codejunkie99/ztk) | GitHub (codejunkie99) | CLI proxy that compresses Bash output before it reaches the LLM. 346KB Zig binary. Global PreToolUse hook. Two upstream patches applied: removed `isSuspicious` newline blocker; changed `permissionDecision` from `ask` to `allow` for transparent operation. MIT. |
 
 **Runtime**: Claude Code (CLI)
 **Scripts**: Python 3 (standard library only)

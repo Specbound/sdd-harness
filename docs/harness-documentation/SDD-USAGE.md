@@ -94,6 +94,15 @@ Researches the codebase and produces a design doc with architecture decisions. A
 /kiro:spec-design revenue-trend-chart
 ```
 
+### `/kiro:spec-grill` — Domain grilling session
+Runs an interactive domain-expert questioning session against the approved requirements and design. Asks one question at a time, waits for your answer, and updates `requirements.md`, `design.md`, and `CONTEXT.md` inline as decisions crystallise. Writes warranted Architecture Decision Records (ADRs) to `specs/\<feature\>/docs/adr/`. Requires design phase to be approved first.
+
+```
+/kiro:spec-grill revenue-trend-chart
+```
+
+Signal completion with "done", "looks good", or "move on". Also available as phase 3.5 in `/kiro:spec-quick` (interactive mode); skipped in `--auto` mode since it requires user interaction.
+
 ### `/kiro:spec-tasks` — Generate implementation tasks
 Breaks the design into parallelizable tasks with dependencies. After generation, opens a **Proof collaborative review session** for approval before implementation begins. Pass `--sequential` to suppress parallel `(P)` markers when you want strictly ordered tasks.
 
@@ -102,8 +111,8 @@ Breaks the design into parallelizable tasks with dependencies. After generation,
 /kiro:spec-tasks revenue-trend-chart --sequential   # disable parallel task markers
 ```
 
-### `/kiro:spec-quick` — Fast path (requirements → design → tasks)
-Runs all three spec phases in one command. Good for small features.
+### `/kiro:spec-quick` — Fast path (requirements → design → grill → tasks)
+Runs all spec phases in one command: requirements → design → grill → tasks. Good for small features. In interactive mode, prompts at each phase and runs the grill session. Pass `--auto` to skip prompts and grill (which requires user interaction).
 
 ```
 /kiro:spec-quick "Add retry logic to SQL query execution"
@@ -339,7 +348,7 @@ The rule is added to the appropriate agent file or rule file and distributed via
 
 ### `/kiro:daily-maintenance` — Nightly orchestrator
 
-Runs the full maintenance cycle end-to-end: **Judge → Reflect → Housekeeping → Trust Score → Augment Skills**. Designed to run on a schedule (daily at 18:00 local) with a SessionStart hook as catch-up — both registered automatically by `install.sh` and `update.sh` for the current platform (launchd on macOS, crontab on Linux, Windows Task Scheduler on WSL).
+Runs the full maintenance cycle end-to-end: **Judge → Reflect → Housekeeping → Trust Score → Augment Skills**. Designed to run on a schedule via Windows Task Scheduler (daily at 18:00 local) with a SessionStart hook as catch-up — both registered automatically by `install.sh` and `update.sh` on WSL systems with `schtasks.exe` available.
 
 ```
 /kiro:daily-maintenance
@@ -368,7 +377,7 @@ Starts at 20% on fresh install. Daily cap ±4.5%. History lives in `.claude/memo
 SDD_SKIP_ROUTINE=1 ~/.claude/sdd-harness/install.sh /path/to/project
 ```
 
-Or after install, disable per platform (global): `launchctl unload -w ~/Library/LaunchAgents/com.sdd.daily-orchestrator.plist` (macOS), `crontab -l | grep -vF sdd-daily-orchestrator | crontab -` (Linux), `schtasks.exe /Delete /TN "SDD Daily Orchestrator" /F` (WSL). Per-repo: `rm .claude/scripts/daily-runner.sh`.
+Or after install: `schtasks.exe /Delete /TN "SDD Daily Orchestrator"` (global) or `rm .claude/scripts/daily-runner.sh` (per-repo).
 
 ### `scripts/detect_reexplanation.py` — session signal detector
 
@@ -378,6 +387,8 @@ Runs from `stop-hook.sh` after each session. Uses Claude Haiku to analyse user t
 - **Charge signals** — user gave unambiguous approval ("that's perfect", "exactly what I needed", "great work"). Each charge → `[session-charge]` observation. The rubric auto-scores these as +1 each.
 
 Both types are written at most once per calendar day. The auto-scoring table in `kiro/settings/rules/session-quality-rubric.md` applies these mechanically — no Judge pass needed.
+
+When drain signals are found, `scripts/micro_reflect.py` is immediately called (Haiku) to extract a durable, generalizable fact from each drain and append it to `hot-memory.md` under an `## Auto-learned` section, tagged `[auto-learn, YYYY-MM-DD]`. These are probationary entries — the housekeeping agent promotes them to `meta/patterns.md` after 7 days if reinforced, or removes them if not. The detector is skipped in headless/print sessions (`SDD_HEADLESS=1`) to prevent recursive spawning from `daily-runner.sh`.
 
 ### Full reference: [`docs/trust-battery/`](trust-battery/)
 
@@ -582,7 +593,7 @@ See `docs/design/impeccable/impeccable.md` for the full rule set.
 8. /kiro:reflect                         ← capture what you learned
 ```
 
-For larger features, use the individual spec phases (`spec-requirements` → `spec-design` → `spec-tasks`) instead of `spec-quick` to review each phase separately.
+For larger features, use the individual spec phases (`spec-requirements` → `spec-design` → `spec-grill` → `spec-tasks`) instead of `spec-quick` to review each phase separately.
 
 ### Quality Gate Sequence (pre-completion)
 

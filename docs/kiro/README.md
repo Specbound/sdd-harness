@@ -24,9 +24,10 @@ Based on [cc-sdd](https://www.npmjs.com/package/cc-sdd) (`npx cc-sdd@latest`), a
 | `spec-init` | 1. Init | Create spec workspace in `specs/` with metadata |
 | `spec-requirements` | 2. Requirements | Generate EARS-format requirements |
 | `spec-design` | 3. Design | Research codebase + produce technical design |
+| `spec-grill` | 3.5 Grill | Interactive domain-expert grilling session; aligns terminology, updates requirements + design inline, writes ADRs |
 | `spec-tasks` | 4. Tasks | Break design into parallelizable task list; `--sequential` disables parallel `(P)` markers |
 | `spec-impl` | 5. Implement | TDD implementation with self-review after each task |
-| `spec-quick` | 2-4 (fast) | Requirements → Design → Tasks in one command |
+| `spec-quick` | 2-5 (fast) | Requirements → Design → Grill → Tasks in one command; grill skipped with `--auto` |
 | `spec-status` | Any | Show current phase, approvals, open tasks |
 | `validate-gap` | Review | Requirements vs. existing code gap analysis |
 | `validate-design` | Review | Design quality review (with remediation on NO-GO) |
@@ -111,6 +112,7 @@ Starting-point files for specs, steering docs, and memory files. Used by `spec-i
 /kiro:spec-init "Add feature X"        # create spec workspace
 /kiro:spec-requirements feature-x       # generate requirements → Proof review → approve
 /kiro:spec-design feature-x             # generate design → Proof review → approve
+/kiro:spec-grill feature-x              # domain grilling session → CONTEXT.md + ADRs
 /kiro:spec-tasks feature-x              # generate tasks → Proof review → approve
 /kiro:spec-tasks feature-x --sequential  # same, but tasks strictly ordered (no P markers)
 /kiro:spec-impl feature-x              # implement via TDD

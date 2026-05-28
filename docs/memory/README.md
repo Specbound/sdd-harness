@@ -42,6 +42,9 @@ Session work → /kiro:reflect → observations.md (append)
                              → patterns.md (promote recurring themes)
                              → hot-memory.md (update current state)
 
+Drain signals  → micro_reflect.py → hot-memory.md ## Auto-learned (probationary [auto-learn] facts)
+                             → /kiro:housekeeping (promote to patterns.md if reinforced; remove after 7d if not)
+
 observations.md (>50) → /kiro:housekeeping → glacier/YYYY-MM.md (archive)
                                             → observations.md (pruned)
 
@@ -71,10 +74,11 @@ Append-only session log. Each entry tagged with category.
 - 2026-03-29 [decision]: switched from REST to GraphQL for the dashboard endpoint — reduces frontend round-trips
 ```
 
-**Tags**: `spec`, `impl`, `design`, `debug`, `decision`, `friction`, `insight`, `pattern`, `enforceable`, `escaped`, `skill-update`
+**Tags**: `spec`, `impl`, `design`, `debug`, `decision`, `friction`, `insight`, `pattern`, `enforceable`, `escaped`, `skill-update`, `auto-learn`
 
 - `enforceable` — Convention violation that could be prevented by a linter rule (feeds the evolve agent's graduation pipeline)
 - `escaped` — Bug that passed validation but was caught later in CI/production (highest priority for graduation)
+- `auto-learn` — Probationary fact written by the micro-reflect stop hook. Tagged `[auto-learn, YYYY-MM-DD]` in `hot-memory.md`. Housekeeping promotes to `patterns.md` after 7 days if reinforced, or removes it if not.
 
 ### action-items.md
 Cross-session TODOs with priority and dates.
