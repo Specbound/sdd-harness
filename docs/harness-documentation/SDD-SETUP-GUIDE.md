@@ -2,7 +2,7 @@
 
 > This file is managed by the SDD harness (`sdd-harness/docs/`).
 > It is the single source of truth — do not edit copies in individual projects.
-> _Last synced: _
+> _Last synced: 2026-05-31
 
 A complete, self-contained guide to setting up the Spec-Driven Development (SDD)
 harness used in this project. Follow these steps to replicate the setup in any
@@ -174,12 +174,21 @@ Create `.claude/settings.json`:
       // Pre-approved ruff lint commands
       "Bash(ruff check:*)",
       "Bash(python -m ruff check <file>)",
-      // Edit permissions for doc sync + harness updater subagents (spawned by post-commit hook)
+      // Edit + Write permissions for doc sync + harness updater subagents (spawned by post-commit hook).
+      // Pair a Write(...) rule with every Edit(...) rule so the subagents can create new files, not just edit existing ones.
       "Edit(docs/**)",
+      "Write(docs/**)",
       "Edit(specs/**)",
+      "Write(specs/**)",
       "Edit(.claude/docs/**)",
+      "Write(.claude/docs/**)",
       "Edit(.claude/steering/**)",
+      "Write(.claude/steering/**)",
       "Edit(.claude/memory/**)",
+      "Write(.claude/memory/**)",
+      // Allow Edit/Write on any markdown file so doc-update hooks (doc-sync, harness-updater) proceed without an approval prompt
+      "Edit(**/*.md)",
+      "Write(**/*.md)",
       // WebFetch for domains Claude needs to access
       "WebFetch(domain:raw.githubusercontent.com)",
       // Skill permissions (add as needed)
@@ -237,6 +246,10 @@ Create `.claude/settings.json`:
           {
             "type": "command",
             "command": "/bin/bash /path/to/.claude/hooks/memory-discipline-hook.sh"
+          },
+          {
+            "type": "command",
+            "command": "/bin/bash /path/to/.claude/hooks/skill-validate-hook.sh"
           }
         ]
       },
@@ -542,6 +555,7 @@ Conventions are defined in `.claude/kiro/settings/rules/memory-conventions.md`:
 | PreToolUse (GitNexus) | Every file Read/Edit by any agent | Enriches file operations with 360° symbol graph context (callers, dependencies, process participation); no-ops gracefully when GitNexus is not installed |
 | PreToolUse (memory-discipline) | Every Write/Edit to `*/memory/*.md` or `MEMORY.md` | Gates memory writes with discipline rules — valid content: workflow patterns, user preferences, reusable lessons. Invalid: case-specific facts, citations, investigation outcomes. Claude sees the rules before executing the write and can revise content. Implemented in `.claude/hooks/memory-discipline-hook.sh`. |
 | PreToolUse (protected path) | Every Write/Edit to a sensitive path (`.env`, crypto keys, credentials, `.aws/`, `.ssh/`) | Injects a confirmation banner; Claude must pause and ask the user before proceeding. Prevents accidental overwrites of secrets files. Implemented in `.claude/hooks/protected-path-hook.sh`. |
+| PreToolUse (skill-validate) | Every Write to `~/.claude/skills/<name>/SKILL.md` | Validates skill frontmatter before writing: `name:` must be kebab-case and match the file path slug; `description:` must exist and be ≥25 chars; warns on vague description starters. Exit 2 hard-blocks on errors. Implemented in `.claude/hooks/skill-validate-hook.sh`. |
 | PreCompact (compaction-discipline) | Every context compaction | Injects boundary-timing principle and state-preservation checklist: compact at workflow phase boundaries (not arbitrary turn counts), preserve artifact paths, cited facts, open questions, and decisions. Use anchored iterative summarization. Implemented in `.claude/hooks/compaction-discipline-hook.sh`. |
 | post-commit (doc sync) | Every `git commit` with non-`.md` source changes | Doc-sync: updates all `.md` files referencing changed code via `claude --print` (background) |
 | post-commit (harness updater) | Every `git commit` with `.claude/` changes (excl. memory) | Updates `SDD-SETUP-GUIDE.md` via `claude --print` (background) |

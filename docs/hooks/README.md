@@ -266,5 +266,5 @@ PreCompact     (all)                                         → compaction-disc
 3. Document it in this file (the `hook-added-notify.sh` hook will remind you if you forget).
 4. Update the Wiring Reference table above.
 
-_Last synced: 2026-05-27_
+_Last synced: 2026-05-31_
 
