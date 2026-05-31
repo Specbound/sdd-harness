@@ -4,7 +4,7 @@
 **Status:** Implemented  
 **Output:** `scripts/dashboard.py` → serves at `http://localhost:4569` (companion server mode, default); use `--static` for file output
 
-_Last synced: 2026-05-14_
+_Last synced: 2026-05-27_
 
 ---
 
@@ -27,7 +27,7 @@ The SDD harness accumulates rich per-repo telemetry — trust scores, session qu
 | CCR panel | Cards with alert banners — one card per routine |
 | Launch | Companion HTTP server at `localhost:4569`; use `--static` for file output |
 
-**Sections (8, in sidebar order):**
+**Sections (9, in sidebar order):**
 1. ⚡ Trust Battery
 2. 🕸 GitNexus
 3. 🪝 Hooks History
@@ -35,7 +35,8 @@ The SDD harness accumulates rich per-repo telemetry — trust scores, session qu
 5. 🧠 Memory Changes
 6. 🎯 Skill Changes
 7. 📊 Session Quality
-8. 🔧 Maintenance Status
+8. 🧵 Context Health
+9. 🔧 Maintenance Status
 
 ---
 
@@ -205,7 +206,23 @@ gap_re   = re.compile(r'\[memory-gap\].*?(\d+) .* topics?: (.+)')
 
 ---
 
-### 8. 🔧 Maintenance Status
+### 8. 🧵 Context Health
+
+**Data:** `<repo>/.claude/memory/.session-history` (written by `stop-hook.sh` at end of each session)
+
+Each line: ISO 8601 UTC timestamp of a session end event. File is capped at 30 entries (most recent kept).
+
+**Layout:**
+- 3 summary stat cards: sessions last 7d | sessions/day (7d avg) | last session time
+- Freq colour coding: green ≤ 3/day, yellow ≤ 6/day, red > 6/day with "consider /compact" label
+- 30-day spark chart (SVG): session count per day, coloured by frequency band
+- Actionable tips: `/compact` when load is high; subagent delegation for long chains
+
+**Empty state:** "No session history yet. Sessions are logged at stop time once the stop hook has run at least once."
+
+---
+
+### 9. 🔧 Maintenance Status
 
 **Data:** `logs/orchestrator.log`, `<repo>/.claude/memory/.last-routine-run`
 

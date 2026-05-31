@@ -2,7 +2,7 @@
 
 > This file is managed by the SDD harness (`sdd-harness/docs/`).
 > It is the single source of truth — do not edit copies in individual projects.
-> _Last synced: 2026-05-27_
+> _Last synced: 
 
 
 A complete, self-contained guide to setting up the Spec-Driven Development (SDD)
@@ -296,6 +296,10 @@ Create `.claude/settings.json`:
 }
 ```
 
+> **Additional hooks wired in the reference `settings.json`** (not shown in the snippet above for brevity):
+> - `PostToolUse` matcher `Read` → `lean-ctx-nudge-hook.sh` — fires after every large file read
+> - `PostToolUse` matcher `CronCreate` → `ccr-routine-added-notify.sh` — fires after every CCR routine creation
+
 > Replace `/path/to/` with your repo's absolute path, or let `setup-git-hooks.sh` (Step 8) do it automatically.
 
 ---
@@ -313,7 +317,7 @@ The stop hook runs lightweight checks at the end of every Claude session:
 1. **Harness update check** — if the harness has new commits since last install, prints a nudge to run `update.sh`.
 2. **Memory health check** — if `.claude/memory/observations.md` has >50 entries, prints a nudge to run `/kiro:housekeeping`.
 3. **Agent failure pattern detection** — if `.claude/memory/trace.log` shows 3+ consecutive failures for the same agent, prints a nudge to run `/kiro:evolve` to investigate friction patterns.
-4. **Session signal detection** — runs `scripts/detect_reexplanation.py` against the session transcript (Haiku-based LLM). Drain signals append a `[memory-gap]` observation; charge signals (unambiguous approval) append a `[session-charge]` observation. Both at most once per calendar day.
+4. **Session signal detection** — runs `scripts/detect_reexplanation.py` against the session transcript (Haiku-based LLM). Drain signals append a `[memory-gap]` observation; charge signals (unambiguous approval) append a `[session-charge]` observation. Both at most once per calendar day. On drain detection, also runs `scripts/micro_reflect.py` to immediately ingest drain topics into `hot-memory.md` as probationary `[auto-learn]` entries (promoted or removed by housekeeping within 7 days).
 5. **Session depth tracking** — appends an ISO timestamp to `.claude/memory/.session-history` (kept to the last 30 entries). This file feeds the dashboard's **Context Health** section, which shows sessions/week, sessions/day trend, and tips for `/compact` and subagent delegation.
 
 Doc sync and harness updates are **not** triggered here — they fire from the git post-commit hook (Step 8) instead.
@@ -420,6 +424,8 @@ The memory system provides persistent cross-session context using a cog-inspired
 ├── meta/
 │   ├── self-observations.md   # SDD workflow learnings (what worked, what didn't)
 │   └── patterns.md            # Distilled workflow rules (<70 lines, read at session start)
+├── daily/                     # Morning brief outputs (one file per day, auto-archived after 30 days)
+│   └── YYYY-MM-DD-brief.md    # Written by daily-maintenance Step D; read-only after creation
 └── glacier/                   # Archive for old observations (YAML frontmatter)
     └── index.md               # Auto-generated catalog
 ```
@@ -449,7 +455,7 @@ Then seed `hot-memory.md` and `entities.md` with your project's current state.
 
 ### Memory Conventions
 
-Conventions are defined in `.claude/kiro/settings/rules/memory-conventions.md`:
+Conventions are defined in `.claude/kiro/settings/rules/memory-conventions.md`. Additional universal coding rules are in `.claude/kiro/settings/rules/karpathy-rules.md` (Karpathy's 4 rules: ask-don't-assume, simplest-first, don't-touch-unrelated-code, flag-uncertainty).
 
 - **Observations**: `- YYYY-MM-DD [tags]: text` (append-only, max 5 per reflect)
 - **Tags**: `spec`, `impl`, `design`, `debug`, `decision`, `friction`, `insight`, `pattern`, `enforceable`, `escaped`, `skill-update`
@@ -527,7 +533,7 @@ Conventions are defined in `.claude/kiro/settings/rules/memory-conventions.md`:
 | `@agents-doc-sync` | git post-commit hook or `/kiro:sync-docs` | Code→doc drift prevention for committed changes |
 | `@agents-harness-updater` | git post-commit hook (when `.claude/` files committed) | Harness→guide sync |
 | `@agents-reflect` | `/kiro:reflect` | Session mining → observations, patterns, hot-memory |
-| `@agents-housekeeping` | `/kiro:housekeeping` | Memory archival, pruning, format validation |
+| `@agents-housekeeping` | `/kiro:housekeeping` | Memory archival (observations, action items, daily briefs >30 days → glacier), pruning, format validation, glacier index rebuild |
 | `@agents-evolve` | `/kiro:evolve` | Rule audit, friction analysis, trace log analysis, improvement proposals, linter graduation |
 | `@agents-guardrails` | `/kiro:guardrails` | Linter complexity rule auditing and scaffolding |
 | `@agents-ci-scaffold` | `/kiro:ci-scaffold` | CI configuration generation (GitHub Actions, GitLab CI, Azure Pipelines) |
@@ -547,20 +553,22 @@ Conventions are defined in `.claude/kiro/settings/rules/memory-conventions.md`:
 | PostToolUse (Jira comment) | Every `git push` Bash command | Posts Jira comment with branch/commits/docs summary if a `jira-solve` session is active |
 | UserPromptSubmit (Jira capture) | Every user prompt | Captures ticket ID from `/kiro:jira-solve TICKET-ID` prompts, writes to `~/.claude/state/active_jira_ticket` |
 | UserPromptSubmit (context priming) | Every user prompt | Injects hot-memory.md contents for session context |
-| SessionStart (maintenance check) | Every Claude session start | Two modes: (1) if no local `daily-runner.sh` is installed — checks if today's `[judge]` sentinel is absent from `observations.md` and asks Claude to run `/kiro:daily-maintenance`; (2) if `daily-runner.sh` is installed and stale (>24h or never ran) — fires it in the background via `nohup` silently, without consuming session context. |
+| SessionStart (maintenance check) | Every Claude session start | **macOS only (pre-step):** clears `com.apple.macl` from `.claude/hooks/` via `xattr -cr` so hook subprocesses can execute after Claude Code Write/Edit tools modify hook files (the session-start hook stays macl-free because `update.sh` refreshes it via `cp`, not the Write tool). Then three modes: (1) if no local `daily-runner.sh` is installed — checks if today's `[judge]` sentinel is absent from `observations.md` and asks Claude to run `/kiro:daily-maintenance`; (2) if `daily-runner.sh` is installed and stale (>24h or never ran) — fires it in the background via `nohup` silently; (3) bi-weekly CLAUDE.md review — if `.claude/memory/.last-claudemd-review` is >14 days stale or absent, injects a `[CLAUDEMD-REVIEW-DUE]` prompt asking Claude to run `/claudemd-review` before the first response. |
 | Stop (memory health) | Every Claude session end | Nudges `/kiro:housekeeping` if observations >50; nudges `/kiro:evolve` if agent failure patterns detected |
-| Stop (session signal detector) | Every Claude session end | Runs `scripts/detect_reexplanation.py` (Haiku LLM); appends `[memory-gap]` observation for drain signals (re-explanation) and `[session-charge]` for charge signals (approval). Each written at most once per day. |
+| Stop (session signal detector) | Every Claude session end | Runs `scripts/detect_reexplanation.py` (Haiku LLM); appends `[memory-gap]` observation for drain signals (re-explanation) and `[session-charge]` for charge signals (approval). Each written at most once per day. On drain detection, also runs `scripts/micro_reflect.py` to immediately ingest drain topics into `hot-memory.md` as probationary `[auto-learn]` entries (promoted or removed by housekeeping within 7 days). |
 | Stop (session depth tracking) | Every Claude session end | Appends ISO timestamp to `.claude/memory/.session-history` (max 30 entries). Powers the dashboard **Context Health** section — sessions/week, sessions/day trend chart, last session time, and `/compact` tips. |
 | PostToolUse (revert detector) | Every git revert/reset/restore Bash call | Immediately appends `[revert]` drain observation to `observations.md` — gives trust-battery Judge concrete evidence. Script: `.claude/hooks/revert-detect-hook.sh`. |
-| OS scheduler + SessionStart (daily maintenance) | Nightly at 18:00 local; SessionStart catch-up if >24h stale | Runs per-repo `daily-runner.sh` → `/kiro:daily-maintenance` — Judge → Reflect → Housekeeping → Trust Score → Augment Skills. Auto-registered by `install.sh` / `update.sh` per platform: **macOS** → launchd LaunchAgent (`~/Library/LaunchAgents/com.sdd.daily-orchestrator.plist`); **WSL/Windows** → Windows Task Scheduler (`schtasks.exe`); **Linux** → crontab (`sdd-daily-orchestrator` entry). Opt out: `SDD_SKIP_ROUTINE=1` at install/update time; `rm .claude/scripts/daily-runner.sh` per-repo. See `SDD-USAGE.md` → "Daily Maintenance". |
+| PostToolUse (lean-ctx nudge) | Every Read tool call on a file ≥16 KB | After reading a large file, prints the optimal `ctx_read` mode (signatures for code, reference for prose, aggressive for unknown types), token cost estimate, and alternative modes. Silent for small files, data formats (JSON/YAML/TOML), and non-existent paths. Implemented in `.claude/hooks/lean-ctx-nudge-hook.sh`. |
+| OS scheduler + SessionStart (daily maintenance) | Nightly at 18:00 local; SessionStart catch-up if >24h stale | Runs per-repo `daily-runner.sh` → `/kiro:daily-maintenance` — Step A (Judge + Reflect + Housekeeping + Trust Score) → Step B (Session Quality Assessment) → Step C (Keep Rate Evaluation) → Step D (Morning Brief written to `.claude/memory/daily/YYYY-MM-DD-brief.md`). Auto-registered by `install.sh` / `update.sh` per platform: **macOS** → launchd LaunchAgent (`~/Library/LaunchAgents/com.sdd.daily-orchestrator.plist`); **WSL/Windows** → Windows Task Scheduler (`schtasks.exe`); **Linux** → crontab (`sdd-daily-orchestrator` entry). Opt out: `SDD_SKIP_ROUTINE=1` at install/update time; `rm .claude/scripts/daily-runner.sh` per-repo. See `SDD-USAGE.md` → "Daily Maintenance". |
 | PreToolUse (RTK) | Every Bash tool call by any agent | Rewrites matching commands to `rtk <cmd>`, compressing output before it reaches the LLM (60–90%+ token reduction). Passes through commands without filters unchanged. Global — fires in all sessions and projects. |
 | PreToolUse (GitNexus) | Every file Read/Edit by any agent | Enriches file operations with 360° symbol graph context (callers, dependencies, process participation); no-ops gracefully when GitNexus is not installed |
 | PreToolUse (memory-discipline) | Every Write/Edit to `*/memory/*.md` or `MEMORY.md` | Gates memory writes with discipline rules — valid content: workflow patterns, user preferences, reusable lessons. Invalid: case-specific facts, citations, investigation outcomes. Claude sees the rules before executing the write and can revise content. Implemented in `.claude/hooks/memory-discipline-hook.sh`. |
 | PreToolUse (protected path) | Every Write/Edit to a sensitive path (`.env`, crypto keys, credentials, `.aws/`, `.ssh/`) | Injects a confirmation banner; Claude must pause and ask the user before proceeding. Prevents accidental overwrites of secrets files. Implemented in `.claude/hooks/protected-path-hook.sh`. |
 | PreToolUse (skill-validate) | Every Write to `~/.claude/skills/<name>/SKILL.md` | Validates skill frontmatter before writing: `name:` must be kebab-case and match the file path slug; `description:` must exist and be ≥25 chars; warns on vague description starters. Exit 2 hard-blocks on errors. Implemented in `.claude/hooks/skill-validate-hook.sh`. |
-| PreCompact (compaction-discipline) | Every context compaction | Injects boundary-timing principle and state-preservation checklist: compact at workflow phase boundaries (not arbitrary turn counts), preserve artifact paths, cited facts, open questions, and decisions. Use anchored iterative summarization. Implemented in `.claude/hooks/compaction-discipline-hook.sh`. |
+| PreCompact (compaction-discipline) | Every context compaction | Injects boundary-timing, state-preservation, and domain-aware compression principles: compact at workflow phase boundaries (not arbitrary turn counts); preserve artifact paths, cited facts, open questions, and decisions; never over-compress (no stripping of file paths, function names, error messages, or identifiers). Domain strategy — code: chunk-level (keep signatures, drop already-acted-on bodies); prose: sentence-level (keep topic sentences, drop elaboration); RAG results: query-aware (filter to last user intent); conversation: keep decisions and user corrections, drop filler; tool output: keep errors and key metrics, drop passing output. Method: anchored iterative summarization (merge into existing sections — do not regenerate from scratch). Implemented in `.claude/hooks/compaction-discipline-hook.sh`. |
 | post-commit (doc sync) | Every `git commit` with non-`.md` source changes | Doc-sync: updates all `.md` files referencing changed code via `claude --print` (background) |
 | post-commit (harness updater) | Every `git commit` with `.claude/` changes (excl. memory) | Updates `SDD-SETUP-GUIDE.md` via `claude --print` (background) |
+| PostToolUse (CCR routine notify) | Every `CronCreate` tool call | Injects a reminder to document the new routine in `docs/ccr-routines/README.md` before the session ends. Extracts routine name and schedule from the tool payload. Implemented in `.claude/hooks/ccr-routine-added-notify.sh`. |
 
 ---
 

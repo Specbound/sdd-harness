@@ -20,7 +20,7 @@ Hook output is injected into Claude's context as system messages — Claude read
 ### `session-start-hook.sh`
 **Event:** `SessionStart` — **Matcher:** _(all sessions)_
 
-**Purpose:** Ensures the daily maintenance pipeline doesn't go unrun. Checks whether today's `[judge]` sentinel exists in `observations.md`. If the local `daily-runner.sh` is installed and its state file is stale (>24h or missing), fires the runner in the background without blocking session start. If no local runner is installed and maintenance is overdue, injects a reminder for Claude to run `/kiro:daily-maintenance` interactively.
+**Purpose:** On macOS, first clears `com.apple.macl` extended attributes from `.claude/hooks/` so that hook files modified by Claude Code's Write/Edit tools remain executable by subprocesses. (The Write/Edit tools set `com.apple.macl`, which blocks subsequent subprocess reads. `session-start-hook.sh` itself is immune — `update.sh` always refreshes it via `cp`, not the Write tool.) Then ensures the daily maintenance pipeline doesn't go unrun: checks whether today's `[judge]` sentinel exists in `observations.md`. If the local `daily-runner.sh` is installed and its state file is stale (>24h or missing), fires the runner in the background without blocking session start. If no local runner is installed and maintenance is overdue, injects a reminder for Claude to run `/kiro:daily-maintenance` interactively.
 
 **Why it's needed:** The Task Scheduler fires at 11:30 IST daily, but the machine may be off or the WSL session closed at that time. The session-start hook is the catch-up path that guarantees maintenance runs at least once per developer day, with zero user friction.
 

@@ -23,6 +23,24 @@ Analyze an external resource and intelligently integrate its capabilities into t
 
 ## Workflow
 
+### Phase 0: Classify the Input Source
+
+Inspect the input passed to the skill and classify it into exactly one source category. The category determines which `docs/sources/<category>/README.md` will be updated in Phase 7.
+
+| Input shape | Category | Target file |
+|---|---|---|
+| Plain text (no URL) — a pasted thread, excerpt, or snippet | **x** | `docs/sources/x/README.md` |
+| URL matching `github.com/<owner>/<repo>` (or `gitlab.com`, `bitbucket.org`) | **git** | `docs/sources/git/README.md` |
+| URL on `arxiv.org`, `aclanthology.org`, `openreview.net`, `nature.com`, `science.org`, `acm.org`, `ieee.org`, or any other scientific journal/preprint server | **papers** | `docs/sources/papers/README.md` |
+| Any other URL (blog post, docs page, vendor site, news, etc.) | **articles** | `docs/sources/articles/README.md` |
+
+Decision rules:
+- A URL classifies as **git** only if it points to a repository root or repo subpath — a link to a GitHub-hosted blog post (e.g. `*.github.io/post`) is **articles**.
+- If a single input contains *both* a paper and its accompanying repo, log to the category of the primary input and cross-reference the other in the entry body (use the pattern `See also: [git/README.md](../git/README.md)` already established in existing entries).
+- If you cannot confidently classify, stop and ask the user before continuing.
+
+Record the chosen category — you will need it in Phase 7.
+
 ### Phase 1: Fetch & Understand the Resource
 
 Use WebFetch or WebSearch to retrieve the content at the provided link. Focus on:
@@ -33,6 +51,8 @@ Use WebFetch or WebSearch to retrieve the content at the provided link. Focus on
 If the link is a GitHub repo, also check:
 - `package.json` / `pyproject.toml` / config files for capabilities
 - Any hooks, CLI commands, or automation scripts
+
+If the input is plain text (category **x**), skip fetching — the content is the input itself. Summarize it in your own words for the subsequent phases.
 
 ### Phase 2: Audit the Harness
 
@@ -171,6 +191,43 @@ After implementing, show:
 **Test it:** [How to invoke/verify the new integration]
 ```
 
+### Phase 7: Log to the Sources Index (REQUIRED)
+
+After every successful extraction, append an entry to the source-category README chosen in Phase 0. This is non-optional — without it, the harness loses the provenance trail that explains *why* skills were added.
+
+**Target file:** `docs/sources/<category>/README.md` where `<category>` is one of `articles`, `git`, `papers`, `x` (from Phase 0).
+
+**Entry format** — match the style already used in that file. The canonical template:
+
+```markdown
+---
+
+## [Title — repo name, article title, paper title, or short label for pasted text]
+**URL:** <source URL>   *(omit for category `x`)*
+**Added:** YYYY-MM-DD   *(today's date in absolute form)*
+**Source / Author:** <optional — publisher, author, or "Pasted text">
+
+**What it's about:** [1–3 sentences — what the source covers, the problem it solves, key claims or data]
+
+**What we added:**
+- [Integration type]: `<name>` — [one-line description of why this fits the harness / the gap it fills]
+- [Repeat for each integration created in Phase 5]
+```
+
+Field rules:
+- For category **x**, omit the `**URL:**` line and use a short descriptive title plus the date.
+- For category **papers**, prefer `**arXiv:**` over `**URL:**` when applicable; include `**Year:**` and `**Authors:**` if known.
+- If the extraction added nothing (proposal rejected, nothing applicable), do **not** write an entry.
+- If a related entry exists in another sources file (e.g. paper + accompanying repo), add a `See also: [<other-category>/README.md](../<other-category>/README.md)` line inside the entry.
+
+Append the entry at the bottom of the file, separated by `---` from the previous entry, preserving chronological order (oldest first).
+
+After writing, confirm to the user:
+
+```
+📝 Logged to docs/sources/<category>/README.md
+```
+
 ## Key Principles
 
 - **Never implement without approval.** The proposal step is mandatory, not optional.
@@ -178,3 +235,4 @@ After implementing, show:
 - **Match harness conventions.** Read nearby files before creating new ones to follow existing patterns.
 - **One resource can yield multiple integration types.** A repo might give a skill, a hook, and a command.
 - **Be explicit about skips.** Always tell the user what you decided not to extract and why.
+- **Always log to the sources index.** Phase 7 is required for every successful extraction — provenance is part of the deliverable, not optional metadata.
