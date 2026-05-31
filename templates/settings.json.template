@@ -13,7 +13,9 @@
       "Edit(specs/**)",
       "Edit(.claude/docs/**)",
       "Edit(.claude/steering/**)",
-      "Edit(.claude/memory/**)"
+      "Edit(.claude/memory/**)",
+      "Edit(**/*.md)",
+      "Write(**/*.md)"
     ],
     "deny": []
   },
