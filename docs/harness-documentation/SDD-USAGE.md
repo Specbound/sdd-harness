@@ -277,6 +277,8 @@ Measures memory health, detects friction patterns, proposes rule improvements. I
 - **Alignment analysis** — computes per-agent alignment scores from trace.log, flags underperformers
 - **Prompt diagnosis** — for flagged agents, produces structured root cause analysis with specific instruction changes (ADD/REMOVE/SHARPEN)
 - **Data-driven tiering** — recommends model tier promotions/demotions based on alignment evidence
+- **Instruction architecture health** (Step 1d) — audits entry file for bloat (>200 lines), low SNR (<60%), hard constraints after line 50 (lost-in-middle), missing topic documents
+- **Session clean state health** (Step 1e) — checks PROGRESS.md freshness, debug artifact presence, verify path documentation; output includes "Harness Architecture Health" scorecard
 
 ```
 /kiro:evolve
@@ -310,7 +312,9 @@ Generates a CI configuration that mirrors the `/kiro:verify` pipeline stages. Au
 The generated pipeline enforces: build, type-check, lint (with zero-warning tolerance), tests, and debug artifact audit.
 
 ### `/kiro:harness-validate` — Check harness structural integrity
-Validates command→agent references, template existence, memory caps, L0 headers, and generates a component relationship index.
+Validates command→agent references, template existence, memory caps, L0 headers, and generates a component relationship index. Also includes:
+- **Step 8: Instruction architecture audit** — entry file line count vs. 50–200 target, hard constraint count vs. 15 max, topic document adoption, hard-constraint phrases after line 50 (lost-in-middle risk)
+- **Step 9: Feature list primitive audit** — triple structure compliance (behavior+verification+state), WIP=1 discipline, pass-state gating evidence
 
 ```
 /kiro:harness-validate
@@ -394,6 +398,21 @@ When drain signals are found, `scripts/micro_reflect.py` is immediately called (
 
 Complete documentation of the trust-battery loop — origin, architecture diagram, rubric details, troubleshooting, and explicit non-goals. Start here if you are modifying any of the battery components.
 
+### `/kiro:macro-eval-sweep` — Population-scale agent evaluation
+Clusters recurring failure patterns across Raindrop Workshop traces, ranks by impact, backward-traces the suspect step per pattern, writes a dated report, and posts annotations back to Workshop. The **macro** layer above per-run grading.
+
+```
+/kiro:macro-eval-sweep              # last 4 days, all runs
+/kiro:macro-eval-sweep 7            # last 7 days
+/kiro:macro-eval-sweep 4 zora       # last 4 days, runs matching "zora"
+```
+
+Runs automatically twice weekly via `scripts/macro-eval-runner.sh` (MIN_GAP_DAYS=3) inside the daily orchestrator. In headless or scheduler contexts, preflight confirms the Raindrop MCP server is reachable — fails loudly with a `*-SKIPPED.md` report rather than pretending success.
+
+Output: `.claude/reports/macro-evals/YYYY-MM-DD.md` with a pattern leaderboard, top-3 diagnoses (focus event + suspect step), and a delta vs. previous sweep. Span-level and run-level Workshop annotations are posted for confirmed recurring failure patterns (cap: ~5 runs per pattern).
+
+Skill: `macro-evals`. Opt-out: `SDD_SKIP_MACRO_EVAL=1`.
+
 ---
 
 ## Jira Integration
@@ -463,6 +482,10 @@ Generates skills from an approved extraction plan, or runs the full pipeline wit
 
 Output: `~/.claude/skills/<name>/SKILL.md` for each extracted skill.
 
+Every new skill passes two mandatory quality gates before it is logged to the sources index:
+- **Phase 5b — SkillOS Quality Gate**: task relevance, operational validity, content quality, compression (≤5,000 words). Failures block completion.
+- **Phase 5c — Identity Alignment Check**: invokes `agent-identity` Mode B — validates description specificity, trigger sharpness, behavioral concreteness, and explicit exclusions. Vague skill identities cause the wrong skill to fire; this gate prevents them from entering the harness.
+
 See `docs/skill-extraction/README.md` for full details on scoring, workflow, and security.
 
 ### `/kiro:gitnexus-setup` — Install and configure GitNexus code intelligence
@@ -492,6 +515,41 @@ Browse symbols, call chains, process flows, and community clusters in a WebGL gr
 Maps changed code to affected execution flows with HIGH/MEDIUM/LOW risk classification. Falls back to grep-based tracing if GitNexus is not installed.
 
 See `docs/gitnexus/README.md` for full details.
+
+---
+
+## Local Dashboard
+
+A browser-based dashboard (`scripts/dashboard.py`, stdlib only) that surfaces harness telemetry for all registered repos.
+
+```bash
+python3 ~/.claude/sdd-harness/scripts/dashboard.py
+```
+
+Starts a local HTTP server at `http://localhost:4569` and opens the browser automatically. Use `--repo <name|path>` to pre-select a repo, `--no-open` to suppress browser launch, or `--static` to write a static `.dashboard/index.html` instead.
+
+**Sections:**
+
+| # | Section | What it shows |
+|---|---|---|
+| 1 | ⚡ Trust Battery | Arc gauge + 30-day bar chart of daily trust deltas |
+| 2 | 🕸 GitNexus | Stats strip + embedded visual explorer (localhost:4567) |
+| 3 | 🪝 Hooks History | Hook name, event type, last activity, active/inactive badge |
+| 4 | 📅 CCR Routines | Schedule, last run, next expected, overdue alerts |
+| 5 | 🧠 Memory Changes | Git feed of hot-memory, observations, and meta/patterns changes |
+| 6 | 🎯 Skill Changes | Rendered skill-curation-report with audit age |
+| 7 | 📊 Session Quality | Score/keep-rate/memory-gap summary + 30-day chart |
+| 8 | 🧵 Context Health | Sessions per day trend + `/compact` recommendations |
+| 9 | 🔧 Maintenance Status | Per-repo orchestrator log tail and last-run status |
+| 10 | 💰 Model Cost | All-time and 30-day spend; 90-day daily cost bar chart; sessions table with model/tokens/cost; cross-provider "What if?" cost switcher |
+
+### 💰 Model Cost section
+
+Reads session JSONL files from `~/.claude/projects/*/`. Pricing is fetched from `models.dev/api.json` and cached at `.dashboard/models-pricing-history.json`, refreshed bi-weekly. Historical snapshots accumulate so past sessions are costed at the rate in effect when they ran. Sessions where pricing has changed since the run are flagged with a ⚠ icon.
+
+The **"What if?" switcher** lets you recalculate total projected cost against any supported provider (Anthropic, OpenAI, Google, Mistral, DeepSeek, xAI, Cohere, Amazon Bedrock, Azure, Perplexity, Groq) and model — select provider first, then model, and the projected vs. actual totals update instantly.
+
+See `docs/superpowers/specs/2026-05-14-harness-dashboard-design.md` for the full section spec.
 
 ---
 

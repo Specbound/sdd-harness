@@ -76,6 +76,27 @@ If `hot-memory.md` exceeds 50 lines:
 2. Condense verbose entries
 3. Verify remaining content is current and accurate
 
+### Step 3.5: Review Auto-learned Entries
+
+Scan `hot-memory.md` for lines tagged `[auto-learn, YYYY-MM-DD]`. These are
+probationary facts written by the micro-reflect stop hook. Apply this lifecycle:
+
+**Keep** — entry is less than 7 days old. No action.
+
+**Promote** — entry is 7+ days old AND there is reinforcing evidence (any of):
+- A `[memory-gap]` observation from a different day touches the same topic
+- The fact is referenced or consistent with an existing entry in `meta/patterns.md`
+- The fact appears relevant to current active work in hot-memory
+
+When promoting: copy the fact as a new entry in `meta/patterns.md` (if under the
+70-line cap), then remove it from hot-memory.
+
+**Remove** — entry is 7+ days old AND no reinforcing evidence. Delete the line.
+Do not archive to glacier — these entries are lightweight and ephemeral by design.
+
+After reviewing all `[auto-learn]` entries, if the `## Auto-learned` section is
+now empty, remove the section header too.
+
 ### Step 4: Condense Patterns
 
 If `meta/patterns.md` exceeds 70 lines:
@@ -94,29 +115,12 @@ Check all memory files for:
 - **Entity format**: 3-line max per entry
 - **Stale action items**: Flag items open >2 weeks
 
-### Step 5.5: Archive Old Daily Briefs
-
-Check `.claude/memory/daily/` for brief files older than 30 days:
-1. List all `YYYY-MM-DD-brief.md` files in that directory
-2. For briefs where the date is >30 days ago, append them to a glacier archive file:
-   `.claude/memory/glacier/daily-briefs-YYYY-MM.md` (one file per month)
-3. Add YAML frontmatter on first creation:
-   ```yaml
-   ---
-   archived: YYYY-MM-DD
-   source: daily/
-   month: YYYY-MM
-   ---
-   ```
-4. Delete the original files after archiving
-
 ### Step 6: Flag Stale Items
 
 Identify and report:
 - Action items open >14 days
 - Entities with `last:` date >30 days old
 - Observations referencing files that no longer exist
-- Daily briefs not yet archived (>30 days old)
 
 ### Step 7: Rebuild Glacier Index
 
@@ -141,7 +145,6 @@ Chat summary only (files updated directly):
 ## Archived
 - Observations: N entries → glacier/observations-YYYY-MM-DD.md
 - Action items: N entries archived
-- Daily briefs: N files → glacier/daily-briefs-YYYY-MM.md (or "None — all within 30 days")
 
 ## Pruned
 - hot-memory.md: N → M lines

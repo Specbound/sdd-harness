@@ -40,46 +40,12 @@ Invoke the `keep-rate` skill via the Skill tool. Apply its workflow:
 
 If today's `[keep-rate]:` line already exists, skip silently.
 
-## Step D — Morning Brief (Draft, Don't Act)
-
-Read the following files to assemble today's brief:
-- `.claude/memory/action-items.md` — open loops and commitments
-- `.claude/memory/hot-memory.md` — current priorities and key decisions
-- `.claude/memory/entities.md` — collaborator context
-
-**Output a structured brief** using this template:
-
-```
-## Morning Brief — TODAY_PLACEHOLDER
-
-### To-do (open loops on me)
-- [item] — [why it matters or what's blocked]
-
-### Needs attention (changed since last brief)
-- [item] — [what changed]
-
-### Blocked on me
-- [project or decision] — [what unblocks it]
-
-### Nothing to flag
-(emit this section only if all above are empty)
-```
-
-Rules:
-- Draft only — never send messages, push code, or take external actions
-- Keep it under 150 words
-- If a section is empty, omit it
-- If no files exist or all sections are empty, output "Morning Brief — nothing to flag."
-
-If today's brief was already written (check `.claude/memory/daily/TODAY_PLACEHOLDER-brief.md`),
-skip and emit `brief=skipped`. Otherwise write the brief to that path and emit `brief=ok`.
-
 ## Output
 
-When all four steps are done, emit a single summary line on stdout:
+When all three steps are done, emit a single summary line on stdout:
 
 ```
-Daily maintenance complete: judge=<delta> session-quality=<N/5> keep-rate=<N%> brief=<ok|skipped|failed>
+Daily maintenance complete: judge=<delta> session-quality=<N/5> keep-rate=<N%>
 ```
 
 If any step was skipped or failed, replace the value with `skipped` or `failed`.

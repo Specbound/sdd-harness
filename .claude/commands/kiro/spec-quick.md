@@ -7,10 +7,10 @@ argument-hint: <project-description> [--auto]
 # Quick Spec Generator
 
 <background_information>
-- **Mission**: Execute all spec phases (init → requirements → design → tasks) in a single command
+- **Mission**: Execute all spec phases (init → requirements → design → grill → tasks) in a single command
 - **Success Criteria**:
-  - Interactive mode: User controls progression with approval prompts at each phase
-  - Automatic mode: All phases execute without interruption when `--auto` flag provided
+  - Interactive mode: User controls progression with approval prompts at each phase; grill phase runs interactively
+  - Automatic mode: All phases except grill execute without interruption when `--auto` flag provided (grill requires user interaction and is skipped)
   - All generated specs maintain quality comparable to manual workflow
 </background_information>
 
@@ -20,22 +20,22 @@ argument-hint: <project-description> [--auto]
 **If `--auto` flag is present in `$ARGUMENTS`, you are in AUTOMATIC MODE.**
 
 In Automatic Mode:
-- Execute ALL 4 phases in a continuous loop without stopping
-- Use TodoWrite to track progress (4 tasks: init, requirements, design, tasks)
+- Execute phases 1–3 and 5 in a continuous loop without stopping (grill requires user interaction and is skipped)
+- Use TodoWrite to track progress (5 tasks: init, requirements, design, grill, tasks)
 - Each phase completion updates TodoWrite and continues immediately
-- IGNORE any "Next Step" messages from Phase 2-4 (they are for standalone usage)
-- Stop ONLY after Phase 4 completes or if error occurs
+- IGNORE any "Next Step" messages from Phase 2-5 (they are for standalone usage)
+- Stop ONLY after Phase 5 completes or if error occurs
 
 **Progress tracking with TodoWrite**:
-- Phase 1 complete = 1/4 tasks done → Continue to Phase 2
-- Phase 2 complete = 2/4 tasks done → Continue to Phase 3
-- Phase 3 complete = 3/4 tasks done → Continue to Phase 4
-- Phase 4 complete = 4/4 tasks done → Output summary and exit
+- Phase 1 complete = 1/5 tasks done → Continue to Phase 2
+- Phase 2 complete = 2/5 tasks done → Continue to Phase 3
+- Phase 3 complete = 3/5 tasks done → Mark task 4 (grill) completed (skipped), continue to Phase 5
+- Phase 5 complete = 5/5 tasks done → Output summary and exit
 
 ---
 
 ## Core Task
-Execute 4 spec phases sequentially. In automatic mode, execute all phases without stopping. In interactive mode, prompt user for approval between phases.
+Execute spec phases sequentially. In automatic mode, execute all phases except grill (which requires user interaction) without stopping. In interactive mode, prompt user for approval between phases including the grill session.
 
 ## Execution Steps
 
@@ -73,6 +73,7 @@ If refinement suggested:
   {"content": "Initialize spec", "activeForm": "Initializing spec", "status": "pending"},
   {"content": "Generate requirements", "activeForm": "Generating requirements", "status": "pending"},
   {"content": "Generate design", "activeForm": "Generating design", "status": "pending"},
+  {"content": "Domain grill", "activeForm": "Grilling domain model", "status": "pending"},
   {"content": "Generate tasks", "activeForm": "Generating tasks", "status": "pending"}
 ]
 ```
@@ -186,20 +187,44 @@ Wait for completion. Subagent will return with "次のステップ" message.
 
 **Output Progress**:
 ```
-✅ Design generated → Continuing to tasks...
+✅ Design generated → Continuing to domain grill...
 ```
 
-**Automatic Mode**: Task list shows 3/4 complete. IMMEDIATELY continue to Phase 4.
+**Automatic Mode**: Task list shows 3/5 complete. Mark task 4 as `completed` (grill skipped — requires user interaction). Mark task 5 as `in_progress`. IMMEDIATELY continue to Phase 5.
 
-**Interactive Mode**: Prompt "Continue to tasks generation? (yes/no)"
+**Interactive Mode**: Prompt "Continue to domain grilling? (yes/no)"
 - If "no": Stop, show current state
-- If "yes": Continue to Phase 4
+- If "yes": Continue to Phase 3.5
 
 ---
 
-#### Phase 4: Generate Tasks
+#### Phase 3.5: Domain Grill (Interactive Mode Only)
 
-**Task 4 is already `in_progress` from Phase 3.**
+**Task 4 is already `in_progress`.**
+
+**Execute SlashCommand**:
+```
+/kiro:spec-grill {feature-name}
+```
+
+The grill session is interactive — it asks one question at a time and waits for your answer. It will update `requirements.md`, `design.md`, and create `CONTEXT.md` inline as decisions crystallise. Signal done when finished ("done", "looks good", "move on").
+
+Wait for completion.
+
+**Update TodoWrite**: Mark task 4 as `completed`, task 5 as `in_progress`.
+
+**Output Progress**:
+```
+✅ Domain grill complete → Continuing to tasks...
+```
+
+Continue to Phase 5.
+
+---
+
+#### Phase 5: Generate Tasks
+
+**Task 5 is already `in_progress` (from Phase 3.5 in interactive mode, or Phase 3 in automatic mode).**
 
 **Execute SlashCommand**:
 ```
@@ -210,9 +235,9 @@ Note: `-y` flag auto-approves design.
 
 Wait for completion.
 
-**Update TodoWrite**: Mark task 4 as `completed`.
+**Update TodoWrite**: Mark task 5 as `completed`.
 
-**All 4 tasks complete. Loop is DONE.**
+**All 5 tasks complete. Loop is DONE.**
 
 Output final completion summary (see Output Description section) and exit.
 
@@ -229,9 +254,10 @@ Output final completion summary (see Output Description section) and exit.
 ### Automatic Mode Behavior
 - Do NOT stop between phases
 - Do NOT wait for user input
-- Do NOT be influenced by "次のステップ" messages from Phases 2-4
+- Do NOT be influenced by "次のステップ" messages from Phases 2-5
 - Update TodoWrite after each phase to maintain progress visibility
-- Continue loop until all 4 phases complete
+- Grill phase (task 4) is automatically marked complete/skipped — it cannot run unattended
+- Continue loop until all 5 tasks complete
 
 ### Interactive Mode Behavior
 - Prompt user after each phase
@@ -254,11 +280,11 @@ Output final completion summary (see Output Description section) and exit.
 - **Read**: Fetch templates from `.claude/kiro/settings/templates/specs/`
 - **Write**: Create `spec.json` and `requirements.md` in spec directory
 
-### Phase 2-4 Tools
-- **SlashCommand**: Execute `/kiro:spec-requirements`, `/kiro:spec-design`, `/kiro:spec-tasks`
+### Phase 2-5 Tools
+- **SlashCommand**: Execute `/kiro:spec-requirements`, `/kiro:spec-design`, `/kiro:spec-grill`, `/kiro:spec-tasks`
 
 ### TodoWrite Usage
-- Initialize with 4 pending tasks
+- Initialize with 5 pending tasks
 - Update after each phase: current task `completed`, next task `in_progress`
 - Provides visual progress tracking in UI
 
@@ -307,18 +333,20 @@ Provide output in the language specified in `spec.json`:
 ⚠️ Quick generation skipped:
 - `/kiro:validate-gap` - Gap analysis (integration check)
 - `/kiro:validate-design` - Design review (architecture validation)
+- `/kiro:spec-grill` - Domain grill (terminology and decision alignment) — **run this before spec-impl if skipped**
 
 ## Next Steps:
 1. Review generated specs (especially design.md)
 2. Optional validation:
    - `/kiro:validate-gap {feature}` - Check integration with existing codebase
    - `/kiro:validate-design {feature}` - Verify architecture quality
+   - `/kiro:spec-grill {feature}` - Align domain language before implementation
 3. Start implementation: `/kiro:spec-impl {feature}`
 
 ## Note:
 For complex features (integrations, security, APIs), use standard workflow:
 /kiro:spec-init → /kiro:spec-requirements → /kiro:validate-gap
-→ /kiro:spec-design → /kiro:validate-design → /kiro:spec-tasks
+→ /kiro:spec-design → /kiro:validate-design → /kiro:spec-grill → /kiro:spec-tasks
 ```
 
 ## Safety & Fallback

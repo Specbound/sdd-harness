@@ -65,6 +65,7 @@ Each fact lives in ONE canonical file. Other files reference via file paths; all
 | `hot-memory.md` | Freely rewritten |
 | `meta/patterns.md` | Edited in-place |
 | `meta/self-observations.md` | Append-only |
+| `daily/YYYY-MM-DD-brief.md` | Written once by daily-maintenance Step D; never edited after creation |
 
 ### L0 Headers
 Every memory file starts with an L0 summary comment for fast scanning:
@@ -87,6 +88,24 @@ At session start, always read L2 of `hot-memory.md` and `meta/patterns.md` (they
 | `meta/patterns.md` | 70 lines | Condense during housekeeping |
 | `observations.md` | 50 entries | Archive oldest to `glacier/` during housekeeping |
 | `action-items.md` completed | 10 items | Archive to `glacier/` during housekeeping |
+
+### Daily Brief Format (`daily/YYYY-MM-DD-brief.md`)
+Structured morning context assembled from `action-items.md`, `hot-memory.md`, and `entities.md`.
+```markdown
+<!-- L0: Morning brief for YYYY-MM-DD — open loops, attention items, blockers -->
+
+## Morning Brief — YYYY-MM-DD
+
+### To-do (open loops on me)
+- [item] — [why it matters or what's blocked]
+
+### Needs attention
+- [item] — [what changed]
+
+### Blocked on me
+- [project or decision] — [what unblocks it]
+```
+**Rules**: Draft only — never triggers external actions. Max 150 words. Written by daily-maintenance Step D; housekeeping archives briefs >30 days old to `glacier/`.
 
 ## Glacier Archival Format
 

@@ -41,11 +41,11 @@ Based on a post by [@nityeshaga](https://x.com/nityeshaga/status/204486411468274
 ```
 .claude/memory/
 ├── hot-memory.md                  # Scoreboard header line updated by trust_score.py
-├── observations.md                # [memory-gap] (from detector), [judge], [routine-*] entries
+├── observations.md                # [memory-gap], [session-charge] (from detector), [judge], [routine-*] entries
 └── trust-score.jsonl              # Append-only score history, one record per nightly run
 
 .claude/scripts/
-├── detect_reexplanation.py        # Detector — finds re-explanation phrases in session transcript
+├── detect_reexplanation.py        # Detector — Haiku LLM; drain (re-explanation → [memory-gap]) and charge (approval → [session-charge])
 └── trust_score.py                 # Score math, clamping, header rewrite
 
 .claude/agents/kiro/
@@ -58,38 +58,33 @@ Based on a post by [@nityeshaga](https://x.com/nityeshaga/status/204486411468274
 └── session-quality-rubric.md      # Charges/drains rubric with evidence requirement
 
 .claude/hooks/
-└── stop-hook.sh                   # Runs detector after each session, appends [memory-gap] obs
+└── stop-hook.sh                   # Runs detector after each session; appends [memory-gap] (drain) and [session-charge] (charge) obs
 ```
 
 ## The Four Components
 
-### 1. Re-explanation Detector — the flagship drain signal
+### 1. Session Signal Detector — drains and charges
 
 **File**: `scripts/detect_reexplanation.py`
 **Trigger**: stop-hook (every session end), also callable from CI
+**Model**: Claude Haiku (LLM-based, runs once per session)
 
-Scans the session's user turns for phrases indicating the user had to re-explain context:
+Analyses the session's user turns using Haiku to identify two signal types in a single LLM pass:
 
-| Pattern | Example |
-|---|---|
-| `I already told/said/mentioned` | "I already told you to use the work email" |
-| `as I said/mentioned` | "as I mentioned, tickets use FOO-123" |
-| `we (already) discussed/covered this` | "we discussed this yesterday" |
-| `remember (that) I said/told you` | "remember that I said staging runs first" |
-| `stop asking/doing` | "stop asking about the config file location" |
-| `like I said/told you` | "like I said, use the dry-run flag" |
-| `how many times` | "how many times do I have to tell you" |
-| `I('ve) told/said (you\|this)` | "I've told you three times now" |
-| `again/repeatedly, I/we told/said/explained` | "again, we told the pipeline is async" |
+**Drain signals** — user had to re-explain something the AI should have remembered, or expressed frustration at a repeated mistake. Catches both explicit ("I already told you", "stop doing that") and implicit signals ("you're still doing that thing I asked you to stop", "this is wrong again").
 
-Each hit = one memory the harness should have saved but didn't. Output: JSON array of `{phrase, context, suggested_memory_topic}`. Dedup rule: overlapping spans from different patterns deduped; near-but-distinct phrases kept separate.
+**Charge signals** — user gave unambiguous approval. Strong signals: "perfect", "exactly what I needed", "great work", "that works!". Excludes standalone "ok"/"yes", anything with "but" immediately following, or phrasing that implies partial approval.
 
 Input modes:
 - `--file PATH` — scan a plain-text file
 - `--stdin` — scan stdin
 - `--auto-transcript` — find most recent Claude Code `.jsonl` transcript for cwd and extract user turns
 
-The stop-hook uses `--auto-transcript` and appends **one** `[memory-gap]` observation per calendar day (subsequent stops within the same day no-op so the observations file does not bloat during long workdays).
+Output filter via `--mode`:
+- `drain` (default) — emit drain signals as JSON array
+- `charge` — emit charge signals as JSON array
+
+The stop-hook runs both modes and appends at most **one** observation per type per calendar day — `[memory-gap]` for drains, `[session-charge]` for charges. Subsequent stops within the same day are no-ops for each type already recorded.
 
 ### 2. Session Judge — independent adversarial scorer
 
@@ -156,7 +151,7 @@ Output arrows: ▲ (up), ▼ (down), ▬ (flat). 7-day delta is `null` until the
 │                                  (once per calendar day)     │
 └──────────────────────────────────────────────────────────────┘
                              │
-         (night, via Windows Task Scheduler / SessionStart hook)
+         (night, via local system scheduler / SessionStart hook)
                              ▼
 ┌──────────────────────────────────────────────────────────────┐
 │ /kiro:daily-maintenance                                      │
@@ -180,15 +175,17 @@ Output arrows: ▲ (up), ▼ (down), ▬ (flat). 7-day delta is `null` until the
 └──────────────────────────────────────────────────────────────┘
 ```
 
-### Scheduling via Windows Task Scheduler
+### Scheduling (OS-aware, auto-registered)
 
-Auto-registered by `install.sh` on first install (and `update.sh` on existing installs) when running under WSL with `schtasks.exe` available. No manual setup needed. To force-recreate (e.g. after editing the schedule template):
+Auto-registered by `install.sh` on first install (and `update.sh` on existing installs). No manual setup needed. The platform-specific scheduler:
 
-```bash
-bash ~/.claude/sdd-harness/scripts/setup-global-orchestrator.sh --force
-```
+| OS | Scheduler | Force-recreate |
+|---|---|---|
+| **macOS** | launchd LaunchAgent | `bash ~/.claude/sdd-harness/scripts/setup-mac-orchestrator.sh --force` |
+| **Linux** | crontab | `bash ~/.claude/sdd-harness/scripts/setup-linux-orchestrator.sh --force` |
+| **WSL / Windows** | Windows Task Scheduler | `bash ~/.claude/sdd-harness/scripts/setup-global-orchestrator.sh --force` |
 
-Fires daily at 18:00 local (Israel) for all repos listed in `~/.claude/sdd-harness/projects.txt`. Each repo runs its own `daily-runner.sh`, maintaining its own memory, score history, and rubric application. A SessionStart hook provides catch-up: if the runner hasn't fired in >24h, opening any Claude session in the repo fires it silently in the background.
+Fires daily at 18:00 local for all repos listed in `~/.claude/sdd-harness/projects.txt`. Each repo runs its own `daily-runner.sh`, maintaining its own memory, score history, and rubric application. A SessionStart hook provides catch-up: if the runner hasn't fired in >24h, opening any Claude session in the repo fires it silently in the background.
 
 Opt out at install time:
 
@@ -196,7 +193,7 @@ Opt out at install time:
 SDD_SKIP_ROUTINE=1 ~/.claude/sdd-harness/install.sh /path/to/project
 ```
 
-Or after the fact: `schtasks.exe /Delete /TN "SDD Daily Orchestrator"` (global) or `rm .claude/scripts/daily-runner.sh` (per-repo).
+Or after the fact (per platform, global): `launchctl unload -w ~/Library/LaunchAgents/com.sdd.daily-orchestrator.plist` (macOS), `crontab -l | grep -vF sdd-daily-orchestrator | crontab -` (Linux), `schtasks.exe /Delete /TN "SDD Daily Orchestrator" /F` (WSL). Per-repo: `rm .claude/scripts/daily-runner.sh`.
 
 ## Rubric at a Glance
 
@@ -255,8 +252,10 @@ Check the guard conditions in order:
 
 ### Routine not registered
 
-- `schtasks.exe /Query /TN "SDD Daily Orchestrator"` — does the Windows task exist?
-- If not, run `bash ~/.claude/sdd-harness/scripts/setup-global-orchestrator.sh` from WSL (requires `schtasks.exe` on PATH). Use `--force` to recreate a broken task.
+Check per platform:
+- **macOS**: `launchctl list com.sdd.daily-orchestrator` — listed? If not, re-run `update.sh` or run `bash ~/.claude/sdd-harness/scripts/setup-mac-orchestrator.sh --force`.
+- **Linux**: `crontab -l | grep sdd-daily-orchestrator` — present? If not, re-run `update.sh` or run `bash ~/.claude/sdd-harness/scripts/setup-linux-orchestrator.sh --force`.
+- **WSL**: `schtasks.exe /Query /TN "SDD Daily Orchestrator"` — present? If not, run `bash ~/.claude/sdd-harness/scripts/setup-global-orchestrator.sh --force` from WSL.
 - `SDD_SKIP_ROUTINE=1` was set during install — run `update.sh` without it to retry.
 
 ### How do I reset a bad day?
@@ -279,7 +278,7 @@ The deliberate non-goals above are stable. If any of these come up in a future r
 ## Related Documentation
 
 - [`docs/memory/README.md`](../memory/README.md) — the memory tier architecture the battery loop plugs into
-- [`docs/SDD-USAGE.md`](../SDD-USAGE.md#daily-maintenance-automated) — user-facing usage of `/kiro:daily-maintenance`
-- [`docs/SDD-SETUP-GUIDE.md`](../SDD-SETUP-GUIDE.md#automated-hooks) — hook and Routine registration flow
+- [`docs/SDD-USAGE.md`](../harness-documentation/SDD-USAGE.md#daily-maintenance-automated) — user-facing usage of `/kiro:daily-maintenance`
+- [`docs/SDD-SETUP-GUIDE.md`](../harness-documentation/SDD-SETUP-GUIDE.md#automated-hooks) — hook and Routine registration flow
 - [`kiro/settings/rules/session-quality-rubric.md`](../../kiro/settings/rules/session-quality-rubric.md) — the full rubric the Judge applies
 - [`kiro/settings/rules/anti-rationalization.md`](../../kiro/settings/rules/anti-rationalization.md) — rule the "rationalized rule-skip" drain enforces

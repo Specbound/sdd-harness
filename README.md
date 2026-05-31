@@ -332,6 +332,7 @@ Each spec phase ends with a **[Proof](https://github.com/anthropics/proof) colla
 | `/kiro:gitnexus-setup` | Install GitNexus, index repo, configure MCP + hooks |
 | `/kiro:gitnexus-explore` | Launch GitNexus Web UI to browse code connections |
 | `/kiro:gitnexus-impact` | Query blast radius of current changes via knowledge graph |
+| `/kiro:macro-eval-sweep` | Twice-weekly macro-eval sweep over Raindrop Workshop traces — clusters failure patterns, ranks by impact, backward-traces suspects, writes report and posts annotations |
 
 For usage examples, see [docs/SDD-USAGE.md](docs/SDD-USAGE.md).
 
@@ -352,15 +353,15 @@ Each command delegates to one or more autonomous subagents. Agents receive a pro
 - **`validate-adversarial`** — Three-pass adversarial review: neutral assessment → refutation → judge synthesis with asymmetric +1/-2 scoring
 - **`validate-perf-agent`** — Detects performance anti-patterns: N+1 queries, unbounded operations, blocking I/O, missing indexes, and caching opportunities
 - **`save-session-agent`** — Captures resumable session snapshots with a structured Progress Tracker (feature, git baseline/head, tasks completed/remaining, blockers, next action) plus narrative sections
-- **`learn-eval-agent`** — Evaluates session patterns with quality gates (specificity, actionability, evidence) and deduplicates against existing knowledge
-- **`reflect-agent`** — Mines git log for observations, promotes recurring themes to patterns, updates hot-memory
+- **`learn-eval-agent`** — Evaluates session patterns with quality gates (specificity, actionability, evidence) plus hard gates (falsifiability, anti-paraphrase) and deduplicates against existing knowledge
+- **`reflect-agent`** — Mines git log for observations, promotes recurring themes to patterns (3+ distinct observations required, falsifiable), updates hot-memory; includes Step 6 session clean-state check (five-dimension table: build/tests/progress/artifacts/startup path)
 - **`housekeeping-agent`** — Archives observations to cold storage, enforces memory caps
-- **`evolve-agent`** — Measures memory health, detects friction patterns, analyzes agent trace logs, proposes rule changes and linter rule graduations
+- **`evolve-agent`** — Measures memory health, detects friction patterns, analyzes agent trace logs, proposes rule changes and linter rule graduations; Step 1d audits instruction architecture health (entry file bloat, SNR, middle placement, topic doc adoption); Step 1e checks session clean-state discipline (PROGRESS.md freshness, debug artifacts, verify path); output includes "Harness Architecture Health" scorecard
 - **`guardrails-agent`** — Audits project linter configs for complexity rules, scaffolds missing guardrails per ecosystem (ESLint, ruff, clippy, golangci-lint)
 - **`ci-scaffold-agent`** — Generates CI configurations (GitHub Actions, GitLab CI, Azure Pipelines) mirroring the verify pipeline stages
-- **`doc-sync`** — Triggered by post-commit hook; finds and updates stale `.md` files after code changes; detects stale doc-to-code references
+- **`doc-sync`** — Triggered by post-commit hook; finds and updates stale `.md` files after code changes; detects stale doc-to-code references; and enforces resource coverage — every added/changed capability (skill, command, agent, hook, rule, script) must be documented in the sources index (`docs/sources/<category>/`), `.claude/docs/**`, `README.md`, and `SDD-USAGE.md`
 - **`harness-updater`** — Triggered when `.claude/` files change; keeps `SDD-SETUP-GUIDE.md` current
-- **`harness-validate-agent`** — Checks structural integrity: command→agent references, template existence, memory caps, L0 headers, generates component index
+- **`harness-validate-agent`** — Checks structural integrity: command→agent references, template existence, memory caps, L0 headers, generates component index; Step 8 audits instruction architecture (entry file line count, constraint count, topic doc adoption, middle-placement check); Step 9 audits feature list primitive compliance (triple structure, WIP=1, pass-state gating)
 - **`gitnexus-setup-agent`** — Installs GitNexus, indexes the repo, configures MCP server and editor integration
 - **`jira-solve-agent`** — Analyzes ticket type and routes to the appropriate workflow
 - **`skill-augment-agent`** — After each daily-maintenance run, reviews session observations and judge drains, encodes up to 3 evidence-backed improvements into relevant `SKILL.md` files (append-only, ≤150 chars each). Logs changes as `[skill-update]` observations.
@@ -448,7 +449,21 @@ Based on the methodology from ["Automating Skill Acquisition through Large-Scale
 2. **Semantic scoring** — Score against the 4-criteria rubric from the paper
 3. **SKILL.md generation** — Produce standalone skill files for `~/.claude/skills/`
 
-See [docs/skill-extraction/README.md](docs/skill-extraction/README.md).
+**Quality gates** (applied to every new skill before it is logged):
+- **Phase 5b — SkillOS Quality Gate**: scores task relevance, operational validity, content quality, and compression. Failures block completion until fixed.
+- **Phase 5c — Identity Alignment Check**: invokes the `agent-identity` skill in Mode B to validate description specificity, trigger sharpness, behavioral concreteness, and explicit exclusions. Prevents vague skill identities from accumulating in the harness.
+
+**Bundled harness skills** — shipped in `skills/` and propagated to every project by `install.sh`/`update.sh`. Recent additions:
+
+| Skill | Source | Description |
+|---|---|---|
+| `instruction-architecture` | walkinglabs.github.io/learn-harness-engineering | Lean entry-file + topic-doc architecture, SNR audit, "lost in the middle" countermeasures, instruction maintenance metadata |
+| `feature-list-primitive` | walkinglabs.github.io/learn-harness-engineering | Machine-readable feature state machine (not_started/active/blocked/passing), triple structure, WIP=1, pass-state gating |
+| `session-clean-state` | walkinglabs.github.io/learn-harness-engineering | Five-dimension clean state, clock-in/clock-out protocols, PROGRESS.md/DECISIONS.md/QUALITY.md templates, entropy management |
+| `agent-harness-design` | arXiv:2605.26112 | 6-component framework (ℛℳ𝒞𝒮𝒪𝒢), temporal scaling tiers; Phase 4 adds Operational Diagnostics (Fresh Session Test, Controlled Ablation, Affordance Analysis, Rot Detection) |
+| `macro-evals` | OpenAI Cookbook | Population-scale eval: cluster trace failures → impact-rank → suspect-trace |
+
+See [docs/skill-extraction/README.md](docs/skill-extraction/README.md) for the full extracted skills index.
 
 ---
 
@@ -719,7 +734,7 @@ git push -u origin main
 
 ## Local Dashboard
 
-A browser-based dashboard that shows trust battery, GitNexus stats, hooks history, CCR routines, memory and skill changes, session quality, and maintenance status across all registered repos.
+A browser-based dashboard that shows trust battery, GitNexus stats, hooks history, CCR routines, memory and skill changes, session quality, maintenance status, and Claude Code model spend across all registered repos.
 
 ```bash
 python3 ~/.claude/sdd-harness/scripts/dashboard.py
@@ -744,6 +759,23 @@ python3 ~/.claude/sdd-harness/scripts/dashboard.py --static --no-open
 ```
 
 Requires at least one project registered in `projects.txt` (added automatically by `install.sh`). The companion server on port 4569 stays alive until you press `Ctrl+C`.
+
+**Sections (sidebar order):**
+
+| # | Section | What it shows |
+|---|---|---|
+| 1 | ⚡ Trust Battery | Arc gauge + 30-day bar chart of daily trust deltas |
+| 2 | 🕸 GitNexus | Stats strip + embedded visual explorer (localhost:4567) |
+| 3 | 🪝 Hooks History | Hook name, event type, last activity, active/inactive badge |
+| 4 | 📅 CCR Routines | Schedule, last run, next expected, overdue alerts |
+| 5 | 🧠 Memory Changes | Git feed of hot-memory, observations, and meta/patterns changes |
+| 6 | 🎯 Skill Changes | Rendered skill-curation-report with audit age |
+| 7 | 📊 Session Quality | Score/keep-rate/memory-gap summary + 30-day chart |
+| 8 | 🧵 Context Health | Sessions per day trend + `/compact` recommendations |
+| 9 | 🔧 Maintenance Status | Per-repo orchestrator log tail and last-run status |
+| 10 | 💰 Model Cost | All-time and 30-day spend; 90-day daily cost bar chart; sessions table with model/tokens/cost; cross-provider "What if?" cost switcher |
+
+The Model Cost section reads session data from `~/.claude/projects/*/`. Pricing is fetched from `models.dev/api.json`, cached at `.dashboard/models-pricing-history.json`, refreshed bi-weekly, with historical snapshots accumulated so past sessions use the rates that were in effect at the time. The "What if?" switcher supports Anthropic, OpenAI, Google, Mistral, DeepSeek, xAI, Cohere, Amazon Bedrock, Azure, Perplexity, and Groq.
 
 ---
 

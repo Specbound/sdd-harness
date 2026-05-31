@@ -4,7 +4,7 @@
 **Status:** Implemented  
 **Output:** `scripts/dashboard.py` → serves at `http://localhost:4569` (companion server mode, default); use `--static` for file output
 
-_Last synced: 2026-05-27_
+_Last synced: 2026-05-31_
 
 ---
 
@@ -27,7 +27,7 @@ The SDD harness accumulates rich per-repo telemetry — trust scores, session qu
 | CCR panel | Cards with alert banners — one card per routine |
 | Launch | Companion HTTP server at `localhost:4569`; use `--static` for file output |
 
-**Sections (9, in sidebar order):**
+**Sections (10, in sidebar order):**
 1. ⚡ Trust Battery
 2. 🕸 GitNexus
 3. 🪝 Hooks History
@@ -37,6 +37,7 @@ The SDD harness accumulates rich per-repo telemetry — trust scores, session qu
 7. 📊 Session Quality
 8. 🧵 Context Health
 9. 🔧 Maintenance Status
+10. 💰 Model Cost
 
 ---
 
@@ -237,12 +238,42 @@ Each line: ISO 8601 UTC timestamp of a session end event. File is capped at 30 e
 
 ---
 
+### 10. 💰 Model Cost
+
+**Data:** `~/.claude/projects/*/` — session JSONL files produced by Claude Code  
+**Pricing:** `https://models.dev/api.json`, cached at `.dashboard/models-pricing-history.json`
+
+**Pricing cache behavior:**
+- Refreshed bi-weekly (age checked via `PRICING_MAX_AGE`).
+- Snapshots are accumulated — when prices change a new snapshot is appended rather than overwriting, so each historical session can be costed at the rate that was current when it ran.
+- `get_pricing_at(snapshots, date_str)` returns the snapshot whose timestamp is closest to (and not after) the session date.
+
+**Layout:**
+- Two summary stats: all-time total spend | 30-day spend
+- Per-project filter dropdown (includes "All Projects")
+- 90-day daily cost bar chart (inline SVG)
+- Scrollable sessions table: Date | Project | Model | Input tokens | Output tokens | Cost — with a ⚠ icon when the pricing snapshot in use differs from the current rate
+- **Cross-provider "What if?" switcher:** two cascading dropdowns (provider → model). Supported providers: Anthropic, OpenAI, Google, Mistral, DeepSeek, xAI, Cohere, Amazon Bedrock, Azure, Perplexity, Groq. Recalculates projected total cost and displays it alongside actual spend.
+
+**New functions:**
+- `load_or_refresh_pricing_history()` — fetches models.dev, manages snapshot history
+- `get_pricing_at(snapshots, date_str)` — returns snapshot closest to a session date
+- `gather_usage_data()` — scans `~/.claude/projects/` for session JSONL files
+- `_parse_session_file(path, project_name)` — extracts model + token usage from a JSONL
+- `compute_session_cost(session, pricing)` — computes USD cost from per-million-token rates
+- `render_model_cost(sessions, pricing_snapshots)` — renders the section HTML
+
+**New constants:** `PRICING_HISTORY`, `PRICING_MAX_AGE`, `CLAUDE_PROJECTS`, `_MODEL_LABEL`, `FEATURED_PROVIDERS`, `PROVIDER_DISPLAY`
+
+---
+
 ## File Changes
 
 | File | Action |
 |---|---|
-| `scripts/dashboard.py` | New — stdlib-only server + generator, ~760 LOC |
+| `scripts/dashboard.py` | New — stdlib-only server + generator, ~760 LOC; updated with Model Cost section |
 | `.gitignore` | Added `.dashboard/` |
+| `.dashboard/models-pricing-history.json` | New artifact — pricing snapshot store (bi-weekly refresh, accumulates historical snapshots) |
 | `docs/superpowers/specs/2026-05-14-harness-dashboard-design.md` | This file |
 
 ---

@@ -94,6 +94,15 @@ Researches the codebase and produces a design doc with architecture decisions. A
 /kiro:spec-design revenue-trend-chart
 ```
 
+### `/kiro:spec-grill` — Domain grilling session
+Runs an interactive domain-expert questioning session against the approved requirements and design. Asks one question at a time, waits for your answer, and updates `requirements.md`, `design.md`, and `CONTEXT.md` inline as decisions crystallise. Writes warranted Architecture Decision Records (ADRs) to `specs/\<feature\>/docs/adr/`. Requires design phase to be approved first.
+
+```
+/kiro:spec-grill revenue-trend-chart
+```
+
+Signal completion with "done", "looks good", or "move on". Also available as phase 3.5 in `/kiro:spec-quick` (interactive mode); skipped in `--auto` mode since it requires user interaction.
+
 ### `/kiro:spec-tasks` — Generate implementation tasks
 Breaks the design into parallelizable tasks with dependencies. After generation, opens a **Proof collaborative review session** for approval before implementation begins. Pass `--sequential` to suppress parallel `(P)` markers when you want strictly ordered tasks.
 
@@ -102,8 +111,8 @@ Breaks the design into parallelizable tasks with dependencies. After generation,
 /kiro:spec-tasks revenue-trend-chart --sequential   # disable parallel task markers
 ```
 
-### `/kiro:spec-quick` — Fast path (requirements → design → tasks)
-Runs all three spec phases in one command. Good for small features.
+### `/kiro:spec-quick` — Fast path (requirements → design → grill → tasks)
+Runs all spec phases in one command: requirements → design → grill → tasks. Good for small features. In interactive mode, prompts at each phase and runs the grill session. Pass `--auto` to skip prompts and grill (which requires user interaction).
 
 ```
 /kiro:spec-quick "Add retry logic to SQL query execution"
@@ -268,6 +277,8 @@ Measures memory health, detects friction patterns, proposes rule improvements. I
 - **Alignment analysis** — computes per-agent alignment scores from trace.log, flags underperformers
 - **Prompt diagnosis** — for flagged agents, produces structured root cause analysis with specific instruction changes (ADD/REMOVE/SHARPEN)
 - **Data-driven tiering** — recommends model tier promotions/demotions based on alignment evidence
+- **Instruction architecture health** (Step 1d) — audits entry file for bloat (>200 lines), low SNR (<60%), hard constraints after line 50 (lost-in-middle), missing topic documents
+- **Session clean state health** (Step 1e) — checks PROGRESS.md freshness, debug artifact presence, verify path documentation; output includes "Harness Architecture Health" scorecard
 
 ```
 /kiro:evolve
@@ -301,7 +312,9 @@ Generates a CI configuration that mirrors the `/kiro:verify` pipeline stages. Au
 The generated pipeline enforces: build, type-check, lint (with zero-warning tolerance), tests, and debug artifact audit.
 
 ### `/kiro:harness-validate` — Check harness structural integrity
-Validates command→agent references, template existence, memory caps, L0 headers, and generates a component relationship index.
+Validates command→agent references, template existence, memory caps, L0 headers, and generates a component relationship index. Also includes:
+- **Step 8: Instruction architecture audit** — entry file line count vs. 50–200 target, hard constraint count vs. 15 max, topic document adoption, hard-constraint phrases after line 50 (lost-in-middle risk)
+- **Step 9: Feature list primitive audit** — triple structure compliance (behavior+verification+state), WIP=1 discipline, pass-state gating evidence
 
 ```
 /kiro:harness-validate
@@ -370,13 +383,35 @@ SDD_SKIP_ROUTINE=1 ~/.claude/sdd-harness/install.sh /path/to/project
 
 Or after install: `schtasks.exe /Delete /TN "SDD Daily Orchestrator"` (global) or `rm .claude/scripts/daily-runner.sh` (per-repo).
 
-### `scripts/detect_reexplanation.py` — re-explanation detector
+### `scripts/detect_reexplanation.py` — session signal detector
 
-Runs from `stop-hook.sh` after each session. Scans the session's user turns for phrases like "I already told you", "as I said", "we discussed this" — each hit becomes a `[memory-gap]` observation. The Judge treats these as flagship drains (every re-explained preference is a memory the harness should have saved but didn't). Rationale: see the "Daily Maintenance" section above.
+Runs from `stop-hook.sh` after each session. Uses Claude Haiku to analyse user turns for two signal types:
+
+- **Drain signals** — user had to re-explain context the AI should have saved (explicit: "I already told you"; implicit: "you're still doing that thing I asked you to stop"). Each drain → `[memory-gap]` observation. The Judge treats these as flagship drains.
+- **Charge signals** — user gave unambiguous approval ("that's perfect", "exactly what I needed", "great work"). Each charge → `[session-charge]` observation. The rubric auto-scores these as +1 each.
+
+Both types are written at most once per calendar day. The auto-scoring table in `kiro/settings/rules/session-quality-rubric.md` applies these mechanically — no Judge pass needed.
+
+When drain signals are found, `scripts/micro_reflect.py` is immediately called (Haiku) to extract a durable, generalizable fact from each drain and append it to `hot-memory.md` under an `## Auto-learned` section, tagged `[auto-learn, YYYY-MM-DD]`. These are probationary entries — the housekeeping agent promotes them to `meta/patterns.md` after 7 days if reinforced, or removes them if not. The detector is skipped in headless/print sessions (`SDD_HEADLESS=1`) to prevent recursive spawning from `daily-runner.sh`.
 
 ### Full reference: [`docs/trust-battery/`](trust-battery/)
 
 Complete documentation of the trust-battery loop — origin, architecture diagram, rubric details, troubleshooting, and explicit non-goals. Start here if you are modifying any of the battery components.
+
+### `/kiro:macro-eval-sweep` — Population-scale agent evaluation
+Clusters recurring failure patterns across Raindrop Workshop traces, ranks by impact, backward-traces the suspect step per pattern, writes a dated report, and posts annotations back to Workshop. The **macro** layer above per-run grading.
+
+```
+/kiro:macro-eval-sweep              # last 4 days, all runs
+/kiro:macro-eval-sweep 7            # last 7 days
+/kiro:macro-eval-sweep 4 zora       # last 4 days, runs matching "zora"
+```
+
+Runs automatically twice weekly via `scripts/macro-eval-runner.sh` (MIN_GAP_DAYS=3) inside the daily orchestrator. In headless or scheduler contexts, preflight confirms the Raindrop MCP server is reachable — fails loudly with a `*-SKIPPED.md` report rather than pretending success.
+
+Output: `.claude/reports/macro-evals/YYYY-MM-DD.md` with a pattern leaderboard, top-3 diagnoses (focus event + suspect step), and a delta vs. previous sweep. Span-level and run-level Workshop annotations are posted for confirmed recurring failure patterns (cap: ~5 runs per pattern).
+
+Skill: `macro-evals`. Opt-out: `SDD_SKIP_MACRO_EVAL=1`.
 
 ---
 
@@ -447,6 +482,10 @@ Generates skills from an approved extraction plan, or runs the full pipeline wit
 
 Output: `~/.claude/skills/<name>/SKILL.md` for each extracted skill.
 
+Every new skill passes two mandatory quality gates before it is logged to the sources index:
+- **Phase 5b — SkillOS Quality Gate**: task relevance, operational validity, content quality, compression (≤5,000 words). Failures block completion.
+- **Phase 5c — Identity Alignment Check**: invokes `agent-identity` Mode B — validates description specificity, trigger sharpness, behavioral concreteness, and explicit exclusions. Vague skill identities cause the wrong skill to fire; this gate prevents them from entering the harness.
+
 See `docs/skill-extraction/README.md` for full details on scoring, workflow, and security.
 
 ### `/kiro:gitnexus-setup` — Install and configure GitNexus code intelligence
@@ -476,6 +515,87 @@ Browse symbols, call chains, process flows, and community clusters in a WebGL gr
 Maps changed code to affected execution flows with HIGH/MEDIUM/LOW risk classification. Falls back to grep-based tracing if GitNexus is not installed.
 
 See `docs/gitnexus/README.md` for full details.
+
+---
+
+## Local Dashboard
+
+A browser-based dashboard (`scripts/dashboard.py`, stdlib only) that surfaces harness telemetry for all registered repos.
+
+```bash
+python3 ~/.claude/sdd-harness/scripts/dashboard.py
+```
+
+Starts a local HTTP server at `http://localhost:4569` and opens the browser automatically. Use `--repo <name|path>` to pre-select a repo, `--no-open` to suppress browser launch, or `--static` to write a static `.dashboard/index.html` instead.
+
+**Sections:**
+
+| # | Section | What it shows |
+|---|---|---|
+| 1 | ⚡ Trust Battery | Arc gauge + 30-day bar chart of daily trust deltas |
+| 2 | 🕸 GitNexus | Stats strip + embedded visual explorer (localhost:4567) |
+| 3 | 🪝 Hooks History | Hook name, event type, last activity, active/inactive badge |
+| 4 | 📅 CCR Routines | Schedule, last run, next expected, overdue alerts |
+| 5 | 🧠 Memory Changes | Git feed of hot-memory, observations, and meta/patterns changes |
+| 6 | 🎯 Skill Changes | Rendered skill-curation-report with audit age |
+| 7 | 📊 Session Quality | Score/keep-rate/memory-gap summary + 30-day chart |
+| 8 | 🧵 Context Health | Sessions per day trend + `/compact` recommendations |
+| 9 | 🔧 Maintenance Status | Per-repo orchestrator log tail and last-run status |
+| 10 | 💰 Model Cost | All-time and 30-day spend; 90-day daily cost bar chart; sessions table with model/tokens/cost; cross-provider "What if?" cost switcher |
+
+### 💰 Model Cost section
+
+Reads session JSONL files from `~/.claude/projects/*/`. Pricing is fetched from `models.dev/api.json` and cached at `.dashboard/models-pricing-history.json`, refreshed bi-weekly. Historical snapshots accumulate so past sessions are costed at the rate in effect when they ran. Sessions where pricing has changed since the run are flagged with a ⚠ icon.
+
+The **"What if?" switcher** lets you recalculate total projected cost against any supported provider (Anthropic, OpenAI, Google, Mistral, DeepSeek, xAI, Cohere, Amazon Bedrock, Azure, Perplexity, Groq) and model — select provider first, then model, and the projected vs. actual totals update instantly.
+
+See `docs/superpowers/specs/2026-05-14-harness-dashboard-design.md` for the full section spec.
+
+---
+
+## Raindrop Workshop (Automatic Agent Tracing)
+
+All registered repos emit traces automatically whenever agents run. No commands needed — just open the dashboard Workshop tab.
+
+### Dashboard Workshop tab
+
+```bash
+python3 ~/.claude/sdd-harness/scripts/dashboard.py
+# → Workshop tab in the sidebar
+```
+
+| Action | How |
+|---|---|
+| Start Workshop | Click **Start raindrop workshop** button (or run `raindrop workshop` in terminal) |
+| View traces | Workshop UI loads at `/workshop/` in the dashboard |
+| Filter by repo | Use the `event=` label in Workshop sidebar (e.g. `aiq-zora-ai-engine`) |
+| Run eval loop | Click **Run Eval Loop** — costs ~5k–30k tokens, always manual |
+
+### What fires automatically
+
+Traces emit whenever an instrumented agent processes a request:
+
+| Repo | Trigger |
+|---|---|
+| `aiq-zora-ai-engine` | Any call to `AgentPipelineGraph.process()` |
+| `aiq-zora-agent-skills` | Any call to `DailyNewsHandler.handle()` |
+| `aiq-purina-salesorderintelligence-poc` | Any `/chat` request via `query_portal.py` |
+
+### Self-Healing Eval Loop
+
+Triggered manually from the dashboard. Claude reads Workshop traces, writes `pytest` assertions from them, runs the tests, and auto-fixes failures (max 3 cycles). Budget ~5k–30k tokens.
+
+Skill: `~/.claude/skills/raindrop-eval-loop/SKILL.md`
+
+### Instrumenting a new repo
+
+```bash
+/raindrop-instrument-agent
+```
+
+Or register the repo with the harness and `install.sh` handles it automatically.
+
+See `docs/raindrop/README.md` for full details and troubleshooting.
 
 ---
 
@@ -531,7 +651,7 @@ See `docs/design/impeccable/impeccable.md` for the full rule set.
 8. /kiro:reflect                         ← capture what you learned
 ```
 
-For larger features, use the individual spec phases (`spec-requirements` → `spec-design` → `spec-tasks`) instead of `spec-quick` to review each phase separately.
+For larger features, use the individual spec phases (`spec-requirements` → `spec-design` → `spec-grill` → `spec-tasks`) instead of `spec-quick` to review each phase separately.
 
 ### Quality Gate Sequence (pre-completion)
 

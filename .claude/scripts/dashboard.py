@@ -6,6 +6,8 @@ Usage:
     python3 ~/.claude/sdd-harness/scripts/dashboard.py --static   # write file only, no server
 """
 
+from __future__ import annotations
+
 import argparse
 import html
 import json
@@ -41,9 +43,47 @@ SECTION_DEFS = [
     ("memory_changes",     "🧠", "Memory Changes"),
     ("skill_changes",      "🎯", "Skill Changes"),
     ("session_quality",    "📊", "Session Quality"),
+    ("model_cost",         "💰", "Model Cost"),
+    ("context_health",     "🧵", "Context Health"),
     ("maintenance_status", "🔧", "Maintenance Status"),
     ("automation_audit",   "🤖", "Automation Audit"),
 ]
+
+PRICING_HISTORY = DASHBOARD_DIR / "models-pricing-history.json"
+PRICING_MAX_AGE = 14 * 86400   # 14-day refresh cadence
+CLAUDE_PROJECTS = Path.home() / ".claude" / "projects"
+
+_MODEL_LABEL = {
+    "claude-opus-4-8":           ("Opus 4.8",   "#cba6f7"),
+    "claude-opus-4-7":           ("Opus 4.7",   "#cba6f7"),
+    "claude-opus-4-6":           ("Opus 4.6",   "#cba6f7"),
+    "claude-opus-4-5":           ("Opus 4.5",   "#cba6f7"),
+    "claude-sonnet-4-6":         ("Sonnet 4.6", "#89b4fa"),
+    "claude-sonnet-4-5":         ("Sonnet 4.5", "#89b4fa"),
+    "claude-haiku-4-5-20251001": ("Haiku 4.5",  "#a6e3a1"),
+    "claude-haiku-4-5":          ("Haiku 4.5",  "#a6e3a1"),
+}
+
+# Providers included in the "what if" cross-provider switcher (ordered for display)
+FEATURED_PROVIDERS = [
+    "anthropic", "openai", "google", "google-vertex",
+    "mistral", "deepseek", "xai", "cohere",
+    "amazon-bedrock", "azure", "perplexity", "groq",
+]
+PROVIDER_DISPLAY = {
+    "anthropic":      "Anthropic",
+    "openai":         "OpenAI",
+    "google":         "Google",
+    "google-vertex":  "Google Vertex",
+    "mistral":        "Mistral",
+    "deepseek":       "DeepSeek",
+    "xai":            "xAI (Grok)",
+    "cohere":         "Cohere",
+    "amazon-bedrock": "Amazon Bedrock",
+    "azure":          "Azure",
+    "perplexity":     "Perplexity",
+    "groq":           "Groq",
+}
 
 NOW = datetime.now(timezone.utc)
 
@@ -308,17 +348,27 @@ def gitnexus_stats(repo):
     return result
 
 def workshop_stats(repo):
-    import shutil
-    installed = shutil.which("raindrop") is not None
-    instrumented = False
-    for cand in [repo / "pyproject.toml", repo / "requirements.txt",
-                 repo / "requirements-dev.txt", repo / "setup.cfg"]:
-        try:
-            if cand.exists() and "raindrop" in cand.read_text().lower():
-                instrumented = True
-                break
-        except Exception:
-            pass
+    import shutil, subprocess
+    # shutil.which only searches $PATH, which omits ~/.raindrop/bin in non-login
+    # shells (e.g. when dashboard.py is launched by a hook or IDE).
+    # Also probe known install locations directly.
+    _known = [
+        os.path.expanduser("~/.raindrop/bin/raindrop"),
+        "/usr/local/bin/raindrop",
+        "/opt/homebrew/bin/raindrop",
+    ]
+    installed = shutil.which("raindrop") is not None or any(
+        os.path.isfile(p) and os.access(p, os.X_OK) for p in _known
+    )
+    try:
+        result = subprocess.run(
+            ["grep", "-rq", "raindrop.begin", str(repo),
+             "--include=*.py", "--include=*.ts"],
+            capture_output=True, timeout=5
+        )
+        instrumented = result.returncode == 0
+    except Exception:
+        instrumented = False
     return {"installed": installed, "instrumented": instrumented}
 
 def parse_orchestrator_log():
@@ -452,6 +502,23 @@ def parse_ccr_routines():
             "next_run":       next_run_str,
         })
     return sorted(routines, key=lambda r: (r["miss_status"] not in ("missed","warn"), r["miss_status"] != "missed"))
+
+def parse_session_history(repo):
+    """Read .claude/memory/.session-history — list of ISO timestamps, one per session end."""
+    f = repo / ".claude" / "memory" / ".session-history"
+    if not f.exists():
+        return []
+    sessions = []
+    for line in f.read_text().splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            dt = datetime.fromisoformat(line.replace("Z", "+00:00"))
+            sessions.append(dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc))
+        except Exception:
+            continue
+    return sorted(sessions)
 
 def read_skill_report():
     report = HARNESS_DIR / "docs" / "skill-curation-report.md"
@@ -844,9 +911,26 @@ def render_workshop(rd, companion=False):
               run /raindrop-instrument-agent to enable evals
             </div>"""
 
+    event_name = Path(repo_path).name
+    en_attr    = html.escape(event_name)
+
+    open_ws_btn = refresh_btn = ""
+    if companion:
+        open_ws_btn = """<a href="http://localhost:5899" target="_blank"
+           style="background:var(--surface0);color:var(--text);text-decoration:none;
+                  border-radius:6px;padding:9px 14px;font-size:12px;font-weight:600;
+                  white-space:nowrap;flex-shrink:0">
+            ↗ Full UI
+          </a>"""
+        refresh_btn = """<button
+           style="background:transparent;color:var(--subtext0);border:1px solid var(--surface0);
+                  border-radius:6px;padding:9px 14px;font-size:12px;cursor:pointer;
+                  white-space:nowrap;flex-shrink:0"
+           onclick="loadWorkshopRuns()">↺</button>"""
+
     header_html = f"""<div style="display:flex;align-items:center;background:var(--base);
                            border-bottom:1px solid var(--surface0);padding:8px 12px;
-                           flex-shrink:0;gap:12px">
+                           flex-shrink:0;gap:8px">
     <div style="flex:1;display:grid;grid-template-columns:repeat(3,1fr);gap:1px;
                 background:var(--surface0);border-radius:6px;overflow:hidden">
       <div style="background:var(--base);padding:8px 10px;text-align:center">
@@ -860,53 +944,37 @@ def render_workshop(rd, companion=False):
         <div class="label">SDK</div></div>
     </div>
     {eval_btn_html}
+    {open_ws_btn}
+    {refresh_btn}
   </div>"""
 
-    iframe_src = f"http://localhost:4569/workshop/" if companion else ""
-    iframe_height = "calc(100vh - 74px)"
+    eval_note = (
+        "The <strong style='color:var(--text)'>Run Eval Loop</strong> button launches a Claude session "
+        "that replays recent Workshop runs against a self-healing test harness — useful for catching "
+        "regressions after code changes. Requires the repo to be instrumented first."
+        if ws.get("instrumented") else
+        "The <strong style='color:var(--text)'>SDK badge</strong> above shows <em>not instrumented</em> — "
+        "run <code>/instrument-agent</code> in that repo's Claude session to wire up tracing, then "
+        "restart the app. The <strong>Run Eval Loop</strong> button will appear once instrumented."
+    )
+    desc = section_desc(
+        "<strong style='color:var(--text)'>Raindrop Workshop</strong> captures AI agent traces for "
+        f"<code>{h(event_name)}</code> — each run records the input sent to the agent, the LLM and tool "
+        "calls it made, and its final output. Runs appear here automatically whenever the app is invoked "
+        "with Workshop running. Filter is scoped to this repo's <code>event_name</code> so switching "
+        "repos shows only that repo's traces. " + eval_note,
+        icon="🔬", color="var(--teal)"
+    )
 
-    start_btn = ""
-    if companion:
-        start_btn = f"""<button id="ws-start-btn"
-           style="display:none;background:var(--teal);color:var(--crust);border:none;
-                  border-radius:6px;padding:9px 18px;font-size:12px;font-weight:600;
-                  cursor:pointer;letter-spacing:.3px"
-           onclick="startWorkshop()">
-        ▶ Start raindrop workshop
-      </button>"""
-
-    iframe_html = f"""<div style="position:relative;overflow:hidden;background:var(--crust);
-                          flex:1;min-height:0">
-    <iframe id="ws-frame" data-src="{html.escape(iframe_src)}"
-            style="width:100%;height:{iframe_height};border:none;display:none">
-    </iframe>
-    <div id="ws-fallback" style="display:flex;height:{iframe_height};
-              background:var(--mantle);flex-direction:column;
-              align-items:center;justify-content:center;gap:12px">
-      <div style="font-size:32px">🔬</div>
-      <div id="ws-status" style="color:var(--subtext0);font-size:13px">Checking Workshop…</div>
-      {start_btn}
-      <div id="ws-copy-btn"
-           style="display:none;background:var(--surface0);border-radius:6px;padding:8px 16px;
-                  font-family:monospace;font-size:12px;color:var(--text);cursor:pointer"
-           onclick="navigator.clipboard.writeText('raindrop workshop');
-                    this.textContent='✓ Copied!'">
-        raindrop workshop  📋
-      </div>
-      <button id="ws-retry-btn"
-           style="display:none;background:transparent;color:var(--subtext0);
-                  border:1px solid var(--surface0);border-radius:6px;
-                  padding:6px 14px;font-size:11px;cursor:pointer;margin-top:4px"
-           onclick="_wsProbing=false;probeWorkshop();this.style.display='none';
-                    document.getElementById('ws-status').textContent='Checking Workshop…'">
-        ↺ Retry
-      </button>
-    </div>
-  </div>"""
+    runs_panel = f"""<div id="ws-runs-panel" data-event-name="{en_attr}"
+      style="flex:1;overflow-y:auto;min-height:0;background:var(--mantle)">
+      <div style="color:var(--subtext0);padding:40px;text-align:center">Loading…</div>
+    </div>"""
 
     return f"""<div style="display:flex;flex-direction:column;height:100vh;overflow:hidden">
   {header_html}
-  {iframe_html}
+  <div style="padding:12px 16px 0;flex-shrink:0">{desc}</div>
+  {runs_panel}
 </div>"""
 
 def render_hooks_history(rd):
@@ -1020,6 +1088,352 @@ def render_hooks_history(rd):
   {cards}
 </div>"""
 
+# ── Model Cost: data collection ───────────────────────────────────────────────
+
+def load_or_refresh_pricing_history():
+    """Return list of pricing snapshots, refreshing from models.dev if stale."""
+    snapshots = []
+    if PRICING_HISTORY.exists():
+        try:
+            snapshots = json.loads(PRICING_HISTORY.read_text()).get("snapshots", [])
+        except Exception:
+            pass
+
+    needs_refresh = True
+    if snapshots:
+        try:
+            latest_ts = datetime.fromisoformat(snapshots[-1]["fetched_at"].replace("Z", "+00:00"))
+            needs_refresh = (NOW - latest_ts).total_seconds() > PRICING_MAX_AGE
+        except Exception:
+            pass
+
+    if needs_refresh:
+        try:
+            req = UrlRequest(
+                "https://models.dev/api.json",
+                headers={"User-Agent": "sdd-harness-dashboard/1.0"},
+            )
+            with urlopen(req, timeout=10) as r:
+                raw = json.loads(r.read())
+
+            fresh_models = {}
+            for provider_id, provider in raw.items():
+                if not isinstance(provider, dict) or "models" not in provider:
+                    continue
+                for model_id, model in provider["models"].items():
+                    cost = model.get("cost")
+                    if cost:
+                        key = f"{provider_id}/{model_id}"
+                        fresh_models[key] = {
+                            "input":       float(cost.get("input",       0)),
+                            "output":      float(cost.get("output",      0)),
+                            "cache_read":  float(cost.get("cache_read",  0)),
+                            "cache_write": float(cost.get("cache_write", 0)),
+                        }
+
+            ts_now = NOW.strftime("%Y-%m-%dT%H:%M:%SZ")
+            if snapshots and snapshots[-1].get("models") == fresh_models:
+                snapshots[-1]["fetched_at"] = ts_now
+            else:
+                snapshots.append({"fetched_at": ts_now, "models": fresh_models})
+
+            PRICING_HISTORY.parent.mkdir(exist_ok=True)
+            PRICING_HISTORY.write_text(json.dumps({"snapshots": snapshots}, indent=2))
+        except Exception:
+            pass
+
+    return snapshots
+
+
+def get_pricing_at(snapshots, date_str):
+    """Return the pricing dict from the snapshot closest to (but not after) date_str."""
+    if not snapshots:
+        return {}
+    try:
+        session_dt = datetime.fromisoformat(date_str + "T00:00:00+00:00")
+    except Exception:
+        return snapshots[-1].get("models", {})
+
+    best = None
+    for snap in snapshots:
+        try:
+            snap_dt = datetime.fromisoformat(snap["fetched_at"].replace("Z", "+00:00"))
+            if snap_dt <= session_dt:
+                best = snap
+        except Exception:
+            continue
+
+    return (best or snapshots[0]).get("models", {})
+
+
+def _parse_session_file(path, project_name):
+    input_t = output_t = cache_read_t = cache_create_t = 0
+    model = None
+    first_ts = None
+
+    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        try:
+            obj = json.loads(line)
+        except Exception:
+            continue
+        if obj.get("type") != "assistant":
+            continue
+        msg = obj.get("message", {})
+        if not isinstance(msg, dict):
+            continue
+        if model is None and msg.get("model"):
+            model = msg["model"]
+        if first_ts is None:
+            first_ts = obj.get("timestamp")
+        usage = msg.get("usage", {})
+        input_t        += usage.get("input_tokens",                0)
+        output_t       += usage.get("output_tokens",               0)
+        cache_read_t   += usage.get("cache_read_input_tokens",     0)
+        cache_create_t += usage.get("cache_creation_input_tokens", 0)
+
+    if model is None or (input_t == 0 and output_t == 0 and cache_read_t == 0):
+        return None
+
+    date_str = "unknown"
+    if first_ts:
+        try:
+            dt = datetime.fromisoformat(str(first_ts).replace("Z", "+00:00"))
+            date_str = dt.strftime("%Y-%m-%d")
+        except Exception:
+            pass
+
+    return {
+        "date":         date_str,
+        "project":      project_name,
+        "model":        model,
+        "input":        input_t,
+        "output":       output_t,
+        "cache_read":   cache_read_t,
+        "cache_create": cache_create_t,
+    }
+
+
+def gather_usage_data():
+    """Scan ~/.claude/projects for session JSONL files and extract token usage."""
+    sessions = []
+    if not CLAUDE_PROJECTS.exists():
+        return sessions
+
+    for project_dir in sorted(CLAUDE_PROJECTS.iterdir()):
+        if not project_dir.is_dir():
+            continue
+        raw = project_dir.name
+        for prefix in ("-Users-dansasha-Documents-", "-Users-dansasha-Desktop-",
+                       "-Users-dansasha-"):
+            if raw.startswith(prefix):
+                raw = raw[len(prefix):]
+                break
+        else:
+            raw = ""
+        project_name = raw.replace("-", " ").strip() or "(global)"
+
+        for jsonl_file in sorted(project_dir.glob("*.jsonl")):
+            try:
+                session = _parse_session_file(jsonl_file, project_name)
+                if session:
+                    sessions.append(session)
+            except Exception:
+                continue
+
+    return sorted(sessions, key=lambda s: s["date"], reverse=True)
+
+
+def compute_session_cost(session, pricing):
+    """Return USD cost for a session using the given pricing snapshot (per-million-token rates)."""
+    key = f"anthropic/{session['model']}"
+    p = pricing.get(key)
+    if not p:
+        return None
+    return (
+        session["input"]        * p["input"]       / 1_000_000 +
+        session["output"]       * p["output"]      / 1_000_000 +
+        session["cache_read"]   * p["cache_read"]  / 1_000_000 +
+        session["cache_create"] * p["cache_write"] / 1_000_000
+    )
+
+
+# ── Model Cost: render ────────────────────────────────────────────────────────
+
+def render_model_cost(sessions, pricing_snapshots):
+    if not sessions:
+        return empty_state(
+            "No session data found. Sessions accumulate in ~/.claude/projects/ "
+            "as you use Claude Code."
+        )
+
+    latest_pricing  = pricing_snapshots[-1]["models"] if pricing_snapshots else {}
+    latest_snap_ts  = pricing_snapshots[-1]["fetched_at"][:10] if pricing_snapshots else "—"
+    n_snapshots     = len(pricing_snapshots)
+
+    # Annotate sessions with historical cost and change flag
+    priced = []
+    for s in sessions:
+        if s["date"] == "unknown":
+            continue
+        hist_pricing = get_pricing_at(pricing_snapshots, s["date"])
+        cost         = compute_session_cost(s, hist_pricing)
+        latest_cost  = compute_session_cost(s, latest_pricing)
+        price_changed = (
+            cost is not None and latest_cost is not None
+            and abs(cost - latest_cost) > 1e-9
+        )
+        priced.append({**s, "cost": cost, "price_changed": price_changed})
+
+    total_cost = sum(p["cost"] for p in priced if p["cost"] is not None)
+    cutoff_30d = (NOW - timedelta(days=30)).strftime("%Y-%m-%d")
+    cost_30d   = sum(
+        p["cost"] for p in priced
+        if p["cost"] is not None and p["date"] >= cutoff_30d
+    )
+
+    # ── Stats row ──────────────────────────────────────────────────────────────
+    summary = f"""<div style="display:grid;grid-template-columns:repeat(3,1fr);
+                       gap:12px;margin-bottom:20px">
+  <div class="stat-card">
+    <div class="stat-val" style="color:#a6e3a1">${total_cost:.2f}</div>
+    <div class="stat-lbl">total cost (all time)</div></div>
+  <div class="stat-card">
+    <div class="stat-val" style="color:#89b4fa">${cost_30d:.2f}</div>
+    <div class="stat-lbl">cost last 30 days</div></div>
+  <div class="stat-card">
+    <div class="stat-val" style="color:#f9e2af">{len(sessions)}</div>
+    <div class="stat-lbl">sessions tracked</div></div>
+</div>"""
+
+    # ── Project filter ──────────────────────────────────────────────────────────
+    projects  = sorted(set(s["project"] for s in sessions))
+    proj_opts = '<option value="">All projects</option>' + "".join(
+        f'<option value="{h(p)}">{h(p)}</option>' for p in projects
+    )
+    proj_filter = f"""<div style="margin-bottom:16px;display:flex;align-items:center;gap:12px">
+  <label style="font-size:12px;color:var(--subtext0)">Project:</label>
+  <select id="mc-proj-filter" onchange="mcFilter(this.value)"
+    style="background:var(--surface1);color:var(--text);border:1px solid var(--surface2);
+           border-radius:6px;padding:4px 10px;font-size:12px">
+    {proj_opts}
+  </select>
+</div>"""
+
+    # ── Cost chart (last 90 days) ───────────────────────────────────────────────
+    cutoff_90d = (NOW - timedelta(days=90)).strftime("%Y-%m-%d")
+    daily: dict[str, float] = {}
+    for p in priced:
+        if p["cost"] is None or p["date"] < cutoff_90d:
+            continue
+        daily[p["date"]] = daily.get(p["date"], 0.0) + p["cost"]
+
+    chart = ""
+    if daily:
+        max_cost = max(daily.values()) or 1
+        bars = ""
+        for date, cost in sorted(daily.items()):
+            bh = max(2, int(cost / max_cost * 44))
+            bars += (
+                f'<div title="{h(date)}: ${cost:.4f}" style="flex:1;display:flex;'
+                f'flex-direction:column;align-items:center;justify-content:flex-end;'
+                f'gap:2px;min-width:3px">'
+                f'<div style="background:#89b4fa;height:{bh}px;width:100%;'
+                f'border-radius:2px 2px 0 0;opacity:0.8"></div></div>'
+            )
+        chart = (
+            f'<div class="label" style="margin-bottom:6px">Daily cost — last 90 days</div>'
+            f'<div style="display:flex;align-items:flex-end;gap:1px;height:64px;'
+            f'margin-bottom:20px">{bars}</div>'
+        )
+
+    # ── Sessions table ──────────────────────────────────────────────────────────
+    rows = ""
+    for p in priced[:200]:
+        label, color = _MODEL_LABEL.get(p["model"], (p["model"], "#a6adc8"))
+        cost_str  = f"${p['cost']:.4f}" if p["cost"] is not None else "—"
+        tokens_k  = (p["input"] + p["output"] + p["cache_read"] + p["cache_create"]) // 1000
+        warn_icon = (
+            f' <span title="Pricing changed since this session" '
+            f'style="color:#f9e2af">⚠</span>'
+            if p.get("price_changed") else ""
+        )
+        rows += (
+            f'<tr data-project="{h(p["project"])}" '
+            f'style="border-bottom:1px solid var(--surface1)">'
+            f'<td style="padding:6px 8px;font-size:11px;color:var(--subtext1)">{h(p["date"])}</td>'
+            f'<td style="padding:6px 8px;font-size:11px;color:var(--text)">{h(p["project"])}</td>'
+            f'<td style="padding:6px 8px">'
+            f'<span style="font-size:10px;font-weight:600;color:{color};'
+            f'background:{color}22;padding:2px 7px;border-radius:10px">{h(label)}</span></td>'
+            f'<td style="padding:6px 8px;font-size:11px;color:var(--subtext0);'
+            f'text-align:right">{tokens_k}K</td>'
+            f'<td style="padding:6px 8px;font-size:11px;color:var(--text);'
+            f'text-align:right;font-family:monospace">{h(cost_str)}{warn_icon}</td>'
+            f'</tr>'
+        )
+
+    table = f"""<div class="label" style="margin-bottom:6px">Sessions (newest first)</div>
+<div style="overflow-x:auto;margin-bottom:20px;max-height:360px;overflow-y:auto">
+<table id="mc-table" style="width:100%;border-collapse:collapse">
+<thead style="position:sticky;top:0;background:var(--base)"><tr style="border-bottom:1px solid var(--surface2)">
+  <th style="padding:6px 8px;font-size:10px;text-align:left;color:var(--overlay0);font-weight:500">Date</th>
+  <th style="padding:6px 8px;font-size:10px;text-align:left;color:var(--overlay0);font-weight:500">Project</th>
+  <th style="padding:6px 8px;font-size:10px;text-align:left;color:var(--overlay0);font-weight:500">Model</th>
+  <th style="padding:6px 8px;font-size:10px;text-align:right;color:var(--overlay0);font-weight:500">Tokens</th>
+  <th style="padding:6px 8px;font-size:10px;text-align:right;color:var(--overlay0);font-weight:500">Cost</th>
+</tr></thead>
+<tbody>{rows}</tbody>
+</table>
+</div>"""
+
+    # ── What-if switcher (cascading provider → model) ───────────────────────────
+    used_model_ids = set(s["model"] for s in sessions)
+
+    prov_opts = '<option value="">All providers</option>'
+    for prov in FEATURED_PROVIDERS:
+        prov_opts += f'<option value="{h(prov)}">{h(PROVIDER_DISPLAY.get(prov, prov))}</option>'
+
+    whatif = f"""<div style="background:var(--surface0);border-radius:8px;padding:14px 16px;margin-bottom:20px">
+  <div class="label" style="margin-bottom:10px">What if you&apos;d used a different model?</div>
+  <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px">
+    <select id="mc-whatif-provider" onchange="mcProviderChange(this.value)"
+      style="background:var(--surface1);color:var(--text);border:1px solid var(--surface2);
+             border-radius:6px;padding:4px 10px;font-size:12px">
+      {prov_opts}
+    </select>
+    <select id="mc-whatif-model" onchange="mcWhatIf(this.value)"
+      style="background:var(--surface1);color:var(--text);border:1px solid var(--surface2);
+             border-radius:6px;padding:4px 10px;font-size:12px;min-width:260px">
+      <option value="">Select model…</option>
+    </select>
+  </div>
+  <div id="mc-whatif-result" style="font-size:13px;color:var(--subtext0);margin-bottom:4px"></div>
+  <div style="font-size:10px;color:var(--overlay0)">
+    ★ = models you have used &nbsp;|&nbsp; Applies alternative pricing to all tracked sessions
+  </div>
+</div>"""
+
+    # ── Pricing history note ────────────────────────────────────────────────────
+    source_note = f"""<div style="background:var(--surface0);border-radius:6px;
+  padding:10px 12px;font-size:11px;color:var(--subtext0);margin-top:8px">
+  <span style="color:var(--blue)">ℹ</span>
+  Pricing from <strong style="color:var(--text)">models.dev</strong>
+  (last fetched {h(latest_snap_ts)}, {n_snapshots} snapshot{'s' if n_snapshots != 1 else ''} stored).
+  Refreshes bi-weekly. Historical sessions use the snapshot closest to their date.
+  ⚠ = pricing changed between that session and the latest snapshot.
+</div>"""
+
+    return f"""<div class="section-inner">
+  <h2 class="section-title">Model Cost</h2>
+  {summary}
+  {proj_filter}
+  {chart}
+  {table}
+  {whatif}
+  {source_note}
+</div>"""
+
+
 def render_ccr_routines(hd):
     routines = hd["ccr_routines"]
     if not routines:
@@ -1030,7 +1444,7 @@ def render_ccr_routines(hd):
           align-items:center">
       <span style="color:var(--blue)">ℹ</span>
       CCR routines run against the <strong style="color:var(--text)">sdd-harness</strong> repo on GitHub — they are harness-wide, not per-repo.
-      Local daily maintenance (judge / reflect / keep-rate) runs via Task Scheduler and is shown in <em>Maintenance Status</em>.
+      Local daily maintenance (judge / reflect / keep-rate) runs via local system scheduler and is shown in <em>Maintenance Status</em>.
     </div>"""
 
     cards = ""
@@ -1109,9 +1523,9 @@ def render_ccr_routines(hd):
     cards += f"""<div style="border:1px solid var(--surface0);border-radius:8px;
                     padding:10px 14px;background:rgba(49,50,68,0.3);margin-top:4px">
     <div style="color:var(--subtext0);font-size:11px;font-weight:600;margin-bottom:3px">
-      📋 Local Daily Maintenance (Task Scheduler)</div>
+      📋 Local Daily Maintenance</div>
     <div style="color:var(--overlay0);font-size:11px">
-      Runs via Windows Task Scheduler / session-start hook catch-up.
+      Runs via local system scheduler (launchd / cron / schtasks) with session-start hook catch-up.
       See <strong>Maintenance Status</strong> for per-repo run history.</div>
   </div>"""
 
@@ -1446,6 +1860,102 @@ def render_session_quality(rd):
   {glossary}
 </div>"""
 
+def render_context_health(rd):
+    sessions = rd.get("session_history", [])
+    if not sessions:
+        return empty_state(
+            "No session history yet. Sessions are logged at stop time once "
+            "the stop hook has run at least once."
+        )
+
+    cutoff_7d  = NOW - timedelta(days=7)
+    cutoff_30d = NOW - timedelta(days=30)
+    recent_7d  = [s for s in sessions if s >= cutoff_7d]
+    recent_30d = [s for s in sessions if s >= cutoff_30d]
+
+    last_session = sessions[-1]
+    sessions_per_day_7d = len(recent_7d) / 7
+    total_shown = len(recent_30d)
+
+    freq_color = (
+        "#a6e3a1" if sessions_per_day_7d <= 3 else
+        "#f9e2af" if sessions_per_day_7d <= 6 else
+        "#f38ba8"
+    )
+    freq_label = (
+        "healthy" if sessions_per_day_7d <= 3 else
+        "moderate" if sessions_per_day_7d <= 6 else
+        "high — consider /compact"
+    )
+
+    summary = f"""<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px">
+    <div class="stat-card">
+      <div class="stat-val" style="color:{freq_color}">{len(recent_7d)}</div>
+      <div class="stat-lbl">sessions (last 7d)</div></div>
+    <div class="stat-card">
+      <div class="stat-val" style="color:{freq_color}">{sessions_per_day_7d:.1f}</div>
+      <div class="stat-lbl">sessions / day</div></div>
+    <div class="stat-card">
+      <div class="stat-val" style="color:var(--subtext1)">{rel_time(last_session.isoformat())}</div>
+      <div class="stat-lbl">last session</div></div>
+  </div>"""
+
+    freq_badge = badge(freq_label, "ok" if sessions_per_day_7d <= 3 else "warn" if sessions_per_day_7d <= 6 else "missed")
+    status_line = (
+        f'<div style="margin-bottom:16px;font-size:12px;color:var(--subtext0)">'
+        f'Frequency: {freq_badge}&nbsp; '
+        f'<span style="color:var(--overlay1)">({total_shown} sessions tracked in last 30d)</span>'
+        f'</div>'
+    )
+
+    bars = ""
+    if recent_7d:
+        day_counts: dict[str, int] = {}
+        for s in recent_7d:
+            day_str = s.strftime("%Y-%m-%d")
+            day_counts[day_str] = day_counts.get(day_str, 0) + 1
+        max_count = max(day_counts.values(), default=1)
+        for s in sorted(day_counts):
+            cnt = day_counts[s]
+            bh = max(4, int(cnt / max_count * 44))
+            bc = "#a6e3a1" if cnt <= 3 else "#f9e2af" if cnt <= 6 else "#f38ba8"
+            bars += (
+                f'<div title="{h(s)}: {cnt} session(s)" style="flex:1;display:flex;flex-direction:column;'
+                f'align-items:center;justify-content:flex-end;gap:2px;min-width:14px">'
+                f'<div style="font-size:8px;color:{bc};font-weight:600">{cnt}</div>'
+                f'<div style="background:{bc};height:{bh}px;width:100%;border-radius:2px 2px 0 0;opacity:0.85"></div>'
+                f'</div>'
+            )
+    chart = (
+        f'<div class="label" style="margin-bottom:6px">Sessions per day (last 7d)</div>'
+        f'<div style="display:flex;align-items:flex-end;gap:3px;height:64px;margin-bottom:16px">{bars}</div>'
+    ) if bars else ""
+
+    tips = """<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-top:16px">
+    <div style="background:var(--surface0);border-radius:6px;padding:10px 12px;font-size:11px">
+      <div style="color:var(--blue);font-weight:600;margin-bottom:4px">🗜 Compact heavy contexts</div>
+      <div style="color:var(--subtext0);line-height:1.55">
+        Run <code style="font-size:10px">/compact</code> when a session grows deep to
+        summarize context and prevent quality degradation. Use <code style="font-size:10px">/kiro:context-budget</code>
+        for a structured context health check.
+      </div>
+    </div>
+    <div style="background:var(--surface0);border-radius:6px;padding:10px 12px;font-size:11px">
+      <div style="color:var(--teal);font-weight:600;margin-bottom:4px">🪵 Subagents protect main context</div>
+      <div style="color:var(--subtext0);line-height:1.55">
+        Delegate research-heavy work to subagents so findings return as a summary,
+        not as hundreds of tool-call lines. Use
+        <code style="font-size:10px">/superpowers:dispatching-parallel-agents</code>.
+      </div>
+    </div>
+  </div>"""
+
+    return f"""<div class="section-inner">
+  <h2 class="section-title">Context Health</h2>
+  {section_desc("Tracks session frequency as a proxy for context load. High session counts often indicate heavy contexts that benefit from <code>/compact</code> or subagent delegation.", icon="🧵", color="var(--teal)")}
+  {summary}{status_line}{chart}{tips}
+</div>"""
+
 def render_maintenance_status(selected_rd, all_repos_data, hd):
     runs = hd.get("orchestrator_runs", [])
     latest = {}
@@ -1455,14 +1965,14 @@ def render_maintenance_status(selected_rd, all_repos_data, hd):
             latest[p] = run
 
     ccr_note = section_desc(
-        "<strong style='color:var(--text)'>Local daily maintenance</strong> — runs via Windows Task Scheduler "
+        "<strong style='color:var(--text)'>Local daily maintenance</strong> — runs via local system scheduler "
         "(judge · reflect · keep-rate · housekeep · augment). "
         "Not a CCR routine: it needs direct access to "
         "<code>.claude/memory/</code> which Anthropic's cloud cannot reach. "
         "Full per-event history is in <em>Automation Audit</em>."
     )
 
-    SCHED_HOUR  = 18   # Windows Task Scheduler fires daily-orchestrator.sh at 18:00
+    SCHED_HOUR  = 18   # daily-orchestrator.sh fires at 18:00 via local system scheduler
     GRACE_SECS  = 2 * 3600  # 2h grace after scheduled time before OVERDUE
 
     def _repo_card(rd, compact=False):
@@ -1499,7 +2009,7 @@ def render_maintenance_status(selected_rd, all_repos_data, hd):
             elif run_status == "pending":
                 next_hint = f"Scheduled today at {SCHED_HOUR:02d}:00"
             else:
-                next_hint = f"Was due at {SCHED_HOUR:02d}:00 today — check Task Scheduler"
+                next_hint = f"Was due at {SCHED_HOUR:02d}:00 today — check local system scheduler"
         else:
             run_str   = "never run"
             run_col   = "var(--overlay0)"
@@ -1820,10 +2330,6 @@ function show(sectionKey) {
   var oldFrame = document.getElementById('gn-frame');
   if (oldFrame && oldFrame.src) { oldFrame.src = ''; }
   _gnProbing = false;
-  var oldWsFrame = document.getElementById('ws-frame');
-  if (oldWsFrame && oldWsFrame.src) { oldWsFrame.src = ''; }
-  _wsProbing = false;
-
   sec = sectionKey;
   var d = SD[repo];
   document.getElementById('panel').innerHTML =
@@ -1833,7 +2339,7 @@ function show(sectionKey) {
     el.classList.toggle('active', el.dataset.s === sectionKey);
   });
   if (sectionKey === 'gitnexus') probeGitnexus();
-  if (sectionKey === 'workshop') probeWorkshop();
+  if (sectionKey === 'workshop') loadWorkshopRuns();
 }
 
 function switchRepo(v) { repo = v; show(sec); }
@@ -1873,6 +2379,8 @@ __GN_SERVE_FUNS__
 
 __WORKSHOP_FUNS__
 
+__MC_FUNS__
+
 // Generic tab switcher — used by Memory Changes and any future tabbed section.
 // Tab pane IDs follow the pattern: <prefix>-pane-<name>
 // Tab button IDs follow: <prefix>-tab-<name>
@@ -1894,7 +2402,7 @@ document.addEventListener('DOMContentLoaded', function() { show('trust_battery')
 
 # ── HTML Assembly ─────────────────────────────────────────────────────────────
 
-def build_html(repos_data, harness_data, initial_idx=0, companion=False):
+def build_html(repos_data, harness_data, usage_sessions, pricing_snapshots, initial_idx=0, companion=False):
     repos = [rd["path"] for rd in repos_data]
 
     repo_opts = "\n".join(
@@ -1912,8 +2420,9 @@ def build_html(repos_data, harness_data, initial_idx=0, companion=False):
     )
 
     # Render all sections for every repo once
-    ccr_html    = render_ccr_routines(harness_data)
-    skill_html  = render_skill_changes(harness_data)
+    ccr_html        = render_ccr_routines(harness_data)
+    skill_html      = render_skill_changes(harness_data)
+    model_cost_html = render_model_cost(usage_sessions, pricing_snapshots)
 
     sections_map = {}
     for rd in repos_data:
@@ -1926,6 +2435,8 @@ def build_html(repos_data, harness_data, initial_idx=0, companion=False):
             "memory_changes":     render_memory_changes(rd, harness_data),
             "skill_changes":      skill_html,
             "session_quality":    render_session_quality(rd),
+            "model_cost":         model_cost_html,
+            "context_health":     render_context_health(rd),
             "maintenance_status": render_maintenance_status(rd, repos_data, harness_data),
             "automation_audit":   render_automation_audit(rd, harness_data),
         }
@@ -1974,83 +2485,225 @@ function pollGitnexus(n) {
 }""" if companion else ""
 
     workshop_funs = """
-var _wsProbing = false;
-function probeWorkshop() {
-  if (_wsProbing) return;
-  _wsProbing = true;
-  var ctrl  = new AbortController();
-  var timer = setTimeout(function() { ctrl.abort(); }, 2500);
-  fetch('http://localhost:5899', { mode: 'no-cors', signal: ctrl.signal })
-    .then(function() {
-      clearTimeout(timer);
-      _wsProbing = false;
-      var f  = document.getElementById('ws-frame');
-      var fb = document.getElementById('ws-fallback');
-      if (f)  { f.src = f.dataset.src || 'http://localhost:5899'; f.style.display = 'block'; }
-      if (fb) fb.style.display = 'none';
-    })
-    .catch(function() {
-      clearTimeout(timer);
-      _wsProbing = false;
-      var st   = document.getElementById('ws-status');
-      var cbtn = document.getElementById('ws-copy-btn');
-      var sbtn = document.getElementById('ws-start-btn');
-      var rbtn = document.getElementById('ws-retry-btn');
-      if (st)   st.textContent = 'Workshop not running';
-      if (cbtn) cbtn.style.display = 'block';
-      if (sbtn) sbtn.style.display = 'block';
-      if (rbtn) rbtn.style.display = 'block';
-    });
+function _wsOpen()       { window.open('http://localhost:5899', '_blank'); }
+function _wsHover(el,on) { el.style.background = on ? 'var(--surface0)' : ''; }
+function _wsCopy(el)     { navigator.clipboard.writeText('raindrop workshop'); el.textContent = '✓ Copied!'; }
+
+function loadWorkshopRuns() {
+  var panel = document.getElementById('ws-runs-panel');
+  if (!panel) return;
+  var eventName = panel.dataset.eventName || '';
+  panel.innerHTML = '<div style="color:var(--subtext0);padding:40px;text-align:center">Loading…</div>';
+  fetch('/api/workshop-runs?event_name=' + encodeURIComponent(eventName))
+    .then(function(r) { if (!r.ok) throw new Error('offline'); return r.json(); })
+    .then(function(runs) { _wsRenderRuns(runs, panel, eventName); })
+    .catch(function() { _wsRenderOffline(panel); });
 }
+
+function _wsRelTime(ms) {
+  var d = Date.now() - ms;
+  if (d < 60000)   return Math.round(d / 1000) + 's ago';
+  if (d < 3600000) return Math.round(d / 60000) + 'm ago';
+  if (d < 86400000) return Math.round(d / 3600000) + 'h ago';
+  return new Date(ms).toLocaleDateString();
+}
+
+function _wsEsc(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function _wsRenderRuns(runs, panel, eventName) {
+  if (!runs.length) {
+    panel.innerHTML =
+      '<div style="color:var(--subtext0);padding:40px;text-align:center">' +
+      '<div style="font-size:28px;margin-bottom:8px">🔬</div>' +
+      '<div>No runs yet for <code style="color:var(--text)">' + _wsEsc(eventName) + '</code></div>' +
+      '<div style="margin-top:8px;font-size:11px;color:var(--overlay0)">Run the app and a trace will appear here.</div>' +
+      '</div>';
+    return;
+  }
+  var shown = Math.min(runs.length, 50);
+  var rows = runs.slice(0, shown).map(function(r) {
+    var ts     = _wsRelTime(r.started_at);
+    var input  = '';
+    try { input = (JSON.parse(r.metadata || '{}').input || '').slice(0, 80); } catch(e) {}
+    if (!input) input = '(no input)';
+    var status = r.finished
+      ? '<span style="color:var(--green)">&#x2713;</span>'
+      : '<span style="color:var(--yellow)">⧗ live</span>';
+    var user   = _wsEsc(r.user_id || '–');
+    var convo  = r.convo_id ? '<span style="color:var(--overlay0)">' + _wsEsc(r.convo_id) + '</span>' : '';
+    var spans  = r.span_count || 0;
+    return '<tr style="border-bottom:1px solid var(--surface0);cursor:pointer"'
+      + ' onclick="_wsOpen()" onmouseenter="_wsHover(this,true)" onmouseleave="_wsHover(this,false)">' +
+      '<td style="padding:10px 12px;color:var(--subtext1);font-size:11px;white-space:nowrap">' + ts + '</td>' +
+      '<td style="padding:10px 12px;max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px">' + _wsEsc(input) + '</td>' +
+      '<td style="padding:10px 12px;font-size:11px;color:var(--subtext1)">' + user + (convo ? '<br>' + convo : '') + '</td>' +
+      '<td style="padding:10px 8px;font-size:11px;text-align:center">' + status + '</td>' +
+      '<td style="padding:10px 12px;font-size:11px;color:var(--overlay0);text-align:right">' + spans + '</td>' +
+      '</tr>';
+  }).join('');
+  panel.innerHTML =
+    '<div style="padding:8px 12px;font-size:11px;color:var(--subtext0);' +
+    'border-bottom:1px solid var(--surface0);display:flex;justify-content:space-between;align-items:center">' +
+    '<span>Showing ' + shown + ' of ' + runs.length + ' runs — click a row to open in Workshop</span>' +
+    '<span style="color:var(--overlay0)">' + _wsEsc(eventName) + '</span></div>' +
+    '<table style="width:100%;border-collapse:collapse"><thead>' +
+    '<tr style="background:var(--base)">' +
+    '<th style="padding:6px 12px;text-align:left;font-size:10px;color:var(--overlay0);font-weight:500">TIME</th>' +
+    '<th style="padding:6px 12px;text-align:left;font-size:10px;color:var(--overlay0);font-weight:500">INPUT</th>' +
+    '<th style="padding:6px 12px;text-align:left;font-size:10px;color:var(--overlay0);font-weight:500">USER / SESSION</th>' +
+    '<th style="padding:6px 8px;font-size:10px;color:var(--overlay0);font-weight:500">OK</th>' +
+    '<th style="padding:6px 12px;text-align:right;font-size:10px;color:var(--overlay0);font-weight:500">SPANS</th>' +
+    '</tr></thead><tbody>' + rows + '</tbody></table>';
+}
+
+function _wsRenderOffline(panel) {
+  panel.innerHTML =
+    '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;' +
+    'height:240px;gap:12px;padding:40px;text-align:center">' +
+    '<div style="font-size:32px">🔬</div>' +
+    '<div style="color:var(--subtext0);font-size:13px">Workshop not running</div>' +
+    '<button style="background:var(--teal);color:var(--crust);border:none;border-radius:6px;' +
+    'padding:9px 18px;font-size:12px;font-weight:600;cursor:pointer" ' +
+    'onclick="startWorkshop()">▶ Start raindrop workshop</button>' +
+    '<div style="background:var(--surface0);border-radius:6px;padding:8px 16px;' +
+    'font-family:monospace;font-size:12px;color:var(--text);cursor:pointer" ' +
+    'onclick="_wsCopy(this)">raindrop workshop  📋</div>' +
+    '</div>';
+}
+
 function startWorkshop() {
-  var st   = document.getElementById('ws-status');
-  var sbtn = document.getElementById('ws-start-btn');
-  var cbtn = document.getElementById('ws-copy-btn');
-  if (st)   st.textContent = 'Starting Workshop…';
-  if (sbtn) sbtn.style.display = 'none';
-  if (cbtn) cbtn.style.display = 'none';
+  var panel = document.getElementById('ws-runs-panel');
+  if (panel) panel.innerHTML = '<div style="color:var(--subtext0);padding:40px;text-align:center">Starting Workshop…</div>';
   fetch('/api/workshop-start', { method: 'POST' })
-    .then(function() { pollWorkshop(0); })
+    .then(function() { _wsPollThenLoad(0); })
     .catch(function() {
-      if (st) st.textContent = 'Could not reach companion server';
+      if (panel) panel.innerHTML = '<div style="color:var(--red);padding:40px;text-align:center">Could not reach companion server</div>';
     });
 }
-function pollWorkshop(n) {
-  var st = document.getElementById('ws-status');
-  if (n > 20) { if (st) st.textContent = 'Timed out — is raindrop installed?'; return; }
-  if (st) st.textContent = 'Waiting for Workshop… (' + (n + 1) + '/20)';
-  var ctrl = new AbortController();
-  setTimeout(function() { ctrl.abort(); }, 1500);
-  fetch('http://localhost:5899', { mode: 'no-cors', signal: ctrl.signal })
-    .then(function() {
-      var f  = document.getElementById('ws-frame');
-      var fb = document.getElementById('ws-fallback');
-      if (f)  { f.src = f.dataset.src || 'http://localhost:5899'; f.style.display = 'block'; }
-      if (fb) fb.style.display = 'none';
-    })
-    .catch(function() { setTimeout(function() { pollWorkshop(n + 1); }, 1000); });
+
+function _wsPollThenLoad(n) {
+  if (n > 20) { var panel = document.getElementById('ws-runs-panel'); if (panel) _wsRenderOffline(panel); return; }
+  fetch('/api/workshop-runs')
+    .then(function(r) { if (r.ok) loadWorkshopRuns(); else throw new Error(); })
+    .catch(function() { setTimeout(function() { _wsPollThenLoad(n + 1); }, 1000); });
 }
+
 function runEvalLoop(repoPath, repoName) {
   var btn = document.getElementById('ws-eval-btn');
   if (btn) { btn.disabled = true; btn.textContent = '⚗ Starting…'; }
   fetch('/api/workshop-eval?repo=' + encodeURIComponent(repoPath), { method: 'POST' })
     .then(function(r) { return r.json(); })
-    .then(function(d) {
+    .then(function() {
       if (btn) { btn.textContent = '✓ Running in terminal'; }
-      setTimeout(function() {
-        if (btn) { btn.disabled = false; btn.textContent = '⚗ Run Eval Loop'; }
-      }, 8000);
+      setTimeout(function() { if (btn) { btn.disabled = false; btn.textContent = '⚗ Run Eval Loop'; } }, 8000);
     })
-    .catch(function() {
-      if (btn) { btn.disabled = false; btn.textContent = '⚗ Run Eval Loop'; }
-    });
+    .catch(function() { if (btn) { btn.disabled = false; btn.textContent = '⚗ Run Eval Loop'; } });
 }""" if companion else ""
+
+    # Model cost JS — embed pricing + session data as globals for mcFilter/mcWhatIf
+    latest_pricing   = pricing_snapshots[-1]["models"] if pricing_snapshots else {}
+    mc_sessions_data = []
+    mc_actual_total  = 0.0
+    for s in usage_sessions:
+        if s["date"] == "unknown":
+            continue
+        hist_p = get_pricing_at(pricing_snapshots, s["date"])
+        cost   = compute_session_cost(s, hist_p)
+        if cost is not None:
+            mc_sessions_data.append({
+                "m": f"anthropic/{s['model']}",
+                "i": s["input"],
+                "o": s["output"],
+                "r": s["cache_read"],
+                "w": s["cache_create"],
+            })
+            mc_actual_total += cost
+
+    # Build cross-provider pricing dict: only featured providers, only priced models,
+    # with prov + name metadata for JS-side filtering/display
+    featured_set = set(FEATURED_PROVIDERS)
+    mc_pricing_dict: dict = {}
+    for k, v in latest_pricing.items():
+        prov = k.split("/", 1)[0]
+        if prov not in featured_set:
+            continue
+        if v["input"] == 0 and v["output"] == 0:
+            continue   # skip free/unknown-priced models
+        mid  = k.split("/", 1)[-1]
+        mc_pricing_dict[k] = {
+            "prov":        prov,
+            "name":        mid,
+            "input":       v["input"],
+            "output":      v["output"],
+            "cache_read":  v["cache_read"],
+            "cache_write": v["cache_write"],
+        }
+    mc_pricing_js  = json.dumps(mc_pricing_dict).replace("</", "<\\/")
+    mc_sessions_js = json.dumps(mc_sessions_data).replace("</", "<\\/")
+
+    # Provider display map for JS
+    mc_prov_display_js = json.dumps(PROVIDER_DISPLAY).replace("</", "<\\/")
+
+    mc_funs = f"""
+var MC_PRICING = {mc_pricing_js};
+var MC_SESSIONS = {mc_sessions_js};
+var MC_ACTUAL = {mc_actual_total:.6f};
+var MC_PROV_DISPLAY = {mc_prov_display_js};
+function mcFilter(proj) {{
+  var rows = document.querySelectorAll('#mc-table tbody tr');
+  rows.forEach(function(r) {{
+    r.style.display = (!proj || r.dataset.project === proj) ? '' : 'none';
+  }});
+}}
+function mcProviderChange(prov) {{
+  var modelSel = document.getElementById('mc-whatif-model');
+  var res      = document.getElementById('mc-whatif-result');
+  if (res) res.innerHTML = '';
+  if (!modelSel) return;
+  var opts = '<option value="">Select model…</option>';
+  var keys = Object.keys(MC_PRICING).filter(function(k) {{
+    return !prov || MC_PRICING[k].prov === prov;
+  }});
+  keys.sort(function(a, b) {{
+    var pa = MC_PRICING[a], pb = MC_PRICING[b];
+    return (pb.input + pb.output) - (pa.input + pa.output);
+  }});
+  keys.forEach(function(k) {{
+    var m = MC_PRICING[k];
+    opts += '<option value="' + k + '">' + m.name
+          + ' — $' + m.input + '/$' + m.output + '/M</option>';
+  }});
+  modelSel.innerHTML = opts;
+}}
+function mcWhatIf(modelKey) {{
+  var res = document.getElementById('mc-whatif-result');
+  if (!res) return;
+  if (!modelKey) {{ res.innerHTML = ''; return; }}
+  var p = MC_PRICING[modelKey];
+  if (!p) {{ res.textContent = 'No pricing data for this model.'; return; }}
+  var projected = 0;
+  MC_SESSIONS.forEach(function(s) {{
+    projected += s.i * p.input / 1e6 + s.o * p.output / 1e6
+               + s.r * p.cache_read / 1e6 + s.w * p.cache_write / 1e6;
+  }});
+  var delta = projected - MC_ACTUAL;
+  var sign  = delta >= 0 ? '+' : '';
+  var col   = delta > 0 ? '#f38ba8' : '#a6e3a1';
+  res.innerHTML = 'Projected: <strong style="color:var(--text)">$' + projected.toFixed(2)
+    + '</strong> vs actual <strong style="color:var(--text)">$' + MC_ACTUAL.toFixed(2) + '</strong> '
+    + '<span style="color:' + col + ';font-weight:600">(' + sign
+    + '$' + Math.abs(delta).toFixed(2) + ')</span>';
+}}
+"""
 
     js  = (JS_TEMPLATE
            .replace("__SECTIONS_JSON__", sj)
            .replace("__INIT_REPO__", ir)
            .replace("__GN_SERVE_FUNS__", gn_funs)
-           .replace("__WORKSHOP_FUNS__", workshop_funs))
+           .replace("__WORKSHOP_FUNS__", workshop_funs)
+           .replace("__MC_FUNS__", mc_funs))
     ts  = datetime.now().strftime("%Y-%m-%d %H:%M")
 
     return f"""<!DOCTYPE html>
@@ -2153,7 +2806,7 @@ def _run_workshop_eval(repo_path: str) -> None:
         f"for the repository '{repo_name}' at {repo_path}. "
         f"Workshop is running at http://localhost:5899."
     )
-    env = {**os.environ, "RAINDROP_LOCAL_DEBUGGER": "http://localhost:5899"}
+    env = {**os.environ, "RAINDROP_LOCAL_DEBUGGER": "http://localhost:5899/v1/"}
     for cmd in [["claude", "--print", prompt], ["claude-code", "--print", prompt]]:
         try:
             subprocess.Popen(
@@ -2182,6 +2835,27 @@ class _DashboardHandler(BaseHTTPRequestHandler):
             self.wfile.write(self._html)
         elif parsed.path.startswith("/gn/") or parsed.path == "/gn":
             self._proxy_gitnexus(parsed)
+        elif parsed.path == "/api/workshop-runs":
+            qs         = parse_qs(parsed.query)
+            event_name = qs.get("event_name", [""])[0]
+            try:
+                req = UrlRequest(f"http://localhost:{self.WS_PORT}/api/runs")
+                with urlopen(req, timeout=3) as resp:
+                    all_runs = json.loads(resp.read())
+                if event_name:
+                    all_runs = [r for r in all_runs if r.get("event_name") == event_name]
+                body = json.dumps(all_runs).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.end_headers()
+                self.wfile.write(body)
+            except Exception:
+                self.send_response(503)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.end_headers()
+                self.wfile.write(b'{"error":"workshop-offline"}')
         elif parsed.path.startswith("/workshop/") or parsed.path == "/workshop":
             self._proxy_workshop(parsed)
         else:
@@ -2195,7 +2869,9 @@ class _DashboardHandler(BaseHTTPRequestHandler):
         # Build target path (strip /gn prefix)
         gn_path = parsed.path[3:] or "/"
         target_qs = urlencode({k: v[0] for k, v in qs_params.items()})
-        target_url = f"http://127.0.0.1:{self.GN_PORT}{gn_path}"
+        # Use "localhost" not "127.0.0.1": gitnexus serve binds to the IPv6
+        # loopback (::1) on macOS, which 127.0.0.1 (IPv4-only) cannot reach.
+        target_url = f"http://localhost:{self.GN_PORT}{gn_path}"
         if target_qs:
             target_url += f"?{target_qs}"
 
@@ -2215,7 +2891,7 @@ class _DashboardHandler(BaseHTTPRequestHandler):
         # For HTML: rewrite absolute /assets/ and /api/ URLs to point at gitnexus,
         # then inject the auto-repo-select script.
         if b"text/html" in content_type.encode() and b"</head>" in content:
-            gn_origin = f"http://127.0.0.1:{self.GN_PORT}"
+            gn_origin = f"http://localhost:{self.GN_PORT}"
             # Rewrite absolute-path references so browser fetches from gitnexus, not 4569
             content = content.replace(b'href="/', f'href="{gn_origin}/'.encode())
             content = content.replace(b'src="/',  f'src="{gn_origin}/'.encode())
@@ -2250,7 +2926,7 @@ class _DashboardHandler(BaseHTTPRequestHandler):
     def _proxy_workshop(self, parsed):
         """Proxy to raindrop workshop UI at port 5899."""
         ws_path = parsed.path[9:] or "/"  # strip /workshop prefix
-        target_url = f"http://127.0.0.1:{self.WS_PORT}{ws_path}"
+        target_url = f"http://localhost:{self.WS_PORT}{ws_path}"
         if parsed.query:
             target_url += f"?{parsed.query}"
 
@@ -2268,7 +2944,7 @@ class _DashboardHandler(BaseHTTPRequestHandler):
             return
 
         if b"text/html" in content_type.encode() and b"</head>" in content:
-            ws_origin = f"http://127.0.0.1:{self.WS_PORT}"
+            ws_origin = f"http://localhost:{self.WS_PORT}"
             content = content.replace(b'href="/', f'href="{ws_origin}/'.encode())
             content = content.replace(b'src="/',  f'src="{ws_origin}/'.encode())
 
@@ -2392,6 +3068,7 @@ def main():
             "workshop":         workshop_stats(repo),
             "memory_changes":   git_log_memory(repo),
             "memory_cards":     read_memory_file_cards(repo),
+            "session_history":  parse_session_history(repo),
         })
 
     skill_content, skill_age = read_skill_report()
@@ -2403,11 +3080,17 @@ def main():
         "harness_memory":       git_log_harness_memory(),
     }
 
+    pricing_snapshots = load_or_refresh_pricing_history()
+    usage_sessions    = gather_usage_data()
+
     print(" done.")
     print("   Rendering...", end="", flush=True)
 
     companion = not args.static
-    html_content = build_html(repos_data, harness_data, initial_idx, companion=companion)
+    html_content = build_html(
+        repos_data, harness_data, usage_sessions, pricing_snapshots,
+        initial_idx, companion=companion,
+    )
     print(" done.")
 
     if args.static:

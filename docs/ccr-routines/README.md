@@ -1,69 +1,92 @@
-# SDD Harness — CCR Routines Reference
+# SDD Harness — Routines Reference
 
-CCR (Claude Code Routines) are scheduled remote agents that run on a cron schedule via the Claude Code platform. They operate in Anthropic's cloud — they can read and write to GitHub repos (via the Claude GitHub App), but **cannot access locally gitignored files** (including `.claude/memory/`).
-
-**To manage CCR routines:** [https://claude.ai/code/routines](https://claude.ai/code/routines)
+All routines now run **locally** via the OS-level scheduler and the daily orchestrator. There are no active CCR (cloud-hosted) routines. Local routines work on any machine, have full access to gitignored files (`~/.claude/skills/`, `.claude/memory/`), and require no GitHub App or cloud authentication.
 
 ---
 
-## Active Routines
+## Active Local Routines
 
-### Bi-Weekly Harness Health (CLAUDE.md Review + Skill Repair)
-**ID:** `trig_014LpmVohefGRmySvBzaJsxk`
-**Schedule:** 1st and 15th of each month at 9:00 AM IDT (06:00 UTC) — cron `0 6 1,15 * *`
-**Status:** Active (first run: 2026-06-01)
-**Repo:** `dansashalesser/sdd-harness` (requires Claude GitHub App installed)
-
-**What it does:** A combined routine covering two phases per run:
-
-1. **CLAUDE.md review** — Audits all CLAUDE.md files across registered repos for stale instructions, over-constraining rules from pre-Claude-4.x habits, and model-assumption drift. Writes findings to `docs/claudemd-review-report.md`. Deloitte repos (aiq-zora-\*) are private and may be inaccessible; the report notes which repos need local follow-up via `/claudemd-review`.
-
-2. **Iterative skill repair** — Reads the most recent `docs/skill-curation-report.md` for skills flagged as low-quality, then applies a three-phase Review→Repair→Validate loop (up to 3 iterations per skill, max 3 skills per run). Uses the SkillOS 4-dimension quality gate as the rubric. Stalled skills (delta not shrinking) are surfaced in the report for human review. Appends a `## Iterative Repair Run — [date]` section to `docs/skill-curation-report.md`.
-
-**Output:**
-- `docs/claudemd-review-report.md` — CLAUDE.md staleness findings
-- `docs/skill-curation-report.md` — appended repair run section
-- Any repaired `SKILL.md` files committed directly to the repo
-
-**How to use:** After the routine runs, `git pull` and read both report files. Stalled skills listed in the repair report need manual intervention — invoke the `iterative-repair-loop` skill locally with domain context the automated run couldn't supply.
-
-**Known limitation:** Deloitte repos (aiq-zora-\*) are private GitHub repos — CCR can't authenticate without org-level GitHub App install. Run `/claudemd-review` locally for those repos.
-
-**Prerequisites:**
-- GitHub App must be installed on `dansashalesser/sdd-harness` → https://claude.ai/code/onboarding?magic=github-app-setup
-- For Deloitte repos: org-level GitHub App install (requires IT approval)
-
-**Why it exists:** CLAUDE.md instructions drift with model releases; bi-weekly auditing catches stale constraints before they limit Claude's behavior. Skill repair closes the loop between the Monday skill-curator audit (which identifies problems) and actual fixes — the iterative pattern ensures each repair is validated, not just applied blindly.
+All routines are wired into `scripts/daily-orchestrator.sh`. The orchestrator fires daily at 18:00 via launchd (macOS), Windows Task Scheduler (WSL/Windows), or crontab (Linux). Catch-up runs if the machine was off: the session-start hook fires the per-repo runner in the background if the state file is >24h stale.
 
 ---
 
-### Weekly Skill-Curator + Memory Governance
-**ID:** `trig_018Wuof3a3z9vzacVX83sbga`
-**Schedule:** Every Monday at 9:00 AM IDT (06:00 UTC) — cron `0 6 * * 1`
-**Status:** Active
-**Repo:** `dansashalesser/sdd-harness` (requires Claude GitHub App installed)
+### Daily Maintenance
+**Runner:** `.claude/scripts/daily-runner.sh`
+**Prompt:** `.claude/scripts/daily-maintenance-prompt.md`
+**Cadence:** Every day (idempotent; skips if already ran today)
+**Scope:** Every registered repo
 
-**What it does:** A combined audit covering two domains in one report:
+**What it does:**
+- Judge — score the previous day's observations via the session-quality rubric
+- Reflect — convert drain entries into memory updates
+- Housekeep — archive observations.md if >50 entries
+- Trust Score — `trust_score.py auto-score` from observations.md signals
+- Morning Brief — draft daily brief to `.claude/memory/daily/YYYY-MM-DD-brief.md`
 
-1. **Skill quality audit** — Scans `~/.claude/skills/` (via the repo) and clusters skills by theme. Scores each against four SkillOS quality dimensions: task relevance, operational validity, content quality, and compression ratio. Proposes merge/compress/delete operations for low-quality or redundant skills. Compression heuristic: skill content should be ≤30% of the context it would replace manually.
-
-2. **Memory governance health audit** — Checks the five compaction-discipline hook failure modes to verify that memory hooks are still enforcing their constraints and haven't drifted. Flags any hooks that have weakened, gone missing, or no longer match their documented intent.
-
-**Output:** Writes `docs/skill-curation-report.md` to the `sdd-harness` repo each Monday.
-
-**How to use:** After the routine runs, pull the repo (`git pull`) and read `docs/skill-curation-report.md`. Then invoke the `skill-curator` skill locally to act on the recommendations — it requires user approval before making any changes.
-
-**Why it exists:** The SkillOS research (arXiv:2605.06614) shows that skill curation — not just accumulation — is the key bottleneck for self-evolving agents. High-quality, compressed, task-relevant skills outperform large libraries of unmanaged ones. Governance health auditing was added because the compaction-discipline hook protects against memory drift, and needs to be checked periodically to stay effective.
+**Opt-out:** `rm .claude/scripts/daily-runner.sh` in that repo; or `SDD_SKIP_ROUTINE=1` to skip registration at install time.
 
 ---
 
-## Local Daily Maintenance (OS Scheduler)
+### Macro-Eval Sweep
+**Runner:** `.claude/scripts/macro-eval-runner.sh`
+**Prompt:** `.claude/scripts/macro-eval-prompt.md`
+**Cadence:** ~Twice weekly (MIN_GAP_DAYS=3; override with `MACRO_EVAL_GAP_DAYS`)
+**Scope:** Every registered repo (no-ops if Raindrop MCP is unreachable)
 
-This is not a CCR routine — it runs locally on the developer machine.
+**What it does:**
+- Pulls Raindrop Workshop traces from the last 4 days
+- Clusters failure patterns by type and impact
+- Writes a dated report to `.claude/reports/macro-evals/YYYY-MM-DD.md`
+- Posts annotations to Workshop for top failing patterns
 
-**Mechanism:** An OS-level scheduler fires `~/.claude/sdd-harness/scripts/daily-orchestrator.sh` at 18:00 local time every day. The orchestrator loops over every repo listed in `~/.claude/sdd-harness/projects.txt` and calls each repo's `.claude/scripts/daily-runner.sh`.
+**Opt-out:** `SDD_SKIP_MACRO_EVAL=1` env var; or preflight writes a `*-SKIPPED.md` report if MCP unreachable.
 
-**Platform-specific scheduler:**
+---
+
+### Weekly Skill-Curator Sweep
+**Runner:** `.claude/scripts/skill-curator-runner.sh`
+**Prompt:** `.claude/scripts/skill-curator-prompt.md`
+**Cadence:** Weekly (MIN_GAP_DAYS=7; override with `SKILL_CURATOR_GAP_DAYS`; force with `SKILL_CURATOR_FORCE=1`)
+**Scope:** Harness repo only (exits 0 in non-harness repos via `docs/ccr-routines/` guard)
+
+**What it does:**
+1. **Skill quality audit** — scores all `~/.claude/skills/*/SKILL.md` against four SkillOS dimensions; flags low-quality candidates and duplicate pairs
+2. **Description budget audit** — measures description field length; flags >150 chars for compression
+3. **Memory governance health** — checks five compaction-discipline hook failure modes
+4. Writes `docs/skill-curation-report.md` (full weekly snapshot, replaced each run)
+
+**How to use:** After the routine runs, invoke `/skill-curator` locally to review findings and apply approved changes (merge/compress/delete) with human approval at every step.
+
+**Opt-out:** `SDD_SKIP_SKILL_CURATOR=1` env var.
+
+---
+
+### Bi-Weekly Harness Health
+**Runner:** `.claude/scripts/harness-health-runner.sh`
+**Prompt:** `.claude/scripts/harness-health-prompt.md`
+**Cadence:** Bi-weekly (MIN_GAP_DAYS=13; override with `HARNESS_HEALTH_GAP_DAYS`; force with `HARNESS_HEALTH_FORCE=1`)
+**Scope:** Harness repo only (exits 0 in non-harness repos via `docs/ccr-routines/` guard)
+
+**What it does:**
+1. **CLAUDE.md review** — reads all repos in `~/.claude/sdd-harness/projects.txt`; audits for stale instructions, model-assumption drift, and over-constraining rules from pre-Claude-4.x habits; rates each repo `clean` / `minor` / `needs-update`; writes `docs/claudemd-review-report.md`
+2. **Iterative skill repair** — reads `docs/skill-curation-report.md` for low-quality flags; applies a Review→Repair→Validate loop (up to 3 skills per run, max 3 repair iterations per skill); writes repaired `SKILL.md` files directly; appends a `## Iterative Repair Run — [date]` section to the curation report
+
+**How to use:** `git pull` after the routine runs, then read `docs/claudemd-review-report.md`. Stalled skills in the repair report need manual intervention — invoke the relevant skill locally with domain context the automated run couldn't supply.
+
+**Opt-out:** `SDD_SKIP_HARNESS_HEALTH=1` env var.
+
+---
+
+### Wednesday Drift Review
+**Mechanism:** Inline in `scripts/daily-orchestrator.sh` (harness-level section)
+**Cadence:** Once per Wednesday (week-number dedup via `~/.claude/sdd-harness/.last-drift-review`)
+**Scope:** Harness-level (not per-repo)
+
+**What it does:** Invokes the `repo-drift-review` skill to sweep the SDD harness for drift. Auto-fixes what it can. Writes `~/.claude/sdd-harness/docs/drift-review-report.md`.
+
+---
+
+## OS Scheduler Setup
 
 | OS | Scheduler | Registered by | Remove with |
 |---|---|---|---|
@@ -71,28 +94,26 @@ This is not a CCR routine — it runs locally on the developer machine.
 | **WSL / Windows** | Windows Task Scheduler | `install.sh` / `update.sh` | `schtasks.exe /Delete /TN "SDD Daily Orchestrator" /F` |
 | **Linux** | crontab | `install.sh` / `update.sh` | `crontab -l \| grep -vF sdd-daily-orchestrator \| crontab -` |
 
-Registration is automatic and idempotent — `install.sh` and `update.sh` both call the appropriate setup script for the current OS. Re-running is safe.
-
-**Catch-up path:** If the machine is off at the scheduled time, `session-start-hook.sh` fires the per-repo runner in the background the next time Claude opens in that repo (if the state file `.claude/memory/.last-routine-run` is >24h stale or missing). See `docs/hooks/README.md → session-start-hook.sh`.
-
-**Per-repo runner:** `.claude/scripts/daily-runner.sh` — template at `~/.claude/sdd-harness/scripts/daily-runner.sh`. Self-contained; runs `claude --print --permission-mode bypassPermissions` with the daily maintenance prompt.
-
-**Important:** `--permission-mode bypassPermissions` is required for headless `claude --print`. Without it, any write to `observations.md` triggers a permission prompt and the entire pipeline hangs silently.
-
-**Pipeline steps (inside daily-maintenance-prompt):**
-- **Step A:** Judge — score the previous day's sessions against trust-battery criteria
-- **Step B:** Reflect — assess session quality signals (keep rate, re-explanation frequency)
-- **Step C:** Evaluate — calculate keep rate trend and record metric observation
-- **Step D:** Housekeep — prune observations.md if it exceeds 50 entries
-- **Step E:** Augment — check skill audit queue for pending additions
-
-**Opt-out:** Set `SDD_SKIP_ROUTINE=1` before running `install.sh` or `update.sh` to skip registration entirely. To disable per-repo: `rm .claude/scripts/daily-runner.sh`.
+Registration is automatic and idempotent — re-running `install.sh` or `update.sh` is safe.
 
 ---
 
-## Adding a New CCR Routine
+## Adding a New Local Routine
 
-1. Create the routine via `CronCreate` tool or the `/schedule` skill.
-2. Document it in this file under **Active Routines** with: ID, schedule, status, what it does, output, and why it exists.
-3. Add the ID to the routine URL: `https://claude.ai/code/routines/<ID>`
-4. The `ccr-routine-added-notify.sh` hook will remind you to document it if you use `CronCreate` in a session.
+1. Create `scripts/<name>-prompt.md` — prompt template with `TODAY_PLACEHOLDER`
+2. Create `scripts/<name>-runner.sh` — copy the `macro-eval-runner.sh` pattern; set `MIN_GAP_DAYS`; add a harness guard if harness-only
+3. Add a call block in `run_one()` in `scripts/daily-orchestrator.sh` with a `SDD_SKIP_<NAME>` opt-out guard
+4. Add a `chmod +x` line in `update.sh`
+5. Sync both to `.claude/scripts/`: `cp scripts/<name>-* .claude/scripts/`
+6. Document it in this file
+
+---
+
+## Retired CCR Routines (migrated 2026-05-31)
+
+The following routines were previously hosted as CCR (Claude Code Routines) on `claude.ai/code/routines`. They were migrated to local runners on 2026-05-31 because local runs have access to gitignored files, require no GitHub App, and work on any machine.
+
+| Routine | Former CCR ID | Migrated to |
+|---------|--------------|-------------|
+| Weekly Skill-Curator + Memory Governance | `trig_018Wuof3a3z9vzacVX83sbga` | `skill-curator-runner.sh` |
+| Bi-Weekly Harness Health | `trig_014LpmVohefGRmySvBzaJsxk` | `harness-health-runner.sh` |

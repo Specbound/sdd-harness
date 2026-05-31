@@ -16,6 +16,8 @@ Check that design has been completed:
 - Verify `specs/$1/` exists
 - Verify `specs/$1/design.md` exists
 - Determine `sequential = ($3 == "--sequential")`
+- Check `specs/$1/spec.json` for `approvals.grill.approved`: if false, warn the user:
+  > ⚠️ Domain grill phase was skipped — terminology and decisions in requirements/design may be unvalidated. Run `/kiro:spec-grill $1` first, or proceed anyway? (yes/no)
 
 If validation fails, inform user to complete design phase first.
 

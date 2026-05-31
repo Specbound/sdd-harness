@@ -91,9 +91,9 @@ def _parse_llm_response(raw: str) -> tuple[list[dict], list[dict]]:
 
 def _call_llm(text: str) -> tuple[list[dict], list[dict]]:
     prompt = DETECTION_PROMPT.replace("{text}", text[:6000])
-    raw = None
 
-    # Try anthropic SDK first (faster, no subprocess overhead)
+    # Requires the anthropic SDK — never fall back to claude --print, as that
+    # spawns a new Claude session whose stop-hook would recurse into this script.
     try:
         import anthropic  # type: ignore
         client = anthropic.Anthropic()
@@ -104,28 +104,11 @@ def _call_llm(text: str) -> tuple[list[dict], list[dict]]:
         )
         raw = msg.content[0].text.strip()
     except ImportError:
-        pass  # SDK not installed — fall through to CLI
+        print("WARN: anthropic SDK not installed; skipping signal detection.", file=sys.stderr)
+        return [], []
     except Exception as e:
-        print(f"WARN: SDK call failed ({e}); trying CLI.", file=sys.stderr)
-
-    # Fall back to claude --print CLI
-    if raw is None:
-        import subprocess
-        try:
-            result = subprocess.run(
-                ["claude", "--print", "--output-format", "text"],
-                input=prompt,
-                capture_output=True,
-                text=True,
-                timeout=60,
-            )
-            if result.returncode != 0:
-                print(f"WARN: claude CLI exited {result.returncode}; no signals.", file=sys.stderr)
-                return [], []
-            raw = result.stdout.strip()
-        except Exception as e:
-            print(f"WARN: CLI call failed ({e}); no signals detected.", file=sys.stderr)
-            return [], []
+        print(f"WARN: SDK call failed ({e}); skipping signal detection.", file=sys.stderr)
+        return [], []
 
     try:
         return _parse_llm_response(raw)

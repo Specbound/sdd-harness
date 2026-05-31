@@ -98,3 +98,63 @@ For each capability extracted from a resource, ask:
 4. Would a **prompt or skill fail** to reliably enforce this (e.g., Claude could forget or skip it)?
 
 If yes to any → propose a hook. Pick the event from the table above, choose soft gate vs. hard block based on whether the action is ever legitimate.
+
+## Observer Loop Prevention
+
+A hook that fires on Write/Edit can itself cause writes (state files, linters, formatters), re-triggering the same hook — an infinite loop. Prevent this with three patterns, applied in order:
+
+**1. Env-var sentinel (cheapest — add to every hook)**
+
+```bash
+[[ "${SDD_HOOK_RUNNING:-}" == "1" ]] && exit 0
+export SDD_HOOK_RUNNING=1
+```
+
+This stops re-entrancy within a single hook chain. Reset is automatic because child processes inherit but don't propagate env changes back.
+
+**2. Matcher specificity (design-time)**
+
+Prefer specific tool matchers (`Write|Edit`) over blank matchers. A blank matcher fires on every tool call — including tool calls made by hooks themselves.
+
+**3. State-file lock (for hooks that spawn subprocesses)**
+
+```bash
+LOCK="/tmp/sdd-hook-$(basename "$0").lock"
+[ -f "$LOCK" ] && exit 0
+trap 'rm -f "$LOCK"' EXIT
+touch "$LOCK"
+```
+
+Use this when a hook runs an external process (linter, test runner) that may itself trigger tool calls back into Claude.
+
+**Smell test:** If your hook writes a file or runs a command that writes a file, add the env-var sentinel. If it uses a blank matcher, switch to a specific one.
+
+## Session Profile Switching
+
+Some sessions need hooks quieted: heavy refactors where quality-gate noise is counterproductive, or debugging the hooks themselves. Add this preamble to any hook that should respect profile switching:
+
+```bash
+# Respect session hook profile
+case "${SDD_HOOK_PROFILE:-standard}" in
+  off)     exit 0 ;;
+  minimal) [[ "$HOOK_CLASS" != "validation" ]] && exit 0 ;;
+  standard) ;;  # run normally
+esac
+```
+
+Set `HOOK_CLASS` at the top of each hook to one of: `validation` (protected-path, memory-discipline), `quality` (linting, formatting), `notification` (hook-added-notify, ccr-routine-added-notify).
+
+**Usage:**
+
+```bash
+# Quiet all hooks for this shell session
+export SDD_HOOK_PROFILE=off
+
+# Keep only validation hooks (protected-path, memory-discipline)
+export SDD_HOOK_PROFILE=minimal
+
+# Restore normal behavior
+unset SDD_HOOK_PROFILE
+```
+
+Profile is checked at runtime — no settings.json edit needed. Reset when the session ends.

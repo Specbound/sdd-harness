@@ -24,9 +24,10 @@ Based on [cc-sdd](https://www.npmjs.com/package/cc-sdd) (`npx cc-sdd@latest`), a
 | `spec-init` | 1. Init | Create spec workspace in `specs/` with metadata |
 | `spec-requirements` | 2. Requirements | Generate EARS-format requirements |
 | `spec-design` | 3. Design | Research codebase + produce technical design |
+| `spec-grill` | 3.5 Grill | Interactive domain-expert grilling session; aligns terminology, updates requirements + design inline, writes ADRs |
 | `spec-tasks` | 4. Tasks | Break design into parallelizable task list; `--sequential` disables parallel `(P)` markers |
 | `spec-impl` | 5. Implement | TDD implementation with self-review after each task |
-| `spec-quick` | 2-4 (fast) | Requirements → Design → Tasks in one command |
+| `spec-quick` | 2-5 (fast) | Requirements → Design → Grill → Tasks in one command; grill skipped with `--auto` |
 | `spec-status` | Any | Show current phase, approvals, open tasks |
 | `validate-gap` | Review | Requirements vs. existing code gap analysis |
 | `validate-design` | Review | Design quality review (with remediation on NO-GO) |
@@ -56,13 +57,13 @@ Key agents beyond the spec pipeline:
 - **ship-agent** — Generates staged rollout plans with decision thresholds, rollback procedures, and feature flag recommendations.
 - **doc-sync** — Triggered by post-commit hook or `/kiro:sync-docs`. Diffs recent commits against `.md` files, updates stale docs, and detects stale doc-to-code references (reverse validation).
 - **harness-updater** — Triggered by post-commit hook when `.claude/` files change. Updates `SDD-SETUP-GUIDE.md`.
-- **reflect-agent** — Mines `git log` for observations, promotes patterns, updates hot-memory.
+- **reflect-agent** — Mines `git log` for observations, promotes patterns (3+ distinct observations, falsifiable), updates hot-memory; Step 6 runs a five-dimension session clean-state check (build/tests/progress/artifacts/startup path) and adds corrective action items for any unmet dimension.
 - **housekeeping-agent** — Archives observations to glacier, enforces memory caps.
-- **evolve-agent** — Measures memory health metrics, analyzes agent trace logs, detects friction patterns, proposes rule changes and linter rule graduations.
+- **evolve-agent** — Measures memory health metrics, analyzes agent trace logs, detects friction patterns, proposes rule changes and linter rule graduations; Step 1d audits instruction architecture (entry file bloat, SNR, middle-placement, topic docs); Step 1e checks session clean-state discipline; output includes "Harness Architecture Health" scorecard.
 - **guardrails-agent** — Audits project linter configs for complexity rules; scaffolds missing guardrails per ecosystem (ESLint, ruff, clippy, golangci-lint).
 - **ci-scaffold-agent** — Generates CI configs (GitHub Actions, GitLab CI, Azure Pipelines) mirroring the verify pipeline stages.
 - **validate-adversarial** — Three-pass adversarial review (neutral → refutation → judge synthesis with +1/-2 scoring).
-- **harness-validate-agent** — Checks structural integrity: command→agent references, template existence, memory caps, L0 headers. Generates component relationship index.
+- **harness-validate-agent** — Checks structural integrity: command→agent references, template existence, memory caps, L0 headers; generates component relationship index; Step 8 audits instruction architecture (line count, constraint count, topic doc adoption, middle-placement); Step 9 audits feature list primitive compliance (triple structure, WIP=1, pass-state).
 - **spec-refactor** — Auto-spawned after each impl task's VERIFY step. Reviews touched files for reuse/quality/efficiency.
 
 ### Rules (`kiro/settings/rules/`)
@@ -111,6 +112,7 @@ Starting-point files for specs, steering docs, and memory files. Used by `spec-i
 /kiro:spec-init "Add feature X"        # create spec workspace
 /kiro:spec-requirements feature-x       # generate requirements → Proof review → approve
 /kiro:spec-design feature-x             # generate design → Proof review → approve
+/kiro:spec-grill feature-x              # domain grilling session → CONTEXT.md + ADRs
 /kiro:spec-tasks feature-x              # generate tasks → Proof review → approve
 /kiro:spec-tasks feature-x --sequential  # same, but tasks strictly ordered (no P markers)
 /kiro:spec-impl feature-x              # implement via TDD

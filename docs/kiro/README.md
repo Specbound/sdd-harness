@@ -57,13 +57,13 @@ Key agents beyond the spec pipeline:
 - **ship-agent** — Generates staged rollout plans with decision thresholds, rollback procedures, and feature flag recommendations.
 - **doc-sync** — Triggered by post-commit hook or `/kiro:sync-docs`. Diffs recent commits against `.md` files, updates stale docs, and detects stale doc-to-code references (reverse validation).
 - **harness-updater** — Triggered by post-commit hook when `.claude/` files change. Updates `SDD-SETUP-GUIDE.md`.
-- **reflect-agent** — Mines `git log` for observations, promotes patterns, updates hot-memory.
+- **reflect-agent** — Mines `git log` for observations, promotes patterns (3+ distinct observations, falsifiable), updates hot-memory; Step 6 runs a five-dimension session clean-state check (build/tests/progress/artifacts/startup path) and adds corrective action items for any unmet dimension.
 - **housekeeping-agent** — Archives observations to glacier, enforces memory caps.
-- **evolve-agent** — Measures memory health metrics, analyzes agent trace logs, detects friction patterns, proposes rule changes and linter rule graduations.
+- **evolve-agent** — Measures memory health metrics, analyzes agent trace logs, detects friction patterns, proposes rule changes and linter rule graduations; Step 1d audits instruction architecture (entry file bloat, SNR, middle-placement, topic docs); Step 1e checks session clean-state discipline; output includes "Harness Architecture Health" scorecard.
 - **guardrails-agent** — Audits project linter configs for complexity rules; scaffolds missing guardrails per ecosystem (ESLint, ruff, clippy, golangci-lint).
 - **ci-scaffold-agent** — Generates CI configs (GitHub Actions, GitLab CI, Azure Pipelines) mirroring the verify pipeline stages.
 - **validate-adversarial** — Three-pass adversarial review (neutral → refutation → judge synthesis with +1/-2 scoring).
-- **harness-validate-agent** — Checks structural integrity: command→agent references, template existence, memory caps, L0 headers. Generates component relationship index.
+- **harness-validate-agent** — Checks structural integrity: command→agent references, template existence, memory caps, L0 headers; generates component relationship index; Step 8 audits instruction architecture (line count, constraint count, topic doc adoption, middle-placement); Step 9 audits feature list primitive compliance (triple structure, WIP=1, pass-state).
 - **spec-refactor** — Auto-spawned after each impl task's VERIFY step. Reviews touched files for reuse/quality/efficiency.
 
 ### Rules (`kiro/settings/rules/`)

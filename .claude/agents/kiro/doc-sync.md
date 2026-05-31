@@ -86,6 +86,13 @@ If so, update the relevant steering file (additive, preserve existing content).
 
 ## Constraints
 - Never write to source code files (`.py`, `.toml`, `.json`, etc.)
+- **Never write to capability definition files** — these are inputs to document, not docs to update:
+  - `.claude/agents/**/*.md` (agent prompts)
+  - `.claude/commands/**/*.md` (command definitions)
+  - `.claude/hooks/**` (hook scripts)
+  - `.claude/kiro/settings/rules/*.md` (harness rules)
+  - `skills/**/*.md` (skill content)
+  - `SDD-SETUP-GUIDE.md` (managed by harness-updater)
 - When uncertain whether a section needs updating, leave it unchanged
 - One focused update per file — do not restructure entire documents
 - Skip `.md` files inside `.venv/`, `.git/`, and `__pycache__/`

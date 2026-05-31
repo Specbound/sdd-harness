@@ -37,7 +37,7 @@ SDD_OS="$(detect_os)"
 #   rm-then-copy is idempotent and identical across all platforms.
 # ---------------------------------------------------------------------------
 sync_dir() {
-  local src="$1" dst_parent="$2"
+  local src="${1%/}" dst_parent="$2"   # strip trailing slash: BSD cp dumps CONTENTS when src ends in /
   rm -rf "$dst_parent/$(basename "$src")"
   cp -r "$src" "$dst_parent/"
 }
@@ -83,7 +83,7 @@ if [ -d "$HARNESS_DIR/skills" ]; then
   mkdir -p "$HOME/.claude/skills"
   for skill_dir in "$HARNESS_DIR/skills"/*/; do
     [ -d "$skill_dir" ] || continue
-    sync_dir "$skill_dir" "$HOME/.claude/skills"
+    sync_dir "${skill_dir%/}" "$HOME/.claude/skills"
   done
   echo "  Harness skills installed to ~/.claude/skills/"
 fi
@@ -109,6 +109,7 @@ chmod +x "$PROJECT_DIR/.claude/hooks/session-start-hook.sh"
 chmod +x "$PROJECT_DIR/.claude/hooks/pre-tool-use-gitnexus.sh"
 chmod +x "$PROJECT_DIR/.claude/hooks/revert-detect-hook.sh"
 chmod +x "$PROJECT_DIR/.claude/scripts/daily-runner.sh"
+[ -f "$PROJECT_DIR/.claude/scripts/macro-eval-runner.sh" ] && chmod +x "$PROJECT_DIR/.claude/scripts/macro-eval-runner.sh"
 
 # --- Set up git post-commit hook ---
 cp "$HARNESS_DIR/git-hooks/post-commit" "$PROJECT_DIR/.git/hooks/"

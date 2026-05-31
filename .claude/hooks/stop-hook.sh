@@ -9,9 +9,7 @@ if [ "$SDD_PROFILE" = "minimal" ]; then
   exit 0
 fi
 
-# Detect harness root from this script's location (works with absolute or relative invocation).
-_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-HARNESS_DIR="$(cd "$_SCRIPT_DIR/../.." && pwd)"
+HARNESS_DIR="/Users/dansasha/Documents/sdd-harness"
 LAST_CHECK_FILE=".claude/.last-harness-check"
 
 # --- Harness update check ---
@@ -40,50 +38,25 @@ if [ -f "$OBS_FILE" ]; then
   fi
 fi
 
-# --- Session signal detection (drain + charge) ---
-# Drain: re-explanation phrases the user had to say → [memory-gap]
-# Charge: unambiguous approval phrases → [session-charge]
-# Both write at most once per calendar day (idempotent).
-DETECTOR="$HARNESS_DIR/scripts/detect_reexplanation.py"
-# Skip detector in headless/print sessions to prevent recursive spawning.
-# daily-runner.sh sets SDD_HEADLESS=1 before invoking claude --print.
-if [ -f "$DETECTOR" ] && [ -f "$OBS_FILE" ] && [ "${SDD_HEADLESS:-0}" != "1" ]; then
+# --- Memory-gap detection (re-explanation signal) ---
+# Scan the current session's transcript for phrases indicating the user had to
+# re-explain context — each hit = a memory the harness should have saved.
+# Runs in background; failures are silent (detector is best-effort).
+DETECTOR=".claude/scripts/detect_reexplanation.py"
+if [ -f "$DETECTOR" ] && [ -f "$OBS_FILE" ]; then
   (
     today=$(date +%Y-%m-%d)
-
-    # Drain
-    drain_hits=$(python3 "$DETECTOR" --auto-transcript --mode drain 2>/dev/null || echo "[]")
-    drain_count=$(echo "$drain_hits" | python3 -c 'import json,sys; print(len(json.load(sys.stdin)))' 2>/dev/null || echo 0)
-    if [ "$drain_count" -gt 0 ] && ! grep -q "^- $today \[memory-gap\]:" "$OBS_FILE" 2>/dev/null; then
-      topic=$(echo "$drain_hits" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(", ".join(sorted({h["suggested_memory_topic"] for h in d}))[:80])' 2>/dev/null || echo "?")
-      echo "- $today [memory-gap]: $drain_count re-explanation phrase(s) detected — topics: $topic" >> "$OBS_FILE"
-    fi
-
-    # Micro-reflect: immediately ingest drain context into hot-memory as [auto-learn] entries.
-    # These are probationary — housekeeping promotes or removes them within 7 days.
-    MICRO_REFLECT="$HARNESS_DIR/scripts/micro_reflect.py"
-    if [ -f "$MICRO_REFLECT" ] && [ "$drain_count" -gt 0 ] && [ -f ".claude/memory/hot-memory.md" ]; then
-      echo "$drain_hits" | python3 "$MICRO_REFLECT" 2>/dev/null
-    fi
-
-    # Charge
-    if ! grep -q "^- $today \[session-charge\]:" "$OBS_FILE" 2>/dev/null; then
-      charge_hits=$(python3 "$DETECTOR" --auto-transcript --mode charge 2>/dev/null || echo "[]")
-      charge_count=$(echo "$charge_hits" | python3 -c 'import json,sys; print(len(json.load(sys.stdin)))' 2>/dev/null || echo 0)
-      if [ "$charge_count" -gt 0 ]; then
-        echo "- $today [session-charge]: $charge_count approval signal(s) detected in session" >> "$OBS_FILE"
-      fi
+    # Skip if today's [memory-gap] already exists (idempotency guard)
+    if ! grep -q "^- $today \[memory-gap\]:" "$OBS_FILE" 2>/dev/null; then
+      python3 "$DETECTOR" --auto-transcript --emit observation 2>/dev/null >> "$OBS_FILE" || true
     fi
   ) &
 fi
 
 # --- Session depth tracking (context health) ---
-# Appends an ISO timestamp to .claude/memory/.session-history so the dashboard
-# can show session frequency and prompt context-management habits.
 SESSION_HISTORY=".claude/memory/.session-history"
 if [ -d ".claude/memory" ]; then
   echo "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$SESSION_HISTORY"
-  # Keep only the last 30 entries
   if [ -f "$SESSION_HISTORY" ]; then
     tail -30 "$SESSION_HISTORY" > "${SESSION_HISTORY}.tmp" && mv "${SESSION_HISTORY}.tmp" "$SESSION_HISTORY"
   fi

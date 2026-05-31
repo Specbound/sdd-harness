@@ -60,6 +60,35 @@ run_one() {
   local duration=$(($(date +%s) - start))
 
   echo "$ts $repo exit=$exit_code duration=${duration}s" >> "$LOG_FILE"
+
+  # Macro-eval sweep — self-paces to ~twice a week via its own MIN_GAP_DAYS guard,
+  # so calling it daily is cheap (it no-ops between runs). Failure-isolated; the
+  # sweep's own Step-0 preflight handles an unreachable Raindrop MCP. Opt out with
+  # SDD_SKIP_MACRO_EVAL=1.
+  if [ "${SDD_SKIP_MACRO_EVAL:-0}" != "1" ] && [ -f "$repo/.claude/scripts/macro-eval-runner.sh" ]; then
+    local me_start=$(date +%s)
+    (cd "$repo" && bash .claude/scripts/macro-eval-runner.sh) > /dev/null 2>&1
+    local me_exit=$?
+    echo "$ts $repo macro-eval exit=$me_exit duration=$(($(date +%s) - me_start))s" >> "$LOG_FILE"
+  fi
+
+  # Skill-curator sweep — self-paces to weekly (MIN_GAP_DAYS=7). Harness-only;
+  # non-harness repos exit 0 immediately. Opt out with SDD_SKIP_SKILL_CURATOR=1.
+  if [ "${SDD_SKIP_SKILL_CURATOR:-0}" != "1" ] && [ -f "$repo/.claude/scripts/skill-curator-runner.sh" ]; then
+    local sc_start=$(date +%s)
+    (cd "$repo" && bash .claude/scripts/skill-curator-runner.sh) > /dev/null 2>&1
+    local sc_exit=$?
+    echo "$ts $repo skill-curator exit=$sc_exit duration=$(($(date +%s) - sc_start))s" >> "$LOG_FILE"
+  fi
+
+  # Harness-health sweep — self-paces to bi-weekly (MIN_GAP_DAYS=13). Harness-only;
+  # non-harness repos exit 0 immediately. Opt out with SDD_SKIP_HARNESS_HEALTH=1.
+  if [ "${SDD_SKIP_HARNESS_HEALTH:-0}" != "1" ] && [ -f "$repo/.claude/scripts/harness-health-runner.sh" ]; then
+    local hh_start=$(date +%s)
+    (cd "$repo" && bash .claude/scripts/harness-health-runner.sh) > /dev/null 2>&1
+    local hh_exit=$?
+    echo "$ts $repo harness-health exit=$hh_exit duration=$(($(date +%s) - hh_start))s" >> "$LOG_FILE"
+  fi
 }
 
 if [ -n "$SINGLE_REPO" ]; then

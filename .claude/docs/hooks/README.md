@@ -20,7 +20,7 @@ Hook output is injected into Claude's context as system messages — Claude read
 ### `session-start-hook.sh`
 **Event:** `SessionStart` — **Matcher:** _(all sessions)_
 
-**Purpose:** Ensures the daily maintenance pipeline doesn't go unrun. Checks whether today's `[judge]` sentinel exists in `observations.md`. If the local `daily-runner.sh` is installed and its state file is stale (>24h or missing), fires the runner in the background without blocking session start. If no local runner is installed and maintenance is overdue, injects a reminder for Claude to run `/kiro:daily-maintenance` interactively.
+**Purpose:** On macOS, first clears `com.apple.macl` extended attributes from `.claude/hooks/` so that hook files modified by Claude Code's Write/Edit tools remain executable by subprocesses. (The Write/Edit tools set `com.apple.macl`, which blocks subsequent subprocess reads. `session-start-hook.sh` itself is immune — `update.sh` always refreshes it via `cp`, not the Write tool.) Then ensures the daily maintenance pipeline doesn't go unrun: checks whether today's `[judge]` sentinel exists in `observations.md`. If the local `daily-runner.sh` is installed and its state file is stale (>24h or missing), fires the runner in the background without blocking session start. If no local runner is installed and maintenance is overdue, injects a reminder for Claude to run `/kiro:daily-maintenance` interactively.
 
 **Why it's needed:** The Task Scheduler fires at 11:30 IST daily, but the machine may be off or the WSL session closed at that time. The session-start hook is the catch-up path that guarantees maintenance runs at least once per developer day, with zero user friction.
 
@@ -38,16 +38,16 @@ Hook output is injected into Claude's context as system messages — Claude read
 
 **Purpose:** Five end-of-session health checks, all lightweight:
 
-1. **Harness update check** — compares the harness repo's latest commit timestamp to `.claude/.last-harness-check`. Prints a `Run: update.sh` nudge if the harness has changes since last install.
+1. **Harness update check** — compares the harness repo’s latest commit timestamp to `.claude/.last-harness-check`. Prints a `Run: update.sh` nudge if the harness has changes since last install.
 2. **Memory health** — counts entries in `observations.md`. If >50, suggests `/kiro:housekeeping` to prune before the file bloats.
-3. **Session signal detection** — runs `scripts/detect_reexplanation.py` on the session transcript in two passes (Haiku-based LLM). Drain pass: phrases like "I already told you", "you're doing it again" → appends a `[memory-gap]` observation. Charge pass: unambiguous approval like "that's perfect", "great work" → appends a `[session-charge]` observation. Both are written at most once per calendar day.
+3. **Session signal detection** — runs `scripts/detect_reexplanation.py` on the session transcript in two passes (Haiku-based LLM). Drain pass: phrases like "I already told you", "you’re doing it again" → appends a `[memory-gap]` observation. Charge pass: unambiguous approval like "that’s perfect", "great work" → appends a `[session-charge]` observation. Both are written at most once per calendar day.
 4. **Agent failure pattern** — scans `trace.log` for 3+ consecutive failures for the same agent type. Surfaces a `/kiro:evolve` nudge to investigate the friction pattern.
-5. **Session depth tracking** — appends an ISO timestamp to `.claude/memory/.session-history`, keeping the last 30 entries. This file is read by the dashboard's **Context Health** section to show sessions/week, a sessions/day trend chart, and tips for `/compact` and subagent delegation.
+5. **Session depth tracking** — appends an ISO timestamp to `.claude/memory/.session-history`, keeping the last 30 entries. This file is read by the dashboard’s **Context Health** section to show sessions/week, a sessions/day trend chart, and tips for `/compact` and subagent delegation.
 
-**Why it's needed:** Session-end is the only consistent window to look back at what happened without adding latency to the conversation. These checks surface problems that accumulate across sessions rather than within them. Session depth tracking gives the dashboard a lightweight signal for context load without requiring transcript analysis.
+**Why it’s needed:** Session-end is the only consistent window to look back at what happened without adding latency to the conversation. These checks surface problems that accumulate across sessions rather than within them. Session depth tracking gives the dashboard a lightweight signal for context load without requiring transcript analysis.
 
 **Output / side effect:**
-- Text nudges printed to Claude's context (harness update, housekeeping)
+- Text nudges printed to Claude’s context (harness update, housekeeping)
 - Appends `[memory-gap]` drain entries to `observations.md` (async, non-blocking)
 - Appends `[session-charge]` charge entries to `observations.md` (async, non-blocking)
 - Appends ISO timestamp to `.claude/memory/.session-history` (always, at session end)
@@ -266,4 +266,5 @@ PreCompact     (all)                                         → compaction-disc
 3. Document it in this file (the `hook-added-notify.sh` hook will remind you if you forget).
 4. Update the Wiring Reference table above.
 
-_Last synced: 2026-05-27_
+_Last synced: 2026-05-31_
+

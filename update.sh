@@ -37,13 +37,21 @@ SDD_OS="$(detect_os)"
 # the GNU cp double-nesting issue when the destination already exists.
 # ---------------------------------------------------------------------------
 sync_dir() {
-  local src="$1" dst_parent="$2"
+  local src="${1%/}" dst_parent="$2"   # strip trailing slash: BSD cp dumps CONTENTS when src ends in /
   rm -rf "$dst_parent/$(basename "$src")"
   cp -r "$src" "$dst_parent/"
 }
 
 do_update() {
   local proj="$1"
+  # Never run do_update on the harness source itself — its .claude/ is maintained
+  # by the self-sync block at the tail of this script. Treating it as a target
+  # repo makes file-onto-itself copies (e.g. impeccable-detect-hook.sh) abort
+  # under `set -e`. Skip it whether listed by absolute or symlinked path.
+  if [ "$(cd "$proj" 2>/dev/null && pwd -P)" = "$(cd "$HARNESS_DIR" 2>/dev/null && pwd -P)" ]; then
+    echo "Skipping $proj — harness source (self-managed)."
+    return
+  fi
   if [ ! -d "$proj/.claude" ]; then
     echo "  WARNING: $proj has no .claude/ — skipping (run install.sh first)"
     return
@@ -85,6 +93,10 @@ do_update() {
   chmod +x "$proj/.claude/hooks/pre-tool-use-gitnexus.sh"
   chmod +x "$proj/.claude/hooks/revert-detect-hook.sh"
   chmod +x "$proj/.claude/hooks/impeccable-detect-hook.sh"
+  [ -f "$proj/.claude/scripts/daily-runner.sh" ]           && chmod +x "$proj/.claude/scripts/daily-runner.sh"
+  [ -f "$proj/.claude/scripts/macro-eval-runner.sh" ]      && chmod +x "$proj/.claude/scripts/macro-eval-runner.sh"
+  [ -f "$proj/.claude/scripts/skill-curator-runner.sh" ]   && chmod +x "$proj/.claude/scripts/skill-curator-runner.sh"
+  [ -f "$proj/.claude/scripts/harness-health-runner.sh" ]  && chmod +x "$proj/.claude/scripts/harness-health-runner.sh"
   [ "$(uname)" = "Darwin" ] && xattr -cr "$proj/.claude/hooks/" 2>/dev/null || true
   if [ -d "$proj/.git" ]; then
     cp "$HARNESS_DIR/git-hooks/post-commit" "$proj/.git/hooks/"
@@ -96,7 +108,7 @@ do_update() {
       mkdir -p "$HOME/.claude/skills"
       for skill_dir in "$HARNESS_DIR/skills"/*/; do
         [ -d "$skill_dir" ] || continue
-        sync_dir "$skill_dir" "$HOME/.claude/skills"
+        sync_dir "${skill_dir%/}" "$HOME/.claude/skills"
       done
       echo "  Harness skills synced to ~/.claude/skills/"
     fi
@@ -143,7 +155,10 @@ cp "$HARNESS_DIR/hooks/session-start-hook.sh"    "$HARNESS_DIR/.claude/hooks/ses
 cp "$HARNESS_DIR/hooks/revert-detect-hook.sh"    "$HARNESS_DIR/.claude/hooks/revert-detect-hook.sh"
 cp "$HARNESS_DIR/hooks/pre-tool-use-gitnexus.sh" "$HARNESS_DIR/.claude/hooks/pre-tool-use-gitnexus.sh"
 cp "$HARNESS_DIR/scripts/daily-runner.sh"        "$HARNESS_DIR/.claude/scripts/daily-runner.sh"
-chmod +x "$HARNESS_DIR/.claude/hooks/"*.sh "$HARNESS_DIR/.claude/scripts/daily-runner.sh"
+cp "$HARNESS_DIR/scripts/daily-orchestrator.sh"  "$HARNESS_DIR/.claude/scripts/daily-orchestrator.sh"
+cp "$HARNESS_DIR/scripts/macro-eval-runner.sh"   "$HARNESS_DIR/.claude/scripts/macro-eval-runner.sh"
+cp "$HARNESS_DIR/scripts/macro-eval-prompt.md"   "$HARNESS_DIR/.claude/scripts/macro-eval-prompt.md"
+chmod +x "$HARNESS_DIR/.claude/hooks/"*.sh "$HARNESS_DIR/.claude/scripts/daily-runner.sh" "$HARNESS_DIR/.claude/scripts/macro-eval-runner.sh" "$HARNESS_DIR/.claude/scripts/daily-orchestrator.sh"
 [ "$(uname)" = "Darwin" ] && xattr -cr "$HARNESS_DIR/.claude/" 2>/dev/null || true
 
 # Regenerate the harness's own settings.json from the template.

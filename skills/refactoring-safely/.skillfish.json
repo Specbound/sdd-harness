@@ -1,0 +1,10 @@
+{
+  "version": 2,
+  "name": "refactoring-safely",
+  "owner": "withzombies",
+  "repo": "hyperpowers",
+  "path": ".agents/skills/refactoring-safely",
+  "branch": "main",
+  "sha": "f23185c923866d4b08ca8b8dca7c093904ba3e74",
+  "source": "manual"
+}

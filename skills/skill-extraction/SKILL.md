@@ -133,32 +133,40 @@ Present the full integration plan to the user. Format:
 
 ### Phase 5: Implement Approved Items
 
-After approval, implement each approved item:
+After approval, implement each approved item.
+
+**Write to HARNESS SOURCE, not the installed copies.** Anything created here must propagate to every machine and every repo via `install.sh`/`update.sh`. Those installers copy *from the harness source tree* (`~/.claude/sdd-harness/` — a symlink to the harness repo), not from the live `~/.claude/` install. So author each artifact in the source tree below, then sync once for immediate use this session. Never create a harness artifact only in `~/.claude/skills`, `~/.claude/commands`, or a single project's `.claude/` — it will be invisible to other repos and lost on the next update.
+
+`HARNESS="$HOME/.claude/sdd-harness"` (resolve once; it symlinks to the repo).
 
 **For Skills:**
-- Create `~/.claude/skills/<name>/SKILL.md` following the standard skill format (frontmatter + named workflow phases)
-- Keep SKILL.md focused; move extended reference content to a `resources/` subfolder
+- Create `$HARNESS/skills/<name>/SKILL.md` (frontmatter + named workflow phases). The installer loops `skills/*/` → `~/.claude/skills/`, so it becomes globally available on the next install/update.
+- For immediate use this session: `cp -r $HARNESS/skills/<name> ~/.claude/skills/`.
+- Keep SKILL.md focused; move extended reference content to a `resources/` subfolder.
 
 **For Hooks:**
-- Write `~/.claude/hooks/<name>.sh` as a standalone bash script
-- Include a `# REGISTRATION` comment block at the end of the file with the exact settings.json JSON to add
-- Use the `update-config` skill to write the settings.json entry after confirming with the user
+- Write `$HARNESS/hooks/<name>.sh` as a standalone bash script. install.sh/update.sh copy harness hooks into each project's `.claude/hooks/` and chmod them — add the new hook to those copy+chmod lists so it propagates.
+- Include a `# REGISTRATION` comment block at the end of the file with the exact settings.json JSON to add. Register it in `templates/settings.json.template` (shipped to projects) so the hook is wired everywhere, not just locally.
+- Use the `update-config` skill to write the local settings.json entry after confirming with the user.
 
 **For Scripts:**
-- Write `~/.claude/scripts/<name>.sh` (or `.py` if Python fits better)
-- Include a usage comment at the top; handle missing arguments gracefully
+- Write `$HARNESS/scripts/<name>.sh` (or `.py`). The whole `scripts/` dir is synced into every project's `.claude/scripts/`, so this propagates automatically. If it must be executable, add a `chmod +x` line for it to both install.sh and update.sh (next to the `daily-runner.sh`/`macro-eval-runner.sh` ones).
+- Include a usage comment at the top; handle missing arguments gracefully.
 
 **For Commands:**
-- Write `~/.claude/commands/<name>.md` with frontmatter (`description`, `allowed-tools`, `argument-hint`)
-- Body: structured instructions Claude follows when the command is invoked
+- Project-scoped (`/kiro:<name>`): write `$HARNESS/commands/kiro/<name>.md` — copied into every project's `.claude/commands/`.
+- User-global (`/<name>`): write `$HARNESS/commands/global/<name>.md` — copied into `~/.claude/commands/`.
+- Frontmatter (`description`, `allowed-tools`, `argument-hint`); body = structured instructions Claude follows when invoked.
 
 **For Routines:**
-- Same as Command format, plus append a `## Suggested Schedule` section with a cron expression
-- Note that the user can register it with `/schedule`
+- A scheduled routine = a `commands/kiro/<name>.md` pipeline + a `scripts/<name>-runner.sh` (headless `claude --print` driver, with an idempotency/cadence guard) + a wiring call in `scripts/daily-orchestrator.sh` `run_one()` (the existing per-repo daily loop). Self-pace via a `MIN_GAP_DAYS` guard so daily calls are cheap no-ops; gate with an `SDD_SKIP_<NAME>=1` opt-out. This reuses the one OS scheduler — do NOT add a second cron/launchd job unless the cadence genuinely can't ride the daily tick. See `scripts/macro-eval-runner.sh` + the orchestrator as the reference implementation.
+- Add `chmod +x` for the runner to install.sh and update.sh, and self-sync it into `$HARNESS/.claude/scripts/` in update.sh's tail block.
 
 **For Config Changes:**
-- Use the `update-config` skill to apply settings.json modifications
-- Always show the exact JSON diff before writing
+- Use the `update-config` skill to apply local settings.json modifications, and mirror durable changes into `templates/settings.json.template` so they ship to every project.
+- Always show the exact JSON diff before writing.
+
+After creating source artifacts, remind the user to run `bash ~/.claude/sdd-harness/update.sh` to roll them out to all registered repos (or `update.sh <repo>` for one).
 
 ### Phase 5b: SkillOS Quality Gate (for new skills only)
 
@@ -177,23 +185,20 @@ If any dimension fails, fix before proceeding:
 - Fails content quality → add workflow phases and concrete steps
 - Fails compression → move verbose appendices to `resources/` and replace with a short pointer
 
-### Phase 6: Confirm & Summarize
+### Phase 5c: Identity Alignment Check (for all new skills)
 
-After implementing, show:
+After the SkillOS Quality Gate passes, invoke `Skill("agent-identity")` in **Mode B (skill identity check)**. This validates the new skill's identity sharpness against four dimensions:
 
-```
-## Extraction Complete
+1. **Description specificity** — Does the description predict WHEN the skill fires?
+2. **Trigger sharpness** — Are `When to Activate` conditions falsifiable?
+3. **Behavioral concreteness** — Are instructions concrete, not descriptive?
+4. **Explicit exclusions** — Does the skill say what it does NOT do?
 
-✅ [Name] — [Type] → [file path]
-✅ [Name] — [Type] → [file path]
-⏭️  [Name] — skipped per your instruction
+Fix any failures before logging to the sources index. Do not skip this step — vague skill identities accumulate into a harness where the wrong skill fires half the time.
 
-**Test it:** [How to invoke/verify the new integration]
-```
+### Phase 6: Log to the Sources Index (DO THIS BEFORE SHOWING THE SUMMARY)
 
-### Phase 7: Log to the Sources Index (REQUIRED)
-
-After every successful extraction, append an entry to the source-category README chosen in Phase 0. This is non-optional — without it, the harness loses the provenance trail that explains *why* skills were added.
+Before printing any completion message, append an entry to the source-category README chosen in Phase 0. **Do not skip to the summary — write the file first, then report.** Without this step the harness loses the provenance trail that explains why skills were added.
 
 **Target file:** `docs/sources/<category>/README.md` where `<category>` is one of `articles`, `git`, `papers`, `x` (from Phase 0).
 
@@ -217,16 +222,28 @@ After every successful extraction, append an entry to the source-category README
 Field rules:
 - For category **x**, omit the `**URL:**` line and use a short descriptive title plus the date.
 - For category **papers**, prefer `**arXiv:**` over `**URL:**` when applicable; include `**Year:**` and `**Authors:**` if known.
-- If the extraction added nothing (proposal rejected, nothing applicable), do **not** write an entry.
+- If the extraction added nothing (proposal rejected, nothing applicable), do **not** write an entry and skip Phase 6 entirely.
 - If a related entry exists in another sources file (e.g. paper + accompanying repo), add a `See also: [<other-category>/README.md](../<other-category>/README.md)` line inside the entry.
 
 Append the entry at the bottom of the file, separated by `---` from the previous entry, preserving chronological order (oldest first).
 
-After writing, confirm to the user:
+### Phase 7: Confirm & Summarize
+
+After writing the sources index entry, show:
 
 ```
+## Extraction Complete
+
+✅ [Name] — [Type] → [file path]
+✅ [Name] — [Type] → [file path]
+⏭️  [Name] — skipped per your instruction
+
 📝 Logged to docs/sources/<category>/README.md
+
+**Test it:** [How to invoke/verify the new integration]
 ```
+
+The `📝 Logged` line is required. If Phase 6 was skipped (nothing extracted), replace it with `⏭️ Sources index not updated (nothing extracted).`
 
 ## Key Principles
 
@@ -235,4 +252,4 @@ After writing, confirm to the user:
 - **Match harness conventions.** Read nearby files before creating new ones to follow existing patterns.
 - **One resource can yield multiple integration types.** A repo might give a skill, a hook, and a command.
 - **Be explicit about skips.** Always tell the user what you decided not to extract and why.
-- **Always log to the sources index.** Phase 7 is required for every successful extraction — provenance is part of the deliverable, not optional metadata.
+- **Always log to the sources index first.** Phase 6 must be completed before the Phase 7 summary is shown — provenance is part of the deliverable, not optional metadata.

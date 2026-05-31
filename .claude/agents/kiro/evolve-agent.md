@@ -101,6 +101,33 @@ Produce an alignment scorecard:
 
 Agents with fewer than 3 scored entries are excluded from alignment analysis (insufficient data).
 
+### Step 1d: Instruction Architecture Health
+
+Audit the primary entry instruction file (CLAUDE.md or AGENTS.md at repo root):
+
+1. **Bloat check**: If >200 lines, flag as `BLOATED` — recommend refactor to lean-entry + topic docs
+2. **SNR estimation**: Count instructions; estimate what fraction apply to the most common task type
+   - If estimated SNR < 0.6, flag as `LOW-SNR` — too much irrelevant content per task
+3. **Middle placement**: Count hard-constraint phrases (NEVER, ALWAYS, MUST NOT) appearing after line 50
+   - Flag each as `LOST-IN-MIDDLE` risk
+4. **Topic document adoption**: Check whether subdirectory ARCHITECTURE.md/CONSTRAINTS.md files exist
+   - No topic docs + large entry file = `MONOLITHIC` pattern
+
+Include findings in friction analysis. For each flagged condition, generate a proposal
+(type: `modify-rule` targeting the instruction architecture).
+
+### Step 1e: Session Clean State Health
+
+Scan for evidence of clean-state discipline in recent sessions:
+
+1. **PROGRESS.md freshness**: Check last-modified date relative to last commit — if >2 sessions behind, flag as `STALE`
+2. **Debug artifact scan**: Grep for `console\.log|debugger|\.tmp|scratch/` in source files — any hits = `ARTIFACT` smell
+3. **Build consistency**: Check if CI/verify command is documented and runnable — if absent, flag as `NO-VERIFY-PATH`
+4. **Feature list currency**: If feature tracking files exist, check whether state reflects recent commits
+
+Include findings. Generate proposals for any persistent clean-state failures (type: `new-rule`
+targeting session exit discipline).
+
 ### Step 2: Analyze Friction
 
 Scan observations and self-observations for friction patterns:
@@ -281,6 +308,17 @@ Chat summary only (self-observations updated directly):
 |-------|-------------|-----------|------------|-------|------|
 | [agent] | N | X.X | Y% | [trend] | [flag or —] |
 (only agents with 3+ scored entries shown)
+
+## Harness Architecture Health
+| Dimension | Status | Flag |
+|---|---|---|
+| Entry file length | N lines | OK / BLOATED |
+| Instruction SNR | ~X% | OK / LOW-SNR |
+| Topic docs adopted | yes/partial/no | — |
+| Hard constraints after line 50 | N | OK / LOST-IN-MIDDLE |
+| PROGRESS.md freshness | N sessions | OK / STALE |
+| Debug artifacts | N hits | OK / ARTIFACT |
+| Verify path documented | yes/no | OK / NO-VERIFY-PATH |
 
 ## Friction Patterns
 - [description of each friction pattern found]

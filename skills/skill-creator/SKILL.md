@@ -135,6 +135,17 @@ Fix any failures before installation:
 
 **Compression heuristic:** Skill content should be ≤ 30% of the context needed to do the task manually. A skill longer than that without proportional value is net-negative.
 
+### Phase 4c: Identity Alignment Check
+
+Invoke `Skill("agent-identity")` in **Mode B (skill identity check)** to validate the new skill's identity sharpness:
+
+1. **Description specificity** — Does the description predict WHEN the skill fires — not just what it does?
+2. **Trigger sharpness** — Are `When to Activate` conditions falsifiable by two independent readers?
+3. **Behavioral concreteness** — Are the skill's instructions concrete steps, or descriptions of what steps would look like?
+4. **Explicit exclusions** — Does the skill state what it does NOT do?
+
+Fix any failures before installation. One sentence per fix is sufficient.
+
 ### Phase 5: Installation
 
 The skill is written to `~/.claude/skills/<skill-name>/SKILL.md` directly — no symlinks needed for Claude Code.
