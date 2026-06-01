@@ -461,7 +461,7 @@ Based on the methodology from ["Automating Skill Acquisition through Large-Scale
 | `feature-list-primitive` | walkinglabs.github.io/learn-harness-engineering | Machine-readable feature state machine (not_started/active/blocked/passing), triple structure, WIP=1, pass-state gating |
 | `session-clean-state` | walkinglabs.github.io/learn-harness-engineering | Five-dimension clean state, clock-in/clock-out protocols, PROGRESS.md/DECISIONS.md/QUALITY.md templates, entropy management |
 | `agent-harness-design` | arXiv:2605.26112 | 6-component framework (ℛℳ𝒞𝒮𝒪𝒢), temporal scaling tiers; Phase 4 adds Operational Diagnostics (Fresh Session Test, Controlled Ablation, Affordance Analysis, Rot Detection) |
-| `macro-evals` | OpenAI Cookbook | Population-scale eval: cluster trace failures → impact-rank → suspect-trace |
+| `evaluation` (family) | Multiple sources | Router + 4 sub-skills: `micro` (per-run), `macro` (population patterns), `funnel` (A/B decisions), `long-trajectory` (stateful/long-horizon agents) |
 
 See [docs/skill-extraction/README.md](docs/skill-extraction/README.md) for the full extracted skills index.
 

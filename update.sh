@@ -1,7 +1,7 @@
 #!/bin/bash
 # ──────────────────────────────────────────────────────────
 # Update all registered projects:
-#   ok 
+#   ~/.claude/sdd-harness/update.sh 
 #
 # Update a single project:
 #   ~/.claude/sdd-harness/update.sh /path/to/project

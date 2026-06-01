@@ -1,42 +1,90 @@
-# Evaluation
+# Evaluation Skills
 
-Skills and commands for LLM evaluation methodology — from general agent quality measurement to production experimentation pipelines.
+All evaluation capabilities live in a single `evaluation/` skill family. The router (`evaluation`) dispatches to sub-skills based on your situation; you can load multiple sub-skills when a task spans more than one layer.
+
+## Folder Structure
+
+```
+skills/evaluation/
+  SKILL.md                  ← router: decision tree + multi-skill loading guide
+  micro/SKILL.md            ← per-run grading, LLM-as-judge, rubrics, quality gates
+  macro/SKILL.md            ← population patterns, impact ranking, suspect tracing
+  funnel/SKILL.md           ← pre-experiment filtering, A/B decisions, judge calibration
+  long-trajectory/SKILL.md  ← long-horizon agents, stateful verification, rubric adaptation
+  references/
+    metrics.md              ← detailed metrics reference
+    pipeline-reference.md   ← macro-eval BERTopic pipeline, scoring derivations
+```
+
+## Sub-Skills
+
+### `evaluation` — Router
+`~/.claude/skills/evaluation/SKILL.md`
+
+Always invoke first. Provides the decision tree and tells you which sub-skill(s) to load. For multi-layer tasks, invoke all relevant sub-skills before implementation.
+
+**Invoke:** `Skill("evaluation")`
 
 ---
 
-## Skills
+### `evaluation/micro` — Per-Run Grading
+`~/.claude/skills/evaluation/micro/SKILL.md`
 
-### `evaluation` — General Agent Evaluation
-`~/.claude/skills/evaluation/SKILL.md`
-
-The foundational evaluation skill. Covers:
-- Multi-dimensional rubric design (relevance, coherence, factual accuracy, tool efficiency)
+The foundational grading layer. Covers:
+- Multi-dimensional rubric design (factual accuracy, completeness, tool efficiency, citation accuracy)
 - LLM-as-judge implementation and prompt patterns
 - Test set construction and complexity stratification
 - Continuous evaluation pipelines and regression detection
-- End-state vs. process evaluation for agent systems
+- End-state vs. process evaluation
 
-**Activate with:** "evaluate agent performance", "build test framework", "measure agent quality", "LLM-as-judge", "evaluation rubric"
+**Activate with:** "evaluate agent performance", "build test framework", "measure agent quality", "LLM-as-judge", "evaluation rubric", "quality gate"
+
+**Invoke:** `Skill("evaluation/micro")`
 
 ---
 
-### `llm-eval-funnel` — Eval Funnel for A/B Experimentation
-`~/.claude/skills/llm-eval-funnel/SKILL.md`
+### `evaluation/macro` — Population-Scale Pattern Discovery
+`~/.claude/skills/evaluation/macro/SKILL.md`
 
-Extracted from: [Spotify Engineering — Better Experiments with LLM Evals: A Funnel, Not a Fork](https://engineering.atspotify.com/2026/5/better-experiments-with-llm-evals-a-funnel-not-a-fork) (2026-05-27)
+Extracted from: [OpenAI Cookbook — Macro Evals for Agentic Systems](https://developers.openai.com/cookbook/examples/partners/macro_evals_for_agentic_systems/macro_evals_for_agentic_systems) (2026-05-31)
 
-Covers the three-stage methodology for integrating LLM evals into a product experimentation pipeline:
+Five-phase methodology: collect/normalize → build trace document → cluster patterns → rank by impact → backward suspect trace.
 
-1. **Pre-experiment filtering** — run LLM judges on all candidate treatments to discard non-promising variants before committing an A/B test slot
-2. **Experiment decision criteria** — tiered evidence framework: when eval alone is sufficient to ship vs. when A/B is required
-3. **Post-experiment calibration** — score A/B data with the same judges to detect eval-outcome misalignment and feed findings back into judge design
+**Activate with:** many traces, systemic failures, "which problems repeat", "where to fix first", population patterns
 
-**Key numbers from Spotify's production data:**
-- 12% of A/B tests ship positive results
-- 64% produce learning (validated knowledge even without shipping)
-- 42% of launched experiments eventually reverse due to guardrail metric regression
+**Invoke:** `Skill("evaluation/macro")`
+
+Automated as the ~twice-weekly `/kiro:macro-eval-sweep` routine over Raindrop Workshop traces.
+
+---
+
+### `evaluation/funnel` — Pre-Experiment Filtering & Judge Calibration
+`~/.claude/skills/evaluation/funnel/SKILL.md`
+
+Extracted from: [Spotify Engineering — LLM Evals: A Funnel, Not a Fork](https://engineering.atspotify.com/2026/5/better-experiments-with-llm-evals-a-funnel-not-a-fork) (2026-05-27)
+
+Three-stage methodology: pre-experiment filtering → A/B decision criteria → post-experiment judge calibration.
+
+Key numbers: 12% of A/B tests ship positive; 42% of launched experiments eventually reverse. Running evals first filters bad candidates before burning experiment bandwidth.
 
 **Activate with:** "eval funnel", "pre-experiment filter", "judge calibration", "A/B test LLM feature", "experiment bandwidth"
+
+**Invoke:** `Skill("evaluation/funnel")`
+
+---
+
+### `evaluation/long-trajectory` — Long-Horizon Agent Evaluation
+`~/.claude/skills/evaluation/long-trajectory/SKILL.md`
+
+Extracted from: [JudgmentLabs — Agent Judge: Solving Long-Context Evaluations](https://www.judgmentlabs.ai/blogs/agent-judge-solving-long-context-evaluations) (2026-06-01)
+
+Three-phase workflow: Search (slice trajectory into targeted evidence chunks via worker agents) → Verify (cross-check agent claims against external system state) → Adapt (Rubric Builder closed-loop calibration).
+
+Empirical improvement: 0.86 accuracy / 0.79 F1 vs. 0.74 / 0.65 for a standard LLM judge on production traffic.
+
+**Activate with:** trajectory too long for context, agent mutates external state, rubric needs calibration, long-horizon agent evaluation, stateful agent verification
+
+**Invoke:** `Skill("evaluation/long-trajectory")`
 
 ---
 
@@ -45,61 +93,47 @@ Covers the three-stage methodology for integrating LLM evals into a product expe
 ### `/eval-funnel-check` — Pre-Launch Checklist
 `~/.claude/commands/eval-funnel-check.md`
 
-Interactive checklist command. Run before committing to an A/B test to verify:
-- Evals have filtered candidate treatments (Stage 1)
-- Guardrail metrics are defined (Stage 2)
-- A calibration plan is in place post-experiment (Stage 3)
-
-Produces a summary with ready/not-ready verdict and flags gaps.
+Interactive checklist. Run before committing to an A/B test to verify Stage 1–3 are planned. Produces a ready/not-ready verdict with flagged gaps.
 
 **Usage:** `/eval-funnel-check [optional feature description]`
 
 ---
 
----
+## Related Skills (Outside This Family)
 
 ### `cma-outcomes` — Automated Grade-and-Revise Loops
 `~/.claude/skills/cma-outcomes/SKILL.md`
 
-Extracted from: [Anthropic Cookbook — Managed Agents: Verify with Outcome Grader](https://platform.claude.com/cookbook/managed-agents-cma-verify-with-outcome-grader) (2026-05-27)
-
-Implements the full grade-and-revise loop using the Claude Managed Agents (CMA) Outcomes feature. Covers:
-- When to use Outcomes vs. custom orchestration (the rubric-fit test)
-- Creating writer agents, environments, and sessions via the CMA API
-- `user.define_outcome` event structure and `max_iterations` control
-- Writing rubrics that force the grader to fetch and verify evidence
-- Event streaming loop monitoring (`span.outcome_evaluation_start/end`)
-- Terminal state handling (`satisfied`, `max_iterations_reached`, `failed`, `interrupted`)
-- Retrieving the final artifact from the event log
-- Full Python template (setup → session → outcome → monitor → retrieve)
+Implements the full grade-and-revise loop using the Claude Managed Agents Outcomes feature. Use alongside `evaluation/micro` when you want the grader to loop automatically — no custom orchestration needed.
 
 **Activate with:** "grade-and-revise loop", "CMA outcomes", "grader agent", "verify agent output automatically", "managed agents rubric"
 
 ---
 
-## How the Skills Relate
+## Layer Model
 
 ```
-evaluation          ← rubric design, judge implementation, test sets
-    |
-    ├── llm-eval-funnel   ← orchestration: when/how to deploy those judges
-    |       |
-    |       └── /eval-funnel-check   ← interactive checklist at experiment time
-    |
-    └── cma-outcomes      ← automated grade-and-revise using CMA Outcomes API
-
-rl-agent-training   ← uses evaluation as a live training signal (RULER / reward fn)
-    (see below)
+FUNNEL            ← filter candidates before committing to A/B experiments
+  │
+MICRO             ← grade individual runs (pass/fail + dimension scores)
+  │
+LONG-TRAJECTORY   ← extend micro to long/stateful runs that exceed its limits
+  │
+MACRO             ← aggregate micro signal into population-level patterns
 ```
 
-The `evaluation` skill tells you *how* to build judges. `llm-eval-funnel` tells you *when* to run them across A/B experiments. `cma-outcomes` handles the case where the writer and grader run autonomously in a managed session loop — no custom orchestration needed.
+Data flows bottom-up: micro produces the raw signal that macro aggregates. Long-trajectory extends micro to cover hard cases. Funnel sits above all of them, deciding what to ship.
+
+Multi-skill combos:
+- "Evaluate my agent and find patterns" → `micro` + `macro`
+- "Set up an eval pipeline before we A/B test" → `micro` + `funnel`
+- "My agent does 200-turn runs with DB writes" → `long-trajectory` + `micro`
+- "Full eval system from scratch" → `micro` + `long-trajectory` + `macro` + `funnel`
 
 ---
 
-## See Also: When Evaluation Becomes a Training Signal
+## When Evaluation Becomes a Training Signal
 
-If you want to use your evaluation/reward signal to **update model weights** — not just measure quality — see the `rl-agent-training` skill (`~/.claude/skills/rl-agent-training/skill.md`).
+To use your evaluation/reward signal to **update model weights** rather than just measure quality, see the `rl-agent-training` skill (`~/.claude/skills/rl-agent-training/skill.md`). It covers online RL training with ART (Agent Reinforcement Trainer): run the agent many times, score with a reward function or RULER (comparative LLM judge), and update via GRPO. Typical cost: $15–$200 in GPU time.
 
-It covers online RL training with ART (Agent Reinforcement Trainer): run the agent many times, score each attempt with a reward function or RULER (comparative LLM judge), and update the model via GRPO. Small open-source models trained this way regularly outperform GPT-4/o3 on narrow tasks. Typical cost: $15–$200 in GPU time.
-
-**Use `rl-agent-training` when:** you can run the agent and score outcomes, and want to bake the winning behavior into the model weights rather than just measure it.
+**Use `rl-agent-training` when:** you can run the agent and score outcomes, and want to bake the winning behavior into model weights rather than just measure it.

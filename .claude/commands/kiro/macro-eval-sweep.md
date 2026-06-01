@@ -6,7 +6,7 @@ argument-hint: "[days-back] [name-filter]   (defaults: 4 days, all runs)"
 
 # Macro-Eval Sweep
 
-Run the `macro-evals` methodology automatically over recent Raindrop Workshop traces and surface recurring failure patterns. This is the **macro** layer (population patterns), not per-run grading.
+Run the `evaluation/macro` methodology automatically over recent Raindrop Workshop traces and surface recurring failure patterns. This is the **macro** layer (population patterns), not per-run grading.
 
 **Arguments** (`$ARGUMENTS`): optional `[days-back]` (default `4`) and optional `[name-filter]` SQL `LIKE` fragment matched against `runs_with_hints.name` / `event_name` to scope to one system (default: all runs in the window).
 
@@ -23,7 +23,7 @@ mcp__raindrop__query_traces  →  SELECT COUNT(*) AS n FROM runs_with_hints;
 
 ## Step 1 — Load the methodology
 
-Invoke the `macro-evals` skill via the Skill tool and follow its five-phase workflow. The phases below bind that methodology to Raindrop's tables. The full SQL/scoring reference is in that skill's `resources/pipeline-reference.md`.
+Invoke the `evaluation/macro` skill via the Skill tool and follow its five-phase workflow. The phases below bind that methodology to Raindrop's tables. The full SQL/scoring reference is in `~/.claude/skills/evaluation/references/pipeline-reference.md`.
 
 ## Step 2 — Population window (Phase 1)
 

@@ -411,7 +411,7 @@ Runs automatically twice weekly via `scripts/macro-eval-runner.sh` (MIN_GAP_DAYS
 
 Output: `.claude/reports/macro-evals/YYYY-MM-DD.md` with a pattern leaderboard, top-3 diagnoses (focus event + suspect step), and a delta vs. previous sweep. Span-level and run-level Workshop annotations are posted for confirmed recurring failure patterns (cap: ~5 runs per pattern).
 
-Skill: `macro-evals`. Opt-out: `SDD_SKIP_MACRO_EVAL=1`.
+Skill: `evaluation/macro` (part of the `evaluation` skill family). Opt-out: `SDD_SKIP_MACRO_EVAL=1`.
 
 ---
 

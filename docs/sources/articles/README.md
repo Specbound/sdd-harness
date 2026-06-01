@@ -106,3 +106,16 @@ Online articles, blog posts, and documentation pages that were passed to `/skill
 
 **What we added:**
 - Skill enhancement: `multi-agent-patterns` v1.3.0 — "Tool Selection: Agent vs. Workflow" section with decision table, task-shape routing tree, ultracode mode note, and token budget guidance. Positions the `Workflow` tool as the scale-escalation path above `Agent`-based dispatch, with explicit cross-link to `superpowers:dispatching-parallel-agents` for the small-fleet path.
+
+---
+
+## Agent Judge: Solving Long-Context Evaluations
+**URL:** https://www.judgmentlabs.ai/blogs/agent-judge-solving-long-context-evaluations
+**Added:** 2026-06-01
+**Source / Author:** JudgmentLabs
+
+**What it's about:** Describes the "Agent Judge" architecture for evaluating long-horizon agents where standard LLM judges fail — specifically when trajectories exceed context limits, actions modify external state (CRM, GitHub, AWS, DB), or evaluation criteria drift as agent behavior evolves. Three core capabilities: Search (slice long trajectories into targeted evidence chunks via worker agents), Verify (cross-check agent claims against external system state rather than trusting agent descriptions), and Adapt (Rubric Builder — closed-loop calibration of rubrics against human labels and production outcomes). Empirical results on trajectory-level hallucination detection: Agent Judge (refined) 0.86 accuracy / 0.79 F1 vs. 0.74 / 0.65 for a standard LLM judge across difficulty deciles.
+
+**What we added:**
+- Skill: `evaluation/long-trajectory` — three-phase workflow (Search / Verify / Adapt), evidence-slice strategies, external system verification checklist (API, DB, GitHub, cloud, logs, filesystem), Rubric Builder iteration loop with calibration signals and trigger conditions. Part of the consolidated `evaluation/` skill family.
+- Restructure: consolidated `evaluation`, `macro-evals`, and `llm-eval-funnel` into a single `evaluation/` skill family with a router (`evaluation/SKILL.md`) and four sub-skills (`micro`, `macro`, `funnel`, `long-trajectory`). Router provides a decision tree and supports loading multiple sub-skills for cross-layer tasks. Documentation added at `docs/evaluation/README.md`.

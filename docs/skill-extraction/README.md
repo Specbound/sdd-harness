@@ -150,16 +150,16 @@ Skills extracted and logged to `docs/sources/` by source type. See the relevant 
 - `prompt-engineering` — prompt engineering patterns (adapted from prompt-master)
 - `frontend-performance` — frontend performance checklist from Linear breakdown
 - `frontend-code-quality` — HTML/CSS/JS quality rules from bendc/frontend-guidelines
-- `macro-evals` — macro-eval methodology from OpenAI cookbook
-- `evaluation` — evaluation fundamentals
+- `evaluation` — evaluation skill family (router + micro/macro/funnel/long-trajectory sub-skills)
 - `karpathy-guidelines` — 4-principle behavioral checklist for every coding task from multica-ai/andrej-karpathy-skills (2026-05-31)
 
 ### From online articles (`docs/sources/articles/`)
 - `frontend-performance` — from performance.dev Linear breakdown (2026-05-27)
-- `llm-eval-funnel` — from Spotify Engineering Blog (2026-05-27)
+- `evaluation/funnel` — from Spotify Engineering Blog (2026-05-27)
 - `progressive-complexity-ladder` — from jxnl.co (2026-05-27)
 - `cma-outcomes` — from Anthropic Cookbook (2026-05-27)
-- `macro-evals` — from OpenAI Cookbook (2026-05-31)
+- `evaluation/macro` — from OpenAI Cookbook (2026-05-31)
+- `evaluation/long-trajectory` — from JudgmentLabs blog (2026-06-01)
 - `instruction-architecture` — from walkinglabs.github.io/learn-harness-engineering Lectures 03–04 (2026-05-31)
 - `feature-list-primitive` — from walkinglabs.github.io/learn-harness-engineering Lectures 07–08 (2026-05-31)
 - `session-clean-state` — from walkinglabs.github.io/learn-harness-engineering Lectures 05, 12 (2026-05-31)
