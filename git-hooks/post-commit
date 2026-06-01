@@ -42,7 +42,7 @@ or architectural decisions not yet captured in steering, update the relevant ste
 
 Skip .md files inside .venv/ and .git/. Never write to source code files."
 
-  claude --print "$DOC_SYNC_PROMPT" 2>/dev/null &
+  claude --dangerously-skip-permissions --print "$DOC_SYNC_PROMPT" 2>/dev/null &
   echo "  post-commit: source changes detected — doc sync running in background..."
 fi
 
@@ -65,6 +65,6 @@ Do not remove existing documented steps unless directly replaced by the changes.
 Do not overwrite sections unrelated to the detected changes.
 Replace any existing '_Last synced' line with: _Last synced: $TODAY_"
 
-  claude --print "$HARNESS_PROMPT" 2>/dev/null &
+  claude --dangerously-skip-permissions --print "$HARNESS_PROMPT" 2>/dev/null &
   echo "  post-commit: harness changes detected — SDD-SETUP-GUIDE sync running in background..."
 fi

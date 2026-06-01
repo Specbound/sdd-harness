@@ -2,7 +2,7 @@
 
 > This file is managed by the SDD harness (`sdd-harness/docs/`).
 > It is the single source of truth — do not edit copies in individual projects.
-> _Last synced: 
+> _Last synced: 2026-06-01
 
 A complete, self-contained guide to setting up the Spec-Driven Development (SDD)
 harness used in this project. Follow these steps to replicate the setup in any
@@ -220,6 +220,19 @@ Create `.claude/settings.json`:
           {
             "type": "command",
             "command": "/bin/bash /path/to/.claude/hooks/impeccable-detect-hook.sh"
+          },
+          {
+            "type": "command",
+            "command": "/bin/bash /path/to/.claude/hooks/hook-added-notify.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "Read",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/bash /path/to/.claude/hooks/lean-ctx-nudge-hook.sh"
           }
         ]
       }
@@ -246,6 +259,10 @@ Create `.claude/settings.json`:
           {
             "type": "command",
             "command": "/bin/bash /path/to/.claude/hooks/memory-discipline-hook.sh"
+          },
+          {
+            "type": "command",
+            "command": "/bin/bash /path/to/.claude/hooks/protected-path-hook.sh"
           },
           {
             "type": "command",
@@ -558,6 +575,9 @@ Conventions are defined in `.claude/kiro/settings/rules/memory-conventions.md`:
 | PreToolUse (protected path) | Every Write/Edit to a sensitive path (`.env`, crypto keys, credentials, `.aws/`, `.ssh/`) | Injects a confirmation banner; Claude must pause and ask the user before proceeding. Prevents accidental overwrites of secrets files. Implemented in `.claude/hooks/protected-path-hook.sh`. |
 | PreToolUse (skill-validate) | Every Write to `~/.claude/skills/<name>/SKILL.md` | Validates skill frontmatter before writing: `name:` must be kebab-case and match the file path slug; `description:` must exist and be ≥25 chars; warns on vague description starters. Exit 2 hard-blocks on errors. Implemented in `.claude/hooks/skill-validate-hook.sh`. |
 | PreCompact (compaction-discipline) | Every context compaction | Injects boundary-timing principle and state-preservation checklist: compact at workflow phase boundaries (not arbitrary turn counts), preserve artifact paths, cited facts, open questions, and decisions. Use anchored iterative summarization. Implemented in `.claude/hooks/compaction-discipline-hook.sh`. |
+| PostToolUse (hook-added-notify) | Every Write/Edit that creates a new `.claude/hooks/*.sh` | Injects a reminder to document the new hook in `docs/hooks/README.md` (and the Wiring Reference table) before the session ends. Stays silent if the hook is already documented. Implemented in `.claude/hooks/hook-added-notify.sh`. |
+| PostToolUse (lean-ctx nudge) | Every Read of a file ≥16 KB (~4,000 tokens) | Suggests the optimal `ctx_read` mode for the file type (`signatures` for code, `reference` for prose, `aggressive` for unknown); silent for small files and data formats (`.json/.yaml/.toml/.lock`). Implemented in `.claude/hooks/lean-ctx-nudge-hook.sh`. |
+| PostToolUse (ccr-routine-added-notify) | Every `CronCreate` tool call | Injects a reminder to document the new CCR routine in `docs/ccr-routines/README.md` (ID, schedule, purpose, output) before the session ends. Implemented in `.claude/hooks/ccr-routine-added-notify.sh`. |
 | post-commit (doc sync) | Every `git commit` with non-`.md` source changes | Doc-sync: updates all `.md` files referencing changed code via `claude --print` (background) |
 | post-commit (harness updater) | Every `git commit` with `.claude/` changes (excl. memory) | Updates `SDD-SETUP-GUIDE.md` via `claude --print` (background) |
 
@@ -944,15 +964,15 @@ Add to your project's `CLAUDE.md` Quality Gates section:
 
 ### Transferring to a new repo
 
-`update.sh` copies `kiro/settings/rules/frontend-anti-patterns.md` and `docs/design/` automatically. The skill lives at `~/.claude/skills/impeccable-audit/` (global, not per-project). The hook at `.claude/hooks/impeccable-detect-hook.sh` is copied by `update.sh` only if you add it to the copy list — or copy manually:
+`install.sh` and `update.sh` propagate **every** hook in the harness's `hooks/` directory to each project's `.claude/hooks/` unconditionally — including `impeccable-detect-hook.sh` — and sync `kiro/settings/rules/frontend-anti-patterns.md` and `docs/` automatically. The skill lives at `~/.claude/skills/impeccable-audit/` (global, not per-project). No manual copy step is needed:
 
 ```bash
-cp ~/.claude/sdd-harness/.claude/hooks/impeccable-detect-hook.sh \
-   /path/to/project/.claude/hooks/
-chmod +x /path/to/project/.claude/hooks/impeccable-detect-hook.sh
+~/.claude/sdd-harness/update.sh        # re-syncs hooks + rules + docs to every registered repo
+# or, for a brand-new repo:
+~/.claude/sdd-harness/install.sh /path/to/project
 ```
 
-Then add the PostToolUse entry to the project's `.claude/settings.json` (shown in Step 6 above).
+The PostToolUse wiring ships in `templates/settings.json.template` and is installed automatically (see Step 6 above for the equivalent manual entry).
 
 See `docs/design/impeccable/impeccable.md` for the full rule set and workflow placement.
 
@@ -1077,7 +1097,7 @@ Each harness subsystem has a detailed reference doc:
 | Cog Memory | `docs/memory/README.md` | Tier architecture, file formats, conventions, data flow |
 | Jira Integration | `docs/jira/README.md` | Hook architecture, scripts, credentials, troubleshooting |
 | AutoResearch | `docs/autoresearch/README.md` | Interview protocol, loop mechanics, agent behavior |
-| Trust Battery | `docs/trust-battery/README.md` | Nightly Judge/Reflector loop, rubric, scoreboard, opt-out, non-goals |
+| Trust Battery | `docs/trust-battery/README.md` | Nightly Judge/Reflector loop, rubric, scoreboard, `auto-score` session success ratio (uncorrected sessions earn passive positive credit, read from `.claude/memory/.session-history`), opt-out, non-goals |
 | ztk | `docs/ztk/README.md` | Token compression proxy — filter coverage, patch details, session memory, upgrading |
 | Context Hub | [github.com/andrewyng/context-hub](https://github.com/andrewyng/context-hub) | MCP server for third-party API docs (external) |
 | Design Quality | `docs/design/README.md` | Visual design quality integrations index |

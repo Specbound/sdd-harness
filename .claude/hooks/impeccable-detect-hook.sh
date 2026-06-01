@@ -42,11 +42,8 @@ done
 [[ "$IS_FRONTEND" == false ]] && exit 0
 
 # --- Resolve impeccable ---
-IMPECCABLE_BIN=""
 if command -v impeccable &>/dev/null; then
   IMPECCABLE_BIN="impeccable"
-elif [[ -x "/home/dalesser/.nvm/versions/node/v18.20.8/bin/impeccable" ]]; then
-  IMPECCABLE_BIN="/home/dalesser/.nvm/versions/node/v18.20.8/bin/impeccable"
 else
   # Not installed — skip silently (avoid npx cold-download on every write)
   exit 0

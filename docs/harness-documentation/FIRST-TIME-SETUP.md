@@ -308,6 +308,8 @@ Once global tools are in place, install the harness into each project:
 ```
 Or use the WSL2 path if Claude Code is running inside WSL2.
 
+`install.sh` propagates **every** hook in the harness's `hooks/` directory into the project's `.claude/hooks/` (and `chmod +x`'s them), syncs `docs/` into `.claude/docs/`, and generates a project stack summary. The harness is the source of truth — which hooks actually fire is governed by the project's `.claude/settings.json` wiring, not by which files are present. Re-run `update.sh` to re-sync after the harness changes.
+
 Then, inside Claude Code in the project directory, run these once:
 
 ```
@@ -373,4 +375,4 @@ Run through this on a fresh machine:
 | **Windows:** `uv` not found after install | PowerShell PATH not reloaded | Restart terminal or run `. $env:USERPROFILE\.cargo\env` (or reopen shell) |
 | **Windows:** `install.sh` fails | Script requires bash | Run from Git Bash or WSL2, not PowerShell or CMD |
 
-_Last synced: 2026-05-27_
+_Last synced: 2026-06-01_
