@@ -2,7 +2,7 @@
 
 > This file is managed by the SDD harness (`sdd-harness/docs/`).
 > It is the single source of truth — do not edit copies in individual projects.
-> _Last synced: 2026-05-31
+> _Last synced: 
 
 A complete, self-contained guide to setting up the Spec-Driven Development (SDD)
 harness used in this project. Follow these steps to replicate the setup in any
@@ -500,6 +500,7 @@ Conventions are defined in `.claude/kiro/settings/rules/memory-conventions.md`:
 | `/kiro:ci-scaffold` | Generate CI configuration mirroring the verify pipeline |
 | `/kiro:autoresearch-init` | Interactive ML project setup — generates program.md, train.py, prepare.py |
 | `/kiro:autoresearch [N]` | Run autonomous ML experiment loop (N iterations or continuous) |
+| `/kiro:macro-eval-sweep [days-back] [name-filter]` | Population-scale failure pattern sweep over Raindrop Workshop traces; clusters recurring failures, ranks by impact, writes dated report, posts Workshop annotations |
 
 ---
 

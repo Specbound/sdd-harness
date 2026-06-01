@@ -127,6 +127,7 @@ The orchestrator passes the Judge's verdict JSON directly into the reflect-agent
 
 ```bash
 python3 .claude/scripts/trust_score.py apply --delta -1.0 --summary "..."
+python3 .claude/scripts/trust_score.py auto-score   # deterministic, from observations + session history
 python3 .claude/scripts/trust_score.py show
 ```
 
@@ -139,6 +140,29 @@ Behavior:
 - Appends to `trust-score.jsonl` with raw delta, applied delta, and timestamp for the 7-day trend
 
 Output arrows: ▲ (up), ▼ (down), ▬ (flat). 7-day delta is `null` until there are records older than 7 days.
+
+#### `auto-score` — session success ratio
+
+The `auto-score` subcommand incorporates a **session success ratio** so uncorrected sessions contribute positively — not just zero. An uncorrected session is one where no user correction was recorded (no `session-quality ≤ 2/5` and no `memory-gap` on that day).
+
+```
+ratio = clean_sessions / total_sessions   (0.0 – 1.0; defaults to 0.5 when no data)
+multiplier = 0.5 + ratio                  (0.5× – 1.5× applied to explicit signals)
+session_credit = (ratio – 0.5) × 2.0     (–1.0 – +1.0 baseline from ratio alone)
+delta = base_delta × multiplier + session_credit
+```
+
+`base_delta` is the sum of explicit observation tags (charges, session-quality scores, memory-gaps). `total_sessions` is counted from `.claude/memory/.session-history` (written by the stop hook on every session close). `corrected_days` approximates corrected sessions as days in the window that had `sq_low` or `memory-gap` signals.
+
+Representative values:
+| Scenario | base_delta | ratio | delta |
+|---|---|---|---|
+| 100% clean sessions, no other signals | 0 | 1.0 | **+1.0** |
+| 100% clean sessions, +2 approvals | +2 | 1.0 | **+4.0** |
+| 50% clean (neutral), +1 approval | +1 | 0.5 | **+1.0** (passes through) |
+| 0% clean (all corrected), –2 gaps | –2 | 0.0 | **–2.0** |
+
+The ratio is included in the summary string: `session-ratio=N/M (X% clean)`.
 
 ## The Nightly Loop
 
@@ -247,8 +271,10 @@ Check the guard conditions in order:
 
 ### Score is stuck at 20%
 
-- The Judge scored 0 for each run. Causes: empty observations window, every finding lacked evidence (the rubric requires citations), or all observations are already tagged `[judge]` (idempotent skip).
-- Check: `python3 .claude/scripts/trust_score.py show` — if `records > 0` but `score == 20`, the Judge is consistently emitting `score_delta: 0`. Inspect the rubric and recent observations.
+- The `auto-score` command now generates passive positive credit from the session success ratio — a run with even zero explicit signals and a 100% clean ratio produces **+1.0**. If the score is still stuck at 20%, check:
+  1. `.claude/memory/.session-history` — does it contain lines? If the stop hook is not appending timestamps, no session ratio can be computed (defaults to 0.5 = neutral).
+  2. `python3 .claude/scripts/trust_score.py show` — if `records > 0` but `score == 20`, the Judge is consistently emitting `score_delta: 0` AND session ratio is near 50% (neutral). Inspect rubric and session history.
+  3. Every finding lacked evidence (the rubric requires citations), or all observations are already tagged `[judge]` (idempotent skip).
 
 ### Routine not registered
 

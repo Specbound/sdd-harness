@@ -77,6 +77,7 @@ sync_dir "$HARNESS_DIR/commands/kiro" "$PROJECT_DIR/.claude/commands"
 sync_dir "$HARNESS_DIR/agents"        "$PROJECT_DIR/.claude"
 sync_dir "$HARNESS_DIR/kiro"          "$PROJECT_DIR/.claude"
 sync_dir "$HARNESS_DIR/scripts"       "$PROJECT_DIR/.claude"
+sync_dir "$HARNESS_DIR/docs"          "$PROJECT_DIR/.claude"
 
 # --- Install harness skills globally ---
 if [ -d "$HARNESS_DIR/skills" ]; then
@@ -99,17 +100,25 @@ if [ -d "$HARNESS_DIR/commands/global" ]; then
 fi
 # glacier/ is empty in the harness source; create it explicitly after kiro sync
 mkdir -p "$PROJECT_DIR/.claude/kiro/settings/templates/memory/meta/glacier"
-sed "s|{{HARNESS_DIR}}|$HARNESS_DIR|g" "$HARNESS_DIR/hooks/stop-hook.sh" \
-  > "$PROJECT_DIR/.claude/hooks/stop-hook.sh"
-cp    "$HARNESS_DIR/hooks/session-start-hook.sh"    "$PROJECT_DIR/.claude/hooks/"
-cp    "$HARNESS_DIR/hooks/pre-tool-use-gitnexus.sh" "$PROJECT_DIR/.claude/hooks/"
-cp    "$HARNESS_DIR/hooks/revert-detect-hook.sh"    "$PROJECT_DIR/.claude/hooks/"
-chmod +x "$PROJECT_DIR/.claude/hooks/stop-hook.sh"
-chmod +x "$PROJECT_DIR/.claude/hooks/session-start-hook.sh"
-chmod +x "$PROJECT_DIR/.claude/hooks/pre-tool-use-gitnexus.sh"
-chmod +x "$PROJECT_DIR/.claude/hooks/revert-detect-hook.sh"
-chmod +x "$PROJECT_DIR/.claude/scripts/daily-runner.sh"
-[ -f "$PROJECT_DIR/.claude/scripts/macro-eval-runner.sh" ] && chmod +x "$PROJECT_DIR/.claude/scripts/macro-eval-runner.sh"
+
+# --- Sync ALL hooks from canonical source ($HARNESS_DIR/hooks/) ---
+# Every .sh in hooks/ is installed unconditionally — even hooks the user may not
+# wire up immediately. The harness is the source of truth; mandatory propagation.
+for hook in "$HARNESS_DIR/hooks/"*.sh; do
+  [ -f "$hook" ] || continue
+  name="$(basename "$hook")"
+  if [ "$name" = "stop-hook.sh" ]; then
+    sed "s|{{HARNESS_DIR}}|$HARNESS_DIR|g" "$hook" > "$PROJECT_DIR/.claude/hooks/$name"
+  else
+    cp "$hook" "$PROJECT_DIR/.claude/hooks/$name"
+  fi
+  chmod +x "$PROJECT_DIR/.claude/hooks/$name"
+done
+
+# --- chmod runtime scripts that need to be executable ---
+for s in daily-runner.sh macro-eval-runner.sh skill-curator-runner.sh harness-health-runner.sh; do
+  [ -f "$PROJECT_DIR/.claude/scripts/$s" ] && chmod +x "$PROJECT_DIR/.claude/scripts/$s"
+done
 
 # --- Set up git post-commit hook ---
 cp "$HARNESS_DIR/git-hooks/post-commit" "$PROJECT_DIR/.git/hooks/"
@@ -145,6 +154,10 @@ fi
 sed "s|{{HARNESS_DIR}}|$HARNESS_DIR|g" "$HARNESS_DIR/templates/settings.harness.json.template" \
   > "$HARNESS_DIR/.claude/settings.json"
 echo "  Harness settings.json generated (paths resolved to $HARNESS_DIR)."
+
+# --- Generate project stack summary (used by agents to understand the codebase) ---
+bash "$HARNESS_DIR/generate-project-stack.sh" "$PROJECT_DIR" || \
+  echo "  WARNING: generate-project-stack.sh returned non-zero — stack file may be missing."
 
 # --- Record install timestamp ---
 date -Iseconds > "$PROJECT_DIR/.claude/.last-harness-check"

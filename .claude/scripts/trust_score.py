@@ -27,6 +27,7 @@ DAILY_CAP = 4.5
 HISTORY = Path(".claude/memory/trust-score.jsonl")
 HOT_MEMORY = Path(".claude/memory/hot-memory.md")
 OBS_FILE = Path(".claude/memory/observations.md")
+SESSION_HISTORY = Path(".claude/memory/.session-history")
 SCORE_HEADER_PREFIX = "## Harness Trust Score:"
 
 
@@ -194,6 +195,24 @@ def _parse_observations_since(since: date) -> dict:
     return counts
 
 
+def _count_sessions_since(since: date) -> int:
+    """Count session-close events recorded in .session-history on or after `since`."""
+    if not SESSION_HISTORY.is_file():
+        return 0
+    count = 0
+    for line in SESSION_HISTORY.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            ts_date = date.fromisoformat(line[:10])
+        except ValueError:
+            continue
+        if ts_date >= since:
+            count += 1
+    return count
+
+
 def cmd_auto_score() -> int:
     """Score deterministically from observation tags; no LLM Judge needed."""
     history = load_history()
@@ -216,7 +235,26 @@ def cmd_auto_score() -> int:
     sq_lo = min(c["sq_low"], 1)
     kr_hi = min(c["kr_high"], 1)
 
-    delta = float(charges + sq_hi + kr_hi - gaps * 2 - sq_lo)
+    # Base signal from explicit observation tags (unchanged)
+    base_delta = float(charges + sq_hi + kr_hi - gaps * 2 - sq_lo)
+
+    # Session success ratio: uncorrected sessions act as a multiplier and baseline.
+    # corrected_days = days in window that had sq_low or memory-gap tags (proxy for sessions needing corrections)
+    corrected_days = min(c["sq_low"] + c["memory_gaps"], 10)
+    total_sessions = _count_sessions_since(since)
+    clean_sessions = max(0, total_sessions - corrected_days)
+
+    if total_sessions > 0:
+        ratio = clean_sessions / total_sessions  # 0.0 = all corrected, 1.0 = all clean
+    else:
+        ratio = 0.5  # no session data → neutral
+
+    # multiplier: [0.5, 1.5] — amplifies existing signals proportional to success rate
+    multiplier = 0.5 + ratio
+    # session_credit: [-1.0, +1.0] — baseline contribution from ratio alone
+    session_credit = (ratio - 0.5) * 2.0
+
+    delta = base_delta * multiplier + session_credit
 
     parts = []
     if charges:
@@ -229,6 +267,8 @@ def cmd_auto_score() -> int:
         parts.append(f"{gaps} re-explanation(s)")
     if sq_lo:
         parts.append("session-quality≤2/5")
+    if total_sessions > 0:
+        parts.append(f"session-ratio={clean_sessions}/{total_sessions} ({ratio:.0%} clean)")
     summary = "auto-score: " + (", ".join(parts) if parts else "no signals detected")
 
     return cmd_apply(delta, summary)

@@ -373,7 +373,7 @@ Idempotent per calendar day (uses today's `[judge]` observation as the sentinel)
 
 The `## Harness Trust Score:` line at the top of `hot-memory.md` (e.g. `42.3% (▲ +0.8 today, 7d: ▼ -1.1)`) is a single-user health signal. **It never gates harness behavior** — spec phase gates still require explicit human approval regardless of score. Adapted from @nityeshaga's "trust battery" design (April 2026) but scoped down: one battery per project (single developer), informational only, no autonomy tiers.
 
-Starts at 20% on fresh install. Daily cap ±4.5%. History lives in `.claude/memory/trust-score.jsonl` (one record per nightly run).
+Starts at 20% on fresh install. Daily cap ±4.5%. History lives in `.claude/memory/trust-score.jsonl` (one record per nightly run). The `auto-score` command incorporates a **session success ratio**: uncorrected sessions (no `session-quality ≤ 2/5` or `memory-gap` on that day) act as a multiplier on existing signals and contribute a ±1.0 baseline — so uneventful sessions now passively charge the battery rather than contributing zero.
 
 ### Opt out
 

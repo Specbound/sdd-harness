@@ -82,21 +82,25 @@ do_update() {
   sync_dir "$HARNESS_DIR/scripts"       "$proj/.claude"
   sync_dir "$HARNESS_DIR/docs"          "$proj/.claude"
   mkdir -p "$proj/.claude/memory/sessions"
-  sed "s|{{HARNESS_DIR}}|$HARNESS_DIR|g" "$HARNESS_DIR/hooks/stop-hook.sh" \
-    > "$proj/.claude/hooks/stop-hook.sh"
-  cp    "$HARNESS_DIR/hooks/session-start-hook.sh"    "$proj/.claude/hooks/"
-  cp    "$HARNESS_DIR/hooks/pre-tool-use-gitnexus.sh" "$proj/.claude/hooks/"
-  cp    "$HARNESS_DIR/hooks/revert-detect-hook.sh"    "$proj/.claude/hooks/"
-  cp    "$HARNESS_DIR/.claude/hooks/impeccable-detect-hook.sh" "$proj/.claude/hooks/"
-  chmod +x "$proj/.claude/hooks/stop-hook.sh"
-  chmod +x "$proj/.claude/hooks/session-start-hook.sh"
-  chmod +x "$proj/.claude/hooks/pre-tool-use-gitnexus.sh"
-  chmod +x "$proj/.claude/hooks/revert-detect-hook.sh"
-  chmod +x "$proj/.claude/hooks/impeccable-detect-hook.sh"
-  [ -f "$proj/.claude/scripts/daily-runner.sh" ]           && chmod +x "$proj/.claude/scripts/daily-runner.sh"
-  [ -f "$proj/.claude/scripts/macro-eval-runner.sh" ]      && chmod +x "$proj/.claude/scripts/macro-eval-runner.sh"
-  [ -f "$proj/.claude/scripts/skill-curator-runner.sh" ]   && chmod +x "$proj/.claude/scripts/skill-curator-runner.sh"
-  [ -f "$proj/.claude/scripts/harness-health-runner.sh" ]  && chmod +x "$proj/.claude/scripts/harness-health-runner.sh"
+
+  # --- Sync ALL hooks from canonical source ($HARNESS_DIR/hooks/) ---
+  # Every .sh in hooks/ is propagated unconditionally to every project.
+  # The harness is the source of truth; user-chosen wiring lives in settings.json.
+  for hook in "$HARNESS_DIR/hooks/"*.sh; do
+    [ -f "$hook" ] || continue
+    name="$(basename "$hook")"
+    if [ "$name" = "stop-hook.sh" ]; then
+      sed "s|{{HARNESS_DIR}}|$HARNESS_DIR|g" "$hook" > "$proj/.claude/hooks/$name"
+    else
+      cp "$hook" "$proj/.claude/hooks/$name"
+    fi
+    chmod +x "$proj/.claude/hooks/$name"
+  done
+
+  # --- chmod runtime scripts that need to be executable ---
+  for s in daily-runner.sh macro-eval-runner.sh skill-curator-runner.sh harness-health-runner.sh; do
+    [ -f "$proj/.claude/scripts/$s" ] && chmod +x "$proj/.claude/scripts/$s"
+  done
   [ "$(uname)" = "Darwin" ] && xattr -cr "$proj/.claude/hooks/" 2>/dev/null || true
   if [ -d "$proj/.git" ]; then
     cp "$HARNESS_DIR/git-hooks/post-commit" "$proj/.git/hooks/"
@@ -146,19 +150,26 @@ else
   done < "$HARNESS_DIR/projects.txt"
 fi
 
-# Update harness VERSION to today
-# Keep the harness's own .claude/ in sync with the source hooks and scripts.
-# NOTE: stop-hook.sh is intentionally NOT synced here — .claude/hooks/stop-hook.sh is the
-# harness-specific version (with memory-gap detection, HARNESS_DIR auto-detection, etc.)
-# while hooks/stop-hook.sh is the simpler version installed into other projects.
-cp "$HARNESS_DIR/hooks/session-start-hook.sh"    "$HARNESS_DIR/.claude/hooks/session-start-hook.sh"
-cp "$HARNESS_DIR/hooks/revert-detect-hook.sh"    "$HARNESS_DIR/.claude/hooks/revert-detect-hook.sh"
-cp "$HARNESS_DIR/hooks/pre-tool-use-gitnexus.sh" "$HARNESS_DIR/.claude/hooks/pre-tool-use-gitnexus.sh"
-cp "$HARNESS_DIR/scripts/daily-runner.sh"        "$HARNESS_DIR/.claude/scripts/daily-runner.sh"
-cp "$HARNESS_DIR/scripts/daily-orchestrator.sh"  "$HARNESS_DIR/.claude/scripts/daily-orchestrator.sh"
-cp "$HARNESS_DIR/scripts/macro-eval-runner.sh"   "$HARNESS_DIR/.claude/scripts/macro-eval-runner.sh"
-cp "$HARNESS_DIR/scripts/macro-eval-prompt.md"   "$HARNESS_DIR/.claude/scripts/macro-eval-prompt.md"
-chmod +x "$HARNESS_DIR/.claude/hooks/"*.sh "$HARNESS_DIR/.claude/scripts/daily-runner.sh" "$HARNESS_DIR/.claude/scripts/macro-eval-runner.sh" "$HARNESS_DIR/.claude/scripts/daily-orchestrator.sh"
+# --- Sync harness's own .claude/ runtime from canonical sources ---
+# hooks/ and scripts/ are the canonical source of truth. The harness's runtime
+# copy under .claude/ is regenerated each update so its own hooks/scripts cannot
+# drift from the source. stop-hook.sh gets {{HARNESS_DIR}} substituted to an
+# absolute path because Claude Code's hook runner does not set CWD.
+for hook in "$HARNESS_DIR/hooks/"*.sh; do
+  [ -f "$hook" ] || continue
+  name="$(basename "$hook")"
+  if [ "$name" = "stop-hook.sh" ]; then
+    sed "s|{{HARNESS_DIR}}|$HARNESS_DIR|g" "$hook" > "$HARNESS_DIR/.claude/hooks/$name"
+  else
+    cp "$hook" "$HARNESS_DIR/.claude/hooks/$name"
+  fi
+  chmod +x "$HARNESS_DIR/.claude/hooks/$name"
+done
+# scripts/ is a flat directory sync — every script available in source is available at runtime.
+sync_dir "$HARNESS_DIR/scripts" "$HARNESS_DIR/.claude"
+for s in "$HARNESS_DIR/.claude/scripts/"*.sh; do
+  [ -f "$s" ] && chmod +x "$s"
+done
 [ "$(uname)" = "Darwin" ] && xattr -cr "$HARNESS_DIR/.claude/" 2>/dev/null || true
 
 # Regenerate the harness's own settings.json from the template.
