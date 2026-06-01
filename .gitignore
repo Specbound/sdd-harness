@@ -4,6 +4,14 @@ VERSION
 .claude/settings.json
 .claude/docs/superpowers/
 
+# Per-user memory — stays local, never shared
+.claude/memory/**
+!.claude/memory/daily/
+!.claude/memory/glacier/
+!.claude/memory/meta/
+!.claude/memory/.gitkeep
+!.claude/memory/**/.gitkeep
+
 # Runtime artifacts
 logs/
 .dashboard/
