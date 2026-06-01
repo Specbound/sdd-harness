@@ -39,7 +39,7 @@ SECTION_DEFS = [
     ("gitnexus",           "🕸", "GitNexus"),
     ("workshop",           "🔬", "Workshop"),
     ("hooks_history",      "🪝", "Hooks History"),
-    ("ccr_routines",       "📅", "CCR Routines"),
+    ("scheduled_tasks",    "📅", "Scheduled Tasks"),
     ("memory_changes",     "🧠", "Memory Changes"),
     ("skill_changes",      "🎯", "Skill Changes"),
     ("session_quality",    "📊", "Session Quality"),
@@ -372,136 +372,391 @@ def workshop_stats(repo):
     return {"installed": installed, "instrumented": instrumented}
 
 def parse_orchestrator_log():
+    """Parse ~/.claude/sdd-harness/logs/orchestrator.log.
+
+    Two line shapes:
+      '<ts> <repo> exit=<N> duration=<N>s'                  (daily-maintenance)
+      '<ts> <repo> <runner-name> exit=<N> duration=<N>s'    (macro-eval, skill-curator, harness-health)
+    Plus harness-level drift lines '<ts> harness: drift review exit=<N>' (no duration).
+    """
     if not ORCH_LOG.exists():
         return []
-    pattern = re.compile(r'(\S+)\s+(\S+)\s+exit=(\d+)\s+duration=(\d+)s')
     runs = []
+    main_re = re.compile(r'^(\S+)\s+(.+?)\s+exit=(\d+)\s+duration=(\d+)s\s*$')
+    drift_re = re.compile(r'^(\S+)\s+harness:\s+drift review\s+exit=(\d+)\s*$')
     for line in ORCH_LOG.read_text().splitlines():
-        m = pattern.match(line.strip())
+        line = line.strip()
+        m = main_re.match(line)
         if m:
+            ts, mid, ex, dur = m.groups()
+            parts = mid.split()
+            if len(parts) >= 2:
+                # last token is runner name
+                runner = parts[-1]
+                path   = " ".join(parts[:-1])
+            else:
+                runner = "daily-maintenance"
+                path   = parts[0] if parts else ""
             runs.append({
-                "ts": m.group(1), "path": m.group(2),
-                "exit": int(m.group(3)), "duration": int(m.group(4)),
+                "ts": ts, "path": path, "runner": runner,
+                "exit": int(ex), "duration": int(dur),
+            })
+            continue
+        m = drift_re.match(line)
+        if m:
+            ts, ex = m.groups()
+            runs.append({
+                "ts": ts, "path": str(HARNESS_DIR), "runner": "drift-review",
+                "exit": int(ex), "duration": 0,
             })
     return runs
 
-def parse_cron(cron_str):
-    parts = cron_str.strip().split()
-    if len(parts) != 5:
-        return None
-    minute, hour, _dom, _month, dow = parts
-    try:
-        if dow != '*':
-            dow_names = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
-            return {
-                "type": "weekly", "dow": int(dow),
-                "hour": int(hour), "minute": int(minute),
-                "interval_seconds": 7 * 86400,
-                "human": f"Every {dow_names[int(dow)]} at {int(hour):02d}:{int(minute):02d} UTC",
-            }
-        else:
-            return {
-                "type": "daily",
-                "hour": int(hour), "minute": int(minute),
-                "interval_seconds": 86400,
-                "human": f"Daily at {int(hour):02d}:{int(minute):02d} UTC",
-            }
-    except (ValueError, IndexError):
-        return None
 
-def _next_schedule_occurrence(sched, from_dt):
-    """Return the next datetime when a parsed cron schedule fires after from_dt."""
-    if not sched:
+# ── Scheduled Tasks (replaces former CCR routine wiring) ──────────────────────
+
+# Source of truth for the Scheduled Tasks dashboard tab. To add a routine here:
+# the orchestrator already logs it under `runner_log_token`; just append an entry
+# and the dashboard picks it up.
+def _scheduled_task_registry():
+    return [
+        {
+            "key":               "daily-maintenance",
+            "name":              "Daily Maintenance",
+            "runner_log_token":  "daily-maintenance",
+            "state_file":        HARNESS_DIR / ".claude" / "memory" / ".last-routine-run",
+            "artifact_glob":     str(HARNESS_DIR / ".claude" / "memory" / "daily" / "*-brief.md"),
+            "artifact_label":    ".claude/memory/daily/<date>-brief.md",
+            "schedule_human":    "Daily at 18:00 (local)",
+            "interval_seconds":  86400,
+            "scope":             "per-repo",
+            "what_it_does":      "Judge previous day, reflect drains→memory, housekeep, trust-score, write morning brief",
+        },
+        {
+            "key":               "macro-eval",
+            "name":              "Macro-Eval Sweep",
+            "runner_log_token":  "macro-eval",
+            "state_file":        HARNESS_DIR / ".claude" / "memory" / ".last-macro-eval-run",
+            "artifact_glob":     str(HARNESS_DIR / ".claude" / "reports" / "macro-evals" / "*.md"),
+            "artifact_label":    ".claude/reports/macro-evals/<date>.md",
+            "schedule_human":    "Twice weekly (MIN_GAP_DAYS=3)",
+            "interval_seconds":  3 * 86400,
+            "scope":             "per-repo",
+            "what_it_does":      "Cluster Raindrop trace failures from last 4 days, impact-rank, post annotations",
+        },
+        {
+            "key":               "skill-curator",
+            "name":              "Weekly Skill-Curator",
+            "runner_log_token":  "skill-curator",
+            "state_file":        HARNESS_DIR / ".claude" / "memory" / ".last-skill-curator-run",
+            "artifact_glob":     str(HARNESS_DIR / "docs" / "skill-curation-report.md"),
+            "artifact_label":    "docs/skill-curation-report.md",
+            "schedule_human":    "Weekly (MIN_GAP_DAYS=7)",
+            "interval_seconds":  7 * 86400,
+            "scope":             "harness",
+            "what_it_does":      "Score all skills (SkillOS rubric), flag low-quality/duplicates, audit description budgets",
+        },
+        {
+            "key":               "harness-health",
+            "name":              "Bi-Weekly Harness Health",
+            "runner_log_token":  "harness-health",
+            "state_file":        HARNESS_DIR / ".claude" / "memory" / ".last-harness-health-run",
+            "artifact_glob":     str(HARNESS_DIR / "docs" / "claudemd-review-report.md"),
+            "artifact_label":    "docs/claudemd-review-report.md",
+            "schedule_human":    "Bi-weekly (MIN_GAP_DAYS=13)",
+            "interval_seconds":  13 * 86400,
+            "scope":             "harness",
+            "what_it_does":      "Review every repo's CLAUDE.md for drift; iteratively repair low-quality skills",
+        },
+        {
+            "key":               "drift-review",
+            "name":              "Wednesday Drift Review",
+            "runner_log_token":  "drift-review",
+            "state_file":        HARNESS_DIR / ".last-drift-review",
+            "artifact_glob":     str(HARNESS_DIR / "docs" / "drift-review-report.md"),
+            "artifact_label":    "docs/drift-review-report.md",
+            "schedule_human":    "Every Wednesday",
+            "interval_seconds":  7 * 86400,
+            "scope":             "harness",
+            "what_it_does":      "Sweep the harness for structural drift; auto-fix what it can",
+        },
+    ]
+
+
+def _read_state_ts(path):
+    """Read a state file. Content is either ISO timestamp, YYYY-MM-DD, or ISO-week (drift)."""
+    try:
+        raw = Path(path).read_text().strip()
+    except Exception:
+        return None
+    if not raw:
+        return None
+    # Drift state uses ISO week '2026-W22' — convert to that week's Wednesday
+    m = re.match(r'^(\d{4})-W(\d{2})$', raw)
+    if m:
+        yr, wk = int(m.group(1)), int(m.group(2))
+        try:
+            dt = datetime.fromisocalendar(yr, wk, 3)  # 3 = Wednesday
+            return dt.replace(tzinfo=timezone.utc)
+        except Exception:
+            return None
+    try:
+        dt = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+    except Exception:
+        # Fall back to state file's mtime for badly-formatted contents
+        try:
+            return datetime.fromtimestamp(Path(path).stat().st_mtime, tz=timezone.utc)
+        except Exception:
+            return None
+
+
+def _newest_artifact(glob_pattern):
+    from glob import glob
+    matches = glob(glob_pattern)
+    if not matches:
         return None
     try:
-        h, m = sched["hour"], sched["minute"]
-        if sched["type"] == "daily":
-            candidate = from_dt.replace(hour=h, minute=m, second=0, microsecond=0,
-                                        tzinfo=from_dt.tzinfo or timezone.utc)
-            if candidate <= from_dt:
-                candidate += timedelta(days=1)
-            return candidate
-        if sched["type"] == "weekly":
-            target_dow = sched["dow"]  # 0=Sun … 6=Sat (cron convention)
-            # Python weekday(): Mon=0 … Sun=6; cron: Sun=0 … Sat=6
-            py_dow = (target_dow - 1) % 7  # convert cron→python
-            days_ahead = (py_dow - from_dt.weekday()) % 7
-            candidate = (from_dt + timedelta(days=days_ahead)).replace(
-                hour=h, minute=m, second=0, microsecond=0,
-                tzinfo=from_dt.tzinfo or timezone.utc)
-            if candidate <= from_dt:
-                candidate += timedelta(weeks=1)
-            return candidate
+        return max(matches, key=lambda p: os.path.getmtime(p))
     except Exception:
         return None
 
 
-def parse_ccr_routines():
-    readme = HARNESS_DIR / "docs" / "ccr-routines" / "README.md"
-    if not readme.exists():
-        return []
-    text = readme.read_text()
-    routines = []
-    for section in re.split(r'^(?=### )', text, flags=re.MULTILINE):
-        if not section.startswith("### "):
+def _extract_headline(md_text, max_chars=600):
+    """Pull a human-readable summary out of a routine's report markdown.
+
+    Priority: explicit '## Summary'/'## TL;DR' section, then first non-heading
+    paragraph in the document.
+    """
+    if not md_text:
+        return ""
+    lines = md_text.splitlines()
+
+    def collect_block(start_idx):
+        block = []
+        for line in lines[start_idx:]:
+            s = line.strip()
+            if s.startswith("#"):
+                break
+            if not s and block:
+                break
+            if s:
+                block.append(s)
+        return " ".join(block).strip()
+
+    summary_re = re.compile(r'^\s*##+\s+(summary|tl;?dr|overview|findings)\b', re.IGNORECASE)
+    for i, line in enumerate(lines):
+        if summary_re.match(line):
+            text = collect_block(i + 1)
+            if text:
+                return text[:max_chars] + ("…" if len(text) > max_chars else "")
+
+    for i, line in enumerate(lines):
+        s = line.strip()
+        if s and not s.startswith("#") and not s.startswith("---"):
+            text = collect_block(i)
+            if text:
+                return text[:max_chars] + ("…" if len(text) > max_chars else "")
+    return ""
+
+
+def _diff_against_snapshot(key, artifact_path):
+    """Compare artifact against the previous-run snapshot.
+
+    Snapshot lives at .dashboard/memory-snapshots/<key>.last.md. Returns
+    (added, removed, snapshot_exists). After computing the diff, refresh the
+    snapshot ONLY if the artifact is newer than the snapshot — that way the
+    diff captures what the most recent run changed (not what subsequent
+    dashboard renders see).
+    """
+    snap_dir = DASHBOARD_DIR / "memory-snapshots"
+    snap_dir.mkdir(parents=True, exist_ok=True)
+    snap = snap_dir / f"{key}.last.md"
+    try:
+        cur_text = Path(artifact_path).read_text(errors="replace")
+        cur_mtime = os.path.getmtime(artifact_path)
+    except Exception:
+        return (0, 0, False)
+
+    if not snap.exists():
+        # First time we've seen this artifact — seed snapshot, no diff to show
+        try:
+            snap.write_text(cur_text)
+            os.utime(snap, (cur_mtime, cur_mtime))
+        except Exception:
+            pass
+        return (0, 0, False)
+
+    try:
+        prev_text  = snap.read_text(errors="replace")
+        snap_mtime = os.path.getmtime(snap)
+    except Exception:
+        return (0, 0, False)
+
+    import difflib
+    added = removed = 0
+    for ln in difflib.unified_diff(prev_text.splitlines(), cur_text.splitlines(), lineterm=""):
+        if ln.startswith("+++") or ln.startswith("---") or ln.startswith("@@"):
             continue
-        name    = section.splitlines()[0][4:].strip()
-        id_m    = re.search(r'\*\*ID:\*\*\s*`(trig_\w+)`', section)
-        cron_m  = re.search(r'cron\s+`([^`]+)`', section)
-        out_m   = re.search(r'\*\*Output:\*\*.*?`([^`]*\.md)`', section)
-        stat_m  = re.search(r'\*\*Status:\*\*\s*(\w+)', section)
-        if not id_m:
-            continue
-        sched      = parse_cron(cron_m.group(1)) if cron_m else None
-        out_file   = out_m.group(1) if out_m else None
-        last_run_ts = None
-        if out_file:
-            git_ts = run_cmd(
-                ["git", "log", "-1", "--format=%cI", "--", out_file],
-                cwd=str(HARNESS_DIR)
-            )
-            if git_ts:
-                try:
-                    dt = datetime.fromisoformat(git_ts.replace("Z", "+00:00"))
-                    last_run_ts = dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
-                except Exception:
-                    pass
-        miss_status = "ok"
+        if ln.startswith("+"):
+            added += 1
+        elif ln.startswith("-"):
+            removed += 1
+
+    # Refresh snapshot only when artifact is newer than snapshot (a fresh run happened)
+    if cur_mtime > snap_mtime + 1:  # 1s tolerance for FS timestamp noise
+        try:
+            snap.write_text(cur_text)
+            os.utime(snap, (cur_mtime, cur_mtime))
+        except Exception:
+            pass
+
+    return (added, removed, True)
+
+
+def _detect_os_scheduler():
+    """Return scheduler status: {installed, kind, next_fire_iso, last_stdout_ts, last_exit}."""
+    result = {
+        "installed":       False,
+        "kind":            "—",
+        "next_fire_iso":   None,
+        "last_stdout_ts":  None,
+        "last_exit":       None,
+        "install_hint":    "",
+    }
+    plat = sys.platform
+    if plat == "darwin":
+        result["kind"] = "launchd (com.sdd.daily-orchestrator)"
+        result["install_hint"] = "bash scripts/setup-mac-orchestrator.sh"
+        out = run_cmd(["launchctl", "list", "com.sdd.daily-orchestrator"])
+        if out:
+            result["installed"] = True
+            for line in out.splitlines():
+                m = re.search(r'"LastExitStatus"\s*=\s*(\d+)', line)
+                if m:
+                    result["last_exit"] = int(m.group(1))
+    elif plat.startswith("linux"):
+        # WSL has schtasks.exe; pure Linux uses cron
+        out = run_cmd(["which", "schtasks.exe"])
+        if out:
+            result["kind"] = 'schtasks ("SDD Daily Orchestrator")'
+            result["install_hint"] = "bash scripts/setup-global-orchestrator.sh"
+            probe = run_cmd(["schtasks.exe", "/Query", "/TN", "SDD Daily Orchestrator"])
+            result["installed"] = bool(probe)
+        else:
+            result["kind"] = "crontab"
+            result["install_hint"] = "bash scripts/setup-linux-orchestrator.sh"
+            ct = run_cmd(["crontab", "-l"])
+            result["installed"] = "sdd-daily-orchestrator" in ct or "daily-orchestrator.sh" in ct
+
+    # Compute next 18:00 local fire time (the orchestrator's hardcoded schedule)
+    local_now = datetime.now()
+    nxt = local_now.replace(hour=18, minute=0, second=0, microsecond=0)
+    if nxt <= local_now:
+        nxt = nxt + timedelta(days=1)
+    result["next_fire_iso"] = nxt.isoformat()
+
+    # Surface most recent stdout activity from the launchd-managed log
+    stdout_log = HARNESS_DIR / "logs" / "orchestrator.stdout.log"
+    if stdout_log.exists():
+        try:
+            dt = datetime.fromtimestamp(stdout_log.stat().st_mtime, tz=timezone.utc)
+            result["last_stdout_ts"] = dt.isoformat()
+        except Exception:
+            pass
+    return result
+
+
+def parse_scheduled_tasks():
+    runs = parse_orchestrator_log()
+    # Group by runner_log_token → newest-first list of run records
+    runs_by_runner = {}
+    for r in runs:
+        runs_by_runner.setdefault(r["runner"], []).append(r)
+    for v in runs_by_runner.values():
+        v.sort(key=lambda x: x["ts"], reverse=True)
+
+    out = []
+    for spec in _scheduled_task_registry():
+        last_ts = _read_state_ts(spec["state_file"])
+        recent  = runs_by_runner.get(spec["runner_log_token"], [])
+        last_run_record = recent[0] if recent else None
+        if last_run_record and not last_ts:
+            try:
+                last_ts = datetime.fromisoformat(
+                    last_run_record["ts"].replace("Z", "+00:00"))
+                if last_ts.tzinfo is None:
+                    last_ts = last_ts.replace(tzinfo=timezone.utc)
+            except Exception:
+                last_ts = None
+
+        # Health classification: overdue beyond interval × 1.25 is missed
+        miss_status  = "ok"
         overdue_secs = 0
-        next_run_str = "unknown"
-        if sched:
-            interval = sched["interval_seconds"]
-            if last_run_ts:
-                elapsed      = (NOW - last_run_ts).total_seconds()
-                overdue_secs = max(0.0, elapsed - interval)
-                if overdue_secs > interval * 0.25:
-                    miss_status = "missed"
-                elif overdue_secs > 0:
-                    miss_status = "warn"
-                nxt = last_run_ts + timedelta(seconds=interval)
-            else:
-                # Never run — compute next occurrence from schedule
-                nxt = _next_schedule_occurrence(sched, NOW)
-            if nxt:
-                d = (nxt - NOW).total_seconds()
-                if d > 0:
-                    next_run_str = f"in {int(d/3600)}h" if d < 86400 else f"in {int(d/86400)}d"
-                else:
-                    next_run_str = (f"{int(-d/3600)}h overdue" if -d < 86400
-                                    else f"{int(-d/86400)}d overdue")
-        routines.append({
-            "name":           name,
-            "id":             id_m.group(1),
-            "schedule_human": sched["human"] if sched else (cron_m.group(1) if cron_m else "—"),
-            "status":         stat_m.group(1) if stat_m else "Unknown",
-            "output_file":    out_file,
-            "last_run_rel":   rel_time(last_run_ts.isoformat()) if last_run_ts else "never (not yet run)",
-            "last_run_ts_iso": last_run_ts.isoformat() if last_run_ts else None,
-            "miss_status":    miss_status,
-            "overdue_secs":   overdue_secs,
-            "next_run":       next_run_str,
+        if last_ts:
+            elapsed      = (NOW - last_ts).total_seconds()
+            overdue_secs = max(0.0, elapsed - spec["interval_seconds"])
+            if overdue_secs > spec["interval_seconds"] * 0.25:
+                miss_status = "missed"
+            elif overdue_secs > 0:
+                miss_status = "warn"
+        else:
+            # Never run AND no log entries → warn (but skip warn if very recently installed)
+            miss_status = "warn"
+
+        artifact_path = _newest_artifact(spec["artifact_glob"])
+        artifact_info = None
+        diff_added = diff_removed = 0
+        headline = ""
+        if artifact_path:
+            try:
+                st = os.stat(artifact_path)
+                artifact_info = {
+                    "path":     artifact_path,
+                    "size_kb":  st.st_size / 1024.0,
+                    "mtime":    datetime.fromtimestamp(st.st_mtime, tz=timezone.utc).isoformat(),
+                }
+            except Exception:
+                pass
+            diff_added, diff_removed, _ = _diff_against_snapshot(spec["key"], artifact_path)
+            try:
+                headline = _extract_headline(Path(artifact_path).read_text(errors="replace"))
+            except Exception:
+                headline = ""
+
+        # Recent-runs strip (last 5 records, across all repos for per-repo routines)
+        history = []
+        for rec in recent[:5]:
+            history.append({
+                "ts":       rec["ts"],
+                "repo":     Path(rec["path"]).name if rec["path"] else "—",
+                "exit":     rec["exit"],
+                "duration": rec["duration"],
+            })
+
+        out.append({
+            "key":             spec["key"],
+            "name":            spec["name"],
+            "scope":           spec["scope"],
+            "schedule_human":  spec["schedule_human"],
+            "what_it_does":    spec["what_it_does"],
+            "last_run_ts_iso": last_ts.isoformat() if last_ts else None,
+            "last_run_rel":    rel_time(last_ts.isoformat()) if last_ts else "never",
+            "last_exit":       last_run_record["exit"] if last_run_record else None,
+            "last_duration":   last_run_record["duration"] if last_run_record else None,
+            "miss_status":     miss_status,
+            "overdue_secs":    overdue_secs,
+            "artifact":        artifact_info,
+            "artifact_label":  spec["artifact_label"],
+            "diff_added":      diff_added,
+            "diff_removed":    diff_removed,
+            "headline":        headline,
+            "history":         history,
         })
-    return sorted(routines, key=lambda r: (r["miss_status"] not in ("missed","warn"), r["miss_status"] != "missed"))
+
+    # Order: missed/warn first, then by health then alphabetical
+    severity = {"missed": 0, "warn": 1, "ok": 2}
+    out.sort(key=lambda r: (severity.get(r["miss_status"], 3), r["name"]))
+    return out
 
 def parse_session_history(repo):
     """Read .claude/memory/.session-history — list of ISO timestamps, one per session end."""
@@ -1434,19 +1689,73 @@ def render_model_cost(sessions, pricing_snapshots):
 </div>"""
 
 
-def render_ccr_routines(hd):
-    routines = hd["ccr_routines"]
-    if not routines:
-        return empty_state("No CCR routines found in docs/ccr-routines/README.md")
+def render_scheduled_tasks(hd):
+    routines  = hd.get("scheduled_tasks", [])
+    scheduler = hd.get("scheduler", {}) or {}
 
-    harness_note = """<div style="background:var(--surface0);border-radius:6px;padding:8px 12px;
-          margin-bottom:14px;font-size:11px;color:var(--subtext0);display:flex;gap:8px;
-          align-items:center">
-      <span style="color:var(--blue)">ℹ</span>
-      CCR routines run against the <strong style="color:var(--text)">sdd-harness</strong> repo on GitHub — they are harness-wide, not per-repo.
-      Local daily maintenance (judge / reflect / keep-rate) runs via local system scheduler and is shown in <em>Maintenance Status</em>.
+    # ── Scheduler health card ────────────────────────────────────────────────
+    inst_color = "var(--green)" if scheduler.get("installed") else "var(--red)"
+    inst_text  = "installed" if scheduler.get("installed") else "NOT installed"
+    nxt_iso    = scheduler.get("next_fire_iso")
+    nxt_rel    = "—"
+    if nxt_iso:
+        try:
+            dt = datetime.fromisoformat(nxt_iso)
+            delta = (dt - datetime.now()).total_seconds()
+            nxt_rel = (f"in {int(delta/3600)}h" if 0 < delta < 86400 else
+                       f"in {int(delta/86400)}d" if delta >= 86400 else "due now")
+        except Exception:
+            pass
+
+    last_act = scheduler.get("last_stdout_ts")
+    last_act_str = rel_time(last_act) if last_act else "never"
+
+    install_hint = ""
+    if not scheduler.get("installed"):
+        install_hint = (
+            f'<div style="margin-top:8px;font-size:11px;color:var(--red)">'
+            f'⚠ Scheduler not installed — run '
+            f'<code style="background:var(--surface0);padding:1px 5px;border-radius:3px">'
+            f'{h(scheduler.get("install_hint",""))}</code></div>'
+        )
+
+    scheduler_card = f"""<div style="border:1px solid {inst_color}55;border-radius:10px;
+                        padding:12px 14px;margin-bottom:18px;
+                        background:linear-gradient(90deg,rgba(0,0,0,0.2),transparent)">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+        <span style="font-size:14px">⏰</span>
+        <span style="color:var(--text);font-weight:600;font-size:13px;flex:1">
+          OS Scheduler</span>
+        <span style="color:{inst_color};font-size:11px;font-weight:600;
+                     text-transform:uppercase;letter-spacing:0.6px">{h(inst_text)}</span>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;
+                  font-size:11px;color:var(--subtext1)">
+        <div><div class="label">Mechanism</div>
+             <div style="margin-top:2px">{h(scheduler.get("kind","—"))}</div></div>
+        <div><div class="label">Next fire</div>
+             <div style="margin-top:2px;color:var(--blue)">18:00 local ({h(nxt_rel)})</div></div>
+        <div><div class="label">Last orchestrator activity</div>
+             <div style="margin-top:2px">{h(last_act_str)}</div></div>
+      </div>
+      {install_hint}
     </div>"""
 
+    intro = section_desc(
+        "Each card below is a scheduled task wired into "
+        "<code>scripts/daily-orchestrator.sh</code>. The orchestrator fires daily at "
+        "18:00 local time; routines self-pace via their own MIN_GAP_DAYS guard. "
+        "“Changes” shows the diff between the artifact this run produced and the "
+        "snapshot from the previous run."
+    )
+
+    if not routines:
+        return (f'<div class="section-inner">'
+                f'<h2 class="section-title">Scheduled Tasks</h2>'
+                f'{scheduler_card}{intro}'
+                f'{empty_state("No scheduled tasks configured.")}</div>')
+
+    # ── Per-routine cards ────────────────────────────────────────────────────
     cards = ""
     for r in routines:
         ms     = r["miss_status"]
@@ -1455,81 +1764,126 @@ def render_ccr_routines(hd):
         bg     = ("rgba(243,139,168,0.06)" if ms == "missed" else
                   "rgba(249,226,175,0.04)" if ms == "warn"   else "transparent")
         sbadge = (badge("MISSED",  "missed") if ms == "missed" else
-                  badge("WARNING", "warn")   if ms == "warn"   else badge("OK", "ok"))
+                  badge("PENDING", "warn")   if ms == "warn"   else badge("OK", "ok"))
 
-        out_html = "—"
-        if r["output_file"]:
-            out_path = HARNESS_DIR / r["output_file"]
-            if out_path.exists():
-                uri = out_path.as_uri()
-                out_html = (f'<a href="{h(uri)}" target="_blank" '
-                            f'style="color:var(--mauve);font-size:11px">'
-                            f'{h(r["output_file"])} ↗</a>')
-            else:
-                out_html = (f'<span style="color:var(--overlay0);font-size:11px">'
-                            f'{h(r["output_file"])} (not yet generated)</span>')
+        # Artifact / changes
+        art = r["artifact"]
+        if art:
+            uri      = Path(art["path"]).as_uri()
+            rel_path = str(Path(art["path"]).relative_to(HARNESS_DIR)) \
+                       if str(art["path"]).startswith(str(HARNESS_DIR)) else art["path"]
+            artifact_html = (
+                f'<a href="{h(uri)}" target="_blank" '
+                f'style="color:var(--mauve);font-size:11px;text-decoration:none">'
+                f'{h(rel_path)} ↗</a> '
+                f'<span style="color:var(--overlay0);font-size:10px;margin-left:6px">'
+                f'{art["size_kb"]:.1f} KB · {h(rel_time(art["mtime"]))}</span>'
+            )
+        else:
+            artifact_html = (
+                f'<span style="color:var(--overlay0);font-size:11px">'
+                f'{h(r["artifact_label"])} <em>(not yet generated)</em></span>'
+            )
 
-        debug = ""
-        if ms == "missed":
-            od = r["overdue_secs"]
-            od_str = (f"{int(od/86400)}d overdue" if od > 86400
-                      else f"{int(od/3600)}h overdue")
-            debug = f"""<div style="background:rgba(243,139,168,0.08);
-                             border:1px solid rgba(243,139,168,0.3);
-                             border-radius:6px;padding:10px 12px;margin-top:10px">
-        <div style="color:var(--red);font-size:11px;font-weight:600;margin-bottom:6px">
-          ⚠ {h(od_str)} — possible causes:
-        </div>
-        <ul style="margin:0;padding-left:16px;color:var(--subtext0);
-                   font-size:11px;line-height:1.9">
-          <li>GitHub App permissions revoked —
-              <a href="https://claude.ai/settings" style="color:var(--mauve)">
-              check claude.ai/settings</a></li>
-          <li>Repo renamed or moved — trigger IDs are path-bound</li>
-          <li>Trigger deleted — re-run
-              <code style="background:var(--surface0);padding:1px 4px;border-radius:3px">
-              /schedule</code> to recreate</li>
-          <li>Output file path changed — routine writing to wrong location</li>
-        </ul>
+        # Diff stats badge
+        if art and (r["diff_added"] or r["diff_removed"]):
+            diff_badge = (
+                f'<span style="color:var(--green);font-size:11px">+{r["diff_added"]}</span>'
+                f' <span style="color:var(--red);font-size:11px">−{r["diff_removed"]}</span>'
+                f' <span style="color:var(--overlay0);font-size:10px"> vs. previous run</span>'
+            )
+        elif art:
+            diff_badge = (f'<span style="color:var(--overlay0);font-size:11px">'
+                          f'no changes vs. previous run</span>')
+        else:
+            diff_badge = ""
+
+        # Reasoning / headline excerpt
+        reasoning_html = ""
+        if r["headline"]:
+            short = r["headline"][:200]
+            more  = r["headline"][200:] if len(r["headline"]) > 200 else ""
+            more_html = (f'<span class="reasoning-more" style="display:none">'
+                         f'{h(more)}</span>'
+                         f' <a href="#" onclick="this.previousElementSibling.style.display=\'inline\';'
+                         f'this.style.display=\'none\';return false" '
+                         f'style="color:var(--mauve);font-size:11px">… more</a>') if more else ""
+            reasoning_html = f"""<div style="margin-top:10px;padding:8px 12px;
+                          background:rgba(49,50,68,0.4);border-radius:6px;
+                          border-left:2px solid var(--mauve);font-size:11px;
+                          color:var(--subtext1);line-height:1.6;font-style:italic">
+        <div style="font-style:normal;color:var(--overlay0);font-size:10px;
+                    font-weight:600;text-transform:uppercase;letter-spacing:0.6px;
+                    margin-bottom:4px">Reasoning from this run</div>
+        “{h(short)}{more_html}”
       </div>"""
+
+        # Last-exit indicator
+        if r["last_exit"] is None:
+            exit_html = '<span style="color:var(--overlay0)">—</span>'
+        elif r["last_exit"] == 0:
+            exit_html = (f'<span style="color:var(--green)">exit=0</span>'
+                         f' <span style="color:var(--overlay0)">({r["last_duration"]}s)</span>')
+        else:
+            exit_html = (f'<span style="color:var(--red)">exit={r["last_exit"]}</span>'
+                         f' <span style="color:var(--overlay0)">({r["last_duration"]}s)</span>')
+
+        # History strip (last 5 runs)
+        hist_html = ""
+        if r["history"]:
+            dots = ""
+            for rec in r["history"][:8]:
+                color = "var(--green)" if rec["exit"] == 0 else "var(--red)"
+                ts    = rec["ts"][:16].replace("T", " ")
+                title = f"{ts} · {rec['repo']} · exit={rec['exit']} · {rec['duration']}s"
+                dots += (f'<span title="{h(title)}" style="display:inline-block;'
+                         f'width:8px;height:8px;border-radius:2px;background:{color};'
+                         f'margin-right:3px"></span>')
+            hist_html = (f'<div style="margin-top:8px;font-size:10px;color:var(--overlay0)">'
+                         f'Recent: {dots}</div>')
+
+        # Per-repo scope hint
+        scope_html = ""
+        if r["scope"] == "per-repo":
+            scope_html = ('<span style="color:var(--overlay0);font-size:10px;margin-left:6px">'
+                          'per-repo</span>')
+        else:
+            scope_html = ('<span style="color:var(--overlay0);font-size:10px;margin-left:6px">'
+                          'harness</span>')
 
         cards += f"""<div style="border:1px solid {border};border-radius:10px;
                         overflow:hidden;margin-bottom:14px;background:{bg}">
       <div style="background:rgba(0,0,0,0.2);padding:10px 14px;
                   display:flex;align-items:center;gap:10px;
                   border-bottom:1px solid {border}33">
-        <span style="color:var(--text);font-weight:600;font-size:13px;flex:1">
-          {h(r["name"])}</span>
-        <code style="color:var(--overlay0);font-size:10px">{h(r["id"][:28])}…</code>
+        <span style="color:var(--text);font-weight:600;font-size:13px">
+          {h(r["name"])}</span>{scope_html}
+        <span style="flex:1"></span>
         {sbadge}
       </div>
-      <div style="padding:12px 14px;display:grid;
-                  grid-template-columns:repeat(4,1fr);gap:12px">
-        <div><div class="label">Schedule</div>
-             <div style="color:var(--subtext1);font-size:12px;margin-top:3px">
-               {h(r["schedule_human"])}</div></div>
-        <div><div class="label">Last ran</div>
-             <div style="color:var(--subtext1);font-size:12px;margin-top:3px">
-               {h(r["last_run_rel"])}</div></div>
-        <div><div class="label">Next expected</div>
-             <div style="color:var(--blue);font-size:12px;margin-top:3px">
-               {h(r["next_run"])}</div></div>
-        <div><div class="label">Output</div>
-             <div style="margin-top:3px">{out_html}</div></div>
+      <div style="padding:12px 14px">
+        <div style="color:var(--overlay0);font-size:11px;margin-bottom:10px;font-style:italic">
+          {h(r["what_it_does"])}
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:10px">
+          <div><div class="label">Schedule</div>
+               <div style="color:var(--subtext1);font-size:12px;margin-top:3px">
+                 {h(r["schedule_human"])}</div></div>
+          <div><div class="label">Last ran</div>
+               <div style="color:var(--subtext1);font-size:12px;margin-top:3px">
+                 {h(r["last_run_rel"])} &nbsp;{exit_html}</div></div>
+          <div><div class="label">Artifact</div>
+               <div style="margin-top:3px">{artifact_html}</div>
+               <div style="margin-top:3px">{diff_badge}</div></div>
+        </div>
+        {reasoning_html}
+        {hist_html}
       </div>
-      {debug}
     </div>"""
 
-    cards += f"""<div style="border:1px solid var(--surface0);border-radius:8px;
-                    padding:10px 14px;background:rgba(49,50,68,0.3);margin-top:4px">
-    <div style="color:var(--subtext0);font-size:11px;font-weight:600;margin-bottom:3px">
-      📋 Local Daily Maintenance</div>
-    <div style="color:var(--overlay0);font-size:11px">
-      Runs via local system scheduler (launchd / cron / schtasks) with session-start hook catch-up.
-      See <strong>Maintenance Status</strong> for per-repo run history.</div>
-  </div>"""
-
-    return f'<div class="section-inner"><h2 class="section-title">CCR Routines</h2>{harness_note}{cards}</div>'
+    return (f'<div class="section-inner">'
+            f'<h2 class="section-title">Scheduled Tasks</h2>'
+            f'{scheduler_card}{intro}{cards}</div>')
 
 def render_memory_changes(rd, hd):
     cards    = rd.get("memory_cards", [])
@@ -1721,26 +2075,26 @@ def render_skill_changes(hd):
     content  = hd.get("skill_report_content")
     last_mod = hd.get("skill_report_age")
     if not content:
-        ccr = next((r for r in hd.get("ccr_routines", [])
-                    if "skill" in r["name"].lower() or "curator" in r["name"].lower()), None)
-        next_run = ccr["next_run"] if ccr else "next Monday at 09:00 IDT"
+        sc = next((r for r in hd.get("scheduled_tasks", [])
+                   if r["key"] == "skill-curator"), None)
+        last_run = sc["last_run_rel"] if sc else "never"
         d = section_desc(
-            "The weekly CCR routine (<em>Weekly Skill-Curator + Memory Governance</em>) audits all "
-            "skills in <code>~/.claude/skills/</code>, prunes stale ones, and writes a report here. "
-            f"<strong style='color:var(--text)'>Next run: {next_run}</strong>. "
+            "The weekly <em>Skill-Curator</em> scheduled task audits all skills in "
+            "<code>~/.claude/skills/</code>, prunes stale ones, and writes a report here. "
+            f"<strong style='color:var(--text)'>Last run: {last_run}</strong>. "
             "Until then, skill changes are visible via <em>Automation Audit</em> (session-quality entries)."
         )
         return f"""<div class="section-inner">
   <h2 class="section-title">Skill Changes</h2>
   {d}
-  {empty_state("No report yet — waiting for first CCR run.")}
+  {empty_state("No report yet — waiting for first scheduled run.")}
 </div>"""
     return f"""<div class="section-inner">
   <h2 class="section-title">Skill Changes</h2>
   <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
     <span style="color:var(--overlay0);font-size:12px">
       Last audit: <strong style="color:var(--subtext1)">{h(last_mod)}</strong></span>
-    {badge("Weekly CCR", "info")}
+    {badge("Weekly", "info")}
   </div>
   <div style="font-size:12px;line-height:1.7">{mini_md(content)}</div>
 </div>"""
@@ -1958,8 +2312,12 @@ def render_context_health(rd):
 
 def render_maintenance_status(selected_rd, all_repos_data, hd):
     runs = hd.get("orchestrator_runs", [])
+    # Show the latest *daily-maintenance* run per repo (other runners are surfaced
+    # in the Scheduled Tasks tab). New log format tags non-daily runs explicitly.
     latest = {}
     for run in runs:
+        if run.get("runner") not in (None, "daily-maintenance"):
+            continue
         p = run["path"]
         if p not in latest or run["ts"] > latest[p]["ts"]:
             latest[p] = run
@@ -1967,9 +2325,9 @@ def render_maintenance_status(selected_rd, all_repos_data, hd):
     ccr_note = section_desc(
         "<strong style='color:var(--text)'>Local daily maintenance</strong> — runs via local system scheduler "
         "(judge · reflect · keep-rate · housekeep · augment). "
-        "Not a CCR routine: it needs direct access to "
-        "<code>.claude/memory/</code> which Anthropic's cloud cannot reach. "
-        "Full per-event history is in <em>Automation Audit</em>."
+        "Runs locally so it can reach <code>.claude/memory/</code>. "
+        "See <em>Scheduled Tasks</em> for the full routine list and "
+        "<em>Automation Audit</em> for per-event history."
     )
 
     SCHED_HOUR  = 18   # daily-orchestrator.sh fires at 18:00 via local system scheduler
@@ -2158,17 +2516,19 @@ def render_automation_audit(rd, hd):
                 "scope":   "local",
             })
 
-    # 4. CCR routine runs (harness-wide, shown for context)
-    for r in hd.get("ccr_routines", []):
+    # 4. Scheduled-task runs (harness-wide, shown for context)
+    for r in hd.get("scheduled_tasks", []):
         ts_iso = r.get("last_run_ts_iso")
         if ts_iso:
+            ex = r.get("last_exit")
+            exit_str = f"exit={ex}" if ex is not None else "—"
             events.append({
                 "ts":      ts_iso,
                 "icon":    "📅",
                 "label":   r["name"],
                 "color":   "#cba6f7",
-                "summary": f"CCR · {r['schedule_human']} · next: {r['next_run']}",
-                "detail":  f"Trigger ID: {r['id']}\nOutput: {r.get('output_file') or '—'}",
+                "summary": f"Scheduled · {r['schedule_human']} · {exit_str}",
+                "detail":  f"Artifact: {r['artifact_label']}\nChanges: +{r['diff_added']}/−{r['diff_removed']} lines",
                 "scope":   "harness",
             })
 
@@ -2420,7 +2780,7 @@ def build_html(repos_data, harness_data, usage_sessions, pricing_snapshots, init
     )
 
     # Render all sections for every repo once
-    ccr_html        = render_ccr_routines(harness_data)
+    scheduled_html  = render_scheduled_tasks(harness_data)
     skill_html      = render_skill_changes(harness_data)
     model_cost_html = render_model_cost(usage_sessions, pricing_snapshots)
 
@@ -2431,7 +2791,7 @@ def build_html(repos_data, harness_data, usage_sessions, pricing_snapshots, init
             "gitnexus":           render_gitnexus(rd, companion=companion),
             "workshop":           render_workshop(rd, companion=companion),
             "hooks_history":      render_hooks_history(rd),
-            "ccr_routines":       ccr_html,
+            "scheduled_tasks":    scheduled_html,
             "memory_changes":     render_memory_changes(rd, harness_data),
             "skill_changes":      skill_html,
             "session_quality":    render_session_quality(rd),
@@ -3073,7 +3433,8 @@ def main():
 
     skill_content, skill_age = read_skill_report()
     harness_data = {
-        "ccr_routines":         parse_ccr_routines(),
+        "scheduled_tasks":      parse_scheduled_tasks(),
+        "scheduler":            _detect_os_scheduler(),
         "orchestrator_runs":    parse_orchestrator_log(),
         "skill_report_content": skill_content,
         "skill_report_age":     skill_age,

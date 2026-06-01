@@ -373,7 +373,7 @@ Idempotent per calendar day (uses today's `[judge]` observation as the sentinel)
 
 The `## Harness Trust Score:` line at the top of `hot-memory.md` (e.g. `42.3% (▲ +0.8 today, 7d: ▼ -1.1)`) is a single-user health signal. **It never gates harness behavior** — spec phase gates still require explicit human approval regardless of score. Adapted from @nityeshaga's "trust battery" design (April 2026) but scoped down: one battery per project (single developer), informational only, no autonomy tiers.
 
-Starts at 20% on fresh install. Daily cap ±4.5%. History lives in `.claude/memory/trust-score.jsonl` (one record per nightly run).
+Starts at 20% on fresh install. Daily cap ±4.5%. History lives in `.claude/memory/trust-score.jsonl` (one record per nightly run). The `auto-score` command incorporates a **session success ratio**: uncorrected sessions (no `session-quality ≤ 2/5` or `memory-gap` on that day) act as a multiplier on existing signals and contribute a ±1.0 baseline — so uneventful sessions now passively charge the battery rather than contributing zero.
 
 ### Opt out
 
@@ -412,6 +412,20 @@ Runs automatically twice weekly via `scripts/macro-eval-runner.sh` (MIN_GAP_DAYS
 Output: `.claude/reports/macro-evals/YYYY-MM-DD.md` with a pattern leaderboard, top-3 diagnoses (focus event + suspect step), and a delta vs. previous sweep. Span-level and run-level Workshop annotations are posted for confirmed recurring failure patterns (cap: ~5 runs per pattern).
 
 Skill: `evaluation/macro` (part of the `evaluation` skill family). Opt-out: `SDD_SKIP_MACRO_EVAL=1`.
+
+---
+
+### `/kiro:tool-failure-review` — Learn from failing tool calls
+Reviews the per-repo tool-failure ledger and promotes recurring failures into memory: diagnoses *why* a command shape keeps failing and writes the cause + remedy as a durable memory entry (and `ERRORS.md`), so it stops happening. The **review** stage of the tool-failure-memory loop.
+
+```
+/kiro:tool-failure-review            # review signatures that failed >= 3x
+/kiro:tool-failure-review 5          # only signatures that failed >= 5x
+```
+
+The loop runs continuously without you: two hooks capture every failing Bash/MCP call (`tool-failure-capture.sh`, PostToolUseFailure) and warn before a known-failing shape is repeated (`tool-failure-recall.sh`, PreToolUse). The review stage runs automatically ~twice weekly via `scripts/tool-failure-review-runner.sh` (MIN_GAP_DAYS=3) inside the daily orchestrator — it no-ops unless the ledger has a signature that failed ≥3× and is still open, so calling it daily is cheap.
+
+Ledger: `.claude/memory/tool-failures.jsonl` (local, per-repo). Report: `.claude/reports/tool-failures/YYYY-MM-DD.md`. Skill: `tool-failure-memory`. Opt-out: `SDD_SKIP_TOOL_FAILURE_REVIEW=1`. Source: ReMe (agentscope-ai/ReMe).
 
 ---
 

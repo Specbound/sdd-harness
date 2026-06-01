@@ -75,3 +75,18 @@ GitHub repositories that were passed to `/skill-extraction` and turned into harn
 
 **What we added:**
 - Skill (augmentation): `hook-design` — added "Observer Loop Prevention" section (env-var sentinel, matcher specificity, state-file lock patterns) and "Session Profile Switching" section (`SDD_HOOK_PROFILE=off|minimal|standard` preamble pattern). Fills a gap: none of the existing harness hooks had re-entrancy guards despite firing on Write/Edit events that can themselves produce writes.
+
+---
+
+## github.com/agentscope-ai/ReMe
+**URL:** https://github.com/agentscope-ai/ReMe | **Added:** 2026-06-01
+**Source / Author:** AgentScope (Alibaba)
+
+**What it's about:** ReMe is an AI-agent memory framework addressing limited context windows and stateless sessions. Beyond conversation memory it maintains **procedural memory** (task success/failure experiences) and **tool memory** (tool-usage experience + parameter optimization), plus file-based ("memory as files") and vector-based stores with hybrid retrieval. The procedural/tool-memory concept — an agent remembering which tool calls fail and avoiding the repeat — is the subset extracted here.
+
+**What we added (a closed capture→recall→review loop for failing tool calls):**
+- Hook: `tool-failure-capture.sh` (PostToolUseFailure, matcher `Bash|mcp__.*`) — records every failing Bash/MCP call into a per-repo ledger `.claude/memory/tool-failures.jsonl`, keyed by a normalized command *signature* (paths/numbers/hashes/strings collapsed) so the *same kind* of failure clusters and its `count` climbs. Re-opens a resolved entry if the failure recurs.
+- Hook: `tool-failure-recall.sh` (PreToolUse, matcher `Bash|mcp__.*`, soft/advisory) — before a call runs, warns if that signature has failed ≥2× and is still open, showing the last error and any recorded remedy. Once-per-session-per-signature dedupe + 45-day recency gate keep it quiet; never blocks.
+- Routine: `tool-failure-review` — `commands/kiro/tool-failure-review.md` + `scripts/tool-failure-review-runner.sh` (MIN_GAP_DAYS=3 self-pacing, no-ops unless the ledger has a promotable entry) wired into `daily-orchestrator.sh` `run_one()`. Diagnoses *why* recurring failures happen and promotes the durable lessons into memory (+ `ERRORS.md`), marking entries resolved/promoted. This is where the system learns from its mistakes.
+- Skill: `tool-failure-memory` — the judgment layer: signature model, how to respond to a recall warning (don't reflexively re-run), and how to record a remedy / promote to memory.
+- Config: registered the two hooks in `templates/settings.json.template` (PostToolUseFailure + PreToolUse) so the loop ships to every repo; runner added to install/update chmod lists.

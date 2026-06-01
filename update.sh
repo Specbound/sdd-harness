@@ -98,7 +98,7 @@ do_update() {
   done
 
   # --- chmod runtime scripts that need to be executable ---
-  for s in daily-runner.sh macro-eval-runner.sh skill-curator-runner.sh harness-health-runner.sh; do
+  for s in daily-runner.sh macro-eval-runner.sh skill-curator-runner.sh harness-health-runner.sh tool-failure-review-runner.sh; do
     [ -f "$proj/.claude/scripts/$s" ] && chmod +x "$proj/.claude/scripts/$s"
   done
   [ "$(uname)" = "Darwin" ] && xattr -cr "$proj/.claude/hooks/" 2>/dev/null || true

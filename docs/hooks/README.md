@@ -11,6 +11,7 @@ Hook output is injected into Claude's context as system messages — Claude read
 | `Stop` | Once, when Claude finishes responding (end of turn) |
 | `PreToolUse` | Before a specific tool is invoked |
 | `PostToolUse` | After a specific tool returns |
+| `PostToolUseFailure` | After a specific tool returns an error |
 | `PreCompact` | Before context compaction summarizes the conversation |
 
 ---
@@ -90,6 +91,30 @@ Hook output is injected into Claude's context as system messages — Claude read
 **Why it's needed:** The trust-battery Judge scores session quality at the end of each day. Revert events are significant negative signals (they indicate a plan that had to be walked back). Without real-time capture, the Judge has to infer reverts from transcript analysis — less reliable and potentially missed. Writing the observation at the moment the command runs gives the Judge concrete, timestamped evidence.
 
 **Output / side effect:** Appends `YYYY-MM-DD [revert]: git-revert|git-reset|git-restore — <command>` to `observations.md`. De-duplicates within the same day.
+
+---
+
+### `tool-failure-capture.sh`
+**Event:** `PostToolUseFailure` — **Matcher:** `Bash|mcp__.*`
+
+**Purpose:** Records every failing Bash or MCP tool call into a per-repo ledger (`.claude/memory/tool-failures.jsonl`), keyed by a normalized command *signature*. Bash commands are collapsed — quoted strings → `<str>`, slash-bearing tokens → `<path>`, hashes → `<hash>`, numbers → `<n>` — so the *same kind* of failure clusters under one entry whose `count` climbs. MCP calls key on `tool_name(sorted,arg,keys)`. A failure that recurs after being marked `resolved` is automatically re-opened.
+
+**Why it's needed:** Without a durable record, the harness re-runs the same broken command shape across sessions (wrong flag, missing dep, bad path) and re-learns the failure each time. This is the **capture** half of the tool-failure-memory loop — adapted from ReMe's procedural/tool memory, made deterministic via a hook so it fires on every failure, not when Claude remembers to.
+
+**Output / side effect:** Upserts a JSON line into `.claude/memory/tool-failures.jsonl` (`{sig, tool, count, first_seen, last_seen, last_error, samples, status, remedy, promoted}`). No context output — silent capture. Paired with `tool-failure-recall.sh` (recall) and the `tool-failure-review` routine (promote-to-memory). See the `tool-failure-memory` skill.
+
+---
+
+### `tool-failure-recall.sh`
+**Event:** `PreToolUse` — **Matcher:** `Bash|mcp__.*` — _(soft gate, never blocks)_
+
+**Purpose:** Before a Bash/MCP call runs, computes the same signature as the capture hook and looks it up. If that shape has failed ≥2× and is still `open`, it injects a short advisory showing the failure count, last error, and any recorded remedy — then exits 0. This is the **recall** half that makes failures "not happen again."
+
+**Noise control:** Warns at most once per session per signature (dedupe file `.claude/memory/.tool-failure-recall-seen`) and ignores entries whose last failure is older than 45 days. Silent on everything else. Tunable via `TOOL_FAILURE_MIN_FAILS` / `TOOL_FAILURE_MAX_AGE_DAYS`.
+
+**Why it's needed:** Capturing failures is useless unless the memory surfaces *before* the repeat. The soft gate keeps Claude in control — it advises reconsidering, never blocks — so a genuinely-now-fixed command can still proceed.
+
+**Output:** `⚠️  Tool-failure memory — this command shape has failed N× …` banner with signature, last error, and remedy. Silent (exit 0) when no recent open failure matches.
 
 ---
 
@@ -254,8 +279,12 @@ PostToolUse    Write|Edit                                    → hook-added-noti
 PostToolUse    Bash                                          → revert-detect-hook.sh
 PostToolUse    CronCreate                                    → ccr-routine-added-notify.sh
 PostToolUse    Read                                          → lean-ctx-nudge-hook.sh
+PreToolUse     Bash|mcp__.*                                  → tool-failure-recall.sh
+PostToolUseFailure Bash|mcp__.*                              → tool-failure-capture.sh
 PreCompact     (all)                                         → compaction-discipline-hook.sh
 ```
+
+The `tool-failure-*` pair plus the `tool-failure-review` routine form the **tool-failure-memory loop** (capture → recall → review). See the `tool-failure-memory` skill and `docs/harness-documentation/SDD-SETUP-GUIDE.md`.
 
 ---
 
@@ -266,5 +295,5 @@ PreCompact     (all)                                         → compaction-disc
 3. Document it in this file (the `hook-added-notify.sh` hook will remind you if you forget).
 4. Update the Wiring Reference table above.
 
-_Last synced: 2026-06-01_
+_Last synced: 2026-06-01 — added `tool-failure-capture.sh` + `tool-failure-recall.sh` (tool-failure-memory loop)._
 

@@ -359,9 +359,10 @@ This script:
 2. Patches `.claude/settings.json` with the repo's absolute path (replacing `/path/to/`)
 
 The post-commit hook:
-- **Doc sync** — runs if any non-`.md`, non-`.claude/` files changed; invokes `claude --print` in background to update relevant `.md` files and steering docs.
-- **Harness updater** — runs if any `.claude/` files changed (excluding `.claude/memory/` to avoid noise from session writes); invokes `claude --print` in background to update `SDD-SETUP-GUIDE.md`.
+- **Doc sync** — runs if any non-`.md`, non-`.claude/` files changed; invokes `claude --dangerously-skip-permissions --print` in background to update relevant `.md` files and steering docs.
+- **Harness updater** — runs if any `.claude/` files changed (excluding `.claude/memory/` to avoid noise from session writes); invokes `claude --dangerously-skip-permissions --print` in background to update `SDD-SETUP-GUIDE.md`.
 - Both agents run in the background (`&`) so they don't block your terminal.
+- The `--dangerously-skip-permissions` flag is required: the background agents run non-interactively (no terminal to answer permission prompts), so without it the doc sync would stall on the first `Edit`/`Write` and never apply changes.
 
 The script is idempotent — safe to run multiple times.
 
@@ -563,11 +564,13 @@ Conventions are defined in `.claude/kiro/settings/rules/memory-conventions.md`:
 | spec-refactor (internal) | After each impl task's SELF-REVIEW step (Step 5) | Spawned by spec-tdd-impl-agent; reviews touched files, fixes issues, re-runs tests |
 | PostToolUse (Jira comment) | Every `git push` Bash command | Posts Jira comment with branch/commits/docs summary if a `jira-solve` session is active |
 | UserPromptSubmit (Jira capture) | Every user prompt | Captures ticket ID from `/kiro:jira-solve TICKET-ID` prompts, writes to `~/.claude/state/active_jira_ticket` |
-| UserPromptSubmit (context priming) | Every user prompt | Injects hot-memory.md contents for session context |
+| UserPromptSubmit (context priming) | Every user prompt | Injects `.claude/memory/hot-memory.md` contents (wrapped in `--- Active Context ---` markers) so the agent always primes on current state before responding. Fast (<1s); no-ops if hot-memory is missing or empty. Implemented in `.claude/hooks/prompt-hook.sh`. |
 | SessionStart (maintenance check) | Every Claude session start | **macOS:** clears `com.apple.macl` xattrs from `.claude/hooks/` (Write/Edit tools set this attribute, blocking subprocess execution of edited hook files). Then two modes: (1) if no local `daily-runner.sh` is installed — checks if today's `[judge]` sentinel is absent from `observations.md` and asks Claude to run `/kiro:daily-maintenance`; (2) if `daily-runner.sh` is installed and stale (>24h or never ran) — fires it in the background via `nohup` silently, without consuming session context. Also checks if the per-repo CLAUDE.md review is >2 weeks stale (`.claude/memory/.last-claudemd-review`) and asks Claude to run `/claudemd-review` if so. |
 | Stop (memory health) | Every Claude session end | Nudges `/kiro:housekeeping` if observations >50; nudges `/kiro:evolve` if agent failure patterns detected |
 | Stop (session signal detector) | Every Claude session end | Runs `scripts/detect_reexplanation.py` (Haiku LLM); appends `[memory-gap]` observation for drain signals (re-explanation) and `[session-charge]` for charge signals (approval). Each written at most once per day. When drains are found, `scripts/micro_reflect.py` immediately writes `[auto-learn]` facts to `hot-memory.md`. Skipped when `SDD_HEADLESS=1`. |
 | PostToolUse (revert detector) | Every git revert/reset/restore Bash call | Immediately appends `[revert]` drain observation to `observations.md` — gives trust-battery Judge concrete evidence. Script: `.claude/hooks/revert-detect-hook.sh`. |
+| PostToolUseFailure (tool-failure capture) | Every failing Bash/MCP tool call | Records the failure into a per-repo ledger `.claude/memory/tool-failures.jsonl`, keyed by a normalized command signature so the same failure shape clusters and its `count` climbs. Capture half of the tool-failure-memory loop. Script: `.claude/hooks/tool-failure-capture.sh`; see the `tool-failure-memory` skill. |
+| PreToolUse (tool-failure recall) | Every Bash/MCP tool call | Soft advisory (never blocks): if this command shape has failed ≥2× and is still open, injects the failure count, last error, and any recorded remedy so Claude reconsiders before repeating it. Once-per-session-per-signature dedupe + 45-day recency gate. Script: `.claude/hooks/tool-failure-recall.sh`. |
 | Windows Task Scheduler + SessionStart (daily maintenance) | Nightly at 18:00 local (Israel); SessionStart catch-up if >24h stale | Runs per-repo `daily-runner.sh` → `/kiro:daily-maintenance` — Judge → Reflect → Housekeeping → Trust Score → Augment Skills. Auto-registered by `install.sh` / `update.sh` (WSL + schtasks.exe). Opt out: `SDD_SKIP_ROUTINE=1` at install time; `schtasks.exe /Delete /TN "SDD Daily Orchestrator"` globally; `rm .claude/scripts/daily-runner.sh` per-repo. See `SDD-USAGE.md` → "Daily Maintenance". |
 | PreToolUse (ztk) | Every Bash tool call by any agent | Rewrites matching commands to `ztk run <cmd>`, compressing output before it reaches the LLM (78–90%+ token reduction). Passes through commands without filters unchanged. Global — fires in all sessions and projects. |
 | PreToolUse (GitNexus) | Every file Read/Edit by any agent | Enriches file operations with 360° symbol graph context (callers, dependencies, process participation); no-ops gracefully when GitNexus is not installed |
@@ -578,8 +581,8 @@ Conventions are defined in `.claude/kiro/settings/rules/memory-conventions.md`:
 | PostToolUse (hook-added-notify) | Every Write/Edit that creates a new `.claude/hooks/*.sh` | Injects a reminder to document the new hook in `docs/hooks/README.md` (and the Wiring Reference table) before the session ends. Stays silent if the hook is already documented. Implemented in `.claude/hooks/hook-added-notify.sh`. |
 | PostToolUse (lean-ctx nudge) | Every Read of a file ≥16 KB (~4,000 tokens) | Suggests the optimal `ctx_read` mode for the file type (`signatures` for code, `reference` for prose, `aggressive` for unknown); silent for small files and data formats (`.json/.yaml/.toml/.lock`). Implemented in `.claude/hooks/lean-ctx-nudge-hook.sh`. |
 | PostToolUse (ccr-routine-added-notify) | Every `CronCreate` tool call | Injects a reminder to document the new CCR routine in `docs/ccr-routines/README.md` (ID, schedule, purpose, output) before the session ends. Implemented in `.claude/hooks/ccr-routine-added-notify.sh`. |
-| post-commit (doc sync) | Every `git commit` with non-`.md` source changes | Doc-sync: updates all `.md` files referencing changed code via `claude --print` (background) |
-| post-commit (harness updater) | Every `git commit` with `.claude/` changes (excl. memory) | Updates `SDD-SETUP-GUIDE.md` via `claude --print` (background) |
+| post-commit (doc sync) | Every `git commit` with non-`.md` source changes | Doc-sync: updates all `.md` files referencing changed code via `claude --dangerously-skip-permissions --print` (background) |
+| post-commit (harness updater) | Every `git commit` with `.claude/` changes (excl. memory) | Updates `SDD-SETUP-GUIDE.md` via `claude --dangerously-skip-permissions --print` (background) |
 
 ---
 
@@ -1123,7 +1126,7 @@ Each harness subsystem has a detailed reference doc:
 
 # RIGHT — post-commit hook (fires once per git commit)
 # .git/hooks/post-commit
-claude --print "..." 2>/dev/null &
+claude --dangerously-skip-permissions --print "..." 2>/dev/null &
 ```
 
 **Rules to remember**:

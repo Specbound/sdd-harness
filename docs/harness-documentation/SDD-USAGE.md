@@ -415,6 +415,20 @@ Skill: `evaluation/macro` (part of the `evaluation` skill family). Opt-out: `SDD
 
 ---
 
+### `/kiro:tool-failure-review` — Learn from failing tool calls
+Reviews the per-repo tool-failure ledger and promotes recurring failures into memory: diagnoses *why* a command shape keeps failing and writes the cause + remedy as a durable memory entry (and `ERRORS.md`), so it stops happening. The **review** stage of the tool-failure-memory loop.
+
+```
+/kiro:tool-failure-review            # review signatures that failed >= 3x
+/kiro:tool-failure-review 5          # only signatures that failed >= 5x
+```
+
+The loop runs continuously without you: two hooks capture every failing Bash/MCP call (`tool-failure-capture.sh`, PostToolUseFailure) and warn before a known-failing shape is repeated (`tool-failure-recall.sh`, PreToolUse). The review stage runs automatically ~twice weekly via `scripts/tool-failure-review-runner.sh` (MIN_GAP_DAYS=3) inside the daily orchestrator — it no-ops unless the ledger has a signature that failed ≥3× and is still open, so calling it daily is cheap.
+
+Ledger: `.claude/memory/tool-failures.jsonl` (local, per-repo). Report: `.claude/reports/tool-failures/YYYY-MM-DD.md`. Skill: `tool-failure-memory`. Opt-out: `SDD_SKIP_TOOL_FAILURE_REVIEW=1`. Source: ReMe (agentscope-ai/ReMe).
+
+---
+
 ## Jira Integration
 
 ### `/kiro:jira-solve` — Work on a Jira ticket with auto-commenting

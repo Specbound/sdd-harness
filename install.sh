@@ -116,7 +116,7 @@ for hook in "$HARNESS_DIR/hooks/"*.sh; do
 done
 
 # --- chmod runtime scripts that need to be executable ---
-for s in daily-runner.sh macro-eval-runner.sh skill-curator-runner.sh harness-health-runner.sh; do
+for s in daily-runner.sh macro-eval-runner.sh skill-curator-runner.sh harness-health-runner.sh tool-failure-review-runner.sh; do
   [ -f "$PROJECT_DIR/.claude/scripts/$s" ] && chmod +x "$PROJECT_DIR/.claude/scripts/$s"
 done
 
