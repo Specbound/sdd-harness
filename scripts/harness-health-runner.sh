@@ -3,7 +3,7 @@
 # plus iterative skill repair. Invoke from the harness repo's working directory:
 #   cd <harness-repo> && bash .claude/scripts/harness-health-runner.sh
 #
-# Harness-only: exits 0 immediately in non-harness repos (checks for docs/ccr-routines/).
+# Harness-only: exits 0 immediately in non-harness repos (checks for docs/scheduled-tasks/).
 # Cadence: MIN_GAP_DAYS=13 (~bi-weekly). Self-pacing via state file — no separate scheduler.
 # Race-safe via mkdir lock (portable; flock is Linux-only).
 # Override cadence with HARNESS_HEALTH_GAP_DAYS; force a run with HARNESS_HEALTH_FORCE=1.
@@ -23,7 +23,7 @@ TODAY="$(date +%Y-%m-%d)"
 log() { echo "[$TIMESTAMP] $REPO_NAME harness-health: $*" >&2; }
 
 # --- Harness-only guard ---
-if [ ! -d "docs/ccr-routines" ]; then
+if [ ! -d "docs/scheduled-tasks" ]; then
   exit 0
 fi
 

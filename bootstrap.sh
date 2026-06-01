@@ -444,5 +444,7 @@ echo -e "╚══════════════════════�
 echo
 echo "  Next steps inside Claude Code (per project):"
 echo "    /kiro:steering       — scan codebase, generate steering docs"
-echo "    /kiro:setup-routine  — register nightly maintenance run"
+echo
+echo "  Daily maintenance runs automatically via the local OS scheduler"
+echo "  (registered by install.sh / update.sh). No per-project setup required."
 echo

@@ -4,7 +4,7 @@
 # Invoke from the repo's working directory:
 #   cd <harness-repo> && bash .claude/scripts/skill-curator-runner.sh
 #
-# Harness-only: exits 0 immediately in non-harness repos (checks for docs/ccr-routines/).
+# Harness-only: exits 0 immediately in non-harness repos (checks for docs/scheduled-tasks/).
 # Cadence: MIN_GAP_DAYS=7 (weekly). Self-pacing via state file — no separate scheduler.
 # Race-safe via mkdir lock (portable; flock is Linux-only).
 # Override cadence with SKILL_CURATOR_GAP_DAYS; force a run with SKILL_CURATOR_FORCE=1.
@@ -24,7 +24,7 @@ TODAY="$(date +%Y-%m-%d)"
 log() { echo "[$TIMESTAMP] $REPO_NAME skill-curator: $*" >&2; }
 
 # --- Harness-only guard ---
-if [ ! -d "docs/ccr-routines" ]; then
+if [ ! -d "docs/scheduled-tasks" ]; then
   exit 0
 fi
 

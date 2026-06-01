@@ -128,12 +128,6 @@ do_update() {
   fi
 
   bash "$HARNESS_DIR/generate-project-stack.sh" "$proj"
-  # Remind to register Routine if not already done (opt-out via SDD_SKIP_ROUTINE=1)
-  if [ "${SDD_SKIP_ROUTINE:-0}" != "1" ]; then
-    local pname
-    pname="$(basename "$proj")"
-    echo "  Reminder: run /kiro:setup-routine in Claude Code to ensure nightly Routine is registered for $pname."
-  fi
   date -Iseconds > "$proj/.claude/.last-harness-check"
   echo "  Done."
 }

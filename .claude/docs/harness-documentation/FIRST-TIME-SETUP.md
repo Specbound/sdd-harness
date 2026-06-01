@@ -308,13 +308,16 @@ Once global tools are in place, install the harness into each project:
 ```
 Or use the WSL2 path if Claude Code is running inside WSL2.
 
+`install.sh` propagates **every** hook in the harness's `hooks/` directory into the project's `.claude/hooks/` (and `chmod +x`'s them), syncs `docs/` into `.claude/docs/`, and generates a project stack summary. The harness is the source of truth — which hooks actually fire is governed by the project's `.claude/settings.json` wiring, not by which files are present. Re-run `update.sh` to re-sync after the harness changes.
+
 Then, inside Claude Code in the project directory, run these once:
 
 ```
 /kiro:steering         # scans codebase, generates steering/product.md, tech.md, structure.md
-/kiro:setup-routine    # registers nightly maintenance (runs in Anthropic's cloud at 11pm)
 /codebase-legibility   # sets up CLAUDE.md hierarchy, .claudeignore, and codebase map
 ```
+
+Daily maintenance runs automatically via the local OS scheduler (registered by `install.sh` / `update.sh`). No per-project setup is required.
 
 Update `.gitignore` to exclude harness files:
 ```gitignore
@@ -365,7 +368,6 @@ Run through this on a fresh machine:
 | Hook not firing at all | `rtk init -g` not run | Run `rtk init -g --auto-patch` |
 | GitNexus context missing in Claude | MCP not in `settings.json` or repo not indexed | Run `/kiro:gitnexus-setup` |
 | impeccable scans not appearing | Binary not in PATH | `npm install -g impeccable` |
-| Maintenance not running | `/kiro:setup-routine` not run | Run it inside Claude Code |
 | Local daily maintenance not running (macOS) | LaunchAgent not loaded | `launchctl list com.sdd.daily-orchestrator` to check; re-run `install.sh` or `update.sh` to re-register |
 | Local daily maintenance not running (Linux) | Cron entry missing | `crontab -l \| grep sdd-daily` to check; re-run `install.sh` or `update.sh` to re-register |
 | Local daily maintenance not running (WSL) | Task Scheduler entry missing | `schtasks.exe /Query /TN "SDD Daily Orchestrator"` to check; re-run `install.sh` to re-register |
@@ -373,4 +375,4 @@ Run through this on a fresh machine:
 | **Windows:** `uv` not found after install | PowerShell PATH not reloaded | Restart terminal or run `. $env:USERPROFILE\.cargo\env` (or reopen shell) |
 | **Windows:** `install.sh` fails | Script requires bash | Run from Git Bash or WSL2, not PowerShell or CMD |
 
-_Last synced: 2026-05-27_
+_Last synced: 2026-06-01_

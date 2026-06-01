@@ -549,7 +549,7 @@ Starts a local HTTP server at `http://localhost:4569` and opens the browser auto
 | 1 | ⚡ Trust Battery | Arc gauge + 30-day bar chart of daily trust deltas |
 | 2 | 🕸 GitNexus | Stats strip + embedded visual explorer (localhost:4567) |
 | 3 | 🪝 Hooks History | Hook name, event type, last activity, active/inactive badge |
-| 4 | 📅 CCR Routines | Schedule, last run, next expected, overdue alerts |
+| 4 | 📅 Scheduled Tasks | OS scheduler health card + per-routine cards (schedule, last run + exit code, artifact, diff vs. previous run, reasoning excerpt) |
 | 5 | 🧠 Memory Changes | Git feed of hot-memory, observations, and meta/patterns changes |
 | 6 | 🎯 Skill Changes | Rendered skill-curation-report with audit age |
 | 7 | 📊 Session Quality | Score/keep-rate/memory-gap summary + 30-day chart |

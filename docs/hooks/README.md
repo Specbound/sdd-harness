@@ -207,17 +207,6 @@ Hook output is injected into Claude's context as system messages — Claude read
 
 ---
 
-### `ccr-routine-added-notify.sh`
-**Event:** `PostToolUse` — **Matcher:** `CronCreate`
-
-**Purpose:** Fires after every `CronCreate` tool call and injects a reminder to document the new routine in `docs/ccr-routines/README.md` before the session ends.
-
-**Why it's needed:** CCR routines run remotely and asynchronously — if they're not documented at creation time, it's easy to forget what they do, why they exist, and how to disable them. This hook closes the gap between "routine created" and "routine documented."
-
-**Output:** Documentation reminder banner with the routine name and schedule extracted from the tool call.
-
----
-
 ### `protected-path-hook.sh`
 **Event:** `PreToolUse` — **Matcher:** `Write|Edit`
 
@@ -277,7 +266,6 @@ PreToolUse     WebFetch|WebSearch                            → gbrain-external
 PostToolUse    Write|Edit                                    → impeccable-detect-hook.sh
 PostToolUse    Write|Edit                                    → hook-added-notify.sh
 PostToolUse    Bash                                          → revert-detect-hook.sh
-PostToolUse    CronCreate                                    → ccr-routine-added-notify.sh
 PostToolUse    Read                                          → lean-ctx-nudge-hook.sh
 PreToolUse     Bash|mcp__.*                                  → tool-failure-recall.sh
 PostToolUseFailure Bash|mcp__.*                              → tool-failure-capture.sh

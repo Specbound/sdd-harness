@@ -142,7 +142,7 @@ case "${SDD_HOOK_PROFILE:-standard}" in
 esac
 ```
 
-Set `HOOK_CLASS` at the top of each hook to one of: `validation` (protected-path, memory-discipline), `quality` (linting, formatting), `notification` (hook-added-notify, ccr-routine-added-notify).
+Set `HOOK_CLASS` at the top of each hook to one of: `validation` (protected-path, memory-discipline), `quality` (linting, formatting), `notification` (hook-added-notify).
 
 **Usage:**
 

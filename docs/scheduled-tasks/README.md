@@ -1,12 +1,12 @@
-# SDD Harness — Routines Reference
+# SDD Harness — Scheduled Tasks Reference
 
-All routines now run **locally** via the OS-level scheduler and the daily orchestrator. There are no active CCR (cloud-hosted) routines. Local routines work on any machine, have full access to gitignored files (`~/.claude/skills/`, `.claude/memory/`), and require no GitHub App or cloud authentication.
+All scheduled tasks run **locally** via the OS-level scheduler and the daily orchestrator. They work on any machine, have full access to gitignored files (`~/.claude/skills/`, `.claude/memory/`), and require no GitHub App or cloud authentication.
 
 ---
 
-## Active Local Routines
+## Active Scheduled Tasks
 
-All routines are wired into `scripts/daily-orchestrator.sh`. The orchestrator fires daily at 18:00 via launchd (macOS), Windows Task Scheduler (WSL/Windows), or crontab (Linux). Catch-up runs if the machine was off: the session-start hook fires the per-repo runner in the background if the state file is >24h stale.
+All tasks are wired into `scripts/daily-orchestrator.sh`. The orchestrator fires daily at 18:00 via launchd (macOS), Windows Task Scheduler (WSL/Windows), or crontab (Linux). Catch-up runs if the machine was off: the session-start hook fires the per-repo runner in the background if the state file is >24h stale.
 
 ---
 
@@ -65,7 +65,7 @@ This is the **review** stage of the tool-failure-memory loop (capture → recall
 **Runner:** `.claude/scripts/skill-curator-runner.sh`
 **Prompt:** `.claude/scripts/skill-curator-prompt.md`
 **Cadence:** Weekly (MIN_GAP_DAYS=7; override with `SKILL_CURATOR_GAP_DAYS`; force with `SKILL_CURATOR_FORCE=1`)
-**Scope:** Harness repo only (exits 0 in non-harness repos via `docs/ccr-routines/` guard)
+**Scope:** Harness repo only (exits 0 in non-harness repos via `docs/scheduled-tasks/` guard)
 
 **What it does:**
 1. **Skill quality audit** — scores all `~/.claude/skills/*/SKILL.md` against four SkillOS dimensions; flags low-quality candidates and duplicate pairs
@@ -83,7 +83,7 @@ This is the **review** stage of the tool-failure-memory loop (capture → recall
 **Runner:** `.claude/scripts/harness-health-runner.sh`
 **Prompt:** `.claude/scripts/harness-health-prompt.md`
 **Cadence:** Bi-weekly (MIN_GAP_DAYS=13; override with `HARNESS_HEALTH_GAP_DAYS`; force with `HARNESS_HEALTH_FORCE=1`)
-**Scope:** Harness repo only (exits 0 in non-harness repos via `docs/ccr-routines/` guard)
+**Scope:** Harness repo only (exits 0 in non-harness repos via `docs/scheduled-tasks/` guard)
 
 **What it does:**
 1. **CLAUDE.md review** — reads all repos in `~/.claude/sdd-harness/projects.txt`; audits for stale instructions, model-assumption drift, and over-constraining rules from pre-Claude-4.x habits; rates each repo `clean` / `minor` / `needs-update`; writes `docs/claudemd-review-report.md`
@@ -114,12 +114,14 @@ This is the **review** stage of the tool-failure-memory loop (capture → recall
 
 Registration is automatic and idempotent — re-running `install.sh` or `update.sh` is safe.
 
+The dashboard's **Scheduled Tasks** tab shows live status for each task: schedule, last run + exit code, artifact path, diff vs. previous run, and the reasoning excerpt from the artifact. It also surfaces the OS scheduler's last-launch exit status.
+
 ---
 
-## Adding a New Local Routine
+## Adding a New Scheduled Task
 
 1. Create `scripts/<name>-prompt.md` — prompt template with `TODAY_PLACEHOLDER`
-2. Create `scripts/<name>-runner.sh` — copy the `macro-eval-runner.sh` pattern; set `MIN_GAP_DAYS`; add a harness guard if harness-only
+2. Create `scripts/<name>-runner.sh` — copy the `macro-eval-runner.sh` pattern; set `MIN_GAP_DAYS`; add a harness guard (`docs/scheduled-tasks/`) if harness-only
 3. Add a call block in `run_one()` in `scripts/daily-orchestrator.sh` with a `SDD_SKIP_<NAME>` opt-out guard
 4. Add a `chmod +x` line in **both** `install.sh` and `update.sh` (the runner loop lists every `*-runner.sh` by name)
 5. Add an entry to `_scheduled_task_registry()` in `scripts/dashboard.py` so the routine shows up as a card on the dashboard's **Scheduled Tasks** tab (set `runner_log_token` to match how the orchestrator logs it)
@@ -128,15 +130,4 @@ Registration is automatic and idempotent — re-running `install.sh` or `update.
 
 ---
 
-## Retired CCR Routines (migrated 2026-05-31)
-
-The following routines were previously hosted as CCR (Claude Code Routines) on `claude.ai/code/routines`. They were migrated to local runners on 2026-05-31 because local runs have access to gitignored files, require no GitHub App, and work on any machine.
-
-| Routine | Former CCR ID | Migrated to |
-|---------|--------------|-------------|
-| Weekly Skill-Curator + Memory Governance | `trig_018Wuof3a3z9vzacVX83sbga` | `skill-curator-runner.sh` |
-| Bi-Weekly Harness Health | `trig_014LpmVohefGRmySvBzaJsxk` | `harness-health-runner.sh` |
-
----
-
-_Last synced: 2026-06-01
+_Last synced: 2026-06-01_

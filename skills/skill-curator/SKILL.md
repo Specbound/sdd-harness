@@ -90,7 +90,7 @@ Present a numbered list — **always wait for user approval before executing:**
               fan-out/fan-in, swarm topologies, and adversarial validation."
    Proposed: "Multi-agent patterns: routing, handoff, voting, swarm, adversarial validation."
 
-2. Merge — `rag-implementation` into `rag-architect` (87% body overlap per CCR report)
+2. Merge — `rag-implementation` into `rag-architect` (87% body overlap per curation report)
    Keep: `rag-architect`; fold unique implementation steps into a new Phase 4
 
 3. Delete — `csv-data-summarizer` (quality score 1.8/4, unused 45+ days, no unique content)

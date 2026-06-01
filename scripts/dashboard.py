@@ -95,7 +95,6 @@ HOOK_DESCRIPTIONS = {
     "pre-tool-use-gitnexus":  "Ensures GitNexus graph is indexed before code-analysis tool calls",
     "memory-discipline":      "Gates memory writes: enforces quality/length rules before saving",
     "hook-added-notify":      "Notifies when a new hook file is added to the repo",
-    "ccr-routine-added":      "Notifies when a new CCR schedule trigger is created",
     "gbrain-agent-spawn":     "Intercepts agent spawns to inject memory-first lookup pattern",
     "gbrain-memory-write":    "Validates memory writes against GBrain quality patterns",
     "gbrain-external":        "Routes external fetches through GBrain compiled-truth check",
@@ -412,7 +411,7 @@ def parse_orchestrator_log():
     return runs
 
 
-# ── Scheduled Tasks (replaces former CCR routine wiring) ──────────────────────
+# ── Scheduled Tasks ───────────────────────────────────────────────────────────
 
 # Source of truth for the Scheduled Tasks dashboard tab. To add a routine here:
 # the orchestrator already logs it under `runner_log_token`; just append an entry
@@ -1250,7 +1249,6 @@ def render_hooks_history(rd):
         "impeccable-detect":    "PostToolUse",
         "revert-detect":        "PostToolUse",
         "hook-added-notify":    "PostToolUse",
-        "ccr-routine-added":    "PostToolUse",
         "gbrain-agent-spawn":   "PreToolUse",
         "gbrain-memory-write":  "PreToolUse",
         "gbrain-external":      "PreToolUse",
@@ -1718,6 +1716,16 @@ def render_scheduled_tasks(hd):
             f'<code style="background:var(--surface0);padding:1px 5px;border-radius:3px">'
             f'{h(scheduler.get("install_hint",""))}</code></div>'
         )
+    elif scheduler.get("last_exit") not in (None, 0):
+        # launchd reports exit*256 (e.g. 32256 = exit 126 shifted left 8 bits)
+        raw = scheduler.get("last_exit")
+        shifted = raw >> 8 if raw and raw > 255 else raw
+        install_hint = (
+            f'<div style="margin-top:8px;font-size:11px;color:var(--yellow)">'
+            f'⚠ Last orchestrator launch returned exit={shifted} — check '
+            f'<code style="background:var(--surface0);padding:1px 5px;border-radius:3px">'
+            f'{h(str(HARNESS_DIR / "logs" / "orchestrator.stderr.log"))}</code></div>'
+        )
 
     scheduler_card = f"""<div style="border:1px solid {inst_color}55;border-radius:10px;
                         padding:12px 14px;margin-bottom:18px;
@@ -1772,12 +1780,14 @@ def render_scheduled_tasks(hd):
             uri      = Path(art["path"]).as_uri()
             rel_path = str(Path(art["path"]).relative_to(HARNESS_DIR)) \
                        if str(art["path"]).startswith(str(HARNESS_DIR)) else art["path"]
+            size_b   = art["size_kb"] * 1024
+            size_str = f"{int(size_b)} B" if size_b < 1024 else f"{art['size_kb']:.1f} KB"
             artifact_html = (
                 f'<a href="{h(uri)}" target="_blank" '
                 f'style="color:var(--mauve);font-size:11px;text-decoration:none">'
                 f'{h(rel_path)} ↗</a> '
                 f'<span style="color:var(--overlay0);font-size:10px;margin-left:6px">'
-                f'{art["size_kb"]:.1f} KB · {h(rel_time(art["mtime"]))}</span>'
+                f'{size_str} · {h(rel_time(art["mtime"]))}</span>'
             )
         else:
             artifact_html = (
@@ -2455,7 +2465,7 @@ def render_maintenance_status(selected_rd, all_repos_data, hd):
 </div>"""
 
 def render_automation_audit(rd, hd):
-    """Timeline of every automated event: maintenance, trust judge, session signals, CCR."""
+    """Timeline of every automated event: maintenance, trust judge, session signals, scheduled tasks."""
     from collections import defaultdict
 
     events = []

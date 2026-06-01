@@ -314,9 +314,10 @@ Then, inside Claude Code in the project directory, run these once:
 
 ```
 /kiro:steering         # scans codebase, generates steering/product.md, tech.md, structure.md
-/kiro:setup-routine    # registers nightly maintenance (runs in Anthropic's cloud at 11pm)
 /codebase-legibility   # sets up CLAUDE.md hierarchy, .claudeignore, and codebase map
 ```
+
+Daily maintenance runs automatically via the local OS scheduler (registered by `install.sh` / `update.sh`). No per-project setup is required.
 
 Update `.gitignore` to exclude harness files:
 ```gitignore
@@ -367,7 +368,6 @@ Run through this on a fresh machine:
 | Hook not firing at all | `rtk init -g` not run | Run `rtk init -g --auto-patch` |
 | GitNexus context missing in Claude | MCP not in `settings.json` or repo not indexed | Run `/kiro:gitnexus-setup` |
 | impeccable scans not appearing | Binary not in PATH | `npm install -g impeccable` |
-| Maintenance not running | `/kiro:setup-routine` not run | Run it inside Claude Code |
 | Local daily maintenance not running (macOS) | LaunchAgent not loaded | `launchctl list com.sdd.daily-orchestrator` to check; re-run `install.sh` or `update.sh` to re-register |
 | Local daily maintenance not running (Linux) | Cron entry missing | `crontab -l \| grep sdd-daily` to check; re-run `install.sh` or `update.sh` to re-register |
 | Local daily maintenance not running (WSL) | Task Scheduler entry missing | `schtasks.exe /Query /TN "SDD Daily Orchestrator"` to check; re-run `install.sh` to re-register |
