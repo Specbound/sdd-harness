@@ -734,7 +734,7 @@ git push -u origin main
 
 ## Local Dashboard
 
-A browser-based dashboard that shows trust battery, GitNexus stats, hooks history, CCR routines, memory and skill changes, session quality, maintenance status, and Claude Code model spend across all registered repos.
+A browser-based dashboard that shows trust battery, GitNexus stats, hooks history, scheduled tasks, memory and skill changes, session quality, maintenance status, and Claude Code model spend across all registered repos.
 
 ```bash
 python3 ~/.claude/sdd-harness/scripts/dashboard.py
@@ -767,7 +767,7 @@ Requires at least one project registered in `projects.txt` (added automatically 
 | 1 | ⚡ Trust Battery | Arc gauge + 30-day bar chart of daily trust deltas |
 | 2 | 🕸 GitNexus | Stats strip + embedded visual explorer (localhost:4567) |
 | 3 | 🪝 Hooks History | Hook name, event type, last activity, active/inactive badge |
-| 4 | 📅 CCR Routines | Schedule, last run, next expected, overdue alerts |
+| 4 | 📅 Scheduled Tasks | OS-scheduler health card + per-routine schedule, last run, next expected, artifact diff, overdue alerts |
 | 5 | 🧠 Memory Changes | Git feed of hot-memory, observations, and meta/patterns changes |
 | 6 | 🎯 Skill Changes | Rendered skill-curation-report with audit age |
 | 7 | 📊 Session Quality | Score/keep-rate/memory-gap summary + 30-day chart |

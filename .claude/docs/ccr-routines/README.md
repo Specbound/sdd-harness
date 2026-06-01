@@ -43,6 +43,24 @@ All routines are wired into `scripts/daily-orchestrator.sh`. The orchestrator fi
 
 ---
 
+### Tool-Failure Review
+**Runner:** `.claude/scripts/tool-failure-review-runner.sh`
+**Command:** `.claude/commands/kiro/tool-failure-review.md` (`/kiro:tool-failure-review`)
+**Cadence:** ~Twice weekly (MIN_GAP_DAYS=3; override with `TOOL_FAILURE_GAP_DAYS`; force with `TOOL_FAILURE_FORCE=1`)
+**Scope:** Every registered repo (no-ops unless the ledger has a promotable signature)
+
+**What it does:**
+- Reads the per-repo tool-failure ledger `.claude/memory/tool-failures.jsonl` (populated by the `tool-failure-capture.sh` PostToolUseFailure hook)
+- Promotes recurring, understood failures (count ≥ `TOOL_FAILURE_MIN_COUNT`, default 3, open, not yet promoted) into durable memory + `ERRORS.md`, diagnosing *why* the command shape keeps failing
+- Marks promoted entries resolved so the `tool-failure-recall.sh` PreToolUse hook stops warning about them
+- Self-paces via MIN_GAP_DAYS and a `mkdir` lock; pre-flights that the `claude` CLI is on PATH before running
+
+This is the **review** stage of the tool-failure-memory loop (capture → recall → review). See the `tool-failure-memory` skill.
+
+**Opt-out:** `SDD_SKIP_TOOL_FAILURE_REVIEW=1` env var.
+
+---
+
 ### Weekly Skill-Curator Sweep
 **Runner:** `.claude/scripts/skill-curator-runner.sh`
 **Prompt:** `.claude/scripts/skill-curator-prompt.md`
@@ -103,9 +121,10 @@ Registration is automatic and idempotent — re-running `install.sh` or `update.
 1. Create `scripts/<name>-prompt.md` — prompt template with `TODAY_PLACEHOLDER`
 2. Create `scripts/<name>-runner.sh` — copy the `macro-eval-runner.sh` pattern; set `MIN_GAP_DAYS`; add a harness guard if harness-only
 3. Add a call block in `run_one()` in `scripts/daily-orchestrator.sh` with a `SDD_SKIP_<NAME>` opt-out guard
-4. Add a `chmod +x` line in `update.sh`
-5. Sync both to `.claude/scripts/`: `cp scripts/<name>-* .claude/scripts/`
-6. Document it in this file
+4. Add a `chmod +x` line in **both** `install.sh` and `update.sh` (the runner loop lists every `*-runner.sh` by name)
+5. Add an entry to `_scheduled_task_registry()` in `scripts/dashboard.py` so the routine shows up as a card on the dashboard's **Scheduled Tasks** tab (set `runner_log_token` to match how the orchestrator logs it)
+6. Sync both to `.claude/scripts/`: `cp scripts/<name>-* .claude/scripts/`
+7. Document it in this file
 
 ---
 
@@ -117,3 +136,7 @@ The following routines were previously hosted as CCR (Claude Code Routines) on `
 |---------|--------------|-------------|
 | Weekly Skill-Curator + Memory Governance | `trig_018Wuof3a3z9vzacVX83sbga` | `skill-curator-runner.sh` |
 | Bi-Weekly Harness Health | `trig_014LpmVohefGRmySvBzaJsxk` | `harness-health-runner.sh` |
+
+---
+
+_Last synced: 2026-06-01

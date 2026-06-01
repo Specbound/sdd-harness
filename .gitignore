@@ -2,6 +2,7 @@
 projects.txt
 VERSION
 .claude/settings.json
+.claude/docs/superpowers/
 
 # Runtime artifacts
 logs/
