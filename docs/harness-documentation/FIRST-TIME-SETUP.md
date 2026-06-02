@@ -330,7 +330,13 @@ specs/
 .claude/commands/
 .claude/agents/
 .claude/kiro/
-.claude/memory/
+# Per-user memory — stays local, never shared
+.claude/memory/**
+!.claude/memory/daily/
+!.claude/memory/glacier/
+!.claude/memory/meta/
+!.claude/memory/.gitkeep
+!.claude/memory/**/.gitkeep
 .claude/docs/
 
 # Keep this one committed:
@@ -364,7 +370,7 @@ Run through this on a fresh machine:
 | Workshop tab shows "not installed" | `raindrop` CLI missing | `curl -fsSL https://raindrop.sh/install \| bash` |
 | No traces appearing in Workshop | `RAINDROP_LOCAL_DEBUGGER` not in env | Run `source ~/.bashrc`; or re-run `raindrop-setup.sh` |
 | `raindrop-ai` import error at agent startup | SDK not installed in venv | `bash ~/.claude/sdd-harness/scripts/raindrop-setup.sh` |
-| Permission dialog on every Bash call | Old `ztk rewrite` hook still present | Replace with `rtk hook claude` in `~/.claude/settings.json` |
+| Permission dialog on every Bash call | Stale legacy hook from a prior token-compression tool still present in `~/.claude/settings.json` | Remove the old hook entry and run `rtk init -g` to install the current `rtk hook claude` entry |
 | Hook not firing at all | `rtk init -g` not run | Run `rtk init -g --auto-patch` |
 | GitNexus context missing in Claude | MCP not in `settings.json` or repo not indexed | Run `/kiro:gitnexus-setup` |
 | impeccable scans not appearing | Binary not in PATH | `npm install -g impeccable` |

@@ -88,13 +88,6 @@ rtk --ultra-compact pytest tests/
 
 Use for very long test suites or when context is near limits.
 
-## ZTK migration note
-
-This harness previously used `ztk rewrite --skip-permissions` (v0.3.1). RTK v0.42.0 replaces it:
-- `ztk run <cmd>` → `rtk proxy <cmd>`
-- `ztk stats` → `rtk gain`
-- `ztk rewrite` → `rtk hook claude` (built into PreToolUse hook)
-
 ## Quick reference
 
 ```bash

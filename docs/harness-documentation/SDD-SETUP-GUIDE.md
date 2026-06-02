@@ -40,6 +40,13 @@ scripts/remap-ccsdd-paths.sh
 .claude/commands/
 .claude/agents/
 .claude/kiro/
+# Per-user memory — stays local, never shared
+.claude/memory/**
+!.claude/memory/daily/
+!.claude/memory/glacier/
+!.claude/memory/meta/
+!.claude/memory/.gitkeep
+!.claude/memory/**/.gitkeep
 !.claude/settings.local.json
 ```
 
@@ -574,7 +581,7 @@ Conventions are defined in `.claude/kiro/settings/rules/memory-conventions.md`:
 | PreToolUse (tool-failure recall) | Every Bash/MCP tool call | Soft advisory (never blocks): if this command shape has failed ≥2× and is still open, injects the failure count, last error, and any recorded remedy so Claude reconsiders before repeating it. Once-per-session-per-signature dedupe + 45-day recency gate. Script: `.claude/hooks/tool-failure-recall.sh`. |
 | daily-orchestrator (tool-failure review) | Once per day per repo via the daily orchestrator (self-paces to ~2×/week via `MIN_GAP_DAYS=3`; no-ops unless a promotable ledger entry exists) | Runs `.claude/scripts/tool-failure-review-runner.sh`, which invokes `/kiro:tool-failure-review` headlessly: diagnoses recurring failures (`count ≥ 3`, open, unpromoted) and promotes the understood, reusable ones into memory files + `ERRORS.md`, then marks them resolved on the ledger. Review (promotion) half of the tool-failure-memory loop. Opt out with `SDD_SKIP_TOOL_FAILURE_REVIEW=1`. |
 | Windows Task Scheduler + SessionStart (daily maintenance) | Nightly at 18:00 local (Israel); SessionStart catch-up if >24h stale | Runs per-repo `daily-runner.sh` → `/kiro:daily-maintenance` — Judge → Reflect → Housekeeping → Trust Score → Augment Skills. Auto-registered by `install.sh` / `update.sh` (WSL + schtasks.exe). Opt out: `SDD_SKIP_ROUTINE=1` at install time; `schtasks.exe /Delete /TN "SDD Daily Orchestrator"` globally; `rm .claude/scripts/daily-runner.sh` per-repo. See `SDD-USAGE.md` → "Daily Maintenance". |
-| PreToolUse (ztk) | Every Bash tool call by any agent | Rewrites matching commands to `ztk run <cmd>`, compressing output before it reaches the LLM (78–90%+ token reduction). Passes through commands without filters unchanged. Global — fires in all sessions and projects. |
+| PreToolUse (rtk) | Every Bash tool call by any agent | `rtk hook claude` rewrites matching commands to `rtk <cmd>`, compressing output before it reaches the LLM (60–90%+ token reduction). Emits `permissionDecision: "allow"` so rewrites are silent. Passes through commands without filters unchanged. Global — fires in all sessions and projects. |
 | PreToolUse (GitNexus) | Every file Read/Edit by any agent | Enriches file operations with 360° symbol graph context (callers, dependencies, process participation); no-ops gracefully when GitNexus is not installed |
 | PreToolUse (memory-discipline) | Every Write/Edit to `*/memory/*.md` or `MEMORY.md` | Gates memory writes with discipline rules — valid content: workflow patterns, user preferences, reusable lessons. Invalid: case-specific facts, citations, investigation outcomes. Claude sees the rules before executing the write and can revise content. Implemented in `.claude/hooks/memory-discipline-hook.sh`. |
 | PreToolUse (protected path) | Every Write/Edit to a sensitive path (`.env`, crypto keys, credentials, `.aws/`, `.ssh/`) | Injects a confirmation banner; Claude must pause and ask the user before proceeding. Prevents accidental overwrites of secrets files. Implemented in `.claude/hooks/protected-path-hook.sh`. |
@@ -982,78 +989,64 @@ See `docs/design/impeccable/impeccable.md` for the full rule set and workflow pl
 
 ---
 
-## ztk (Automatic — Token Compression)
+## RTK (Automatic — Token Compression)
 
-The harness includes a global integration with [ztk](https://github.com/codejunkie99/ztk) — a 346KB single-binary CLI proxy that intercepts Bash command output and compresses it before it enters the LLM context window. Claims 78–90%+ token reduction on typical development commands.
+The harness includes a global integration with [RTK](https://github.com/rtk-ai/rtk) (Rust Token Killer) — a 6.6MB single-binary CLI proxy that intercepts Bash command output and compresses it before it enters the LLM context window. Typical reduction: 60–90% on development commands.
 
 ### What it does
 
-A `PreToolUse` hook in `~/.claude/settings.json` intercepts every Bash tool call. If ztk has a filter for the command, it rewrites `git diff` to `ztk run git diff`, captures the output, compresses it, and returns the compressed version. Everything is automatic — no commands to invoke, no per-project setup.
+A `PreToolUse` hook in `~/.claude/settings.json` runs `rtk hook claude` on every Bash tool call. When RTK has a filter for the command, the hook emits a rewrite directive (`permissionDecision: "allow"`) telling Claude Code to run `rtk <original>` instead. The proxy executes the command, applies the filter, and returns the compressed version. Everything is automatic — no commands to invoke, no per-project setup.
 
-**Filters cover:** git (diff/status/log/add/commit/push), pytest/cargo test/go test/npm test/jest/vitest/playwright, ls/cat/find/grep/rg/wc/head/tail/tree, cargo build/check/clippy, tsc, eslint/ruff/mypy, docker, kubectl, curl, gh, jq, python3, and 25+ regex-based patterns (make, terraform, helm, brew, pip, gradle, aws, and more).
+**Filters cover 100+ commands:** git (diff/status/log/add/commit/push/pull), pytest/cargo test/go test/jest/vitest/playwright/rspec/rake, ls/find/grep/diff/tree/wc, cargo build/check/clippy, tsc, eslint/ruff/mypy/golangci-lint/rubocop/prettier, docker, kubectl, aws, curl, gh, glab, psql, jq, npm/pnpm/pip/bundle/prisma.
 
 ### Installation
 
-**Windows (native):** ztk has no Windows binary. Use WSL2 to get token compression — install WSL2 and follow the Linux instructions below from inside it.
-
-**macOS** — use Homebrew (see Step 1 in [FIRST-TIME-SETUP.md](FIRST-TIME-SETUP.md)).
-
-**Linux / WSL2 — build from source** (no prebuilt binary):
-
-No prebuilt Linux binary is distributed. Build from source with Zig 0.16+:
+**All platforms** — use Homebrew (macOS and Linux):
 
 ```bash
-# 1. Download Zig 0.16.0
-curl -fL "https://ziglang.org/download/0.16.0/zig-x86_64-linux-0.16.0.tar.xz" -o /tmp/zig.tar.xz
-tar -xf /tmp/zig.tar.xz -C /tmp/
-
-# 2. Clone ztk
-git clone https://github.com/codejunkie99/ztk /tmp/ztk-src
-cd /tmp/ztk-src
+brew install rtk
+rtk init -g
 ```
 
-Apply two required patches before building:
+`rtk init -g` writes the `PreToolUse` hook to `~/.claude/settings.json` once. All projects and sessions inherit it automatically.
 
-**Patch 1** — `src/proxy.zig`: Remove the `permissions.checkCommand` block (lines ~13–26). This check calls `isSuspicious()` which blocks any command with embedded newlines — including all multiline `python3 -c "..."` scripts.
-
-**Patch 2** — `src/hooks/claude_rewrite.zig`: Change `"permissionDecision\":\"ask\""` to `"permissionDecision\":\"allow\""` in `emitRewrite()`. Without this, Claude Code pops a permission dialog for every rewritten command.
+**Linux without Homebrew:**
 
 ```bash
-# 3. Build and install
-/tmp/zig-x86_64-linux-0.16.0/zig build -Doptimize=ReleaseSmall
-mkdir -p ~/.local/bin
-cp zig-out/bin/ztk ~/.local/bin/ztk
-chmod +x ~/.local/bin/ztk
-
-# 4. Wire the global PreToolUse hook
-ztk init -g
+curl -fsSL https://rtk-ai.app/install.sh | sh
+rtk init -g
 ```
 
-The hook is written to `~/.claude/settings.json` once. All projects and sessions inherit it automatically.
-
-### macOS (Homebrew)
-
-```bash
-brew install codejunkie99/ztk/ztk
-ztk init -g
-```
-
-Note: the `permissionDecision: "ask"` patch is still needed for truly transparent operation. Either build from source or accept confirmation dialogs on rewrites.
+**Windows (native):** RTK does not ship a native Windows binary. Use WSL2 — install WSL2 and run the Linux instructions above from inside it.
 
 ### Verifying it works
 
 ```bash
-ztk stats                                    # cumulative savings
-tail -20 ~/.local/share/ztk/hook-debug.log   # live hook activity
+rtk --version    # should show rtk 0.42.0
+rtk gain         # cumulative savings (starts at 0 on fresh install)
 ```
 
-The debug log shows `rewrite` for intercepted commands and `passthrough` for commands without filters.
+Preview how a command would be rewritten without running it:
+
+```bash
+echo '{"tool_name":"Bash","tool_input":{"command":"git status"}}' | rtk hook claude
+# Should print: {"hookSpecificOutput":{"permissionDecision":"allow","updatedInput":{"command":"rtk git status"},...}}
+```
+
+### Bypassing compression
+
+When exact raw output is needed (debugging, piping to other tools):
+
+```bash
+rtk proxy <cmd>        # run command unfiltered (still tracked in rtk gain)
+rtk hook check <cmd>   # dry-run preview of the rewrite decision
+```
 
 ### CLAUDE.md additions
 
-No CLAUDE.md changes needed — ztk is fully automatic and global.
+No CLAUDE.md changes needed — RTK is fully automatic and global.
 
-See `docs/ztk/README.md` for full details, patch instructions, and troubleshooting.
+See `docs/context-management/rtk/README.md` for full filter coverage, configuration, ultra-compact mode, and troubleshooting.
 
 ---
 
@@ -1102,11 +1095,12 @@ Each harness subsystem has a detailed reference doc:
 | Jira Integration | `docs/jira/README.md` | Hook architecture, scripts, credentials, troubleshooting |
 | AutoResearch | `docs/autoresearch/README.md` | Interview protocol, loop mechanics, agent behavior |
 | Trust Battery | `docs/trust-battery/README.md` | Nightly Judge/Reflector loop, rubric, scoreboard, `auto-score` session success ratio (uncorrected sessions earn passive positive credit, read from `.claude/memory/.session-history`), opt-out, non-goals |
-| ztk | `docs/ztk/README.md` | Token compression proxy — filter coverage, patch details, session memory, upgrading |
+| RTK | `docs/context-management/rtk/README.md` | Token compression proxy — filter coverage, install, configuration, upgrading |
 | Context Hub | [github.com/andrewyng/context-hub](https://github.com/andrewyng/context-hub) | MCP server for third-party API docs (external) |
 | Design Quality | `docs/design/README.md` | Visual design quality integrations index |
 | Impeccable | `docs/design/impeccable/impeccable.md` | 27 anti-pattern rules, skill usage, hook setup, transfer instructions |
 | Raindrop Workshop | `docs/raindrop/README.md` | AI-agent tracing — instrumented repos, eval loop, dashboard tab, troubleshooting |
+| Scheduled Tasks | `docs/scheduled-tasks/README.md` | All scheduled routines (daily maintenance, macro-eval, skill-curator, harness health, drift review); OS scheduler setup; dashboard **Scheduled Tasks** tab |
 
 ---
 

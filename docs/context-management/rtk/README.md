@@ -156,7 +156,7 @@ The global hook in `~/.claude/settings.json` does not need updating between vers
 | Problem | Cause | Fix |
 |---|---|---|
 | `rtk: command not found` in hooks | Not installed or not in `$PATH` | `brew install rtk` |
-| Permission dialogs on every Bash call | Old `ztk rewrite` hook still present | Remove `ztk` hook entry from `~/.claude/settings.json` |
+| Permission dialogs on every Bash call | Stale legacy hook from a prior token-compression tool still present in `~/.claude/settings.json` | Remove the old hook entry and run `rtk init -g` |
 | Hook not firing | `rtk hook claude` entry missing from `~/.claude/settings.json` | Run `rtk init -g` |
 | Hook firing but no compression | Command not in RTK's filter list | Expected — passes through unchanged |
 | Compressed output loses needed detail | Filter too aggressive for this command | Add to `exclude_commands` in config, or use `rtk proxy` |
