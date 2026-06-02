@@ -30,8 +30,8 @@ GitHub repositories that were passed to `/skill-extraction` and turned into harn
 **What it is:** Peter Steinberger's Codex/OpenClaw skill-cleaner — audits skill libraries for prompt-budget cost (descriptions as % of context window), duplicate skills, and unused skills. Includes a TypeScript analyzer that reads Codex session logs and models_cache.json.
 
 **What we added:**
-- Skill: `skill-curator` — local post-CCR curation step. The TypeScript script and Codex-specific paths (models_cache.json, history.jsonl) were not portable, but the core concepts were: description-budget analysis (chars per description, 150/200-char thresholds, grammar compression heuristics) were absorbed into Phase 2 of the skill. Phase 1 reads the existing weekly CCR report; Phases 3–5 handle consolidated proposal + human-approved execution (merge/compress/delete). Also fixed a gap: the weekly CCR routine referenced `skill-curator` in its "How to use" but the skill didn't exist.
-- Updated: `docs/ccr-routines/README.md` — corrected weekly routine's "How to use" to reference `/skill-curator`, added Known Limitation note about CCR not accessing `~/.claude/skills/`.
+- Skill: `skill-curator` — local post-weekly-sweep curation step. The TypeScript script and Codex-specific paths (models_cache.json, history.jsonl) were not portable, but the core concepts were: description-budget analysis (chars per description, 150/200-char thresholds, grammar compression heuristics) were absorbed into Phase 2 of the skill. Phase 1 reads `docs/skill-curation-report.md` from the weekly skill-curator scheduled-tasks sweep; Phases 3–5 handle consolidated proposal + human-approved execution (merge/compress/delete). Also fixed a gap: the weekly sweep referenced `skill-curator` in its "How to use" but the skill didn't exist.
+- Updated: `docs/scheduled-tasks/README.md` — corrected weekly routine's "How to use" to reference `/skill-curator`, added Known Limitation note about the sweep not accessing `~/.claude/skills/` directly.
 
 ---
 

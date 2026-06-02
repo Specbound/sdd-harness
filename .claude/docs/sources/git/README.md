@@ -30,8 +30,8 @@ GitHub repositories that were passed to `/skill-extraction` and turned into harn
 **What it is:** Peter Steinberger's Codex/OpenClaw skill-cleaner — audits skill libraries for prompt-budget cost (descriptions as % of context window), duplicate skills, and unused skills. Includes a TypeScript analyzer that reads Codex session logs and models_cache.json.
 
 **What we added:**
-- Skill: `skill-curator` — local post-CCR curation step. The TypeScript script and Codex-specific paths (models_cache.json, history.jsonl) were not portable, but the core concepts were: description-budget analysis (chars per description, 150/200-char thresholds, grammar compression heuristics) were absorbed into Phase 2 of the skill. Phase 1 reads the existing weekly CCR report; Phases 3–5 handle consolidated proposal + human-approved execution (merge/compress/delete). Also fixed a gap: the weekly CCR routine referenced `skill-curator` in its "How to use" but the skill didn't exist.
-- Updated: `docs/ccr-routines/README.md` — corrected weekly routine's "How to use" to reference `/skill-curator`, added Known Limitation note about CCR not accessing `~/.claude/skills/`.
+- Skill: `skill-curator` — local post-weekly-sweep curation step. The TypeScript script and Codex-specific paths (models_cache.json, history.jsonl) were not portable, but the core concepts were: description-budget analysis (chars per description, 150/200-char thresholds, grammar compression heuristics) were absorbed into Phase 2 of the skill. Phase 1 reads `docs/skill-curation-report.md` from the weekly skill-curator scheduled-tasks sweep; Phases 3–5 handle consolidated proposal + human-approved execution (merge/compress/delete). Also fixed a gap: the weekly sweep referenced `skill-curator` in its "How to use" but the skill didn't exist.
+- Updated: `docs/scheduled-tasks/README.md` — corrected weekly routine's "How to use" to reference `/skill-curator`, added Known Limitation note about the sweep not accessing `~/.claude/skills/` directly.
 
 ---
 
@@ -58,6 +58,16 @@ GitHub repositories that were passed to `/skill-extraction` and turned into harn
 
 ---
 
+## github.com/multica-ai/andrej-karpathy-skills
+**URL:** https://github.com/multica-ai/andrej-karpathy-skills | **Added:** 2026-05-31
+
+**What it is:** A single-skill harness plugin packaging Andrej Karpathy's observations on LLM coding pitfalls into four behavioral principles: Think Before Coding (surface assumptions, present alternatives, ask when confused), Simplicity First (minimum code to solve the problem, nothing speculative), Surgical Changes (only touch lines traceable to the user's request, clean up only your own orphans), and Goal-Driven Execution (transform imperative tasks into verifiable test-first goals). Originally a `CLAUDE.md` snippet; the multica-ai fork ships it as a proper `SKILL.md` plugin.
+
+**What we added:**
+- Skill: `karpathy-guidelines` — 4-principle behavioral checklist that fires before every coding task (writing, editing, reviewing, refactoring). Description deliberately broad so the `using-superpowers` skill auto-invokes it on any coding request. Cross-references `questions`, `refactoring-safely`, and `test-driven-development` for deeper process support.
+
+---
+
 ## github.com/affaan-m/ECC
 **URL:** https://github.com/affaan-m/ECC | **Added:** 2026-05-31
 
@@ -65,3 +75,18 @@ GitHub repositories that were passed to `/skill-extraction` and turned into harn
 
 **What we added:**
 - Skill (augmentation): `hook-design` — added "Observer Loop Prevention" section (env-var sentinel, matcher specificity, state-file lock patterns) and "Session Profile Switching" section (`SDD_HOOK_PROFILE=off|minimal|standard` preamble pattern). Fills a gap: none of the existing harness hooks had re-entrancy guards despite firing on Write/Edit events that can themselves produce writes.
+
+---
+
+## github.com/agentscope-ai/ReMe
+**URL:** https://github.com/agentscope-ai/ReMe | **Added:** 2026-06-01
+**Source / Author:** AgentScope (Alibaba)
+
+**What it's about:** ReMe is an AI-agent memory framework addressing limited context windows and stateless sessions. Beyond conversation memory it maintains **procedural memory** (task success/failure experiences) and **tool memory** (tool-usage experience + parameter optimization), plus file-based ("memory as files") and vector-based stores with hybrid retrieval. The procedural/tool-memory concept — an agent remembering which tool calls fail and avoiding the repeat — is the subset extracted here.
+
+**What we added (a closed capture→recall→review loop for failing tool calls):**
+- Hook: `tool-failure-capture.sh` (PostToolUseFailure, matcher `Bash|mcp__.*`) — records every failing Bash/MCP call into a per-repo ledger `.claude/memory/tool-failures.jsonl`, keyed by a normalized command *signature* (paths/numbers/hashes/strings collapsed) so the *same kind* of failure clusters and its `count` climbs. Re-opens a resolved entry if the failure recurs.
+- Hook: `tool-failure-recall.sh` (PreToolUse, matcher `Bash|mcp__.*`, soft/advisory) — before a call runs, warns if that signature has failed ≥2× and is still open, showing the last error and any recorded remedy. Once-per-session-per-signature dedupe + 45-day recency gate keep it quiet; never blocks.
+- Routine: `tool-failure-review` — `commands/kiro/tool-failure-review.md` + `scripts/tool-failure-review-runner.sh` (MIN_GAP_DAYS=3 self-pacing, no-ops unless the ledger has a promotable entry) wired into `daily-orchestrator.sh` `run_one()`. Diagnoses *why* recurring failures happen and promotes the durable lessons into memory (+ `ERRORS.md`), marking entries resolved/promoted. This is where the system learns from its mistakes.
+- Skill: `tool-failure-memory` — the judgment layer: signature model, how to respond to a recall warning (don't reflexively re-run), and how to record a remedy / promote to memory.
+- Config: registered the two hooks in `templates/settings.json.template` (PostToolUseFailure + PreToolUse) so the loop ships to every repo; runner added to install/update chmod lists.
