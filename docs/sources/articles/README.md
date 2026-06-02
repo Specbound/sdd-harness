@@ -119,3 +119,13 @@ Online articles, blog posts, and documentation pages that were passed to `/skill
 **What we added:**
 - Skill: `evaluation/long-trajectory` — three-phase workflow (Search / Verify / Adapt), evidence-slice strategies, external system verification checklist (API, DB, GitHub, cloud, logs, filesystem), Rubric Builder iteration loop with calibration signals and trigger conditions. Part of the consolidated `evaluation/` skill family.
 - Restructure: consolidated `evaluation`, `macro-evals`, and `llm-eval-funnel` into a single `evaluation/` skill family with a router (`evaluation/SKILL.md`) and four sub-skills (`micro`, `macro`, `funnel`, `long-trajectory`). Router provides a decision tree and supports loading multiple sub-skills for cross-layer tasks. Documentation added at `docs/evaluation/README.md`.
+
+---
+
+## Agentic RL: Token-In, Token-Out Done Right
+**URL:** https://qgallouedec-tito.hf.space | **Added:** 2026-06-02 | **Source:** Hugging Face (qgallouedec)
+
+**What it's about:** Identifies a silent correctness bug in multi-turn RL training loops for tool-calling LLMs. When conversation history is re-rendered through the chat template at each step, BPE drift produces different token sequences than what the model originally sampled — gradients then target tokens the model never generated. The fix is a single invariant ("never re-encode what you decoded") implemented via a running token buffer. Also covers the prefix-preservation property test (12-line Python), a model compatibility table (18/19 major open-weight models pass unchanged), the Qwen3 one-line Jinja template fix, and edge case handling (history rewriting, truncation).
+
+**What we added:**
+- Skill: `agentic-rl-tito` — TITO invariant, correct loop algorithm, prefix-preservation property test with code, model compat table, `compute_tool_delta()` pattern, edge case recipes. Fires only on RL fine-tuning / multi-turn training loop tasks. Full code patterns in `resources/code-patterns.md`.

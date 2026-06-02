@@ -37,21 +37,23 @@ Hook output is injected into Claude's context as system messages — Claude read
 ### `stop-hook.sh`
 **Event:** `Stop` — **Matcher:** _(all sessions)_
 
-**Purpose:** Five end-of-session health checks, all lightweight:
+**Purpose:** Six end-of-session health checks, all lightweight:
 
 1. **Harness update check** — compares the harness repo’s latest commit timestamp to `.claude/.last-harness-check`. Prints a `Run: update.sh` nudge if the harness has changes since last install.
 2. **Memory health** — counts entries in `observations.md`. If >50, suggests `/kiro:housekeeping` to prune before the file bloats.
 3. **Session signal detection** — runs `scripts/detect_reexplanation.py` on the session transcript in two passes (Haiku-based LLM). Drain pass: phrases like "I already told you", "you’re doing it again" → appends a `[memory-gap]` observation. Charge pass: unambiguous approval like "that’s perfect", "great work" → appends a `[session-charge]` observation. Both are written at most once per calendar day.
 4. **Agent failure pattern** — scans `trace.log` for 3+ consecutive failures for the same agent type. Surfaces a `/kiro:evolve` nudge to investigate the friction pattern.
 5. **Session depth tracking** — appends an ISO timestamp to `.claude/memory/.session-history`, keeping the last 30 entries. This file is read by the dashboard’s **Context Health** section to show sessions/week, a sessions/day trend chart, and tips for `/compact` and subagent delegation.
+6. **Setup sequence capture** — reads `.claude/memory/.setup-session-buffer.log` (populated during the session by `setup-buffer-hook.sh`). If ≥2 setup commands were accumulated, appends them as a dated `bash` code block under `## <project> — <date>` in `.claude/memory/setup-knowledge.md` (creating the file if needed), then clears the buffer. Threshold of 2 prevents trivial one-off installs from polluting the knowledge file.
 
-**Why it’s needed:** Session-end is the only consistent window to look back at what happened without adding latency to the conversation. These checks surface problems that accumulate across sessions rather than within them. Session depth tracking gives the dashboard a lightweight signal for context load without requiring transcript analysis.
+**Why it’s needed:** Session-end is the only consistent window to look back at what happened without adding latency to the conversation. These checks surface problems that accumulate across sessions rather than within them. Session depth tracking gives the dashboard a lightweight signal for context load without requiring transcript analysis. Setup sequence capture ensures environment bootstrap steps are never lost — they are captured automatically without requiring Claude to remember to save them.
 
 **Output / side effect:**
 - Text nudges printed to Claude’s context (harness update, housekeeping)
 - Appends `[memory-gap]` drain entries to `observations.md` (async, non-blocking)
 - Appends `[session-charge]` charge entries to `observations.md` (async, non-blocking)
 - Appends ISO timestamp to `.claude/memory/.session-history` (always, at session end)
+- Appends setup command block to `.claude/memory/setup-knowledge.md` and clears buffer (when ≥2 setup commands captured)
 
 **Respects:** `SDD_PROFILE=minimal` env var — skips entirely.
 
@@ -80,6 +82,44 @@ Hook output is injected into Claude's context as system messages — Claude read
 **Why it's needed:** Frontend anti-patterns (e.g., CSS property ordering, accessible-name violations, layout anti-patterns) accumulate silently across edits. Catching them at write time, rather than at PR review, costs far fewer tokens and less rework.
 
 **Output:** Anti-pattern warnings with severity; green check if clean. Fails silently if Impeccable is not installed — install with `npm install -g impeccable`.
+
+---
+
+### `action-capture.sh`
+**Event:** `PostToolUse` — **Matcher:** `Bash` — _(soft gate, never blocks)_
+
+**Purpose:** After high-signal Bash commands complete, prompts Claude to consider saving a memory observation from the outcome. Watches for three patterns: `git commit`, failing `pytest` runs, and deployment commands (`docker deploy`, `kubectl apply`, `helm upgrade`, etc.).
+
+**Design principle:** "Memory from what agents DO, not just what they say" — extracted from Memori's architecture. Current memory is only saved when Claude explicitly decides to. This hook closes the gap for important events that happen during work but go uncaptured.
+
+**Why it's needed:** Git commits, test failures, and deploys are the highest-signal moments in a coding session. Without a prompt at these moments, the workflow lesson (e.g., a recurring test breakage pattern, a deployment gotcha) evaporates at session end. The hook makes the prompt automatic without being prescriptive — Claude still applies the transfer test before saving.
+
+**Noise control:** Only fires on the three specific patterns; silent on all other Bash commands. Test passes are intentionally excluded (low signal). The hook emits a reminder banner but exits 0 always — Claude decides whether anything is worth saving.
+
+**Output:** `╔══ Action Capture ══╗` reminder banner with context-specific guidance for each signal type. Silent on no match.
+
+**Location:** `~/.claude/hooks/action-capture.sh` (global — fires across all projects)
+
+---
+
+### `setup-buffer-hook.sh`
+**Event:** `PostToolUse` — **Matcher:** `Bash`
+
+**Purpose:** After every Bash command, checks whether the command matches a setup-like pattern and, if so, appends it to a per-session accumulation buffer (`.claude/memory/.setup-session-buffer.log`). The buffer is consumed at session end by `stop-hook.sh`, which writes the captured commands to `.claude/memory/setup-knowledge.md`.
+
+**Patterns detected** (prefix-matched, case-insensitive):
+- Package managers: `pip install`, `pip3 install`, `npm install`, `npm ci`, `yarn install`, `yarn add`, `pnpm install`, `pnpm add`, `brew install`, `apt-get install`, `apt install`, `cargo build`, `go mod download`, `bundle install`, `composer install`, `gem install`, `uv sync`, `uv pip install`, `poetry install`, `conda install`
+- Docker: `docker-compose`, `docker compose`, `docker build`, `docker pull`
+- Database setup: `createdb`, `dropdb`, `psql ... CREATE/DROP`, `mysql`
+- Migrations: `python manage.py migrate`, `rails db:`, `alembic upgrade`, `prisma migrate`, `prisma db push`
+- Environment: `source *.env`, `cp *.env* ...`, `export VAR=`
+- Repo bootstrap: `git clone`, `git submodule update`, `make install`, `make setup`, `make init`, `make bootstrap`
+
+**Noise control:** Skips multi-line commands (>3 lines) — these are typically inline scripts, not atomic setup steps. Silent on all non-matching commands.
+
+**Why it's needed:** Environment bootstrap steps (dependencies, DB setup, env config) are the most-forgotten class of knowledge across sessions. Running the same `pip install` sequence when re-visiting a project, or onboarding someone, typically requires re-reading docs or asking. Automatic capture at the moment the commands run means `setup-knowledge.md` is always current without requiring Claude to remember to save them. Paired with `stop-hook.sh` (write) to keep the buffer-flush logic together at a natural session boundary.
+
+**Output / side effect:** Appends command line to `.claude/memory/.setup-session-buffer.log`. No context output — silent capture.
 
 ---
 
@@ -196,6 +236,59 @@ Hook output is injected into Claude's context as system messages — Claude read
 
 ---
 
+### `skill-permissions-gate.sh`
+**Event:** `PostToolUse` — **Matcher:** `Write|Edit` — _(soft gate, never blocks)_
+
+**Purpose:** After any Write or Edit to a `*/skills/*/SKILL.md` path, prompts Claude to invoke `agent-permissions-design` and verify four dimensions before marking skill creation complete: (1) tool access — does the skill direct Claude to use destructive tools? (2) irreversible action gates — are high-risk steps preceded by a verification instruction? (3) scope boundary — are trigger conditions specific enough to prevent misfire? (4) external access — does the skill touch external services or credentials least-privilege?
+
+**Design principle:** Skills are mini-agents — they direct Claude to take actions with tools. The same rigor applied to AI agent authorization systems (`agent-permissions-design`) applies to skill design: scope it, gate destructive actions, keep triggers tight. Extracted from the VentureBeat article "The AI agent bottleneck isn't model performance — it's permissions" (2026-05-29).
+
+**Why it's needed:** Without this gate, newly created skills could instruct Claude to run shell commands, overwrite files, or call external APIs without scoping, verification steps, or explicit "Do Not Use" guards. The hook catches these at write time rather than during a later security audit.
+
+**Noise control:** Only fires on `*/skills/*/SKILL.md` paths — silent on all other Write/Edit operations. Never blocks (exits 0 always).
+
+**Output:** `╔══ Skill Permissions Gate ══╗` reminder banner listing the four review dimensions. Silent on no match.
+
+**Location:** `~/.claude/sdd-harness/.claude/hooks/skill-permissions-gate.sh`
+
+---
+
+### `caveman-activate.js`
+**Event:** `SessionStart` — **Matcher:** _(all sessions)_
+
+**Purpose:** Activates Caveman response compression at the configured intensity level at the start of every session. Reads `~/.config/caveman/config.json` (or `CAVEMAN_DEFAULT_MODE` env var) to determine the level. Emits the full Caveman ruleset filtered to the active level as session context, anchoring Claude's response style for the entire session. Writes a flag file (`~/.claude/.caveman-active`) for statusline display.
+
+**Default level:** `lite` — strips filler words, pleasantries, and hedging while keeping full technical substance. User can upgrade (`/caveman full`, `/caveman ultra`) or disable (`normal mode`) at any point mid-session.
+
+**Levels:**
+- `lite` — light trim: removes pleasantries and hedging; fragments allowed
+- `full` — moderate compression: terse prose, short synonyms, no elaboration (default upstream)
+- `ultra` — telegraphic: maximum brevity, every non-essential word removed
+- `wenyan` — classical Chinese compression (stress test of brevity)
+
+**Why it's needed:** Caveman only applies for a session if explicitly invoked with `/caveman`. A SessionStart hook makes it the default behavior without requiring the user to remember to activate it. The full ruleset is emitted (not a short summary) because the 2-sentence version drifts mid-session; full rules with examples anchor the style reliably even after compaction.
+
+**Output:** `CAVEMAN MODE ACTIVE — level: lite` followed by the filtered ruleset. If statusline is not configured, appends a setup nudge.
+
+**Location:** `~/.claude/hooks/caveman-activate.js` (global, installed by `npx github:JuliusBrussee/caveman`)
+
+---
+
+### `address-check-hook.sh`
+**Event:** `Stop` — **Matcher:** _(all turns)_
+
+**Purpose:** Verifies that every assistant response addressed the user as "Husband". Fires after each turn. Reads the latest session transcript, extracts the last assistant message, and checks for the word "husband" (case-insensitive).
+
+**Outputs:**
+- Nothing, if "Husband" present — exit 0, stop proceeds normally
+- `[address-check]` correction banner — exit 2 (blocks stop) if "Husband" absent, injecting a prompt that instructs Claude to run `/compact`, re-read CLAUDE.md, and re-respond correctly
+
+**Why a hook and not a prompt:** CLAUDE.md instructions are subject to context degradation — Claude eventually stops following them as context fills. A Stop hook fires unconditionally after every turn regardless of context state. The exit 2 path creates a self-correcting loop: the injected message reaches Claude as its next input, and the next response is forced to include "Husband". Absence of the term is also a reliable early signal that CLAUDE.md is being ignored, triggering `/compact` before other rules degrade too.
+
+**Location:** `~/.claude/hooks/address-check-hook.sh` (global, all projects)
+
+---
+
 ### `hook-added-notify.sh`
 **Event:** `PostToolUse` — **Matcher:** `Write|Edit`
 
@@ -256,7 +349,10 @@ From `.claude/settings.json`:
 
 ```
 SessionStart   → session-start-hook.sh
+SessionStart   (all)                                        → caveman-activate.js  [global, ~/.claude/hooks/]
 Stop           → stop-hook.sh
+Stop           (all)                                        → address-check-hook.sh
+PreToolUse     Bash                                          → rtk hook claude  [global, ~/.claude/settings.json — token compression]
 PreToolUse     Write|Edit                                    → memory-discipline-hook.sh
 PreToolUse     Write|Edit                                    → protected-path-hook.sh
 PreToolUse     Write|Edit                                    → skill-validate-hook.sh
@@ -265,7 +361,10 @@ PreToolUse     mcp__plugin_claude-mem_mcp-search__save_obs  → gbrain-memory-wr
 PreToolUse     WebFetch|WebSearch                            → gbrain-external-search.sh
 PostToolUse    Write|Edit                                    → impeccable-detect-hook.sh
 PostToolUse    Write|Edit                                    → hook-added-notify.sh
+PostToolUse    Write|Edit  (*/skills/*/SKILL.md only)        → skill-permissions-gate.sh
+PostToolUse    Bash                                          → action-capture.sh
 PostToolUse    Bash                                          → revert-detect-hook.sh
+PostToolUse    Bash                                          → setup-buffer-hook.sh
 PostToolUse    Read                                          → lean-ctx-nudge-hook.sh
 PreToolUse     Bash|mcp__.*                                  → tool-failure-recall.sh
 PostToolUseFailure Bash|mcp__.*                              → tool-failure-capture.sh
@@ -283,5 +382,5 @@ The `tool-failure-*` pair plus the `tool-failure-review` routine form the **tool
 3. Document it in this file (the `hook-added-notify.sh` hook will remind you if you forget).
 4. Update the Wiring Reference table above.
 
-_Last synced: 2026-06-01 — added `tool-failure-capture.sh` + `tool-failure-recall.sh` (tool-failure-memory loop)._
+_Last synced: 2026-06-02 — added `caveman-activate.js` (SessionStart — auto-activates caveman lite every session; user adjusts via /caveman full|ultra or disables with "normal mode"); added `rtk hook claude` to wiring reference (PreToolUse Bash — replaces ztk, 60–90% Bash output compression, global)._
 

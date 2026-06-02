@@ -89,6 +89,17 @@ run_one() {
     local hh_exit=$?
     echo "$ts $repo harness-health exit=$hh_exit duration=$(($(date +%s) - hh_start))s" >> "$LOG_FILE"
   fi
+
+  # Tool-failure review — promotes recurring Bash/MCP failures into memory so the
+  # system learns from its mistakes. Self-paces to ~twice a week (MIN_GAP_DAYS=3)
+  # and no-ops unless the ledger has a promotable entry, so calling it daily is
+  # cheap. Applies to every repo. Opt out with SDD_SKIP_TOOL_FAILURE_REVIEW=1.
+  if [ "${SDD_SKIP_TOOL_FAILURE_REVIEW:-0}" != "1" ] && [ -f "$repo/.claude/scripts/tool-failure-review-runner.sh" ]; then
+    local tf_start=$(date +%s)
+    (cd "$repo" && bash .claude/scripts/tool-failure-review-runner.sh) > /dev/null 2>&1
+    local tf_exit=$?
+    echo "$ts $repo tool-failure-review exit=$tf_exit duration=$(($(date +%s) - tf_start))s" >> "$LOG_FILE"
+  fi
 }
 
 if [ -n "$SINGLE_REPO" ]; then

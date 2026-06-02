@@ -152,6 +152,8 @@ Skills extracted and logged to `docs/sources/` by source type. See the relevant 
 - `frontend-code-quality` — HTML/CSS/JS quality rules from bendc/frontend-guidelines
 - `evaluation` — evaluation skill family (router + micro/macro/funnel/long-trajectory sub-skills)
 - `karpathy-guidelines` — 4-principle behavioral checklist for every coding task from multica-ai/andrej-karpathy-skills (2026-05-31)
+- `action-capture` hook + `agent-memory-discipline` enhancement — "memory from what agents do" design patterns from MemoriLabs/Memori (2026-06-02)
+- `hook-design` augmentation + daily maintenance Step D (pattern scoring) + `forward-patterns.md` — instinct-based confidence scoring from affaan-m/ECC (2026-06-02)
 
 ### From online articles (`docs/sources/articles/`)
 - `frontend-performance` — from performance.dev Linear breakdown (2026-05-27)
@@ -164,5 +166,10 @@ Skills extracted and logged to `docs/sources/` by source type. See the relevant 
 - `feature-list-primitive` — from walkinglabs.github.io/learn-harness-engineering Lectures 07–08 (2026-05-31)
 - `session-clean-state` — from walkinglabs.github.io/learn-harness-engineering Lectures 05, 12 (2026-05-31)
 - `multi-agent-patterns` v1.3.0 enhancement — Agent vs. Workflow tool decision table + routing tree + ultracode mode, from claude.com/blog dynamic-workflows (2026-05-31)
+- `agentic-rl-tito` — TITO correctness invariant + prefix-preservation test + model compat table for multi-turn RL training of tool-calling LLMs, from qgallouedec-tito.hf.space (2026-06-02)
 
-_Last synced: 2026-05-31 (dynamic-workflows → multi-agent-patterns v1.3.0)_
+### From pasted text (`docs/sources/x/`)
+- `tdd-workflows-tdd-red` source-grounding augmentation + `tdd-workflow` RED phase principles + `setup-buffer-hook.sh` + `stop-hook.sh` setup capture — from Cognition Devin blog post on autonomous end-to-end testing (2026-06-02)
+- `rtk` tool install + `caveman` tool install with auto-lite SessionStart hook — from YouTube transcript on Claude Code token reduction strategies (2026-06-02)
+
+_Last synced: 2026-06-02 (YouTube transcript → rtk install, caveman auto-activation)_

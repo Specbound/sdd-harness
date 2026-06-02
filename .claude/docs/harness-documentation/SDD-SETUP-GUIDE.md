@@ -2,7 +2,7 @@
 
 > This file is managed by the SDD harness (`sdd-harness/docs/`).
 > It is the single source of truth — do not edit copies in individual projects.
-> _Last synced: 2026-06-01
+> _Last synced: 2026-06-02
 
 A complete, self-contained guide to setting up the Spec-Driven Development (SDD)
 harness used in this project. Follow these steps to replicate the setup in any
@@ -337,12 +337,24 @@ The stop hook runs lightweight checks at the end of every Claude session:
 2. **Memory health check** — if `.claude/memory/observations.md` has >50 entries, prints a nudge to run `/kiro:housekeeping`.
 3. **Agent failure pattern detection** — if `.claude/memory/trace.log` shows 3+ consecutive failures for the same agent, prints a nudge to run `/kiro:evolve` to investigate friction patterns.
 4. **Session signal detection** — runs `scripts/detect_reexplanation.py` against the session transcript (Haiku-based LLM). Drain signals append a `[memory-gap]` observation; charge signals (unambiguous approval) append a `[session-charge]` observation. Both at most once per calendar day. When drain signals are found, `scripts/micro_reflect.py` is immediately called to extract durable facts and append them to `hot-memory.md` as `[auto-learn, YYYY-MM-DD]` entries. These are probationary — housekeeping promotes them to `patterns.md` after 7 days if reinforced, or removes them. The detector is skipped when `SDD_HEADLESS=1` (set by `daily-runner.sh`) to prevent recursive spawning.
+5. **Setup sequence capture** — reads `.claude/memory/.setup-session-buffer.log` (populated during the session by `setup-buffer-hook.sh`). If ≥2 setup commands were captured, appends them as a dated bash block to `.claude/memory/setup-knowledge.md` and clears the buffer. Creates `setup-knowledge.md` if it does not exist. This is the write half of the setup-knowledge loop; `setup-buffer-hook.sh` (PostToolUse Bash) is the capture half.
 
 Doc sync and harness updates are **not** triggered here — they fire from the git post-commit hook (Step 8) instead.
 
 **Design principle**: Doc sync belongs in the git lifecycle, not the Claude session lifecycle. Running `claude --print` background agents on every session stop blocks Claude Code and spawns subprocesses on every message. The post-commit hook fires exactly once per commit, with a clear scope (the changed files in that commit).
 
 See the full script in `.claude/hooks/stop-hook.sh`.
+
+### Optional: Global address-check hook
+
+`address-check-hook.sh` is a personal-preference Stop hook registered globally in `~/.claude/settings.json` (not per-repo). It verifies that every response addresses the user by their preferred name. If the term is absent, it exits 2 to block the stop and inject a `/compact` + re-read correction prompt — a self-correcting context-health signal.
+
+To install it on a new machine, copy `~/.claude/hooks/address-check-hook.sh` and add the entry to `~/.claude/settings.json` under `hooks.Stop`:
+```json
+{ "matcher": "", "hooks": [{ "type": "command", "command": "bash \"~/.claude/hooks/address-check-hook.sh\"" }] }
+```
+
+The CLAUDE.md template already includes the `## Address` rule, so the prompt-level instruction is present in every repo automatically. The hook provides enforcement when context degrades.
 
 ---
 
@@ -440,6 +452,7 @@ The memory system provides persistent cross-session context using a cog-inspired
 ├── observations.md            # Append-only session log (max 50 entries before archival)
 ├── action-items.md            # Cross-session TODOs with due dates and priority
 ├── entities.md                # Project entity registry (services, APIs, databases)
+├── setup-knowledge.md         # Auto-captured setup sequences (written by stop-hook at session end)
 ├── meta/
 │   ├── self-observations.md   # SDD workflow learnings (what worked, what didn't)
 │   └── patterns.md            # Distilled workflow rules (<70 lines, read at session start)
@@ -577,6 +590,7 @@ Conventions are defined in `.claude/kiro/settings/rules/memory-conventions.md`:
 | Stop (memory health) | Every Claude session end | Nudges `/kiro:housekeeping` if observations >50; nudges `/kiro:evolve` if agent failure patterns detected |
 | Stop (session signal detector) | Every Claude session end | Runs `scripts/detect_reexplanation.py` (Haiku LLM); appends `[memory-gap]` observation for drain signals (re-explanation) and `[session-charge]` for charge signals (approval). Each written at most once per day. When drains are found, `scripts/micro_reflect.py` immediately writes `[auto-learn]` facts to `hot-memory.md`. Skipped when `SDD_HEADLESS=1`. |
 | PostToolUse (revert detector) | Every git revert/reset/restore Bash call | Immediately appends `[revert]` drain observation to `observations.md` — gives trust-battery Judge concrete evidence. Script: `.claude/hooks/revert-detect-hook.sh`. |
+| PostToolUse (setup buffer) | Every Bash call matching a setup pattern (package install, docker, db migrate, .env, git clone, make setup, etc.) | Appends the command to `.claude/memory/.setup-session-buffer.log`. Stop hook flushes buffer to `setup-knowledge.md` at session end if ≥2 commands captured. Script: `.claude/hooks/setup-buffer-hook.sh`. |
 | PostToolUseFailure (tool-failure capture) | Every failing Bash/MCP tool call | Records the failure into a per-repo ledger `.claude/memory/tool-failures.jsonl`, keyed by a normalized command signature so the same failure shape clusters and its `count` climbs. Capture half of the tool-failure-memory loop. Script: `.claude/hooks/tool-failure-capture.sh`; see the `tool-failure-memory` skill. |
 | PreToolUse (tool-failure recall) | Every Bash/MCP tool call | Soft advisory (never blocks): if this command shape has failed ≥2× and is still open, injects the failure count, last error, and any recorded remedy so Claude reconsiders before repeating it. Once-per-session-per-signature dedupe + 45-day recency gate. Script: `.claude/hooks/tool-failure-recall.sh`. |
 | daily-orchestrator (tool-failure review) | Once per day per repo via the daily orchestrator (self-paces to ~2×/week via `MIN_GAP_DAYS=3`; no-ops unless a promotable ledger entry exists) | Runs `.claude/scripts/tool-failure-review-runner.sh`, which invokes `/kiro:tool-failure-review` headlessly: diagnoses recurring failures (`count ≥ 3`, open, unpromoted) and promotes the understood, reusable ones into memory files + `ERRORS.md`, then marks them resolved on the ledger. Review (promotion) half of the tool-failure-memory loop. Opt out with `SDD_SKIP_TOOL_FAILURE_REVIEW=1`. |

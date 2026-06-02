@@ -16,12 +16,11 @@ All tasks are wired into `scripts/daily-orchestrator.sh`. The orchestrator fires
 **Cadence:** Every day (idempotent; skips if already ran today)
 **Scope:** Every registered repo
 
-**What it does:**
-- Judge — score the previous day's observations via the session-quality rubric
-- Reflect — convert drain entries into memory updates
-- Housekeep — archive observations.md if >50 entries
-- Trust Score — `trust_score.py auto-score` from observations.md signals
-- Morning Brief — draft daily brief to `.claude/memory/daily/YYYY-MM-DD-brief.md`
+**What it does (four steps, error-isolated):**
+- **A** — Judge + Reflect + Housekeep + Trust Score: score the previous day's observations via the session-quality rubric; convert drain entries into memory updates; archive `observations.md` if >50 entries; run `trust_score.py auto-score`
+- **B** — Session Quality Assessment: collect git activity; score session 1–5; append `[session-quality]` observation
+- **C** — Keep Rate Evaluation: find Claude-co-authored commits older than 7 days; compute lines still in HEAD; append `[keep-rate]` observation
+- **D** — Pattern Scoring: scan observations since last `[judge]:` line; score each 1–5 for reusability; append PROMOTE-scored (4–5) entries to `.claude/memory/forward-patterns.md` as one-line heuristics; append `[pattern-score]` summary observation. The weekly skill-curator sweep then processes `forward-patterns.md` for skill promotion.
 
 **Opt-out:** `rm .claude/scripts/daily-runner.sh` in that repo; or `SDD_SKIP_ROUTINE=1` to skip registration at install time.
 
@@ -68,6 +67,7 @@ This is the **review** stage of the tool-failure-memory loop (capture → recall
 **Scope:** Harness repo only (exits 0 in non-harness repos via `docs/scheduled-tasks/` guard)
 
 **What it does:**
+0. **Forward-pattern intake** — reads `.claude/memory/forward-patterns.md` from every registered repo; surfaces confidence 4–5 entries as incorporate/promote/defer candidates; included in the curation report
 1. **Skill quality audit** — scores all `~/.claude/skills/*/SKILL.md` against four SkillOS dimensions; flags low-quality candidates and duplicate pairs
 2. **Description budget audit** — measures description field length; flags >150 chars for compression
 3. **Memory governance health** — checks five compaction-discipline hook failure modes
@@ -130,4 +130,4 @@ The dashboard's **Scheduled Tasks** tab shows live status for each task: schedul
 
 ---
 
-_Last synced: 2026-06-01_
+_Last synced: 2026-06-02_

@@ -1,5 +1,9 @@
 # {{PROJECT_NAME}}
 
+## Address
+- Always call the user "Husband" in every reply — no exceptions.
+- If you stop doing this, it signals CLAUDE.md is being ignored; a Stop hook will automatically prompt you to /compact and re-read CLAUDE.md.
+
 ## Context Resources (read on demand, not upfront)
 - `.claude/memory/hot-memory.md` — read at session start (current state, priorities)
 - `.claude/memory/meta/patterns.md` — read at session start (workflow patterns)

@@ -97,6 +97,31 @@ Online articles, blog posts, and documentation pages that were passed to `/skill
 
 ---
 
+## The Website Specification
+**URL:** https://specification.website | **Added:** 2026-06-02
+
+**What it's about:** A platform-agnostic, machine-readable reference for 100+ web standards across 10 categories: Foundations, SEO, Accessibility, Security, Well-Known URIs, Agent Readiness, Performance, Privacy, Resilience, and Internationalisation. Every spec is tagged `required` / `recommended` / `optional` / `avoid`. Accessible as Markdown endpoints, `/llms-full.txt`, or via a stateless HTTP MCP server at `https://mcp.specification.website/mcp` (tools: `search`, `list_topics`, `get_topic`, `get_checklist`, `audit_url`). The site also publishes its own Agent Skill at `/.well-known/agent-skills/specification-website/SKILL.md`.
+
+**What we added:**
+- Skill: `website-spec` — when/how to use the specification.website MCP, audit workflow (required → recommended → optional), status level semantics, Agent Readiness category guide (llms.txt, MCP discovery, A2A, DNS-AID, Web Bot Auth), and citation rules.
+- Config: `specification-website` MCP server registered in user scope (`~/.claude.json`) via `claude mcp add --transport http`.
+
+---
+
+## The AI Agent Bottleneck Isn't Model Performance — It's Permissions
+**URL:** https://venturebeat.com/orchestration/the-ai-agent-bottleneck-isnt-model-performance-its-permissions | **Added:** 2026-06-02 | **Source:** VentureBeat
+
+**What it's about:** Enterprise AI agents stall not on model capability but on authorization design. The core argument: permissions must live where the data lives (in the system of record, not a separate governance layer), agents must be scoped to a strict subset of the authorizing human's actual permissions, high-stakes actions need a separate pre-execution verification model (not self-check), and audit trails must be co-located with the data in-transaction. Quotes Workday's Sana agent architecture (Gemini base + context engine + verification models + SoR-scoped execution + SoR audit write) and practitioners from Würk and Compance.AI.
+
+**What we added:**
+- Skill: `agent-permissions-design` — five-principle framework (scope inheritance, system-of-record authority, pre-execution verification gates, agent identity transparency, audit co-location), 7-step design workflow, action classification table (read-only / reversible write / irreversible write / cross-system), agent identity record schema, anti-pattern catalogue, and the Sana reference architecture diagram.
+- Enhancement: `ai-agents-architect` — added "Permissions & Scope" section pointing to `agent-permissions-design` as a first-class design concern; added it to Related Skills.
+- Hook: `skill-permissions-gate.sh` — PostToolUse on `Write|Edit` to `*/skills/*/SKILL.md`; fires a soft gate after every skill write prompting Claude to invoke `agent-permissions-design` and verify tool access, irreversible action gates, scope boundaries, and external access before marking skill creation complete. Registered in harness `.claude/settings.json`.
+- Enhancement: `skill-creator` Phase 4c — explicit Permissions & Scope Review step added before installation.
+- Enhancement: `skill-extraction` Phase 5d — explicit Permissions & Scope Review step added before the Confirm phase.
+
+---
+
 ## Introducing Dynamic Workflows in Claude Code
 **URL:** https://claude.com/blog/introducing-dynamic-workflows-in-claude-code
 **Added:** 2026-05-31
@@ -106,3 +131,13 @@ Online articles, blog posts, and documentation pages that were passed to `/skill
 
 **What we added:**
 - Skill enhancement: `multi-agent-patterns` v1.3.0 — "Tool Selection: Agent vs. Workflow" section with decision table, task-shape routing tree, ultracode mode note, and token budget guidance. Positions the `Workflow` tool as the scale-escalation path above `Agent`-based dispatch, with explicit cross-link to `superpowers:dispatching-parallel-agents` for the small-fleet path.
+
+---
+
+## Agentic RL: Token-In, Token-Out Done Right
+**URL:** https://qgallouedec-tito.hf.space | **Added:** 2026-06-02 | **Source:** Hugging Face (qgallouedec)
+
+**What it's about:** Identifies a silent correctness bug in multi-turn RL training loops for tool-calling LLMs. When conversation history is re-rendered through the chat template at each step, BPE drift produces different token sequences than what the model originally sampled — gradients then target tokens the model never generated. The fix is a single invariant ("never re-encode what you decoded") implemented via a running token buffer. Also covers the prefix-preservation property test (12-line Python), a model compatibility table (18/19 major open-weight models pass unchanged), the Qwen3 one-line Jinja template fix, and edge case handling (history rewriting, truncation).
+
+**What we added:**
+- Skill: `agentic-rl-tito` — TITO invariant, correct loop algorithm, prefix-preservation property test with code, model compat table, `compute_tool_delta()` pattern, edge case recipes. Fires only on RL fine-tuning / multi-turn training loop tasks. Full code patterns in `resources/code-patterns.md`.

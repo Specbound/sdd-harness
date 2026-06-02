@@ -69,12 +69,25 @@ GitHub repositories that were passed to `/skill-extraction` and turned into harn
 ---
 
 ## github.com/affaan-m/ECC
-**URL:** https://github.com/affaan-m/ECC | **Added:** 2026-05-31
+**URL:** https://github.com/affaan-m/ECC | **Added:** 2026-05-31 | **Updated:** 2026-06-02
 
 **What it is:** ECC ("harness-native operator system for agentic work") — a cross-harness AI agent operating system with 63 agents, 249 skills, and 15+ hook events, built over 10+ months of daily production use. Supports Claude Code, Cursor, OpenCode, Codex, Copilot, and Zed. Notable patterns: observer loop prevention (5-layer re-entrancy guard), hook profile switching via env vars, and instinct-based pattern extraction with confidence scoring.
 
 **What we added:**
 - Skill (augmentation): `hook-design` — added "Observer Loop Prevention" section (env-var sentinel, matcher specificity, state-file lock patterns) and "Session Profile Switching" section (`SDD_HOOK_PROFILE=off|minimal|standard` preamble pattern). Fills a gap: none of the existing harness hooks had re-entrancy guards despite firing on Write/Edit events that can themselves produce writes.
+- Daily maintenance Step D (pattern scoring) — ECC's instinct-based pattern extraction with confidence scoring adapted as a new phase in `.claude/scripts/daily-maintenance-prompt.md`. Each morning the runner scans observations added since the last `[judge]:` line, scores each 1–5 for reusability, and appends PROMOTE-scored entries (4–5) to `.claude/memory/forward-patterns.md` as one-line reusable heuristics. The weekly skill-curator then picks up `forward-patterns.md` and decides what to graduate to full skills. Pattern score summary written as `[pattern-score]` observation. Docs updated: `docs/memory/README.md` (new file in tree + data flow).
+
+---
+
+## github.com/MemoriLabs/Memori
+**URL:** https://github.com/MemoriLabs/Memori | **Added:** 2026-06-02
+
+**What it's about:** Agent-native memory infrastructure built around the principle "memory from what agents DO, not just what they say." Provides a cloud MCP server + Python/TS SDK, but the valuable extract is its design patterns: entity/process/session attribution hierarchy, 8 augmentation layers (attributes, events, facts, preferences, relationships, rules, skills, people), and automatic memory capture from agent actions rather than conversational summaries. Achieved 81.95% on the LoCoMo benchmark at only 4.97% of full-context token footprint (~67% leaner than competing systems).
+
+**What we added** (local patterns only — no cloud service, no API key required):
+- Hook: `action-capture.sh` (PostToolUse, Bash, soft gate) — fires after `git commit`, failing `pytest` runs, and deploy commands; prompts Claude to consider saving a memory observation from the outcome. Implements the "memory from what agents do" principle locally without any external dependency.
+- Skill enhancement: `agent-memory-discipline` — added "Memory Body Sub-Types" section (Memori's 8 augmentation layers mapped onto the 4 existing memory types for more precise body structure) and "Session Attribution" section (optional `session:` frontmatter field keyed by git branch or task descriptor for targeted retrieval).
+- Docs updated: `docs/hooks/README.md` (new hook entry + wiring table), `docs/memory/README.md` (sub-types table + session attribution convention).
 
 ---
 
