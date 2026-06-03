@@ -38,6 +38,25 @@ if ! command -v schtasks.exe >/dev/null 2>&1; then
   exit 1
 fi
 
+# --- Skip cleanly when there is no WSL distro (Git Bash / MSYS2-only setup) ---
+# The scheduled task runs the orchestrator via `wsl.exe -d <distro>`, so it is
+# only meaningful when a WSL distro exists. On a WSL-less box it would register a
+# task that can never run. Maintenance still happens via the SessionStart hook
+# catch-up (>24h), so we skip gracefully (exit 0) instead of failing loudly.
+if ! wsl.exe -l -q >/dev/null 2>&1 \
+   || [ -z "$(wsl.exe -l -q 2>/dev/null | tr -d '\000\r' | grep -v '^[[:space:]]*$' | head -1)" ]; then
+  echo "  Skipping daily scheduled task: no WSL distro found (Git Bash/MSYS2-only setup)."
+  echo "  Maintenance still runs via the SessionStart hook when you open Claude (>24h catch-up)."
+  exit 0
+fi
+
+# --- iconv is required to encode the Task Scheduler XML as UTF-16 ---
+if ! command -v iconv >/dev/null 2>&1; then
+  echo "  Skipping daily scheduled task: 'iconv' not available to encode the task XML."
+  echo "  Maintenance still runs via the SessionStart hook. (Install iconv to enable the task.)"
+  exit 0
+fi
+
 # --- Idempotency check: skip if task already exists and --force not set ---
 if [ "$FORCE" = false ] && schtasks.exe /Query /TN "$TASK_NAME" >/dev/null 2>&1; then
   echo "✓ Task '$TASK_NAME' already exists. Skipping (use --force to recreate)."

@@ -7,7 +7,11 @@
 
 set -eu
 
-ORCHESTRATOR="$HOME/.claude/sdd-harness/scripts/daily-orchestrator.sh"
+# Self-locate the harness root (no hardcoded paths — see scripts/lib/resolve-harness-dir.sh)
+__here="$(cd -P "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
+. "$__here/lib/resolve-harness-dir.sh"
+
+ORCHESTRATOR="$HARNESS_DIR/scripts/daily-orchestrator.sh"
 CRON_MARKER="sdd-daily-orchestrator"
 CRON_ENTRY="0 18 * * * bash -lc \"$ORCHESTRATOR\" # $CRON_MARKER"
 

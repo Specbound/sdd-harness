@@ -11,9 +11,13 @@
 
 set -eu
 
+# Self-locate the harness root (no hardcoded paths — see scripts/lib/resolve-harness-dir.sh)
+__here="$(cd -P "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
+. "$__here/lib/resolve-harness-dir.sh"
+
 TASK_NAME="SDD Daily Orchestrator"
 WSL_DISTRO="${WSL_DISTRO_NAME:-Ubuntu}"
-ORCHESTRATOR="$HOME/.claude/sdd-harness/scripts/daily-orchestrator.sh"
+ORCHESTRATOR="$HARNESS_DIR/scripts/daily-orchestrator.sh"
 XML_PATH="/tmp/sdd-orchestrator-task.xml"
 
 FORCE=false
@@ -32,6 +36,25 @@ fi
 if ! command -v schtasks.exe >/dev/null 2>&1; then
   echo "ERROR: schtasks.exe not on PATH. Are you in WSL?" >&2
   exit 1
+fi
+
+# --- Skip cleanly when there is no WSL distro (Git Bash / MSYS2-only setup) ---
+# The scheduled task runs the orchestrator via `wsl.exe -d <distro>`, so it is
+# only meaningful when a WSL distro exists. On a WSL-less box it would register a
+# task that can never run. Maintenance still happens via the SessionStart hook
+# catch-up (>24h), so we skip gracefully (exit 0) instead of failing loudly.
+if ! wsl.exe -l -q >/dev/null 2>&1 \
+   || [ -z "$(wsl.exe -l -q 2>/dev/null | tr -d '\000\r' | grep -v '^[[:space:]]*$' | head -1)" ]; then
+  echo "  Skipping daily scheduled task: no WSL distro found (Git Bash/MSYS2-only setup)."
+  echo "  Maintenance still runs via the SessionStart hook when you open Claude (>24h catch-up)."
+  exit 0
+fi
+
+# --- iconv is required to encode the Task Scheduler XML as UTF-16 ---
+if ! command -v iconv >/dev/null 2>&1; then
+  echo "  Skipping daily scheduled task: 'iconv' not available to encode the task XML."
+  echo "  Maintenance still runs via the SessionStart hook. (Install iconv to enable the task.)"
+  exit 0
 fi
 
 # --- Idempotency check: skip if task already exists and --force not set ---

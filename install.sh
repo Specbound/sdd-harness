@@ -55,7 +55,8 @@ set -e
 __here="$(cd -P "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 . "$__here/scripts/lib/resolve-harness-dir.sh"
 WITH_GITNEXUS=false
-SKIP_EMBEDDINGS=false
+SKIP_EMBEDDINGS=false   # legacy no-op: GitNexus 1.6.5 has embeddings OFF by default
+WITH_EMBEDDINGS=false   # opt-in to semantic-search embeddings during indexing
 ALL=false
 FORCE=false
 
@@ -98,7 +99,8 @@ POSITIONAL_ARGS=()
 for arg in "$@"; do
   case "$arg" in
     --with-gitnexus)   WITH_GITNEXUS=true ;;
-    --skip-embeddings) SKIP_EMBEDDINGS=true ;;
+    --skip-embeddings) SKIP_EMBEDDINGS=true ;;   # no-op (kept for back-compat)
+    --with-embeddings) WITH_EMBEDDINGS=true ;;
     --all)             ALL=true ;;
     --force)           FORCE=true ;;
     *) POSITIONAL_ARGS+=("$arg") ;;
@@ -212,14 +214,20 @@ install_project() {
     echo "Setting up GitNexus code intelligence..."
 
     if command -v gitnexus >/dev/null 2>&1 || npx gitnexus --version >/dev/null 2>&1; then
+      # GitNexus 1.6.5: embeddings are OFF by default (the legacy --skip-embeddings
+      # flag no longer exists). Pass --embeddings only when explicitly requested.
       local ANALYZE_FLAGS=""
-      if [ "$SKIP_EMBEDDINGS" = true ]; then
-        ANALYZE_FLAGS="--skip-embeddings"
-      fi
+      [ "$WITH_EMBEDDINGS" = true ] && ANALYZE_FLAGS="--embeddings"
+
+      # GitNexus is a native (Node/Windows) tool. Launched from MSYS2/Git Bash it
+      # misreads an MSYS-style cwd ("/c/...") as "Not a git repository", so pass an
+      # explicit NATIVE path via cygpath when available. No-op on macOS/Linux.
+      local GN_PATH="$PROJECT_DIR"
+      command -v cygpath >/dev/null 2>&1 && GN_PATH="$(cygpath -w "$PROJECT_DIR")"
 
       if [ ! -d "$PROJECT_DIR/.gitnexus" ]; then
         echo "  Indexing repository with GitNexus..."
-        (cd "$PROJECT_DIR" && npx gitnexus analyze $ANALYZE_FLAGS)
+        (cd "$PROJECT_DIR" && npx gitnexus analyze "$GN_PATH" $ANALYZE_FLAGS)
         echo "  Repository indexed."
       else
         echo "  Repository already indexed (.gitnexus/ exists)."
@@ -373,6 +381,12 @@ if [ "$ALL" = true ]; then
     # Skip already-installed projects unless --force
     if [ "$FORCE" != true ] && [ -d "$line/.claude/kiro" ]; then
       echo "  SKIP (installed): $line"
+      # Per-project flags only take effect when the project is actually installed.
+      # Warn loudly so --with-gitnexus is never silently dropped on a skipped repo.
+      if [ "$WITH_GITNEXUS" = true ]; then
+        echo "    NOTE: --with-gitnexus has NO effect here (project skipped)."
+        echo "          Re-run with --force to (re)configure GitNexus on installed repos."
+      fi
       skipped=$((skipped + 1))
       continue
     fi

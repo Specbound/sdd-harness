@@ -11,7 +11,9 @@
 
 set -u
 
-HARNESS_DIR="$HOME/.claude/sdd-harness"
+# Self-locate the harness root (no hardcoded paths — see scripts/lib/resolve-harness-dir.sh)
+__here="$(cd -P "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
+. "$__here/lib/resolve-harness-dir.sh"
 PROJECTS_FILE="$HARNESS_DIR/projects.txt"
 LOG_FILE="$HARNESS_DIR/logs/orchestrator.log"
 mkdir -p "$(dirname "$LOG_FILE")"
@@ -128,7 +130,7 @@ if [ "$DOW" = "3" ] && [ "$DRY_RUN" = false ]; then
     ts="$(date -Iseconds)"
     echo "$ts harness: starting drift review ($DRIFT_WEEK)" >> "$LOG_FILE"
     echo "$DRIFT_WEEK" > "$DRIFT_STATE"
-    echo 'Use the repo-drift-review skill to sweep the SDD harness for drift. Auto-fix what you can. Write the summary to /home/dalesser/.claude/sdd-harness/docs/drift-review-report.md' | \
+    echo "Use the repo-drift-review skill to sweep the SDD harness for drift. Auto-fix what you can. Write the summary to $HARNESS_DIR/docs/drift-review-report.md" | \
       claude --print --output-format text --permission-mode bypassPermissions > /dev/null 2>&1
     echo "$ts harness: drift review exit=$?" >> "$LOG_FILE"
   fi

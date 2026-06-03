@@ -9,7 +9,7 @@ if [ "$SDD_PROFILE" = "minimal" ]; then
   exit 0
 fi
 
-HARNESS_DIR="/home/dalesser/.claude/sdd-harness"
+HARNESS_DIR="/c/Users/dlesser/Documents/GitHub/sdd-harness"
 LAST_CHECK_FILE=".claude/.last-harness-check"
 
 # --- Harness update check ---
@@ -20,7 +20,7 @@ if [ -d "$HARNESS_DIR/.git" ]; then
     if [[ "$HARNESS_LAST_COMMIT" > "$LAST_CHECK" ]]; then
       echo ""
       echo "SDD harness has updates since your last install."
-      echo "Run: ~/.claude/sdd-harness/update.sh"
+      echo "Run: $HARNESS_DIR/update.sh"
       echo ""
     fi
   fi

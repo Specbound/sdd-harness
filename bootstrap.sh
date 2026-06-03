@@ -382,7 +382,11 @@ index_gitnexus() {
       skipped=$((skipped+1))
     else
       info "Indexing $(basename "$proj")..."
-      (cd "$proj" && npx gitnexus analyze) \
+      # Pass a NATIVE path via cygpath so GitNexus (a Node/Windows tool) does not
+      # misread an MSYS-style cwd as "Not a git repository" on Git Bash/MSYS2.
+      local gnpath="$proj"
+      command -v cygpath >/dev/null 2>&1 && gnpath="$(cygpath -w "$proj")"
+      (cd "$proj" && npx gitnexus analyze "$gnpath") \
         && ok "$(basename "$proj")  indexed" \
         || warn "$(basename "$proj")  index failed — run /kiro:gitnexus-setup inside Claude Code"
       indexed=$((indexed+1))
