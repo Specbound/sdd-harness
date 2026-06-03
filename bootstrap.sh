@@ -98,6 +98,73 @@ confirm() {
   case "$resp" in y|Y|yes|YES) return 0 ;; *) return 1 ;; esac
 }
 
+# ── Cross-platform package installation ────────────────────────────────────────
+# Installing tools is the ONE thing that cannot be OS-agnostic — brew/apt/winget
+# are different programs. pkg_install declares a tool ONCE and dispatches to the
+# right native manager so every OS reaches parity (no "do it manually" stubs).
+#
+#   pkg_install <name> <brew_formula> <apt_pkg> <winget_id>
+#
+# Pass "-" for any slot a manager genuinely can't satisfy. Returns non-zero on
+# failure so callers can warn without aborting the whole bootstrap.
+pkg_install() {
+  local name="$1" brew_pkg="$2" apt_pkg="$3" winget_id="$4"
+  case "$OS" in
+    macos)
+      [ "$brew_pkg" = "-" ] && { warn "$name: no Homebrew formula — install manually"; return 1; }
+      command -v brew >/dev/null 2>&1 || { err "Homebrew required: https://brew.sh"; return 1; }
+      brew install "$brew_pkg" ;;
+    linux|wsl)
+      [ "$apt_pkg" = "-" ] && { warn "$name: no apt package — install manually"; return 1; }
+      if command -v apt-get >/dev/null 2>&1; then
+        sudo apt-get install -y "$apt_pkg"
+      else
+        warn "$name: apt-get not found — install '$apt_pkg' with your distro's package manager"; return 1
+      fi ;;
+    gitbash)
+      [ "$winget_id" = "-" ] && { warn "$name: no winget package — install manually"; return 1; }
+      command -v winget >/dev/null 2>&1 || { err "winget required (App Installer from the Microsoft Store)"; return 1; }
+      winget install -e --id "$winget_id" --accept-source-agreements --accept-package-agreements --disable-interactivity ;;
+    *)
+      warn "$name: unknown OS — install manually"; return 1 ;;
+  esac
+}
+
+# ── Make freshly-installed tools visible to THIS run ───────────────────────────
+# A package manager updates the persistent PATH, but an already-running shell does
+# not see it — especially on Windows (winget). Prepend the known install dirs so
+# subsequent steps (npm -g, gitnexus, raindrop) work in a single bootstrap run.
+refresh_tool_path() {
+  case "$OS" in
+    gitbash)
+      local links npmbin
+      links="$(cygpath -u "${LOCALAPPDATA:-}" 2>/dev/null)/Microsoft/WinGet/Links"
+      npmbin="$(cygpath -u "${APPDATA:-}" 2>/dev/null)/npm"
+      export PATH="/c/Program Files/nodejs:$npmbin:$links:$HOME/.raindrop/bin:$PATH"
+      ;;
+    macos|linux|wsl)
+      export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$HOME/.raindrop/bin:$PATH"
+      ;;
+  esac
+  hash -r 2>/dev/null || true
+}
+
+# ── Windows: let MSYS2/Git Bash see Windows-PATH tools ─────────────────────────
+# MSYS2 does NOT inherit the Windows PATH by default, so winget/npm-installed tools
+# (node, gitnexus, rg, fd, jq, uv) are invisible to the shell. Persist
+# MSYS2_PATH_TYPE=inherit so every future MSYS2/Git Bash session sees them. No-op
+# off Windows.
+ensure_windows_path_inherit() {
+  [ "$OS" = "gitbash" ] || return 0
+  export MSYS2_PATH_TYPE=inherit
+  if command -v setx.exe >/dev/null 2>&1 && [ "${MSYS2_PATH_TYPE_PERSISTED:-}" != "1" ]; then
+    setx.exe MSYS2_PATH_TYPE inherit >/dev/null 2>&1 \
+      && info "Set MSYS2_PATH_TYPE=inherit (Windows tools now visible in MSYS2 shells)" \
+      || warn "Could not persist MSYS2_PATH_TYPE — set it manually if MSYS2 can't see Windows tools"
+    export MSYS2_PATH_TYPE_PERSISTED=1
+  fi
+}
+
 # ── Header ────────────────────────────────────────────────────────────────────
 echo
 echo -e "${BOLD}╔════════════════════════════════════════════════════╗"
@@ -111,8 +178,22 @@ echo
 # ── Step 0: Prerequisites ─────────────────────────────────────────────────────
 section "Step 0: Prerequisites"
 
+# On Windows, make sure MSYS2/Git Bash will see Windows-PATH tools (idempotent).
+ensure_windows_path_inherit
+
+# Node is auto-installable on every OS; claude + git are true prerequisites.
+if ! command -v node >/dev/null 2>&1; then
+  warn "node not found"
+  if confirm "Install Node.js (required for GitNexus / impeccable)?"; then
+    pkg_install "Node.js" node nodejs OpenJS.NodeJS.LTS || true
+    refresh_tool_path
+  fi
+fi
+
+# Hard requirements for bootstrap's OWN operations (npm needs node; git is used
+# throughout). Missing either aborts.
 PREREQ_FAIL=false
-for tool in claude node git; do
+for tool in node git; do
   if command -v "$tool" >/dev/null 2>&1; then
     ver="$($tool --version 2>&1 | head -1)"
     ok "$tool  ($ver)"
@@ -122,12 +203,21 @@ for tool in claude node git; do
   fi
 done
 
+# claude (Claude Code CLI) is a RUNTIME dependency for automated maintenance, not
+# for bootstrapping. It is often installed as a desktop app or on a PATH this
+# shell doesn't see — so warn, don't abort.
+if command -v claude >/dev/null 2>&1; then
+  ok "claude  ($(claude --version 2>&1 | head -1))"
+else
+  warn "claude (Claude Code) not on this shell's PATH — fine for setup, but expose it"
+  warn "  so the automated daily maintenance runner can call it."
+fi
+
 if [ "$PREREQ_FAIL" = true ]; then
   echo
-  warn "One or more prerequisites are missing. Install them and re-run."
-  warn "  claude : npm install -g @anthropic-ai/claude-code  (or download the installer)"
-  warn "  node   : https://nodejs.org"
-  warn "  git    : https://git-scm.com"
+  warn "Missing hard prerequisite(s). Install and re-run:"
+  warn "  node : https://nodejs.org   (auto-install was attempted above — a new shell may be needed)"
+  warn "  git  : https://git-scm.com"
   exit 1
 fi
 
@@ -139,6 +229,8 @@ section "Step 0b: Power Tools (ripgrep · fd · jq)"
 if [ "$SKIP_POWER_TOOLS" = true ]; then
   warn "Skipping power tools  (--skip-power-tools)"
 else
+  # Per-tool package specs:        name  brew      apt        winget
+  #   rg / fd / jq resolve to the right package on every OS via pkg_install.
   POWER_MISSING=()
   for tool in rg fd jq; do
     if command -v "$tool" >/dev/null 2>&1; then
@@ -151,43 +243,25 @@ else
   done
 
   if [ "${#POWER_MISSING[@]}" -gt 0 ]; then
-    case "$OS" in
-      macos)
-        install_map=( ["rg"]="ripgrep" ["fd"]="fd" ["jq"]="jq" )
-        brew_pkgs=()
-        for t in "${POWER_MISSING[@]}"; do
-          brew_pkgs+=("${install_map[$t]:-$t}")
-        done
-        if confirm "Install missing power tools via Homebrew? (${brew_pkgs[*]})"; then
-          brew install "${brew_pkgs[@]}"
-          ok "Power tools installed"
-        else
-          warn "Skipped power tools"
-        fi
-        ;;
-      linux|wsl)
-        apt_map=( ["rg"]="ripgrep" ["fd"]="fd-find" ["jq"]="jq" )
-        apt_pkgs=()
-        for t in "${POWER_MISSING[@]}"; do
-          apt_pkgs+=("${apt_map[$t]:-$t}")
-        done
-        if confirm "Install missing power tools via apt? (${apt_pkgs[*]})"; then
-          sudo apt-get install -y "${apt_pkgs[@]}"
-          # fd-find installs as 'fdfind' on Ubuntu; create alias if needed
-          if command -v fdfind >/dev/null 2>&1 && ! command -v fd >/dev/null 2>&1; then
-            mkdir -p "$HOME/.local/bin"
-            ln -sf "$(command -v fdfind)" "$HOME/.local/bin/fd"
-            ok "fd symlinked from fdfind"
-          fi
-          ok "Power tools installed"
-        else
-          warn "Skipped power tools"
-        fi
-        ;;
-      *)
-        warn "Unknown OS — install manually: ripgrep, fd, jq"
-        ;;
-    esac
+    if confirm "Install missing power tools (${POWER_MISSING[*]})?"; then
+      for t in "${POWER_MISSING[@]}"; do
+        case "$t" in
+          rg) pkg_install "ripgrep" ripgrep ripgrep BurntSushi.ripgrep.MSVC || true ;;
+          fd) pkg_install "fd"      fd      fd-find  sharkdp.fd            || true ;;
+          jq) pkg_install "jq"      jq      jq       jqlang.jq             || true ;;
+        esac
+      done
+      # fd-find installs as 'fdfind' on Ubuntu; expose it as 'fd'
+      if command -v fdfind >/dev/null 2>&1 && ! command -v fd >/dev/null 2>&1; then
+        mkdir -p "$HOME/.local/bin"
+        ln -sf "$(command -v fdfind)" "$HOME/.local/bin/fd"
+        ok "fd symlinked from fdfind"
+      fi
+      refresh_tool_path
+      ok "Power tools step complete"
+    else
+      warn "Skipped power tools"
+    fi
   fi
 fi
 
@@ -213,8 +287,11 @@ else
       ;;
 
     gitbash)
-      warn "RTK on Windows native: install via winget or use WSL2."
-      warn "Skipping RTK on Git Bash."
+      # RTK ships no native Windows binary — it's a Rust PreToolUse proxy that
+      # needs a Linux runtime. This is a real upstream limitation, not a stub.
+      # RTK is OPTIONAL (Bash-output token compression); the harness works without it.
+      warn "RTK has no native Windows build — install it inside WSL2 if you want it."
+      warn "Skipping RTK (optional; the harness functions normally without it)."
       ;;
 
     *)
@@ -235,6 +312,7 @@ elif npx gitnexus --version >/dev/null 2>&1; then
 else
   if confirm "Install GitNexus globally?  (npm install -g gitnexus)"; then
     npm install -g gitnexus
+    refresh_tool_path
     ok "GitNexus installed"
   else
     warn "Skipped GitNexus"
@@ -249,37 +327,49 @@ if [ "$SKIP_WORKSHOP" = true ]; then
 elif command -v raindrop >/dev/null 2>&1; then
   ok "Raindrop Workshop already installed"
 else
-  case "$OS" in
-    gitbash)
-      warn "Raindrop Workshop install requires bash with curl. Run from WSL2 or macOS."
-      ;;
-    *)
-      if confirm "Install Raindrop Workshop?"; then
-        # Download first, then run — piping curl directly into bash fails for this
-        # script because it uses set -euo pipefail and reads a manifest mid-stream.
-        local _tmp
-        _tmp="$(mktemp /tmp/raindrop-install-XXXXXX.sh)"
-        curl -fsSL https://raindrop.sh/install -o "$_tmp"
-        bash "$_tmp"
-        rm -f "$_tmp"
+  # Raindrop's installer runs anywhere with bash + curl + python3 (including
+  # MSYS2/Git Bash) — the old "WSL2/macOS only" restriction was incorrect.
+  if confirm "Install Raindrop Workshop?"; then
+    # The installer requires python3 — ensure it per-OS first.
+    if ! command -v python3 >/dev/null 2>&1; then
+      info "Raindrop needs python3 — installing..."
+      case "$OS" in
+        macos)     command -v brew >/dev/null 2>&1 && brew install python ;;
+        linux|wsl) command -v apt-get >/dev/null 2>&1 && sudo apt-get install -y python3 ;;
+        gitbash)   if command -v pacman >/dev/null 2>&1; then
+                     pacman -S --needed --noconfirm python
+                   else
+                     warn "No pacman (not MSYS2). Install python3 and re-run, or use MSYS2."
+                   fi ;;
+      esac
+      refresh_tool_path
+    fi
 
-        # Ensure ~/.raindrop/bin is on PATH for this session and future ones
-        export PATH="$HOME/.raindrop/bin:$PATH"
-        for rc in "$HOME/.zshrc" "$HOME/.bashrc"; do
-          if [ -f "$rc" ] && ! grep -qF '.raindrop/bin' "$rc"; then
-            echo 'export PATH="$HOME/.raindrop/bin:$PATH"' >> "$rc"
-            info "Added ~/.raindrop/bin to PATH in $rc"
-          fi
-        done
+    if ! command -v python3 >/dev/null 2>&1; then
+      warn "python3 unavailable — skipping Raindrop (install python3, then re-run)"
+    else
+      # Download then run (piping into bash fails: the installer reads a manifest mid-stream).
+      _tmp="$(mktemp 2>/dev/null || echo "${TMPDIR:-/tmp}/raindrop-install.sh")"
+      curl -fsSL https://raindrop.sh/install -o "$_tmp"
+      bash "$_tmp"
+      rm -f "$_tmp"
 
-        command -v raindrop >/dev/null 2>&1 \
-          && ok "Raindrop Workshop installed  ($(raindrop --version 2>&1))" \
-          || warn "raindrop binary not found after install — check ~/.raindrop/bin"
-      else
-        warn "Skipped Raindrop Workshop"
-      fi
-      ;;
-  esac
+      # Put ~/.raindrop/bin on PATH for this session and future shells.
+      export PATH="$HOME/.raindrop/bin:$PATH"
+      for rc in "$HOME/.zshrc" "$HOME/.bashrc"; do
+        if [ -f "$rc" ] && ! grep -qF '.raindrop/bin' "$rc"; then
+          echo 'export PATH="$HOME/.raindrop/bin:$PATH"' >> "$rc"
+          info "Added ~/.raindrop/bin to PATH in $rc"
+        fi
+      done
+
+      command -v raindrop >/dev/null 2>&1 \
+        && ok "Raindrop Workshop installed  ($(raindrop --version 2>&1))" \
+        || warn "raindrop binary not found after install — check ~/.raindrop/bin"
+    fi
+  else
+    warn "Skipped Raindrop Workshop"
+  fi
 fi
 
 # ── Step 3: impeccable ────────────────────────────────────────────────────────
@@ -292,6 +382,7 @@ elif command -v impeccable >/dev/null 2>&1; then
 else
   if confirm "Install impeccable globally?  (npm install -g impeccable)"; then
     npm install -g impeccable
+    refresh_tool_path
     ok "impeccable installed"
   else
     warn "Skipped impeccable"
@@ -318,8 +409,10 @@ else
         ok "uv installed"
         ;;
       gitbash)
-        warn "Run this from PowerShell to install uv on Windows:"
-        warn "  powershell -ExecutionPolicy BypassPolicy -c \"irm https://astral.sh/uv/install.ps1 | iex\""
+        pkg_install "uv" - - astral-sh.uv || true
+        refresh_tool_path
+        command -v uv >/dev/null 2>&1 && ok "uv installed" \
+          || warn "uv installed but not yet on PATH — open a new shell"
         ;;
     esac
   else
