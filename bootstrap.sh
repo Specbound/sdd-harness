@@ -18,7 +18,11 @@
 #   --skip-power-tools  Skip ripgrep/fd/jq install
 set -e
 
-HARNESS_DIR="$(cd "$(dirname "$0")" && pwd)"
+# Self-locate the harness root via the shared resolver — symlink/junction-safe,
+# resolves to the real physical path, works on any machine/OS/clone location.
+# Single source of truth: scripts/lib/resolve-harness-dir.sh. No hardcoded paths.
+__here="$(cd -P "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
+. "$__here/scripts/lib/resolve-harness-dir.sh"
 
 # ── Parse arguments ──────────────────────────────────────────────────────────
 PROJECT_DIR=""

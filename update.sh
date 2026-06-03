@@ -9,7 +9,11 @@
 # Syncs harness files to all registered projects (or just one).
 set -e
 
-HARNESS_DIR="$(cd "$(dirname "$0")" && pwd)"
+# Self-locate the harness root via the shared resolver — symlink/junction-safe,
+# resolves to the real physical path, works on any machine/OS/clone location.
+# Single source of truth: scripts/lib/resolve-harness-dir.sh. No hardcoded paths.
+__here="$(cd -P "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
+. "$__here/scripts/lib/resolve-harness-dir.sh"
 TARGET="${1:-}"
 
 # ---------------------------------------------------------------------------

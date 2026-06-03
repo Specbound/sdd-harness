@@ -13,7 +13,11 @@
 
 set -e
 
-HARNESS_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+# Self-locate the harness root via the shared resolver — symlink/junction-safe,
+# resolves to the real physical path, works on any machine/OS/clone location.
+# Single source of truth: lib/resolve-harness-dir.sh. No hardcoded paths.
+__here="$(cd -P "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
+. "$__here/lib/resolve-harness-dir.sh"
 PROJECTS_FILE="$HARNESS_DIR/projects.txt"
 GLOBAL_SETTINGS="$HOME/.claude/settings.json"
 RAINDROP_URL="http://localhost:5899/v1/"

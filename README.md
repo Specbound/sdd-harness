@@ -63,6 +63,14 @@ One harness, many projects. Install once, keep every repo in sync.
 # defaults to current directory if no path given
 ```
 
+> **Windows:** `install.sh` is a bash script — it cannot be run directly from PowerShell or CMD (you'll get `Missing expression after unary operator '!'`, or `not recognized as the name of a cmdlet`). Easiest path: open a **Git Bash** terminal and run the plain `~/.claude/sdd-harness/install.sh …` commands. From **PowerShell**, invoke Git Bash with the call operator and a concrete script path (`bash` is usually not on PATH, and `~` isn't expanded as an argument):
+> ```powershell
+> # run from inside the sdd-harness repo directory:
+> & "C:\Program Files\Git\bin\bash.exe" install.sh --all --with-gitnexus
+> # or one-off from anywhere (let bash expand ~ via -c):
+> & "C:\Program Files\Git\bin\bash.exe" -c "~/.claude/sdd-harness/install.sh --all"
+> ```
+
 This will:
 - Create the `.claude/` directory structure with commands, agents, rules, and templates
 - Initialize memory files from templates
@@ -708,6 +716,28 @@ The harness is installed once at `~/.claude/sdd-harness/` and shared across all 
 ### Register projects
 
 Projects are automatically registered in `projects.txt` when you run `install.sh`. One absolute path per line.
+
+### Install into all registered projects
+
+Run `install.sh --all` to install the harness into every project listed in `projects.txt` in one pass. Projects that are already installed (those with a `.claude/kiro/` directory) are **skipped** automatically:
+
+```bash
+# Git Bash / WSL2 / macOS / Linux
+~/.claude/sdd-harness/install.sh --all
+
+# From PowerShell (Windows), invoke Git Bash with the call operator,
+# run from inside the sdd-harness repo directory:
+& "C:\Program Files\Git\bin\bash.exe" install.sh --all
+```
+
+| Command | What it does |
+|---|---|
+| `install.sh --all` | Install into every project in `projects.txt`; skip already-installed ones |
+| `install.sh --all --force` | Re-sync **every** project, including installed ones — use this to roll out harness updates everywhere |
+| `install.sh --all --with-gitnexus` | Batch install and configure GitNexus on each project |
+| `install.sh --all --with-gitnexus --skip-embeddings` | Batch install with GitNexus indexing but skip the (slow) embeddings step |
+
+Missing directories and non-git paths are reported and skipped; one failing project never aborts the batch. A final tally prints `installed / skipped / failed`. Machine-global setup (skills, global commands, Raindrop, the OS daily orchestrator) runs **once**, not per project.
 
 ### Update all projects
 

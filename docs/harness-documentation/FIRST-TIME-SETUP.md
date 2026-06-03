@@ -306,7 +306,14 @@ Once global tools are in place, install the harness into each project:
 ```bash
 ~/.claude/sdd-harness/install.sh /c/dev/my-project
 ```
-Or use the WSL2 path if Claude Code is running inside WSL2.
+Or use the WSL2 path if Claude Code is running inside WSL2. From PowerShell, invoke Git Bash with the call operator from inside the repo: `& "C:\Program Files\Git\bin\bash.exe" install.sh /c/dev/my-project` (running the `.sh` directly fails with a `#!`-shebang parser error, and `~/...install.sh` fails as "not recognized as a cmdlet").
+
+**Install into all registered projects at once:** use `--all` to walk `projects.txt`, skipping any project already installed (`.claude/kiro/` present):
+```bash
+~/.claude/sdd-harness/install.sh --all                  # skip already-installed
+~/.claude/sdd-harness/install.sh --all --force          # re-sync every project (push updates)
+~/.claude/sdd-harness/install.sh --all --with-gitnexus  # batch install + GitNexus
+```
 
 `install.sh` propagates **every** hook in the harness's `hooks/` directory into the project's `.claude/hooks/` (and `chmod +x`'s them), syncs `docs/` into `.claude/docs/`, and generates a project stack summary. The harness is the source of truth — which hooks actually fire is governed by the project's `.claude/settings.json` wiring, not by which files are present. Re-run `update.sh` to re-sync after the harness changes.
 

@@ -20,7 +20,7 @@ if [ -d "$HARNESS_DIR/.git" ]; then
     if [[ "$HARNESS_LAST_COMMIT" > "$LAST_CHECK" ]]; then
       echo ""
       echo "SDD harness has updates since your last install."
-      echo "Run: ~/.claude/sdd-harness/update.sh"
+      echo "Run: $HARNESS_DIR/update.sh"
       echo ""
     fi
   fi
