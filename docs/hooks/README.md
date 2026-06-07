@@ -59,6 +59,21 @@ Hook output is injected into Claude's context as system messages — Claude read
 
 ---
 
+### `frontend-security-nudge.sh`
+**Event:** `UserPromptSubmit` — **Matcher:** _(all prompts, keyword-gated)_
+
+**Purpose:** Detects when the user is about to build frontend, UI, or design work and injects a reminder to invoke the `secure-agent-design` skill before starting. Fires on every prompt but exits in <5ms if no keywords match.
+
+**Trigger logic:** Two conditions must BOTH be true:
+1. **Build intent** — prompt contains: `build a`, `create a`, `add a`, `implement a`, `write a`, `scaffold`, `set up`
+2. **Frontend subject** — prompt contains framework names (`react`, `vue`, `angular`, `svelte`, `nextjs`, `nuxt`, `remix`, `astro`…) or design keywords (`frontend`, `ui`, `ux`, `component`, `css`, `tailwind`, `form`, `button`, `modal`, `page`, `responsive`…)
+
+**Why it's needed:** Security considerations (XSS, injection, input sanitization, prompt injection in agent-fed forms) are easiest to address before the first file is written. A question-only prompt like "how does React work?" does not trigger the nudge — only prompts with build intent.
+
+**Output:** `╔══ Security Nudge ══╗` banner with the instruction to invoke `Skill("secure-agent-design")`. Silent on non-matching prompts.
+
+---
+
 ### `memory-discipline-hook.sh`
 **Event:** `PreToolUse` — **Matcher:** `Write|Edit`
 
@@ -205,6 +220,24 @@ Hook output is injected into Claude's context as system messages — Claude read
 **Why it's needed:** External web calls are expensive (tokens + latency) and often unnecessary — prior research sessions have already fetched and stored the relevant content in memory. A quick memory search first can avoid the external call entirely.
 
 **Output:** 4-step memory-first checklist: search → semantic search if thin → get_observations for hits → external only if nothing useful found.
+
+---
+
+### `raindrop-best-practices.sh`
+**Event:** `PreToolUse` — **Matcher:** `mcp__raindrop__`
+
+**Purpose:** Before any Raindrop Workshop MCP tool call, injects active observability best practices that reduce token cost and improve cluster quality.
+
+**Rules injected:**
+1. **Batch facets** — run multiple analytical dimensions in one LLM call (not one call per dimension)
+2. **Facet-first** — summarize each trace in 1-2 sentences before clustering (raw traces produce noisy clusters)
+3. **Cap input** — preprocess to ≤128K tokens before LLM analysis (walk spans, deduplicate messages, drop scorer/metric spans)
+4. **No-LLM classify** — at classification time use nearest-summary lookup (~100ms; no LLM call needed once a topic map exists)
+5. **Long tail** — don't sample aggressively; bugs live in rare clusters (HDBSCAN with no pre-specified count; outliers → `no_match`, not forced)
+
+**Why it's needed:** Raindrop trace analysis is token-heavy. Without guidance, the natural pattern is to feed raw trace payloads into LLMs one at a time — multiplying cost. These patterns compress the input surface and batch analytical work so trace evaluation runs at ~10–20% of the naïve cost.
+
+**Output:** `╔══ Active Observability (Raindrop) ══╗` rules banner before every Raindrop MCP call.
 
 ---
 
@@ -375,11 +408,13 @@ SessionStart   → session-start-hook.sh
 SessionStart   (all)                                        → caveman-activate.js  [global, ~/.claude/hooks/]
 Stop           → stop-hook.sh
 Stop           (all)                                        → address-check-hook.sh
+UserPromptSubmit (all, keyword-gated)                       → frontend-security-nudge.sh
 PreToolUse     Bash                                          → rtk hook claude  [global, ~/.claude/settings.json — token compression]
 PreToolUse     Write|Edit                                    → memory-discipline-hook.sh
 PreToolUse     Write|Edit                                    → protected-path-hook.sh
 PreToolUse     Write|Edit                                    → skill-validate-hook.sh
 PreToolUse     Agent                                         → gbrain-agent-spawn.sh
+PreToolUse     mcp__raindrop__                               → raindrop-best-practices.sh
 PreToolUse     mcp__plugin_claude-mem_mcp-search__save_obs  → gbrain-memory-write.sh
 PreToolUse     WebFetch|WebSearch                            → gbrain-external-search.sh
 PostToolUse    Write|Edit                                    → impeccable-detect-hook.sh

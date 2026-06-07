@@ -102,6 +102,17 @@ run_one() {
     local tf_exit=$?
     echo "$ts $repo tool-failure-review exit=$tf_exit duration=$(($(date +%s) - tf_start))s" >> "$LOG_FILE"
   fi
+
+  # Security report — daily static security scan of recent git changes. Writes a
+  # safety report to .claude/reports/security/<date>-security-report.md. Self-paces
+  # to daily (MIN_GAP_DAYS=1). Applies to every repo.
+  # Opt out with SDD_SKIP_SECURITY_REPORT=1.
+  if [ "${SDD_SKIP_SECURITY_REPORT:-0}" != "1" ] && [ -f "$repo/.claude/scripts/security-report-runner.sh" ]; then
+    local sr_start=$(date +%s)
+    (cd "$repo" && bash .claude/scripts/security-report-runner.sh) > /dev/null 2>&1
+    local sr_exit=$?
+    echo "$ts $repo security-report exit=$sr_exit duration=$(($(date +%s) - sr_start))s" >> "$LOG_FILE"
+  fi
 }
 
 if [ -n "$SINGLE_REPO" ]; then
