@@ -14,6 +14,8 @@ Usage:
     trust_score.py show
 """
 
+from __future__ import annotations  # PEP 604 (`X | None`) on Python 3.9 hosts
+
 import argparse
 import json
 import re
