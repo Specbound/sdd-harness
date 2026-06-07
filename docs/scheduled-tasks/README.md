@@ -20,7 +20,7 @@ All tasks are wired into `scripts/daily-orchestrator.sh`. The orchestrator fires
 - **A** — Judge + Reflect + Housekeep + Trust Score: score the previous day's observations via the session-quality rubric; convert drain entries into memory updates; archive `observations.md` if >50 entries; run `trust_score.py auto-score`
 - **B** — Session Quality Assessment: collect git activity; score session 1–5; append `[session-quality]` observation
 - **C** — Keep Rate Evaluation: find Claude-co-authored commits older than 7 days; compute lines still in HEAD; append `[keep-rate]` observation
-- **D** — Pattern Scoring: scan observations since last `[judge]:` line; score each 1–5 for reusability; append PROMOTE-scored (4–5) entries to `.claude/memory/forward-patterns.md` as one-line heuristics; append `[pattern-score]` summary observation. The weekly skill-curator sweep then processes `forward-patterns.md` for skill promotion.
+- **D** — Skill Augmentation (Sleep-Phase Knowledge Seeding): invoke `skill-augment-agent` with today's judge verdict. The agent collects `[seed-target:]` observations written by the `action-capture.sh` hook during the Wake phase (failed Bash commands), maps them to skill domains, generates synthetic worked examples (Dreaming), and applies up to 3 evidence-backed skill improvements. Logs each as `[skill-update]`. Idempotent — skips if `[skill-update]` entries already exist for today. This step closes the full Wake→Sleep cycle: struggles during active sessions automatically become targeted skill updates overnight.
 
 **Opt-out:** `rm .claude/scripts/daily-runner.sh` in that repo; or `SDD_SKIP_ROUTINE=1` to skip registration at install time.
 
@@ -130,4 +130,4 @@ The dashboard's **Scheduled Tasks** tab shows live status for each task: schedul
 
 ---
 
-_Last synced: 2026-06-02_
+_Last synced: 2026-06-07_

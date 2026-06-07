@@ -1,6 +1,6 @@
 ---
 name: karpathy-guidelines
-description: Behavioral checklist for EVERY coding task — writing, editing, reviewing, or refactoring code. Enforces four principles from Andrej Karpathy's observations on LLM coding pitfalls: Think Before Coding, Simplicity First, Surgical Changes, Goal-Driven Execution.
+description: Behavioral checklist for EVERY coding task — writing, editing, reviewing, or refactoring code. Principles from Karpathy (coding discipline) and cpojer (dependency ownership, option value): Think Before Coding, Simplicity First, Surgical Changes, Goal-Driven Execution, Review Tiering, Dependency Ownership, Option Value.
 license: MIT
 source: https://github.com/multica-ai/andrej-karpathy-skills
 ---
@@ -25,6 +25,8 @@ Run through this checklist mentally:
 - [ ] **Simplest path identified?** — Could this be done with less code? If yes, do less.
 - [ ] **Scope locked?** — Know exactly which lines you'll touch and why.
 - [ ] **Success criteria defined?** — How will you know it's done? Tests? Expected output?
+- [ ] **Adding a dependency?** — Run the ownership check (section 6).
+- [ ] **Architectural decision?** — Run the option value check (section 7).
 
 ---
 
@@ -94,9 +96,57 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 
 ---
 
+## 5. Review Tiering
+
+**AI owns the mechanical; humans own the judgment.**
+
+When reviewing or requesting review, route by category:
+
+| AI reviews | Human reviews |
+|---|---|
+| Style, formatting, linting | Domain logic and business rules |
+| PR description completeness | Legal / compliance / privacy |
+| Bug patterns, test coverage gaps | Security-sensitive code (auth, crypto, secrets) |
+| Naming and structural consistency | Product taste (UX copy, feature feel) |
+
+**Implication for your PRs:** Don't wait for a human to catch lint errors or missing tests — fix those before requesting review. Reserve human attention for the right-column categories.
+
+---
+
+## 6. Before Adding a Dependency
+
+**Every dependency is code you'll own forever.**
+
+When suggesting or adding a third-party library:
+- What constraints, architecture decisions, or upgrade paths does this impose?
+- Could this be built in under a day with agent help? If yes, owning it may be cheaper long-term.
+- Does the dependency solve the problem in a way that forecloses your own future design choices?
+
+**Not a rule against dependencies** — a prompt to make the cost explicit before accepting it.
+
+**Red flag:** You added a library without considering what it locks in architecturally.
+
+---
+
+## 7. Option Value Check
+
+**Good design unlocks future choices. Bad design forecloses them.**
+
+Before finalizing any architectural decision:
+- Does this make the next change easier or harder?
+- Does it create a corner you can't easily escape from?
+- With agents, large-scale rewrites are cheap — but only if the architecture permits them.
+
+**Flip side:** Don't over-engineer for hypothetical futures (→ Simplicity First). The check is whether this *closes off* obvious future paths, not whether it opens every conceivable one.
+
+**Red flag:** You locked in an architectural choice because it was convenient today, without considering what it prevents tomorrow.
+
+---
+
 ## How to Know It's Working
 
 - **Fewer unnecessary changes in diffs** — only requested changes appear
 - **Fewer rewrites due to overcomplication** — code is simple the first time
 - **Clarifying questions come before implementation** — not after mistakes
 - **Clean, minimal PRs** — no drive-by refactoring or "improvements"
+- **Human reviewers focus on domain/security/taste** — not style nits

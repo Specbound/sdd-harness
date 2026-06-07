@@ -478,6 +478,18 @@ def _scheduled_task_registry():
             "scope":             "harness",
             "what_it_does":      "Sweep the harness for structural drift; auto-fix what it can",
         },
+        {
+            "key":               "security-report",
+            "name":              "Daily Security Scan",
+            "runner_log_token":  "security-report",
+            "state_file":        None,  # per-repo state; dashboard shows last log entry
+            "artifact_glob":     str(HARNESS_DIR / ".claude" / "reports" / "security" / "*.md"),
+            "artifact_label":    ".claude/reports/security/<date>-security-report.md",
+            "schedule_human":    "Daily (MIN_GAP_DAYS=1)",
+            "interval_seconds":  86400,
+            "scope":             "per-repo",
+            "what_it_does":      "Static security scan of recent git changes; flags OWASP patterns, secrets, injection sinks",
+        },
     ]
 
 

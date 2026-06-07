@@ -135,6 +135,12 @@ install_project() {
   mkdir -p "$PROJECT_DIR/.claude/commands"
   mkdir -p "$PROJECT_DIR/specs"
 
+  # --- chmod runtime scripts that need to be executable ---
+  for s in daily-runner.sh macro-eval-runner.sh skill-curator-runner.sh harness-health-runner.sh tool-failure-review-runner.sh; do
+    [ -f "$PROJECT_DIR/.claude/scripts/$s" ] && chmod +x "$PROJECT_DIR/.claude/scripts/$s"
+  done
+  [ -f "$PROJECT_DIR/.claude/scripts/ollama_model_test.py" ] && chmod +x "$PROJECT_DIR/.claude/scripts/ollama_model_test.py"
+
   # --- Copy harness files ---
   sync_dir "$HARNESS_DIR/commands/kiro" "$PROJECT_DIR/.claude/commands"
   sync_dir "$HARNESS_DIR/agents"        "$PROJECT_DIR/.claude"

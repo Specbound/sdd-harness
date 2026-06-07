@@ -196,6 +196,22 @@ After the SkillOS Quality Gate passes, invoke `Skill("agent-identity")` in **Mod
 
 Fix any failures before logging to the sources index. Do not skip this step — vague skill identities accumulate into a harness where the wrong skill fires half the time.
 
+### Phase 5d: Verification Companion Check (for new skills only)
+
+After Phase 5c passes, determine whether the new skill's domain has manual checks that should be encoded:
+
+Ask: **"Does this domain involve manual checks a human would run after Claude's work?"**
+
+Examples that warrant a companion verify skill:
+- Visual inspection (UI, reports, generated docs)
+- Running a service and checking behavior
+- Sampling output for correctness or plausibility
+- Checking logs, error output, or side effects
+
+If YES → invoke `Skill("verification-skill-authoring")` to create a companion `<domain>-verify` skill before proceeding to Phase 6.
+
+If NO (pure logic, already covered by CI, or the skill itself IS a verification skill) → skip and proceed.
+
 ### Phase 6: Log to the Sources Index (DO THIS BEFORE SHOWING THE SUMMARY)
 
 Before printing any completion message, append an entry to the source-category README chosen in Phase 0. **Do not skip to the summary — write the file first, then report.** Without this step the harness loses the provenance trail that explains why skills were added.

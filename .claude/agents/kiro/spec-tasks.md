@@ -131,7 +131,11 @@ Provide brief summary in the language specified in spec.json:
    - ✅ All requirements mapped to tasks
    - ✅ Task dependencies verified
    - ✅ Testing tasks included
-4. **Next Action**: Review tasks and proceed when ready
+4. **Parallel Execution Groups** (omit if sequential mode or no `(P)` tasks):
+   - List each safe parallel group: "Group A: tasks 1.1, 1.2, 1.3 — no shared writes"
+   - Note the first sequential gate after each group
+   - This section lets users dispatch parallel `/kiro:spec-impl` invocations without reading the dependency chain
+5. **Next Action**: Review tasks and proceed when ready
 
 **Format**: Concise (under 200 words)
 

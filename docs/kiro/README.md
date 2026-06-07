@@ -22,11 +22,11 @@ Based on [cc-sdd](https://www.npmjs.com/package/cc-sdd) (`npx cc-sdd@latest`), a
 | `steering-custom` | Setup | Add domain-specific steering (auth, DB, API, etc.) |
 | `idea-refine` | 0. Ideation | Refine vague ideas into spec-ready briefs (wired into spec-quick) |
 | `spec-init` | 1. Init | Create spec workspace in `specs/` with metadata |
-| `spec-requirements` | 2. Requirements | Generate EARS-format requirements |
+| `spec-requirements` | 2. Requirements | Generate EARS-format requirements; marks ambiguities as `[NEEDS CLARIFICATION]` for user resolution before approval |
 | `spec-design` | 3. Design | Research codebase + produce technical design |
 | `spec-grill` | 3.5 Grill | Interactive domain-expert grilling session; aligns terminology, updates requirements + design inline, writes ADRs |
-| `spec-tasks` | 4. Tasks | Break design into parallelizable task list; `--sequential` disables parallel `(P)` markers |
-| `spec-impl` | 5. Implement | TDD implementation with self-review after each task |
+| `spec-tasks` | 4. Tasks | Break design into parallelizable task list; `--sequential` disables `(P)` markers; output includes Parallel Execution Groups section listing safe concurrent invocation groups |
+| `spec-impl` | 5. Implement | TDD implementation with self-review after each task; runs Phase -1 Pre-Implementation Gates (simplicity, anti-abstraction, integration-first) before delegating |
 | `spec-quick` | 2-5 (fast) | Requirements → Design → Grill → Tasks in one command; grill skipped with `--auto` |
 | `spec-status` | Any | Show current phase, approvals, open tasks |
 | `validate-gap` | Review | Requirements vs. existing code gap analysis |

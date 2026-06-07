@@ -40,12 +40,31 @@ Invoke the `keep-rate` skill via the Skill tool. Apply its workflow:
 
 If today's `[keep-rate]:` line already exists, skip silently.
 
-## Output
+## Step D — Skill Augmentation (Sleep-Phase Knowledge Seeding)
 
-When all three steps are done, emit a single summary line on stdout:
+Invoke the `skill-augment-agent` via the Agent tool. Pass this as the task prompt:
 
 ```
-Daily maintenance complete: judge=<delta> session-quality=<N/5> keep-rate=<N%>
+Augment skills from today's session.
+Date: TODAY_PLACEHOLDER
+Judge verdict: <paste the full judge JSON from Step A, or "no verdict" if Step A was skipped>
+```
+
+This is the Sleep-phase Knowledge Seeding step: converts today's drains **and any `[seed-target:]` observations** (auto-written by the action-capture hook during the Wake phase) into targeted, evidence-backed skill improvements. The agent will:
+1. Collect `[seed-target:]` observations as additional evidence alongside judge drains
+2. Run the Dreaming phase to generate synthetic worked examples for each gap
+3. Apply up to 3 skill updates, logging each as `[skill-update]`
+
+Idempotent: if `[skill-update]:` entries already exist for TODAY_PLACEHOLDER, the agent exits without duplicate writes.
+
+If Step A failed and no judge verdict is available, pass "no verdict" — the agent falls back to `[seed-target:]` observations only.
+
+## Output
+
+When all four steps are done, emit a single summary line on stdout:
+
+```
+Daily maintenance complete: judge=<delta> session-quality=<N/5> keep-rate=<N%> skill-updates=<N>
 ```
 
 If any step was skipped or failed, replace the value with `skipped` or `failed`.

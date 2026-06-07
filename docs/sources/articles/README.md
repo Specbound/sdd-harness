@@ -129,3 +129,28 @@ Online articles, blog posts, and documentation pages that were passed to `/skill
 
 **What we added:**
 - Skill: `agentic-rl-tito` — TITO invariant, correct loop algorithm, prefix-preservation property test with code, model compat table, `compute_tool_delta()` pattern, edge case recipes. Fires only on RL fine-tuning / multi-turn training loop tasks. Full code patterns in `resources/code-patterns.md`.
+
+---
+
+## Running an AI-Native Engineering Organization
+**URL:** https://claude.com/blog/running-an-ai-native-engineering-org
+**Added:** 2026-06-07
+**Source / Author:** Anthropic (Claude Code team)
+
+**What it's about:** Anthropic's Claude Code team describes how they restructured engineering around agentic coding — shifting bottlenecks from writing code to verification, review, and security. Covers four process changes (JIT planning, ask-Claude-first context, AI/human review tiering, blurred team roles), three org principles (dogfood, flat teams, kill obsolete processes), specific adoption metrics (onboarding ramp, PR cycle time, Claude-assisted commit rate), and the "pick your noisiest workflow" prioritization heuristic.
+
+**What we added:**
+- Skill: `ai-native-org-patterns` — five-phase framework: process audit ("noisiest workflow" heuristic), JIT planning pattern, AI/human review tiering table, ask-Claude-first context gathering, adoption metrics with targets, and three non-negotiable org principles.
+- Skill enhancement: `karpathy-guidelines` — added "Review Tiering" section (Section 5) with explicit AI-owns-mechanical / human-owns-judgment split table and updated "How to Know It's Working" checklist.
+
+---
+
+## Modern Engineering Values
+**URL:** https://cpojer.net/posts/modern-engineering-values
+**Added:** 2026-06-07
+**Source / Author:** Christoph Nakazawa (cpojer) — creator of Jest/Metro
+
+**What it's about:** Five engineering principles that remain essential — and are amplified — when AI agents handle most code execution: Strong Ownership, Taste (judgment over execution), Strict Guardrails & Fast Feedback, Context in the Repo, and Own your Stack. Argues the engineering bottleneck shifts from writing code to exercising judgment. Adds Option Value as a design principle: every architectural choice should unlock future options, not foreclose them.
+
+**What we added:**
+- Skill enhancement: `karpathy-guidelines` — Section 6 "Before Adding a Dependency" (ownership cost check: what constraints does this lock in? can it be built with agents instead?) and Section 7 "Option Value Check" (does this architectural decision unlock or foreclose future changes?). Also added two conditional checklist items to "Before You Write a Single Line". No new skill created — principles fit cleanly as additions to an existing checklist skill at different decision points (dependency selection, architecture).

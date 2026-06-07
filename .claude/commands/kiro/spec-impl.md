@@ -25,6 +25,25 @@ If validation fails, inform user to complete tasks generation first.
 - If `$2` provided: Parse task numbers (e.g., "1.1", "1,2,3")
 - Otherwise: Read `specs/$1/tasks.md` and find all unchecked tasks (`- [ ]`)
 
+## Phase -1: Pre-Implementation Gates
+
+Before delegating to the TDD agent, run this checklist against `specs/$1/tasks.md` and `specs/$1/design.md`. Surface any failure to the user and wait for confirmation before proceeding.
+
+**Simplicity Gate**
+- [ ] Implementation has ≤3 main components for this feature?
+- [ ] No tasks contain "future-proof", "extensible", "generic", or "might need" language?
+
+**Anti-Abstraction Gate**
+- [ ] Tasks use framework features directly — no wrapper layers proposed without explicit rationale?
+- [ ] Single data model representation (no parallel DTO/entity/domain object duplication)?
+
+**Integration-First Gate**
+- [ ] API contracts or interface definitions exist in design.md before any implementation task?
+- [ ] At least one integration/contract test task appears before any unit-only implementation task?
+
+If all gates pass: proceed to subagent invocation.
+If any gate fails: show the failing item(s), ask the user to confirm or fix before continuing. This is a soft gate — user can override with "proceed anyway".
+
 ## Invoke Subagent
 
 Delegate TDD implementation to spec-tdd-impl-agent:

@@ -78,6 +78,19 @@ Score each on two questions (0/1 each):
 
 Only proceed with skills scoring 2/2.
 
+### Step 2.5: Collect [seed-target:] Observations
+
+Before drafting, also scan for Wake-phase struggle signals auto-written by the action-capture hook:
+
+```bash
+today=$(date +%Y-%m-%d)
+grep "^- $today \[seed-target:" .claude/memory/observations.md 2>/dev/null
+```
+
+Each `[seed-target:<domain>]` entry records a Bash command that failed with a non-zero exit code. Map the domain to the candidate skill list (same domain→skill mapping as Step 1B). If a domain maps to a skill already in the candidate list, it adds supporting evidence. If it maps to a new skill, add it to candidates (still capped at 5 total).
+
+This is the harness analogue of the paper's Wake-phase tagging — struggles during the active session become explicit seeding targets for the Sleep phase.
+
 ### Step 3: Draft Improvements
 
 For each passing skill, draft the minimal change:
@@ -102,6 +115,32 @@ Rules:
 - Plain language — no jargon unless already used in the skill
 - Evidence citation inline: `(source: YYYY-MM-DD observation)`
 - Never modify the frontmatter
+
+### Step 3.5: Dreaming — Generate Synthetic Examples
+
+For each skill that passed 2/2 scoring, generate 1-2 synthetic worked examples that concretely demonstrate the gap or the fix. These are not documentation — they are practice material that makes the skill actionable on first read.
+
+**Example types:**
+- **Positive worked example**: a short scenario showing the skill applied correctly that directly addresses the observed drain/gap
+- **Edge case / negative example**: a variant that looks like a correct application but isn't — the failure mode made concrete
+
+**Format** (write to `~/.claude/skills/<skill-name>/resources/examples/YYYY-MM-DD-examples.md`):
+
+```markdown
+# Session Examples — YYYY-MM-DD
+Source: [observation or drain evidence citation]
+
+## Worked Example: [Short Label]
+**Scenario:** [2-3 sentences — concrete situation]
+**Correct application:** [What the skill says to do and why]
+**Common mistake:** [The failure pattern this prevents]
+```
+
+Rules:
+- Each example file ≤ 400 chars total
+- Only write if `resources/examples/` dir can be created (create it if needed)
+- Do not write examples for skills that scored < 2/2 — evidence-gated same as Step 3
+- Skip silently if no examples can be generated from the available evidence
 
 ### Step 4: Apply and Log
 

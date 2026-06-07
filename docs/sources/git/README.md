@@ -103,3 +103,57 @@ GitHub repositories that were passed to `/skill-extraction` and turned into harn
 - Routine: `tool-failure-review` — `commands/kiro/tool-failure-review.md` + `scripts/tool-failure-review-runner.sh` (MIN_GAP_DAYS=3 self-pacing, no-ops unless the ledger has a promotable entry) wired into `daily-orchestrator.sh` `run_one()`. Diagnoses *why* recurring failures happen and promotes the durable lessons into memory (+ `ERRORS.md`), marking entries resolved/promoted. This is where the system learns from its mistakes.
 - Skill: `tool-failure-memory` — the judgment layer: signature model, how to respond to a recall warning (don't reflexively re-run), and how to record a remedy / promote to memory.
 - Config: registered the two hooks in `templates/settings.json.template` (PostToolUseFailure + PreToolUse) so the loop ships to every repo; runner added to install/update chmod lists.
+
+---
+
+## github.com/ulyssestenn/omt
+**URL:** https://github.com/ulyssestenn/omt | **Added:** 2026-06-07
+**Source / Author:** Bethany Hunt (ulyssestenn)
+
+**What it's about:** Zero-dependency Python CLI (stdlib only) for running a prompt N times against any local Ollama model and saving every response to disk. Outputs are keyed on a SHA256 prompt hash so multi-model comparison runs land in the same folder automatically. Captures token counts, timing, and temperature per run in JSON metadata alongside Markdown response files.
+
+**What we added:**
+- Script: `ollama_model_test.py` — full OMT script added to `scripts/`; propagates to every project's `.claude/scripts/` via update.sh. chmod +x wired into install.sh and update.sh.
+- Skill: `local-llm-eval` — guided workflow for offline prompt evaluation: pre-flight check, parameter selection, single/multi-model run patterns (shell loop), result interpretation, and prompt iteration loop. Fills gap between abstract `llm-evaluation` skill and actual local execution.
+- Docs: `docs/local-llm-eval/README.md` — quick start, flag reference, output schema, common patterns (model comparison, variance audit, temperature sweep), related skills.
+
+---
+
+## github.com/anthropics/defending-code-reference-harness
+**URL:** https://github.com/anthropics/defending-code-reference-harness | **Added:** 2026-06-07
+**Source / Author:** Anthropic
+
+**What it's about:** Anthropic's reference implementation for autonomous vulnerability discovery and remediation using Claude. Provides a 7-stage pipeline (recon → find → grade → judge → report → patch) with gVisor sandboxing and an egress-allowlist proxy, plus a set of interactive Claude Code skills (threat-model, vuln-scan, triage, patch) for the human-in-the-loop path. Key design patterns: `<untrusted_data>` wrapping to mitigate prompt injection, separate find/verify agent isolation (only the PoC crosses), serial judge for dedup race prevention, and egress-only network policy.
+
+**What we added:**
+- Skill: `ai-security-workflow` — 5-phase interactive security pipeline (threat-model → vuln-scan → triage → patch → close) with standardized artifact handoffs (THREAT_MODEL.md → VULN-FINDINGS.json → TRIAGE.json → PATCHES/ → SECURITY-REPORT.md). Distinct from existing scattered SAST skills: this is a choreographed, phase-gated process that gets from "do a security pass" to "here are my patches" with human review gates between each phase.
+- Skill: `secure-agent-design` — 5-pattern checklist for building security-hardened Claude agents: `<untrusted_data>` prompt injection mitigation, find/verify isolation architecture, serial dedup judge, egress control, and credential handling. Fires when building any agent that processes untrusted input or runs in parallel.
+- Runner: `security-report-runner.sh` + `security-report-prompt.md` — daily headless safety scan (MIN_GAP_DAYS=1) wired into `daily-orchestrator.sh`. Scans git changes from the last 24h for OWASP patterns, hardcoded secrets, injection sinks, and missing auth checks; writes `.claude/reports/security/<date>-security-report.md`.
+- Dashboard: added `security-report` entry to `_scheduled_task_registry()` in `dashboard.py` so the Scheduled Tasks tab shows daily scan status and last report artifact.
+- Hook: `frontend-security-nudge.sh` (UserPromptSubmit, global) — detects when a prompt combines "build/create/add" + frontend/design keywords and injects a reminder to invoke `secure-agent-design` skill before building. Registered in `~/.claude/settings.json` and `templates/settings.json.template`.
+
+---
+
+## github.com/github/spec-kit
+**URL:** https://github.com/github/spec-kit | **Added:** 2026-06-07
+**Source / Author:** GitHub
+
+**What it's about:** Open-source Spec-Driven Development toolkit with a 7-phase workflow (Constitution → Specify → Clarify → Plan → Tasks → Validate → Implement) and slash commands for 30+ AI agents. Key patterns: `[NEEDS CLARIFICATION]` markers to force explicit ambiguity surfacing, constitutional gates (Simplicity/Anti-Abstraction/Integration-First) as Phase -1 pre-implementation checklists, and parallel task group identification. The harness already has a full SDD pipeline (Kiro); these three patterns filled concrete gaps.
+
+**What we added:**
+- Augment: `agents/kiro/spec-requirements.md` — `[NEEDS CLARIFICATION]` discipline: step 3 now marks every assumed value, unstated intent, or unclear constraint with an explicit inline marker + a step 4 that surfaces all markers to the user for resolution before requirements are approved.
+- Augment: `agents/kiro/spec-tasks.md` — Output Description now includes "Parallel Execution Groups" section listing safe concurrent invocation groups, first sequential gate after each group, enabling users to dispatch parallel `/kiro:spec-impl` calls without reading the dependency chain.
+- Augment: `commands/kiro/spec-impl.md` — Phase -1 Pre-Implementation Gates added before TDD subagent invocation: Simplicity Gate (≤3 components, no speculative tasks), Anti-Abstraction Gate (direct framework use, single model), Integration-First Gate (contracts in design.md, integration test task before unit-only tasks). Soft gate — user can override.
+- Docs: `docs/kiro/README.md` — updated command table entries for `spec-requirements`, `spec-tasks`, and `spec-impl` to reflect new behaviors.
+
+---
+
+## github.com/tinyfish-io/bigset
+**URL:** https://github.com/tinyfish-io/bigset | **Added:** 2026-06-07
+**Source / Author:** TinyFish
+
+**What it's about:** Self-hosted AI platform that takes a natural-language dataset description, infers a schema via Claude Sonnet, fans out parallel agents to research entities from live public web sources, deduplicates results, and exports a structured CSV/XLSX. Uses Mastra for workflow orchestration, TinyFish APIs for web access, Convex as the database, and Clerk for auth. Requires Docker + 3 free API keys.
+
+**What we added:**
+- Skill: `structured-web-dataset` — implements BigSet's pipeline natively in Claude Code (no Docker, no external APIs). Covers both Web mode (parallel Agent() fan-out per entity → verified rows from live sources) and Synthetic mode (schema + distribution rules → generated rows with controlled edge cases). Fills the gap between `deep-research` (prose reports) and raw data needs — output is always a typed, deduplicated table/CSV.
+- Docs: `docs/structured-web-dataset/README.md` — workflow diagram, design decisions, related skills.

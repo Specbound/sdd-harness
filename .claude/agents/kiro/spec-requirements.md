@@ -57,8 +57,14 @@ Generate complete requirements for the feature based on the project description 
    - Group related functionality into logical requirement areas
    - Apply EARS format to all acceptance criteria
    - Use language specified in spec.json
+   - **Mark ambiguities explicitly**: For every assumed value, unstated user intent, or unclear constraint, add an inline `[NEEDS CLARIFICATION: <specific question>]` marker rather than silently choosing. Common triggers: auth method not specified, data ownership unclear, error behavior undefined, scale/performance targets absent, multi-user vs single-user unstated.
 
-4. **Update Metadata**:
+4. **Resolve Clarifications** (if any markers were written):
+   - List all `[NEEDS CLARIFICATION]` markers in the output summary
+   - Ask the user to resolve each one before approving requirements
+   - Once resolved, inline-replace each marker with the confirmed answer
+
+5. **Update Metadata**:
    - Set `phase: "requirements-generated"`
    - Set `approvals.requirements.generated: true`
    - Update `updated_at` timestamp

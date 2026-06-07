@@ -11,6 +11,15 @@ argument-hint: [feature-name]
 
 ## Execution Steps
 
+### Step 0: Clean the Diff
+
+Run `/simplify` to reduce noise before verification and review:
+```
+/simplify
+```
+
+If `/simplify` is not available, skip and proceed to Step 1.
+
 ### Step 1: Run Verification Pipeline
 
 Execute the full pre-PR verification first:

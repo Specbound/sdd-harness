@@ -51,3 +51,43 @@ When you paste content directly (e.g. a thread, an excerpt, a doc snippet), it g
 - Enhancement: `skill-extraction` Phase 5c — mandatory identity alignment check (invokes `agent-identity` Mode B) before any new skill is logged to the sources index.
 - Enhancement: `skill-creator` Phase 4c — same identity check wired into the harness skill-creator before installation.
 - Enhancement: `multi-agent-patterns` Orchestration Tax section — GIL analogy, Amdahl's Law framing, and 5 design rules (scale fleet to review rate, sort work, batch reviews, spend the lock on judgment, protect serial time).
+
+---
+
+## Claude Code Feedback Loops — Self-Verification Patterns (Pasted article)
+**Added:** 2026-06-07
+**Source / Author:** Pasted text — Anthropic/Claude Code team article on self-verification and workflow bundling
+
+**What it's about:** How to encode domain-specific manual checks as verification skills so Claude self-verifies mid-work without prompting. Core insight: the gap between Claude's first response and your final result is filled by checks only you were running. Three patterns: (1) `<domain>-verify` skills encode manual inspection steps as executable phases; (2) bundling skills into a composite pipeline (simplify → verify → design → PR → CI watch) lets Claude complete entire feature workflows autonomously; (3) second-agent review before merge provides unbiased quality gating from a fresh context.
+
+**What we added:**
+- Skill: `verification-skill-authoring` — meta-skill for creating `<domain>-verify` companion skills; includes domain defaults (frontend, API, data pipeline, CLI) and rubric pattern for qualitative checks
+- Skill augmentation: `skill-extraction` Phase 5d — after identity check on any new skill, automatically asks if a companion verify skill is warranted; invokes `verification-skill-authoring` if yes
+- Skill augmentation: `skill-creator` Phase 4d — same companion check wired into the skill-creator workflow
+- Command augmentation: `kiro:ship` Step 0 — `/simplify` added before the verify pipeline, matching the described composite pipeline pattern
+
+---
+
+## State of Memory in Agent Harnesses (Pasted article)
+**Added:** 2026-06-07
+**Source / Author:** Pasted text — comparative analysis of memory architectures across 6 major AI coding harnesses
+
+**What it's about:** Systematic comparison of how Claude Code, Anthropic Managed Agents, OpenAI Codex, GitHub Copilot, OpenClaw, and Hermes Agent implement memory. Introduces a 3-tier taxonomy (working/external/parametric) and the memo ceiling theorem (arXiv:2604.27707: Ω(k²) vs O(d)). Covers each harness's retrieval mechanism, persistence model, hard limits, and key shortcoming. Only Copilot has published real-world A/B data (83%→90% PR merge rate lift). Key patterns: Copilot citation-schema at write time + JIT expiry, Codex two-phase consolidation (6hr idle gate → locked merge), Hermes 80% utilization threshold trigger.
+
+**What we added:**
+- Skill augmentation: `agent-memory-systems` — added "Production Memory Ceiling" section (3-tier taxonomy + memo theorem) and "Harness Comparison" table (6 systems, retrieval mechanisms, limits, shortcomings, published A/B metric).
+- Skill augmentation: `agent-memory-discipline` — added "Citation Schema (Write-Time)" section: Copilot-inspired structured frontmatter (`citation: {file, line, symbol, verified_at}` + `expires_at`) enabling mechanical validation of code-citing memories. Pairs with existing CLAUDE.md read-time check.
+- Skill augmentation: `agent-memory-consolidation` — added "Consolidation Timing Patterns" section: Pattern A (Codex two-phase idle-gate + locked merge) and Pattern B (Hermes 80% utilization-gauge trigger), with guidance on which to use per failure mode.
+
+---
+
+## Braintrust Topics — Continuous Trace Intelligence at Scale (Pasted article)
+**Added:** 2026-06-07
+**Source / Author:** Pasted text — Braintrust engineering blog post on their "Topics" trace intelligence pipeline
+
+**What it's about:** How Braintrust built active observability for production LLM agent traces — finding patterns you didn't know to look for. Core insight (from Anthropic's Clio paper): instead of embedding raw multi-million-token traces, ask an LLM to summarize the trace along one dimension in 1-2 sentences, then embed that summary. The same pipeline works for any analytical dimension (task, issues, sentiment, custom). Key optimizations: batch multiple facets into one LLM call (trace tokens paid once), hard-cap preprocessed input at 128K tokens, use HDBSCAN + UMAP without prespecifying cluster count, and classify via nearest-centroid lookup (~100ms, no LLM at classify time).
+
+**What we added:**
+- Skill: `active-observability` — full workflow for batch pattern discovery in Raindrop Workshop traces; 4-phase pipeline (collect → batch-facet → LLM-cluster summaries → report); adapted from Braintrust's 6-stage pipeline using LLM-as-judge clustering instead of ML deps
+- Hook: `raindrop-best-practices.sh` (PreToolUse `mcp__raindrop__`) — soft gate injecting 5 key patterns as context whenever any Raindrop MCP tool fires; registered in `~/.claude/settings.json` and `templates/settings.json.template`
+- Skill augmentation: `raindrop-eval-loop` — added Phase −1 "Pattern Discovery" block pointing to `active-observability` for use before writing eval assertions

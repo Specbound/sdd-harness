@@ -88,15 +88,38 @@ Hook output is injected into Claude's context as system messages — Claude read
 ### `action-capture.sh`
 **Event:** `PostToolUse` — **Matcher:** `Bash` — _(soft gate, never blocks)_
 
-**Purpose:** After high-signal Bash commands complete, prompts Claude to consider saving a memory observation from the outcome. Watches for three patterns: `git commit`, failing `pytest` runs, and deployment commands (`docker deploy`, `kubectl apply`, `helm upgrade`, etc.).
+**Purpose:** After high-signal Bash commands complete, performs two functions: (1) prompts Claude to consider saving a memory observation from the outcome; (2) **automatically** writes Wake-phase weakness markers when commands fail.
 
-**Design principle:** "Memory from what agents DO, not just what they say" — extracted from Memori's architecture. Current memory is only saved when Claude explicitly decides to. This hook closes the gap for important events that happen during work but go uncaptured.
+**Signal types:**
 
-**Why it's needed:** Git commits, test failures, and deploys are the highest-signal moments in a coding session. Without a prompt at these moments, the workflow lesson (e.g., a recurring test breakage pattern, a deployment gotcha) evaporates at session end. The hook makes the prompt automatic without being prescriptive — Claude still applies the transfer test before saving.
+| Signal | Trigger | Action |
+|--------|---------|--------|
+| `git-commit` | `^git commit` | Advisory banner — prompt to save workflow lesson |
+| `test-failure` | `pytest` + FAILED/ERROR in output | Advisory banner — prompt to save breakage pattern |
+| `deploy` | docker/kubectl/helm deploy commands | Advisory banner — prompt to save env gotcha |
+| `struggle` | Any Bash with non-zero exit code (new) | **Auto-writes** `[seed-target:<domain>]` observation to `observations.md` + advisory banner |
 
-**Noise control:** Only fires on the three specific patterns; silent on all other Bash commands. Test passes are intentionally excluded (low signal). The hook emits a reminder banner but exits 0 always — Claude decides whether anything is worth saving.
+**Wake-phase tagging (Sleep Cycle Protocol):** The `struggle` signal is the harness implementation of the paper's Wake-phase weakness identification (Behrouz et al., 2026). When any Bash command fails, the hook infers a skill domain from the command content, auto-writes a `[seed-target:<domain>]` entry to `.claude/memory/observations.md`, then emits an advisory banner. No Claude decision required — the observation is written unconditionally. The nightly `skill-augment-agent` (Step D of daily maintenance) consumes these entries as seeding targets for the Sleep phase.
 
-**Output:** `╔══ Action Capture ══╗` reminder banner with context-specific guidance for each signal type. Silent on no match.
+**Domain inference table:**
+
+| Command contains | Inferred domain |
+|-----------------|----------------|
+| `pip`, `npm`, `yarn`, `poetry`, `uv` | `dependency-management` |
+| `docker`, `kubectl`, `helm` | `deployment-engineer` |
+| `git` | `git-advanced-workflows` |
+| `curl`, `wget`, `http` | `api-patterns` |
+| `python`, `.py` | `python-pro` |
+| `node`, `npm`, `.ts`, `.tsx` | `nodejs-best-practices` |
+| _(default)_ | `systematic-debugging` |
+
+**Design principle:** "Memory from what agents DO, not just what they say" — extracted from Memori's architecture. The struggle extension adds automatic capture without requiring Claude to decide.
+
+**Why it's needed:** Git commits, test failures, and deploys are high-signal moments. Failed commands are even higher-signal — they reveal exactly where skills are weak. Without automatic capture, these weakness signals evaporate at session end and the nightly improvement pipeline has no targets.
+
+**Noise control:** Advisory signals only fire on the four specific patterns; silent on all other Bash commands. Test passes are intentionally excluded (low signal). The hook exits 0 always.
+
+**Output:** `╔══ Action Capture ══╗` banner (advisory) for all signal types. `[seed-target:]` observation written silently to `observations.md` for `struggle` signal only.
 
 **Location:** `~/.claude/hooks/action-capture.sh` (global — fires across all projects)
 

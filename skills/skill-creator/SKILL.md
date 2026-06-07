@@ -146,6 +146,22 @@ Invoke `Skill("agent-identity")` in **Mode B (skill identity check)** to validat
 
 Fix any failures before installation. One sentence per fix is sufficient.
 
+### Phase 4d: Verification Companion Check
+
+After Phase 4c passes, determine whether this skill's domain has manual checks that should be encoded:
+
+Ask: **"Does this domain involve manual checks a human would run after Claude's work?"**
+
+Examples that warrant a companion verify skill:
+- Visual inspection (UI, reports, generated docs)
+- Running a service and checking behavior
+- Sampling output for correctness or plausibility
+- Checking logs, error output, or side effects
+
+If YES → invoke `Skill("verification-skill-authoring")` to create a companion `<domain>-verify` skill before installation.
+
+If NO (pure logic, already covered by CI, or the skill itself IS a verification skill) → skip and proceed.
+
 ### Phase 5: Installation
 
 The skill is written to `~/.claude/skills/<skill-name>/SKILL.md` directly — no symlinks needed for Claude Code.
