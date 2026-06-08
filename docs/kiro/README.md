@@ -35,7 +35,7 @@ Based on [cc-sdd](https://www.npmjs.com/package/cc-sdd) (`npx cc-sdd@latest`), a
 | `validate-adversarial` | Review | Three-pass adversarial review with +1/-2 scoring |
 | `debug` | Debugging | Systematic 6-step bug triage (wired into jira-solve for BUGs) |
 | `simplify` | Maintenance | Behavior-preserving code simplification (wired into spec-refactor) |
-| `ship` | Deployment | Launch readiness: verification + rollout planning (wired into verify) |
+| `ship` | Deployment | Launch readiness: Step 0 `/simplify` (diff cleanup), then verification + production validation + rollout planning |
 | `sync-docs` | Maintenance | Sync `.md` files with code changes |
 | `reflect` | Memory | Mine session learnings, update observations/patterns |
 | `housekeeping` | Memory | Prune memory, archive old observations |
@@ -135,3 +135,5 @@ Starting-point files for specs, steering docs, and memory files. Used by `spec-i
 ## Setup
 
 Installed via `npx cc-sdd@latest --claude-agent --lang en`, then path-remapped with `scripts/remap-ccsdd-paths.sh`. See `SDD-SETUP-GUIDE.md` Steps 3–4 for details.
+
+_Last synced: 2026-06-07_

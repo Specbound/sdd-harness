@@ -1,9 +1,33 @@
 #!/usr/bin/env python3
 """SDD Harness Dashboard — starts a local server and opens the dashboard in the browser.
 
-Usage:
-    python3 ~/.claude/sdd-harness/scripts/dashboard.py [--repo /path/to/repo] [--no-open]
-    python3 ~/.claude/sdd-harness/scripts/dashboard.py --static   # write file only, no server
+Quickstart (run from anywhere — harness root is resolved from the script path):
+    python3 ~/.claude/sdd-harness/scripts/dashboard.py
+
+Or from inside the harness repo:
+    cd ~/.claude/sdd-harness
+    python3 scripts/dashboard.py
+
+Multi-repo mode (default):
+    The dashboard reads ~/.claude/sdd-harness/projects.txt — one absolute repo path per line.
+    Every repo listed there gets its own Trust Battery, GitNexus, Workshop, Hooks, and Memory
+    tabs in the sidebar.  To add a repo, append its absolute path to projects.txt:
+
+        echo /path/to/your/repo >> ~/.claude/sdd-harness/projects.txt
+
+    Current repos (projects.txt):
+        /mnt/c/dev/aiq-zora-ai-engine
+        /home/dalesser/aiq-purina-salesorderintelligence-poc
+        /mnt/c/dev/aiq-zora-agent-skill-foundation
+
+Single-repo override:
+    python3 scripts/dashboard.py --repo /path/to/repo
+
+Options:
+    --repo PATH     Show only the given repo (overrides projects.txt)
+    --no-open       Start the server but don't launch a browser tab
+    --static        Write .dashboard/index.html without starting a server (CI/offline use)
+    --port PORT     HTTP port for the local server (default: auto-selected free port)
 """
 
 from __future__ import annotations

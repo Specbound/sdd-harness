@@ -180,6 +180,14 @@ echo "  Harness settings.json regenerated (paths resolved to $HARNESS_DIR)."
 
 echo "$(date +%Y-%m-%d)" > "$HARNESS_DIR/VERSION"
 
+# Self-register harness in projects.txt (idempotent) — same logic as install.sh.
+touch "$HARNESS_DIR/projects.txt"
+if ! grep -qF "$HARNESS_DIR" "$HARNESS_DIR/projects.txt" 2>/dev/null; then
+  { echo "$HARNESS_DIR"; cat "$HARNESS_DIR/projects.txt"; } > "$HARNESS_DIR/projects.txt.tmp" \
+    && mv "$HARNESS_DIR/projects.txt.tmp" "$HARNESS_DIR/projects.txt"
+  echo "  Harness self-registered in projects.txt (first entry)."
+fi
+
 # Ensure daily orchestrator is registered (idempotent, OS-aware).
 # Honors SDD_SKIP_ROUTINE=1 to opt out.
 if [ "${SDD_SKIP_ROUTINE:-0}" != "1" ]; then
@@ -206,6 +214,12 @@ echo ""
 echo "Refreshing Raindrop Workshop setup..."
 bash "$HARNESS_DIR/scripts/raindrop-setup.sh" || \
   echo "  WARNING: raindrop-setup.sh returned non-zero — re-run manually if needed."
+
+# Refresh headroom context compression wiring for all repos.
+echo ""
+echo "Refreshing headroom context compression setup..."
+bash "$HARNESS_DIR/scripts/headroom-setup.sh" || \
+  echo "  WARNING: headroom-setup.sh returned non-zero — re-run manually if needed."
 
 echo ""
 echo "All projects updated to harness version $(cat "$HARNESS_DIR/VERSION")."

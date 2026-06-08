@@ -82,11 +82,12 @@ Append-only session log. Each entry tagged with category.
 - 2026-03-29 [decision]: switched from REST to GraphQL for the dashboard endpoint — reduces frontend round-trips
 ```
 
-**Tags**: `spec`, `impl`, `design`, `debug`, `decision`, `friction`, `insight`, `pattern`, `enforceable`, `escaped`, `skill-update`, `auto-learn`
+**Tags**: `spec`, `impl`, `design`, `debug`, `decision`, `friction`, `insight`, `pattern`, `enforceable`, `escaped`, `skill-update`, `auto-learn`, `seed-target`
 
 - `enforceable` — Convention violation that could be prevented by a linter rule (feeds the evolve agent's graduation pipeline)
 - `escaped` — Bug that passed validation but was caught later in CI/production (highest priority for graduation)
 - `auto-learn` — Probationary fact written by the micro-reflect stop hook. Tagged `[auto-learn, YYYY-MM-DD]` in `hot-memory.md`. Housekeeping promotes to `patterns.md` after 7 days if reinforced, or removes it if not.
+- `seed-target` — Auto-written by `action-capture.sh` when a Bash command exits non-zero. Format: `[seed-target:<domain>]`. Maps the failure domain (e.g., `python-pro`, `git-advanced-workflows`) for the nightly `skill-augment-agent` Sleep phase — these entries become explicit seeding targets for skill improvement.
 
 ### action-items.md
 Cross-session TODOs with priority and dates.
@@ -200,4 +201,4 @@ Defined in `kiro/settings/rules/memory-conventions.md`:
 
 See `SDD-SETUP-GUIDE.md` Step 12 for full bootstrap instructions.
 
-_Last synced: 2026-06-02 — added `setup-knowledge.md` to architecture diagram and conventions; auto-written by `stop-hook.sh` + `setup-buffer-hook.sh`._
+_Last synced: 2026-06-07 — added `seed-target` observation tag (auto-written by `action-capture.sh` on Bash failure; consumed by nightly `skill-augment-agent`)._

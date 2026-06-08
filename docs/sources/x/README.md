@@ -81,6 +81,18 @@ When you paste content directly (e.g. a thread, an excerpt, a doc snippet), it g
 
 ---
 
+## Orchestrator/Executor Routing — Rubric-Based Model Tier Selection (Pasted article)
+**Added:** 2026-06-08
+**Source / Author:** Pasted text — "15 prompts that cut my Coding bill from $7,800 to $129" — AI workflow cost optimization article
+
+**What it's about:** Orchestrator/executor model split pattern: use reasoning-tier models (Opus) for planning, judgment calls, and quality review; use execution-tier models (cheap parallel agents) for batch work with clear output specs. Core insight: the routing decision reduces to one question — "can you write a rubric that a machine could grade?" If yes → execution tier. If no → reasoning tier. Article includes 15 prompt templates for the plan→rubric→execute→review→assemble workflow cycle.
+
+**What we added:**
+- Skill augmentation: `model-tiers` — added "The Rubric Test" section between Decision Heuristics and Practical Patterns: the semantic routing test (can you write a machine-gradable rubric?) with two worked examples showing where it catches what complexity-signal scoring misses.
+- Skill augmentation: `multi-agent-patterns` — added "Rubric-First Dispatch" subsection in Skill Routing Quality: 3-field rubric structure (pass/fail/failure-modes), handoff sequence diagram, and the TDD-red-first analogy for pre-commitment; paired with the existing post-condition coupling pattern.
+
+---
+
 ## Braintrust Topics — Continuous Trace Intelligence at Scale (Pasted article)
 **Added:** 2026-06-07
 **Source / Author:** Pasted text — Braintrust engineering blog post on their "Topics" trace intelligence pipeline
@@ -91,3 +103,14 @@ When you paste content directly (e.g. a thread, an excerpt, a doc snippet), it g
 - Skill: `active-observability` — full workflow for batch pattern discovery in Raindrop Workshop traces; 4-phase pipeline (collect → batch-facet → LLM-cluster summaries → report); adapted from Braintrust's 6-stage pipeline using LLM-as-judge clustering instead of ML deps
 - Hook: `raindrop-best-practices.sh` (PreToolUse `mcp__raindrop__`) — soft gate injecting 5 key patterns as context whenever any Raindrop MCP tool fires; registered in `~/.claude/settings.json` and `templates/settings.json.template`
 - Skill augmentation: `raindrop-eval-loop` — added Phase −1 "Pattern Discovery" block pointing to `active-observability` for use before writing eval assertions
+
+---
+
+## Dynamic Workflow Patterns — 6 Patterns and 14 Steps (Pasted article)
+**Added:** 2026-06-08
+**Source / Author:** Pasted text — "How to master Dynamic Workflows in Claude Code" — movez.substack.com, ~Jun 2026
+
+**What it's about:** Deep explainer on Claude Code's Dynamic Workflow feature (shipped May 28, 2026). Covers the mental model (Claude writing its own JS harness using `agent()`, `parallel()`, `pipeline()`), the 3 failure modes workflows fix (agentic laziness, self-preferential bias, goal drift), the 6 composable patterns (classify-and-act, fan-out-and-synthesize, adversarial verification, generate-and-filter, tournament, loop-until-done), pattern composition recipes for 9 real use cases (migrations, research, sorting, triage, evals, etc.), workflow controls (`/goal`, `/loop`, token budgets), quarantine pattern for prompt injection in untrusted input, and how to save/ship workflows as Skills.
+
+**What we added:**
+- Skill augmentation: `multi-agent-patterns` — added "Dynamic Workflow Patterns" major section covering: the 3 failure modes and which pattern fixes each; all 6 patterns with when-to-use rules and code examples; composition matrix (use case → pattern combination); workflow controls (`/goal`, `/loop`, token budgets); quarantine pattern (read-only reader agent for untrusted input); workflow-as-Skill packaging; and 8-item common-mistakes table. Also updated description frontmatter to include dynamic workflow triggers. Version bumped 1.3.0 → 1.4.0.

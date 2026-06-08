@@ -1,6 +1,6 @@
 ---
 name: multi-agent-patterns
-description: This skill should be used when the user asks to "design multi-agent system", "implement supervisor pattern", "create swarm architecture", "coordinate multiple agents", or mentions multi-agent patterns, context isolation, agent handoffs, sub-agents, or parallel agent execution.
+description: "Activate when designing multi-agent systems, implementing supervisor/swarm/hierarchical patterns, coordinating subagents, or choosing a workflow pattern (classify-and-act, fan-out-and-synthesize, adversarial verification, generate-and-filter, tournament, loop-until-done). Also activate when the user mentions ultracode, dynamic workflows, workflow patterns, or asks how to avoid agentic laziness / self-preferential bias / goal drift."
 ---
 
 # Multi-Agent Architecture Patterns
@@ -48,7 +48,210 @@ Task scope?
 
 **First-workflow confirmation:** The first time a Workflow fires in a session, Claude shows the planned execution and waits for user confirmation before spawning agents.
 
+**`parallel()` vs `pipeline()`:** `parallel()` is a barrier — fans out, waits for ALL results before returning. `pipeline()` is streaming — each item flows through every stage independently. Decision: *do I need all results before I can do anything next?* Yes → `parallel`. No → `pipeline` (cheaper, faster overall).
+
 **Token budget guidance:** Workflows consume substantially more tokens than typical sessions. The right strategy: start with a narrow scope (one subsystem, one file pattern), measure cost, then widen. Never start with "audit everything" — start with "audit the auth module."
+
+---
+
+## Dynamic Workflow Patterns
+
+Dynamic Workflows (shipped Claude Code May 28, 2026) let Claude write its own custom harness for a task — a JavaScript file using `agent()`, `parallel()`, `pipeline()` plus standard JS. Trigger by asking "make a workflow that…" or using the `ultracode` keyword. Interrupted workflows resume from where they left off.
+
+### The 3 Failure Modes Workflows Fix
+
+Reach for a workflow when your task shows any of these:
+
+| Failure mode | Symptom | Structural fix |
+|---|---|---|
+| **Agentic laziness** | Stops at partial progress, calls it done (reviewed 20 of 50 items, declares "handled") | Fan-out-and-synthesize — each item gets its own agent |
+| **Self-preferential bias** | Claude verifying its own output favors that output; can't be a fair judge of its own work | Adversarial verification — separate context, no shared history |
+| **Goal drift** | Original constraints quietly disappear after compaction; "don't do X" vanishes at turn 47 | Fan-out — each agent carries only its scoped goal, not the full accumulated history |
+
+If none of these apply → a regular Claude Code session is faster and cheaper.
+
+### The 6 Patterns
+
+#### 1. Classify-and-Act
+A classifier agent decides task type first, then the workflow routes to different agents or behaviors.
+
+**When to use:**
+- Heterogeneous task set — different sub-types need different treatment
+- Want to spend expensive model only where complexity demands it (cheap classifier → route to Opus only for hard cases)
+- Decomposition itself is non-trivial
+
+**Shape:** `classifier agent → route decision → specialist agent(s)`
+
+**Example:** Explain a module. Classifier reads codebase first, estimates complexity, routes to Sonnet (≤10 files) or Opus (>10 files).
+
+---
+
+#### 2. Fan-Out-and-Synthesize
+Split into many independent steps, run an agent per step in parallel, merge results into one answer.
+
+**When to use:**
+- Clearly enumerable list of work items (50 files, 200 endpoints, 100 reviews)
+- Each item is independent — no item needs another's output to begin
+- Want a single consolidated answer at the end
+
+```javascript
+// Fan out: one agent per file. parallel() = barrier.
+const reviews = await parallel(
+  files.map(file => () => agent(
+    `Review ${file} for security issues`,
+    { model: "haiku", schema: IssueList }
+  ))
+)
+
+// Synthesize: Opus merges everything after barrier completes.
+const report = await agent(
+  `Merge these reviews into one prioritized report:\n${JSON.stringify(reviews)}`,
+  { model: "opus" }
+)
+```
+
+---
+
+#### 3. Adversarial Verification
+For each worker agent, spawn a separate verifier that checks output against a rubric. The verifier has never seen the original work — it cannot favor it.
+
+**When to use:**
+- Claim-checking (each factual statement in a report gets its own verifier)
+- Code review (author agent writes the fix, reviewer agent reviews — never the same Claude)
+- Quality gates before shipping an artifact
+
+**Pairing rule:** The verifier must know only the rubric and the artifact — not who produced it. Any hint of authorship reintroduces self-preference.
+
+**Shape:** `worker → [artifact] → verifier(rubric) → [pass/fail + failure context]`
+
+---
+
+#### 4. Generate-and-Filter
+Generate N candidates, filter by rubric, dedupe, return only the highest-quality verified set.
+
+**When to use:**
+- Brainstorming (30 names → verifier kills clichés/conflicts → you see 3)
+- Hypothesis generation (5 approaches → score against constraints → winner has earned it)
+- Any problem where "the best answer" suffers from premature commitment
+
+**Key insight:** Asking for "the best answer" makes Claude commit early. Generate-and-filter commits late — after every option has been challenged.
+
+**Shape:** `generator(N candidates) → filter(rubric) → dedup → top-K`
+
+---
+
+#### 5. Tournament (Pairwise Comparison)
+Spawn N agents each attempting the same task differently, then judge results in pairwise fashion until one wins.
+
+**When to use:**
+- Sorting 1,000+ items where absolute scoring degrades
+- Taste-based ranking (design choices, naming, UI options, candidate selection)
+- Any domain where comparative judgment is more reliable than absolute scoring
+
+**Why pairwise beats sort-by-score:** Sorting 1,000 items in one prompt fails on quality and context. A tournament splits the bracket across fresh agents, each comparing just two items. The bracket lives in deterministic loop code — not in context.
+
+**Shape:** `N worker agents → pairwise comparison bracket → winner`
+
+---
+
+#### 6. Loop Until Done
+For tasks with unknown scope, loop spawning agents until a stop condition is met instead of running a fixed number of passes.
+
+**When to use:**
+- Flaky test debugging (reproduce → theories → test until one holds)
+- Bug hunting (keep finding bugs until a full pass returns zero)
+- Pattern mining (cluster → identify rules → until no new clusters appear)
+
+**Critical:** Pair with `/goal` to set a hard completion requirement. Without `/goal`, the workflow stops at the first soft completion point.
+
+**Shape:**
+```
+loop:
+  findings = agent(investigate_next_item)
+  if stop_condition(findings): break
+  accumulate(findings)
+```
+
+---
+
+### Pattern Composition Matrix
+
+Real workflows compose 2–4 patterns. Map failure mode → pattern combination:
+
+| Use case | Primary patterns | Notes |
+|---|---|---|
+| Migrations / refactors | Fan-out → adversarial verification → loop until done | Anthropic's Bun Zig→Rust rewrite used this shape |
+| Deep research | Fan-out (parallel searches) → adversarial verification (per claim) → synthesize | Each claim verified independently |
+| Deep verification of a draft | Classify (find all claims) → fan-out (one verifier per claim) → meta-verifier | Checks verifier source quality too |
+| Sorting 1,000+ items | Tournament | Pairwise comparison only — never absolute scoring |
+| Root-cause investigation | Fan-out (disjoint evidence sources) → loop until done (theories survive) | Each agent reads logs/files/data independently |
+| Triage at scale | Classify-and-act → generate-and-filter (dedupe) → loop | Pair with `/loop` for continuous triage |
+| Exploration / taste | Generate-and-filter → tournament with rubric | Design choices, naming, UI options |
+| Lightweight evals | Run candidate in worktree → comparison agents grade → refine + re-grade | Same as tournament but for grading, not ranking |
+
+**Selection heuristic:**
+- Goal drift? → fan-out
+- Self-preference? → adversarial verification
+- Open-ended / unknown scope? → loop until done
+- Hard to score? → tournament
+
+---
+
+### Workflow Controls
+
+**`/goal`** — sets a hard completion requirement. Without it, a workflow stops at the first soft completion. Use with loop patterns: "don't stop until one theory works."
+
+**`/loop`** — runs the entire workflow on a recurring schedule. Use for continuous triage, weekly research updates, recurring verification.
+
+**Token budget** — always specify explicitly: `"use 10k tokens"`. Without a cap, ambitious workflows balloon to 5–10× expected.
+
+```
+> ultracode quick adversarial review of this assumption:
+  "moving to Postgres eliminates our shard rebalancing."
+  Use 5k tokens. /goal don't stop until you have either
+  a counterexample or three independent confirmations.
+```
+
+---
+
+### Quarantine Pattern (Untrusted Input)
+
+Any workflow processing untrusted content — support tickets, bug reports, user feedback, scraped data — must assume prompt injection risk.
+
+**Rule:** Bar agents that read untrusted content from taking any high-privilege actions. Separate agents (with no exposure to raw content) do the acting.
+
+**Applies to:** user-submitted content, scraped web pages, third-party API output.
+
+**Cost:** ~30 lines for a read-only reader agent. Removes an entire class of prompt injection risk.
+
+```
+[untrusted input] → reader agent (read-only, no high-privilege tools)
+                         ↓ structured summary only
+                    actor agent (never sees raw input)
+```
+
+---
+
+### Saving Workflows as Skills
+
+1. When a workflow succeeds: press `s` in the workflow menu → saved to `~/.claude/workflows/`
+2. To ship as a Skill: bundle the JS file inside a Skill folder, reference it in `SKILL.md`
+3. **Template mode:** when packaging, tell Claude to treat the workflow as a template, not a verbatim script. This lets Claude adapt the shape to each task while preserving overall structure.
+
+---
+
+### Common Mistakes
+
+| Mistake | Fix |
+|---|---|
+| Reaching for a workflow when regular session would do | Ask: does this task suffer from laziness, self-preference, or drift? If no → don't use workflow |
+| No token budget | Always specify: `"use Xk tokens"` |
+| One agent does both work and verification | Split — self-preferential bias makes the verifier favor the worker |
+| Treating `parallel()` and `pipeline()` as interchangeable | `parallel` = barrier (wait all), `pipeline` = streaming (each item flows through) |
+| Skipping `/goal` on loop patterns | Workflow stops at first soft completion without it |
+| Untrusted content reaching the actor | Quarantine is not optional for user-submitted or scraped content |
+| Sorting with absolute scores | Use tournament (pairwise comparison) |
+| Never saving working workflows | Save with `s`, ship as a Skill |
 
 ---
 
@@ -385,6 +588,6 @@ Five agents is not 1× workload done five times. It is 5 cold context reloads, p
 ## Skill Metadata
 
 **Created**: 2025-12-20
-**Last Updated**: 2026-05-31
-**Author**: Agent Skills for Context Engineering Contributors; enhanced with arXiv:2605.18747, arXiv:2605.26112, claude.com/blog dynamic-workflows
-**Version**: 1.3.0
+**Last Updated**: 2026-06-08
+**Author**: Agent Skills for Context Engineering Contributors; enhanced with arXiv:2605.18747, arXiv:2605.26112, claude.com/blog dynamic-workflows, movez.substack.com dynamic-workflow-patterns article
+**Version**: 1.4.0

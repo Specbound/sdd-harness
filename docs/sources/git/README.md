@@ -157,3 +157,15 @@ GitHub repositories that were passed to `/skill-extraction` and turned into harn
 **What we added:**
 - Skill: `structured-web-dataset` — implements BigSet's pipeline natively in Claude Code (no Docker, no external APIs). Covers both Web mode (parallel Agent() fan-out per entity → verified rows from live sources) and Synthetic mode (schema + distribution rules → generated rows with controlled edge cases). Fills the gap between `deep-research` (prose reports) and raw data needs — output is always a typed, deduplicated table/CSV.
 - Docs: `docs/structured-web-dataset/README.md` — workflow diagram, design decisions, related skills.
+
+---
+
+## github.com/chopratejas/headroom
+**URL:** https://github.com/chopratejas/headroom | **Added:** 2026-06-08
+**Source / Author:** Tejas Chopra
+
+**What it's about:** Content-aware prompt compression layer for LLM agents and Claude Code. Compresses tool outputs, RAG chunks, file contents, and conversation history at the messages/prompt layer (60-95% token savings) using 6 algorithms: SmartCrusher (JSON), CodeCompressor (AST), Kompress-base (ML), log, search, and HTML extractors. Reversible Compression (CCR) stores originals locally; `headroom wrap claude` intercepts all context before it reaches the model with zero code changes. Distinct from RTK (shell output compression): headroom operates on the full prompt layer, not just Bash stdout.
+
+**What we added:**
+- Script: `headroom-setup.sh` — idempotent install script: installs `headroom-ai` globally (uv tool → pipx → pip --user, first that works) + per registered-repo virtualenv (mirrors raindrop-setup.sh pattern), adds `alias claude='headroom wrap claude'` to `~/.bashrc` so every new Claude Code session is automatically wrapped without any per-session decision.
+- Wired: `install.sh` `install_globals()` and `update.sh` tail both call `headroom-setup.sh` alongside `raindrop-setup.sh` — propagates to all machines on next install/update run.

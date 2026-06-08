@@ -171,5 +171,6 @@ Skills extracted and logged to `docs/sources/` by source type. See the relevant 
 ### From pasted text (`docs/sources/x/`)
 - `tdd-workflows-tdd-red` source-grounding augmentation + `tdd-workflow` RED phase principles + `setup-buffer-hook.sh` + `stop-hook.sh` setup capture — from Cognition Devin blog post on autonomous end-to-end testing (2026-06-02)
 - `rtk` tool install + `caveman` tool install with auto-lite SessionStart hook — from YouTube transcript on Claude Code token reduction strategies (2026-06-02)
+- `multi-agent-patterns` v1.4.0 enhancement — "Dynamic Workflow Patterns" section: 3 failure modes, 6 patterns (classify-and-act, fan-out-and-synthesize, adversarial verification, generate-and-filter, tournament, loop-until-done), composition matrix, `/goal`+`/loop` controls, quarantine pattern, workflow-as-Skill packaging, 8 common mistakes — from movez.substack.com dynamic-workflow article (2026-06-08)
 
-_Last synced: 2026-06-02 (YouTube transcript → rtk install, caveman auto-activation)_
+_Last synced: 2026-06-08 (movez.substack.com → multi-agent-patterns v1.4.0 Dynamic Workflow Patterns section)_

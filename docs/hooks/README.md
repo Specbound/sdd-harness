@@ -9,6 +9,7 @@ Hook output is injected into Claude's context as system messages — Claude read
 |---|---|
 | `SessionStart` | Once, before the first user message in each session |
 | `Stop` | Once, when Claude finishes responding (end of turn) |
+| `UserPromptSubmit` | Before each user prompt is submitted |
 | `PreToolUse` | Before a specific tool is invoked |
 | `PostToolUse` | After a specific tool returns |
 | `PostToolUseFailure` | After a specific tool returns an error |
@@ -99,6 +100,7 @@ Hook output is injected into Claude's context as system messages — Claude read
 **Output:** Anti-pattern warnings with severity; green check if clean. Fails silently if Impeccable is not installed — install with `npm install -g impeccable`.
 
 ---
+
 
 ### `action-capture.sh`
 **Event:** `PostToolUse` — **Matcher:** `Bash` — _(soft gate, never blocks)_
@@ -211,6 +213,7 @@ Hook output is injected into Claude's context as system messages — Claude read
 **Output:** GBrain protocol banner injected before the Agent tool executes.
 
 ---
+
 
 ### `gbrain-external-search.sh`
 **Event:** `PreToolUse` — **Matcher:** `WebFetch|WebSearch`
@@ -440,5 +443,5 @@ The `tool-failure-*` pair plus the `tool-failure-review` routine form the **tool
 3. Document it in this file (the `hook-added-notify.sh` hook will remind you if you forget).
 4. Update the Wiring Reference table above.
 
-_Last synced: 2026-06-02 — added `caveman-activate.js` (SessionStart — auto-activates caveman lite every session; user adjusts via /caveman full|ultra or disables with "normal mode"); added `rtk hook claude` to wiring reference (PreToolUse Bash — replaces ztk, 60–90% Bash output compression, global)._
+_Last synced: 2026-06-07 — added `frontend-security-nudge.sh` (UserPromptSubmit — security nudge for frontend/design build prompts, fires `secure-agent-design` skill reminder); added `raindrop-best-practices.sh` (PreToolUse mcp__raindrop__ — active observability patterns for Raindrop Workshop); updated wiring reference with both._
 

@@ -372,7 +372,7 @@ Each command delegates to one or more autonomous subagents. Agents receive a pro
 - **`harness-validate-agent`** — Checks structural integrity: command→agent references, template existence, memory caps, L0 headers, generates component index; Step 8 audits instruction architecture (entry file line count, constraint count, topic doc adoption, middle-placement check); Step 9 audits feature list primitive compliance (triple structure, WIP=1, pass-state gating)
 - **`gitnexus-setup-agent`** — Installs GitNexus, indexes the repo, configures MCP server and editor integration
 - **`jira-solve-agent`** — Analyzes ticket type and routes to the appropriate workflow
-- **`skill-augment-agent`** — After each daily-maintenance run, reviews session observations and judge drains, encodes up to 3 evidence-backed improvements into relevant `SKILL.md` files (append-only, ≤150 chars each). Logs changes as `[skill-update]` observations.
+- **`skill-augment-agent`** — After each daily-maintenance run (Step D), collects judge drains plus `[seed-target:]` observations auto-written by the action-capture hook during the Wake phase. Runs a Dreaming phase to generate synthetic worked examples for each skill gap. Encodes up to 3 evidence-backed improvements into relevant `SKILL.md` files (append-only, ≤150 chars each). Logs changes as `[skill-update]` observations.
 
 ---
 
@@ -470,6 +470,13 @@ Based on the methodology from ["Automating Skill Acquisition through Large-Scale
 | `session-clean-state` | walkinglabs.github.io/learn-harness-engineering | Five-dimension clean state, clock-in/clock-out protocols, PROGRESS.md/DECISIONS.md/QUALITY.md templates, entropy management |
 | `agent-harness-design` | arXiv:2605.26112 | 6-component framework (ℛℳ𝒞𝒮𝒪𝒢), temporal scaling tiers; Phase 4 adds Operational Diagnostics (Fresh Session Test, Controlled Ablation, Affordance Analysis, Rot Detection) |
 | `evaluation` (family) | Multiple sources | Router + 4 sub-skills: `micro` (per-run), `macro` (population patterns), `funnel` (A/B decisions), `long-trajectory` (stateful/long-horizon agents) |
+| `local-llm-eval` | Custom (OMT) | Zero-dependency CLI for testing prompts against local Ollama models; multi-model comparison keyed on prompt hash; temperature variance testing; fully offline |
+| `active-observability` | Braintrust/Clio | Batch-LLM facet pipeline for discovering unknown patterns in agent trace collections; clusters summaries via HDBSCAN; feeds Raindrop Workshop eval loop |
+| `ai-security-workflow` | Custom | 5-phase interactive security workflow (threat-model → vuln-scan → triage → patch → close); produces standardized artifacts; wired into `security-report-runner.sh` |
+| `secure-agent-design` | VentureBeat 2026 | Prompt injection mitigation, find/verify isolation, serial dedup, egress control for agents that process untrusted input or run in multi-agent pipelines |
+| `structured-web-dataset` | Custom | Build structured tabular datasets from NL descriptions via parallel research agents (web mode) or constraint-driven generation (synthetic mode); outputs rows/columns, not prose |
+| `verification-skill-authoring` | Custom | Turn manual domain checks into a reusable `<domain>-verify` skill; auto-invoked after skill creation (skill-extraction Phase 5d); encodes review checklists as Claude-executable steps |
+| `ai-native-org-patterns` | Custom | Organizational design patterns for AI-first teams: context engineering, async agent pipelines, skill-based modularity, evaluation loops, and human-in-the-loop governance |
 
 See [docs/skill-extraction/README.md](docs/skill-extraction/README.md) for the full extracted skills index.
 
@@ -663,6 +670,14 @@ Runs when a Claude Code session starts (SessionStart). Two modes: (1) if no loca
 
 Runs before every user prompt (UserPromptSubmit). Injects the contents of `hot-memory.md` into context so the agent always has current priorities, active specs, and recent decisions.
 
+### Frontend Security Nudge (`hooks/frontend-security-nudge.sh`)
+
+Runs before every user prompt (UserPromptSubmit). When the prompt contains build intent (build/create/implement/scaffold) combined with frontend or design keywords (React, Vue, Svelte, CSS, component, form, modal, etc.), injects a reminder to invoke the `secure-agent-design` skill before starting. Exits in <5ms on non-matching prompts — zero overhead for non-frontend work.
+
+### Raindrop Best Practices (`hooks/raindrop-best-practices.sh`)
+
+Fires before any Raindrop Workshop MCP tool call (`mcp__raindrop__` matcher). Injects five active-observability patterns: batch facets (multiple dimensions → one LLM call), facet-first summarization before clustering, 128K token cap on input, no-LLM nearest-summary classification, and long-tail sampling with HDBSCAN. Ensures trace analysis runs at a fraction of the naïve cost.
+
 ### Session Exit Hook (`hooks/stop-hook.sh`)
 
 Runs when a Claude Code session ends. Checks for:
@@ -800,7 +815,7 @@ Requires at least one project registered in `projects.txt` (added automatically 
 | 1 | ⚡ Trust Battery | Arc gauge + 30-day bar chart of daily trust deltas |
 | 2 | 🕸 GitNexus | Stats strip + embedded visual explorer (localhost:4567) |
 | 3 | 🪝 Hooks History | Hook name, event type, last activity, active/inactive badge |
-| 4 | 📅 Scheduled Tasks | OS-scheduler health card + per-routine schedule, last run, next expected, artifact diff, overdue alerts |
+| 4 | 📅 Scheduled Tasks | OS-scheduler health card + per-routine schedule, last run, next expected, artifact diff, overdue alerts. Includes the Daily Security Scan routine (`security-report-runner.sh`) which scans recent git changes for OWASP patterns, secrets, and injection sinks. |
 | 5 | 🧠 Memory Changes | Git feed of hot-memory, observations, and meta/patterns changes |
 | 6 | 🎯 Skill Changes | Rendered skill-curation-report with audit age |
 | 7 | 📊 Session Quality | Score/keep-rate/memory-gap summary + 30-day chart |
@@ -830,6 +845,9 @@ The Model Cost section reads session data from `~/.claude/projects/*/`. Pricing 
 | [Sonar Integration](docs/security/sonar-hotspot-review.md) | SonarQube security hotspot review |
 | [Design Quality](docs/design/README.md) | Visual design quality integrations index |
 | [Impeccable](docs/design/impeccable/impeccable.md) | Anti-pattern rules, skill usage, CLI setup for frontend design quality |
+| [Local LLM Eval](docs/local-llm-eval/README.md) | Offline prompt evaluation with Ollama via OMT — multi-model comparison, variance testing |
+| [Structured Web Dataset](docs/structured-web-dataset/README.md) | Building tabular datasets from NL descriptions — web research mode and synthetic mode |
+| [Hooks Reference](docs/hooks/README.md) | Complete hook documentation — event types, purpose, wiring reference |
 
 ---
 
@@ -872,3 +890,5 @@ The Model Cost section reads session data from `~/.claude/projects/*/`. Pricing 
 ## License
 
 Private repository. Contact the maintainer for access.
+
+_Last synced: 2026-06-07_

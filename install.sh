@@ -308,6 +308,27 @@ install_globals() {
     echo "  Re-run manually: bash $HARNESS_DIR/scripts/raindrop-setup.sh"
   fi
 
+  # --- Headroom context compression setup (idempotent) ---
+  echo ""
+  echo "Setting up headroom context compression..."
+  if bash "$HARNESS_DIR/scripts/headroom-setup.sh"; then
+    :
+  else
+    echo "  WARNING: headroom-setup.sh returned non-zero."
+    echo "  Re-run manually: bash $HARNESS_DIR/scripts/headroom-setup.sh"
+  fi
+
+  # --- Self-register harness in projects.txt (idempotent) ---
+  # Harness-specific runners (skill-curator, harness-health, macro-eval) guard
+  # themselves with a docs/scheduled-tasks check — they only run in the harness
+  # repo. Without this entry they exit 0 immediately in every non-harness project.
+  touch "$HARNESS_DIR/projects.txt"
+  if ! grep -qF "$HARNESS_DIR" "$HARNESS_DIR/projects.txt" 2>/dev/null; then
+    { echo "$HARNESS_DIR"; cat "$HARNESS_DIR/projects.txt"; } > "$HARNESS_DIR/projects.txt.tmp" \
+      && mv "$HARNESS_DIR/projects.txt.tmp" "$HARNESS_DIR/projects.txt"
+    echo "  Harness self-registered in projects.txt (first entry)."
+  fi
+
   # --- Auto-register daily orchestrator (idempotent, OS-aware) ---
   if [ "${SDD_SKIP_ROUTINE:-0}" != "1" ]; then
     case "$SDD_OS" in
