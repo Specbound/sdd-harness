@@ -4,12 +4,31 @@ Content passed directly as pasted text to `/skill-extraction` — not a URL, rep
 
 ---
 
-*No entries yet.*
+## @nityeshaga — Trust Battery Design
+**URL:** https://x.com/nityeshaga/status/2044864114682741134 | **Added:** 2026-04-21 | **Source:** @nityeshaga (X post)
 
-When you paste content directly (e.g. a thread, an excerpt, a doc snippet), it gets logged here with:
-- A short title describing the source
-- What the content covered
-- What was extracted and added to the harness
+**What it's about:** Design for a "trust battery" system inspired by Tobi Lütke's Shopify mental model. Core insight: separate the Judge (scores behavior, proposes nothing) from the Reflector (improves, reads Judge's drains) — if one agent both scores and improves, it optimizes for score not quality. The sharpest practical signal: every re-explained preference is a memory the agent should have saved but didn't.
+
+**What we added:**
+- Script: `scripts/detect_reexplanation.py` — Haiku detector scanning session user turns for drain signals (re-explanation, frustration) and charge signals (explicit approval). Runs at session end via stop-hook; appends at most one `[memory-gap]` and one `[session-charge]` per calendar day
+- Script: `scripts/trust_score.py` — score math: ±4.5%/day cap, [0,100] clamp, idempotent per calendar day, rewrites hot-memory.md scoreboard header
+- Agent: `agents/kiro/session-judge.md` — adversarial Haiku scorer; emits verdict JSON only, hard constraint: never proposes fixes
+- Command: `/kiro:daily-maintenance` — nightly orchestrator: Judge → Reflect → Housekeeping → Score → Alert
+- Rule: `kiro/settings/rules/session-quality-rubric.md` — charges (+1, max 5/day) and drains (-2, max 5/day) with evidence requirements. Trust Score is observability only — never gates harness behavior.
+- Hook enhancement: `hooks/claude/stop-hook.sh` — calls detector after each session
+- Docs: `docs/trust-battery/README.md`
+
+---
+
+## @sukh_saroy — Skill Augmentation from Session Learnings
+**URL:** https://x.com/sukh_saroy/status/2046177... | **Added:** 2026-05-06 | **Source:** @sukh_saroy (X post)
+
+**What it's about:** Pattern of automatically encoding session friction signals back into skill files — closing the loop between nightly judge verdicts and the skill library. Each drain maps to a skill domain; each drain should produce an anti-pattern note in the relevant SKILL.md.
+
+**What we added:**
+- Agent: `agents/kiro/skill-augment-agent.md` — reads judge verdict + today's observations, appends anti-patterns/learned patterns to up to 3 skills per run. Append-only, 150-char limit per addition, citation required. Domain mapping: memory-gap→memory-systems, silent-failure→error-handling-patterns, gate-bypass→verification-before-completion, rule-skip→systematic-debugging, stale-context→context-management
+- Command enhancement: `commands/kiro/daily-maintenance.md` — Step 6 added after score step
+- Routine: nightly CCR registered at 9:47 PM daily
 
 ---
 
@@ -81,18 +100,6 @@ When you paste content directly (e.g. a thread, an excerpt, a doc snippet), it g
 
 ---
 
-## Orchestrator/Executor Routing — Rubric-Based Model Tier Selection (Pasted article)
-**Added:** 2026-06-08
-**Source / Author:** Pasted text — "15 prompts that cut my Coding bill from $7,800 to $129" — AI workflow cost optimization article
-
-**What it's about:** Orchestrator/executor model split pattern: use reasoning-tier models (Opus) for planning, judgment calls, and quality review; use execution-tier models (cheap parallel agents) for batch work with clear output specs. Core insight: the routing decision reduces to one question — "can you write a rubric that a machine could grade?" If yes → execution tier. If no → reasoning tier. Article includes 15 prompt templates for the plan→rubric→execute→review→assemble workflow cycle.
-
-**What we added:**
-- Skill augmentation: `model-tiers` — added "The Rubric Test" section between Decision Heuristics and Practical Patterns: the semantic routing test (can you write a machine-gradable rubric?) with two worked examples showing where it catches what complexity-signal scoring misses.
-- Skill augmentation: `multi-agent-patterns` — added "Rubric-First Dispatch" subsection in Skill Routing Quality: 3-field rubric structure (pass/fail/failure-modes), handoff sequence diagram, and the TDD-red-first analogy for pre-commitment; paired with the existing post-condition coupling pattern.
-
----
-
 ## Braintrust Topics — Continuous Trace Intelligence at Scale (Pasted article)
 **Added:** 2026-06-07
 **Source / Author:** Pasted text — Braintrust engineering blog post on their "Topics" trace intelligence pipeline
@@ -103,6 +110,18 @@ When you paste content directly (e.g. a thread, an excerpt, a doc snippet), it g
 - Skill: `active-observability` — full workflow for batch pattern discovery in Raindrop Workshop traces; 4-phase pipeline (collect → batch-facet → LLM-cluster summaries → report); adapted from Braintrust's 6-stage pipeline using LLM-as-judge clustering instead of ML deps
 - Hook: `raindrop-best-practices.sh` (PreToolUse `mcp__raindrop__`) — soft gate injecting 5 key patterns as context whenever any Raindrop MCP tool fires; registered in `~/.claude/settings.json` and `templates/settings.json.template`
 - Skill augmentation: `raindrop-eval-loop` — added Phase −1 "Pattern Discovery" block pointing to `active-observability` for use before writing eval assertions
+
+---
+
+## Orchestrator/Executor Routing — Rubric-Based Model Tier Selection (Pasted article)
+**Added:** 2026-06-08
+**Source / Author:** Pasted text — "15 prompts that cut my Coding bill from $7,800 to $129" — AI workflow cost optimization article
+
+**What it's about:** Orchestrator/executor model split pattern: use reasoning-tier models (Opus) for planning, judgment calls, and quality review; use execution-tier models (cheap parallel agents) for batch work with clear output specs. Core insight: the routing decision reduces to one question — "can you write a rubric that a machine could grade?" If yes → execution tier. If no → reasoning tier. Article includes 15 prompt templates for the plan→rubric→execute→review→assemble workflow cycle.
+
+**What we added:**
+- Skill augmentation: `model-tiers` — added "The Rubric Test" section between Decision Heuristics and Practical Patterns: the semantic routing test (can you write a machine-gradable rubric?) with two worked examples showing where it catches what complexity-signal scoring misses.
+- Skill augmentation: `multi-agent-patterns` — added "Rubric-First Dispatch" subsection in Skill Routing Quality: 3-field rubric structure (pass/fail/failure-modes), handoff sequence diagram, and the TDD-red-first analogy for pre-commitment; paired with the existing post-condition coupling pattern.
 
 ---
 

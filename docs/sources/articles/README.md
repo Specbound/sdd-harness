@@ -4,6 +4,49 @@ Online articles, blog posts, and documentation pages that were passed to `/skill
 
 ---
 
+## Cursor: Continually Improving with AI Feedback Loops
+**URL:** https://cursor.com/blog/continually-improving | **Added:** 2026-05-07 | **Source:** Cursor Engineering Blog
+
+**What it's about:** How Cursor instruments its AI coding agent to continuously improve through behavioral governance — specifically, how memory contamination by case-specific facts (rather than reusable workflow patterns) is the #1 silent failure mode in long-running agents per the OpenAI cookbook. Covers compaction boundary timing, memory write discipline, and the distinction between investigation artifacts (ephemeral) and workflow patterns (persistent).
+
+**What we added:**
+- Hook: `hooks/claude/memory-discipline-hook.sh` (PreToolUse, gate on `*/memory/*.md` and `MEMORY.md` writes) — displays discipline rules before any memory write executes, enabling self-correction of violations (case-specific facts, pronouns, duplicated content)
+- Hook: `hooks/claude/compaction-discipline-hook.sh` (PreCompact) — injects boundary-timing principles before every compaction: compact at workflow phase boundaries, preserve artifact paths/decisions/open questions, merge not regenerate (regeneration compounds LLM sampling drift)
+- Skill: `agent-memory-discipline` — canonical reference for memory governance; 3-tier type system, body structure rules, what to save vs. skip
+- Skill enhancement: `context-compression` — new "Compaction Modes and Boundary Timing" section (3-mode taxonomy: routine, phase-boundary, crisis)
+
+---
+
+## Overloaded Context: Why Agent Memory Fails at Scale
+**URL:** https://www.dbreunig.com/2026/05/10/overloaded-context | **Added:** 2026-05-12 | **Source:** Drew Breunig (dbreunig.com)
+
+**What it's about:** Analysis of why agents reach for external search too eagerly — burning tokens and introducing latency — when the answer already exists in session memory or the memory-first lookup chain. Argues for a retrieval priority hierarchy: local memory → external search, not the reverse.
+
+**What we added:**
+- Design context for `hooks/claude/gbrain-external-search.sh` — the hook's memory-first lookup chain (search → get_observations → timeline before any WebFetch/WebSearch) directly implements this article's retrieval priority hierarchy. The article was the reasoning input for that hook's design alongside the garrytan/gbrain patterns.
+
+---
+
+## Claude Code `/goal` — Goal-Driven Autonomous Execution
+**URL:** https://code.claude.com/docs/en/goal | **Added:** 2026-05-14 | **Source:** Anthropic / Claude Code documentation
+
+**What it's about:** Documents the `/goal` primitive in Claude Code — a completion evaluator (Haiku) that runs after each turn, checks whether the stated goal has been met, and either continues autonomously or stops when done. Enables running any workflow without permission stops until a verifiable condition is met.
+
+**What we added:**
+- Skill: `goal-mode` — patterns for running any feature development workflow in autonomous mode (goal-driven, runs until completion) vs interactive mode (permission steps, debuggable). Fills gap in the existing 53 development workflow skills which had no goal-driven autonomous execution pattern.
+
+---
+
+## Continuous Evaluation for Skill Extraction Workflows
+**URL:** https://huggingface.co/blog/continuous_eval | **Added:** 2026-05-18 | **Source:** Hugging Face
+
+**What it's about:** Methodology for continuous evaluation of LLM-powered pipelines — specifically, the principle that deterministic enforcement patterns should be implemented as hooks (run every time, measurable) rather than as skills or prompts (advisory, easily skipped). Introduces 4 evaluation signals for identifying hook candidates.
+
+**What we added:**
+- Skill enhancement: `skill-extraction` — Phase 3 now has a mandatory "Hook Candidate Assessment" section that invokes the `hook-design` skill to evaluate each extracted capability against 4 signals before proposing integration type: (1) must run every time, (2) describes enforcement, (3) lifecycle-aware, (4) prompt would fail to enforce. If any signal is positive → Hook entry in the proposal.
+
+---
+
 ## How is Linear So Fast? A Technical Breakdown
 **URL:** https://performance.dev/how-is-linear-so-fast-a-technical-breakdown | **Added:** 2026-05-27
 

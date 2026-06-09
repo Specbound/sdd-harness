@@ -1,0 +1,29 @@
+#!/bin/bash
+# =============================================================================
+# SDD harness pre-commit guard — blocks commits that introduce hardcoded paths.
+# =============================================================================
+# Runs scripts/check-no-hardcoded-paths.sh so a machine/user-specific absolute
+# path can never be committed into harness source. Every path must be
+# self-located (scripts/lib/resolve-harness-dir.sh) or computed from $HARNESS_DIR.
+#
+# HARNESS-REPO ONLY. This hook is intentionally NOT propagated to downstream
+# projects by install.sh — a user's own project may legitimately reference
+# absolute paths. It guards the harness's own portability, nothing else.
+#
+# Install (from the harness repo):
+#   cp git-hooks/pre-commit .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit
+#
+# Bypass for one commit (discouraged): git commit --no-verify
+# =============================================================================
+set -u
+
+ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0
+GUARD="$ROOT/scripts/utils/check-no-hardcoded-paths.sh"
+[ -f "$GUARD" ] || exit 0   # guard absent (e.g. downstream repo) — do nothing
+
+if ! bash "$GUARD"; then
+  echo ""
+  echo "pre-commit: BLOCKED — hardcoded path(s) above must be made dynamic."
+  echo "            Bypass (discouraged): git commit --no-verify"
+  exit 1
+fi

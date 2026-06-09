@@ -27,6 +27,11 @@
 - `pytest -x --ignore=tests/integration`: after each impl task
 - doc sync: automatically on every `git commit` via post-commit hook
 
+## Serena (Python code intelligence — mandatory, not optional)
+- After editing any `.py` file: call `mcp__serena__get_diagnostics_for_file(path)` — real type/lint errors, not just ruff
+- Before renaming or deleting any Python function/class: call `mcp__serena__find_referencing_symbols(symbol)` to confirm blast radius
+- `initial_instructions` is excluded — Serena loads silently with zero session overhead
+
 ## Post-Task Convention
 After any coding task, end with:
 - **Files changed**: list every file touched

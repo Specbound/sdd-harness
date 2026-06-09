@@ -4,6 +4,126 @@ GitHub repositories that were passed to `/skill-extraction` and turned into harn
 
 ---
 
+## github.com/karpathy/autoresearch
+**URL:** https://github.com/karpathy/autoresearch | **Added:** 2026-03-30
+
+**What it is:** Andrej Karpathy's autonomous ML research agent that iterates on a training script overnight — reads a research brief (`program.md`), proposes one hypothesis per loop, edits `train.py`, runs a 5-minute wall-clock-bounded experiment, keeps improvements via git commit, reverts failures via `git checkout`, and loops.
+
+**What we added:**
+- Command: `/kiro:autoresearch-init` — interactive 8-question interview that generates all 3 required files (`program.md`, `train.py`, `prepare.py`) from a user description
+- Command: `/kiro:autoresearch [N]` — runs the autonomous experiment loop (N iterations or continuous)
+- Agents: `autoresearch-init-agent` (interview → file generation), `autoresearch-agent` (experiment loop executor)
+- Docs: `docs/autoresearch/README.md` — loop diagram, file roles, use cases, example `program.md`
+
+---
+
+## github.com/abhigyanpatwari/GitNexus
+**URL:** https://github.com/abhigyanpatwari/GitNexus | **Added:** 2026-04-16
+
+**What it is:** Zero-server code intelligence engine that builds a knowledge graph (symbols, dependencies, call chains, execution flows) from a codebase and exposes it via MCP tools.
+
+**What we added:**
+- Integration: PreToolUse hook (`hooks/claude/pre-tool-use-gitnexus.sh`) — automatically enriches every file read/edit with 360-degree symbol context (callers, deps, blast radius). Zero agent configuration needed.
+- Integration: Post-commit hook auto-reindex — `hooks/git/post-commit` re-indexes the repo after every commit so the knowledge graph stays fresh.
+- Integration wired into: `verify-agent` (Stage 0 risk detection), `spec-impl` (blast radius scan before TDD), `debug-agent` (Step 2 call chain tracing), `skill-extract-agent` (Leiden community cluster seeding)
+- Command: `/kiro:gitnexus-explore` — launches GitNexus Web UI (localhost:4747) for visual repo exploration
+- Docs: `docs/gitnexus/README.md`
+
+---
+
+## github.com/nidhinjs/prompt-master
+**URL:** https://github.com/nidhinjs/prompt-master | **Added:** 2026-05-06
+
+**What it is:** Active prompt factory with 30+ tool profiles, 14 templates, 38 anti-patterns, and native JSON-structured input support. Core insight: models guess when dimensions (tone, format, audience, length) are unspecified — JSON eliminates the guessing surface.
+
+**What we added:**
+- Skill: `prompt-master` v1.7.0 — JSON input detection, 9-dimension extraction framework, 30+ tool profiles across 11 categories, 14 templates, 38 anti-patterns (including 7 agentic credit-killers). Activates when ≥3 dimensions unspecified in a prose prompt.
+- Lazy-load references: `references/templates.md` + `references/patterns.md` (loaded on demand to avoid context bloat)
+- Docs: `docs/prompt-master/README.md` — JSON vs prose decision matrix, before/after gallery, key behaviors, tool profiles table
+
+---
+
+## github.com/openai/privacy-filter
+**URL:** https://github.com/openai/privacy-filter | **Added:** 2026-05-06
+
+**What it is:** OpenAI's Privacy Filter (OPF) — an 8-layer bidirectional transformer with sparse MoE FFN (128 experts, top-4) and Viterbi CRF decoder for character-level PII span extraction. 600MB model weights auto-download on first use.
+
+**What we added:**
+- Hook: `hooks/claude/scan-pii.sh` — pre-commit git hook that runs OPF on staged files; exits 2 (warn, don't block) when OPF is missing; exits 1 on high-severity PII detection
+- Docs: `docs/privacy-filter/README.md` — architecture diagram, graceful degradation pattern, output modes, Python API, performance tuning (`OPF_TORCH_COMPILE=1` for ~20% speedup), troubleshooting table. Links to: `secrets-management`, `gdpr-data-handling`, `security-sast`
+
+---
+
+## github.com/EveryInc/proof-sdk
+**URL:** https://github.com/EveryInc/proof-sdk | **Added:** 2026-05-06
+
+**What it is:** SDK for Proof — a collaborative markdown review tool that starts a local server, publishes a document to a live shareable URL, lets stakeholders comment and edit inline, and returns the finalized version. Designed for async multi-stakeholder review workflows.
+
+**What we added:**
+- Skill: `proof-collaborative-review` — SDD phase-gate integration: publishes spec/design/task-list artifacts to a live Proof document, waits for human review/adjustment, retrieves the final version, tears down the server. Used at spec phase transitions requiring stakeholder sign-off where "approve/reject" is insufficient.
+
+---
+
+## github.com/pbakaus/impeccable
+**URL:** https://github.com/pbakaus/impeccable | **Added:** 2026-05-07
+
+**What it is:** Design quality system for detecting AI-generated UI fingerprints and enforcing professional design standards via 27 deterministic rules across 7 domains.
+
+**What we added:**
+- Skill: `impeccable-audit` — 27 deterministic anti-pattern rules across typography, color/contrast, spatial design, motion, interaction, responsive, and UX writing. AI fingerprint detection flags 7 patterns that reliably mark AI-generated UIs: gradient text, glassmorphism, colored left borders, gradient backgrounds, nested cards, identical card grids, pure white backgrounds. Output: structured audit with PASS / NEEDS WORK / BLOCK verdict + file:line references.
+- Hook: `hooks/claude/impeccable-detect-hook.sh` — detects when a prompt targets frontend/UI work and injects a reminder to run `impeccable-audit` before shipping.
+
+---
+
+## github.com/codejunkie99/ztk
+**URL:** https://github.com/codejunkie99/ztk | **Added:** 2026-05-07
+
+**What it is:** Quality metrics toolkit for measuring code authorship and survival patterns in git repositories. The key insight extracted: measuring the survival rate of generated code (% of lines still in HEAD after N days) provides a lagging quality signal independent of test passage.
+
+**What we added:**
+- Skill: `keep-rate` — calculates % of Claude-authored lines (grep: `Co-Authored-By: Claude` or `noreply@anthropic`) still present in HEAD after 7+ days. Thresholds: >80% strong, 60–80% normal, 40–60% warning, <40% alert. Auto-appends kaizen observations below 50%. Recommended cadence: Monday/Thursday evenings via CCR routine.
+
+---
+
+## github.com/garrytan/gbrain
+**URL:** https://github.com/garrytan/gbrain | **Added:** 2026-05-12
+
+**What it is:** GBrain — a pattern library for agent harnesses covering model tier selection (haiku/sonnet/opus routing), compiled-truth memory structure (State zone rewrite-in-place, Evidence zone append-only), memory-first lookup chains, and background task routing. Key principle: protocols should fire at the moment they're needed, not be manually invoked.
+
+**What we added:**
+- Hook: `hooks/claude/gbrain-agent-spawn.sh` (PreToolUse `Agent`) — injects model-tier guidance (haiku=classification, sonnet=generation/subagents, opus=deep-reasoning-only) + background-routing pain signals before every Agent spawn
+- Hook: `hooks/claude/gbrain-memory-write.sh` (PreToolUse `save_observation`) — enforces compiled-truth two-zone structure (State at top rewrite-in-place, Evidence append-only at bottom) before every memory write
+- Hook: `hooks/claude/gbrain-external-search.sh` (PreToolUse `WebFetch|WebSearch`) — injects memory-first lookup reminder (search → get_observations → timeline) before reaching external APIs
+- Skill: `agent-memory-consolidation` — episodic-first architecture, 3 consolidation failure modes (misgrouping, interference, overfitting), audit checklist
+- Docs: `docs/gbrain-patterns/gbrain-patterns.md`
+
+---
+
+## github.com/yvgude/lean-ctx
+**URL:** https://github.com/yvgude/lean-ctx | **Added:** 2026-05-18
+
+**What it is:** Single Rust binary MCP server exposing 51 `ctx_*` tools for token-efficient file reads and code analysis. `ctx_read(path, "signatures")` returns only exported symbols instead of full file (~400 tokens vs 12,000 for a typical file). Re-reads of cached files cost ~13 tokens regardless of size.
+
+**What we added:**
+- Integration: lean-ctx MCP server registered in harness `settings.json` template; complements RTK (RTK handles Bash output, lean-ctx handles file reads and AST analysis)
+- Hook: `hooks/claude/lean-ctx-nudge-hook.sh` (UserPromptSubmit) — detects when a prompt involves file reading/analysis and suggests `ctx_read` modes over raw Read calls
+- Docs: `docs/context-management/lean-ctx/README.md` — 10 read modes, ctx_graph vs gitnexus decision table, ctx_shell warning (don't use — RTK handles it), installation guide
+
+---
+
+## github.com/raindrop-ai/workshop
+**URL:** https://github.com/raindrop-ai/workshop | **Added:** 2026-05-18
+
+**What it is:** Raindrop Workshop — agent trace capture, replay, and evaluation platform. Records full execution traces from Claude agents, enables replaying specific runs, and provides an MCP server for querying spans and payloads programmatically.
+
+**What we added:**
+- Skills: `raindrop-instrument-agent`, `raindrop-eval-loop`, `raindrop-agent-replay` — instrument agent, run eval loops, and replay captured runs
+- Dashboard: Raindrop Workshop tab added to `scripts/dashboard.py` (accessible at localhost port)
+- Per-repo tracing configured across all 3 registered projects
+- Docs: `docs/raindrop/README.md`
+
+---
+
 ## github.com/bendc/frontend-guidelines
 **URL:** https://github.com/bendc/frontend-guidelines | **Added:** 2026-05-27
 
@@ -169,3 +289,17 @@ GitHub repositories that were passed to `/skill-extraction` and turned into harn
 **What we added:**
 - Script: `headroom-setup.sh` — idempotent install script: installs `headroom-ai` globally (uv tool → pipx → pip --user, first that works) + per registered-repo virtualenv (mirrors raindrop-setup.sh pattern), adds `alias claude='headroom wrap claude'` to `~/.bashrc` so every new Claude Code session is automatically wrapped without any per-session decision.
 - Wired: `install.sh` `install_globals()` and `update.sh` tail both call `headroom-setup.sh` alongside `raindrop-setup.sh` — propagates to all machines on next install/update run.
+
+---
+
+## github.com/run-llama/liteparse
+**URL:** https://github.com/run-llama/liteparse | **Added:** 2026-06-08
+**Source / Author:** LlamaIndex (run-llama)
+
+**What it's about:** Local-first PDF/document parser built in Rust (Apache 2.0). Extracts text with bounding boxes via PDFium, runs OCR via bundled Tesseract or pluggable HTTP servers (EasyOCR, PaddleOCR), generates page screenshots for LLM vision workflows, and supports PDF natively plus DOCX/XLSX/PPTX via LibreOffice and images via ImageMagick. Python, Node.js, Rust, and WASM bindings ship with a `lit` CLI. Fills the gap between raw documents and RAG pipelines without any cloud dependency.
+
+**What we added:**
+- Skill: `document-parsing` — 6-phase workflow (install → format selection → CLI patterns → Python API → RAG handoff → cloud escalation decision). Fires before any RAG pipeline or document processing task; bridges raw documents into `rag-implementation`.
+- Hook: `doc-parse-nudge.sh` (UserPromptSubmit, global) — detects action verbs combined with document/RAG keywords and injects a reminder to invoke `document-parsing` before building. Registered in both `~/.claude/settings.json` and `templates/settings.harness.json.template`.
+- Wired: `install.sh` `install_globals()` and `update.sh` tail both include inline `pip install liteparse` (idempotent) — no separate setup script, propagates on next install/update run.
+- Docs: `docs/skills/document-parsing/README.md` — supported formats table, activation instructions, related skills.

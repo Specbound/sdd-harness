@@ -87,10 +87,10 @@ do_update() {
   sync_dir "$HARNESS_DIR/docs"          "$proj/.claude"
   mkdir -p "$proj/.claude/memory/sessions"
 
-  # --- Sync ALL hooks from canonical source ($HARNESS_DIR/hooks/) ---
-  # Every .sh in hooks/ is propagated unconditionally to every project.
+  # --- Sync ALL hooks from canonical source ($HARNESS_DIR/hooks/claude/) ---
+  # Every .sh in hooks/claude/ is propagated unconditionally to every project.
   # The harness is the source of truth; user-chosen wiring lives in settings.json.
-  for hook in "$HARNESS_DIR/hooks/"*.sh; do
+  for hook in "$HARNESS_DIR/hooks/claude/"*.sh; do
     [ -f "$hook" ] || continue
     name="$(basename "$hook")"
     if [ "$name" = "stop-hook.sh" ]; then
@@ -102,13 +102,13 @@ do_update() {
   done
 
   # --- chmod runtime scripts that need to be executable ---
-  for s in daily-runner.sh macro-eval-runner.sh skill-curator-runner.sh harness-health-runner.sh tool-failure-review-runner.sh; do
+  for s in orchestration/daily-runner.sh routines/macro-eval-runner.sh routines/skill-curator-runner.sh routines/harness-health-runner.sh routines/tool-failure-review-runner.sh; do
     [ -f "$proj/.claude/scripts/$s" ] && chmod +x "$proj/.claude/scripts/$s"
   done
-  [ -f "$proj/.claude/scripts/ollama_model_test.py" ] && chmod +x "$proj/.claude/scripts/ollama_model_test.py"
+  [ -f "$proj/.claude/scripts/utils/ollama_model_test.py" ] && chmod +x "$proj/.claude/scripts/utils/ollama_model_test.py"
   [ "$(uname)" = "Darwin" ] && xattr -cr "$proj/.claude/hooks/" 2>/dev/null || true
   if [ -d "$proj/.git" ]; then
-    cp "$HARNESS_DIR/git-hooks/post-commit" "$proj/.git/hooks/"
+    cp "$HARNESS_DIR/hooks/git/post-commit" "$proj/.git/hooks/"
     chmod +x "$proj/.git/hooks/post-commit"
   fi
   # --- Sync harness skills + global commands (runs once per update, not per project) ---
@@ -132,7 +132,7 @@ do_update() {
     export _SDD_GLOBAL_SYNCED=1
   fi
 
-  bash "$HARNESS_DIR/generate-project-stack.sh" "$proj"
+  bash "$HARNESS_DIR/scripts/setup/generate-project-stack.sh" "$proj"
   date -Iseconds > "$proj/.claude/.last-harness-check"
   echo "  Done."
 }
@@ -150,11 +150,11 @@ else
 fi
 
 # --- Sync harness's own .claude/ runtime from canonical sources ---
-# hooks/ and scripts/ are the canonical source of truth. The harness's runtime
+# hooks/claude/ and scripts/ are the canonical source of truth. The harness's runtime
 # copy under .claude/ is regenerated each update so its own hooks/scripts cannot
 # drift from the source. stop-hook.sh gets {{HARNESS_DIR}} substituted to an
 # absolute path because Claude Code's hook runner does not set CWD.
-for hook in "$HARNESS_DIR/hooks/"*.sh; do
+for hook in "$HARNESS_DIR/hooks/claude/"*.sh; do
   [ -f "$hook" ] || continue
   name="$(basename "$hook")"
   if [ "$name" = "stop-hook.sh" ]; then
@@ -164,11 +164,9 @@ for hook in "$HARNESS_DIR/hooks/"*.sh; do
   fi
   chmod +x "$HARNESS_DIR/.claude/hooks/$name"
 done
-# scripts/ is a flat directory sync — every script available in source is available at runtime.
+# scripts/ is a nested directory — sync preserves subdirectory structure.
 sync_dir "$HARNESS_DIR/scripts" "$HARNESS_DIR/.claude"
-for s in "$HARNESS_DIR/.claude/scripts/"*.sh; do
-  [ -f "$s" ] && chmod +x "$s"
-done
+find "$HARNESS_DIR/.claude/scripts" -name "*.sh" -exec chmod +x {} \;
 [ "$(uname)" = "Darwin" ] && xattr -cr "$HARNESS_DIR/.claude/" 2>/dev/null || true
 
 # Regenerate the harness's own settings.json from the template.
@@ -194,16 +192,16 @@ if [ "${SDD_SKIP_ROUTINE:-0}" != "1" ]; then
   case "$SDD_OS" in
     wsl|gitbash)
       if command -v schtasks.exe >/dev/null 2>&1; then
-        bash "$HARNESS_DIR/scripts/setup-global-orchestrator.sh" || \
+        bash "$HARNESS_DIR/scripts/orchestration/setup-global-orchestrator.sh" || \
           echo "  WARNING: scheduled-task bootstrap returned non-zero."
       fi
       ;;
     macos)
-      bash "$HARNESS_DIR/scripts/setup-mac-orchestrator.sh" || \
+      bash "$HARNESS_DIR/scripts/orchestration/setup-mac-orchestrator.sh" || \
         echo "  WARNING: launchd registration returned non-zero."
       ;;
     linux)
-      bash "$HARNESS_DIR/scripts/setup-linux-orchestrator.sh" || \
+      bash "$HARNESS_DIR/scripts/orchestration/setup-linux-orchestrator.sh" || \
         echo "  WARNING: crontab registration returned non-zero."
       ;;
   esac
@@ -212,14 +210,23 @@ fi
 # Refresh Raindrop Workshop wiring (env vars + venv installs) for all repos.
 echo ""
 echo "Refreshing Raindrop Workshop setup..."
-bash "$HARNESS_DIR/scripts/raindrop-setup.sh" || \
-  echo "  WARNING: raindrop-setup.sh returned non-zero — re-run manually if needed."
+bash "$HARNESS_DIR/scripts/setup/raindrop-setup.sh" || \
+  echo "  WARNING: setup/raindrop-setup.sh returned non-zero — re-run manually if needed."
 
 # Refresh headroom context compression wiring for all repos.
 echo ""
 echo "Refreshing headroom context compression setup..."
-bash "$HARNESS_DIR/scripts/headroom-setup.sh" || \
-  echo "  WARNING: headroom-setup.sh returned non-zero — re-run manually if needed."
+bash "$HARNESS_DIR/scripts/setup/headroom-setup.sh" || \
+  echo "  WARNING: setup/headroom-setup.sh returned non-zero — re-run manually if needed."
+
+# Refresh liteparse document parser install.
+echo ""
+echo "Refreshing liteparse install..."
+python3 -m pip show liteparse >/dev/null 2>&1 \
+  && echo "  liteparse already installed." \
+  || { python3 -m pip install --user liteparse 2>/dev/null \
+       && echo "  liteparse installed." \
+       || echo "  WARNING: liteparse install failed — run manually: pip install liteparse"; }
 
 echo ""
 echo "All projects updated to harness version $(cat "$HARNESS_DIR/VERSION")."

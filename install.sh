@@ -136,10 +136,10 @@ install_project() {
   mkdir -p "$PROJECT_DIR/specs"
 
   # --- chmod runtime scripts that need to be executable ---
-  for s in daily-runner.sh macro-eval-runner.sh skill-curator-runner.sh harness-health-runner.sh tool-failure-review-runner.sh; do
+  for s in orchestration/daily-runner.sh routines/macro-eval-runner.sh routines/skill-curator-runner.sh routines/harness-health-runner.sh routines/tool-failure-review-runner.sh; do
     [ -f "$PROJECT_DIR/.claude/scripts/$s" ] && chmod +x "$PROJECT_DIR/.claude/scripts/$s"
   done
-  [ -f "$PROJECT_DIR/.claude/scripts/ollama_model_test.py" ] && chmod +x "$PROJECT_DIR/.claude/scripts/ollama_model_test.py"
+  [ -f "$PROJECT_DIR/.claude/scripts/utils/ollama_model_test.py" ] && chmod +x "$PROJECT_DIR/.claude/scripts/utils/ollama_model_test.py"
 
   # --- Copy harness files ---
   sync_dir "$HARNESS_DIR/commands/kiro" "$PROJECT_DIR/.claude/commands"
@@ -151,10 +151,10 @@ install_project() {
   # glacier/ is empty in the harness source; create it explicitly after kiro sync
   mkdir -p "$PROJECT_DIR/.claude/kiro/settings/templates/memory/meta/glacier"
 
-  # --- Sync ALL hooks from canonical source ($HARNESS_DIR/hooks/) ---
-  # Every .sh in hooks/ is installed unconditionally — even hooks the user may not
+  # --- Sync ALL hooks from canonical source ($HARNESS_DIR/hooks/claude/) ---
+  # Every .sh in hooks/claude/ is installed unconditionally — even hooks the user may not
   # wire up immediately. The harness is the source of truth; mandatory propagation.
-  for hook in "$HARNESS_DIR/hooks/"*.sh; do
+  for hook in "$HARNESS_DIR/hooks/claude/"*.sh; do
     [ -f "$hook" ] || continue
     local name
     name="$(basename "$hook")"
@@ -168,12 +168,12 @@ install_project() {
 
   # --- chmod runtime scripts that need to be executable ---
   local s
-  for s in daily-runner.sh macro-eval-runner.sh skill-curator-runner.sh harness-health-runner.sh tool-failure-review-runner.sh; do
+  for s in orchestration/daily-runner.sh routines/macro-eval-runner.sh routines/skill-curator-runner.sh routines/harness-health-runner.sh routines/tool-failure-review-runner.sh; do
     [ -f "$PROJECT_DIR/.claude/scripts/$s" ] && chmod +x "$PROJECT_DIR/.claude/scripts/$s"
   done
 
   # --- Set up git post-commit hook ---
-  cp "$HARNESS_DIR/git-hooks/post-commit" "$PROJECT_DIR/.git/hooks/"
+  cp "$HARNESS_DIR/hooks/git/post-commit" "$PROJECT_DIR/.git/hooks/"
   chmod +x "$PROJECT_DIR/.git/hooks/post-commit"
   echo "  Git post-commit hook installed."
 
@@ -202,8 +202,8 @@ install_project() {
   fi
 
   # --- Generate project stack summary (used by agents to understand the codebase) ---
-  bash "$HARNESS_DIR/generate-project-stack.sh" "$PROJECT_DIR" || \
-    echo "  WARNING: generate-project-stack.sh returned non-zero — stack file may be missing."
+  bash "$HARNESS_DIR/scripts/setup/generate-project-stack.sh" "$PROJECT_DIR" || \
+    echo "  WARNING: scripts/setup/generate-project-stack.sh returned non-zero — stack file may be missing."
 
   # --- Record install timestamp ---
   date -Iseconds > "$PROJECT_DIR/.claude/.last-harness-check"
@@ -301,21 +301,32 @@ install_globals() {
   # --- Raindrop Workshop setup (idempotent) ---
   echo ""
   echo "Setting up Raindrop Workshop tracing..."
-  if bash "$HARNESS_DIR/scripts/raindrop-setup.sh"; then
+  if bash "$HARNESS_DIR/scripts/setup/raindrop-setup.sh"; then
     :
   else
-    echo "  WARNING: raindrop-setup.sh returned non-zero."
-    echo "  Re-run manually: bash $HARNESS_DIR/scripts/raindrop-setup.sh"
+    echo "  WARNING: setup/raindrop-setup.sh returned non-zero."
+    echo "  Re-run manually: bash $HARNESS_DIR/scripts/setup/raindrop-setup.sh"
   fi
 
   # --- Headroom context compression setup (idempotent) ---
   echo ""
   echo "Setting up headroom context compression..."
-  if bash "$HARNESS_DIR/scripts/headroom-setup.sh"; then
+  if bash "$HARNESS_DIR/scripts/setup/headroom-setup.sh"; then
     :
   else
-    echo "  WARNING: headroom-setup.sh returned non-zero."
-    echo "  Re-run manually: bash $HARNESS_DIR/scripts/headroom-setup.sh"
+    echo "  WARNING: setup/headroom-setup.sh returned non-zero."
+    echo "  Re-run manually: bash $HARNESS_DIR/scripts/setup/headroom-setup.sh"
+  fi
+
+  # --- LiteParse document parser (idempotent) ---
+  echo ""
+  echo "Installing liteparse document parser..."
+  if python3 -m pip show liteparse >/dev/null 2>&1; then
+    echo "  liteparse already installed."
+  else
+    python3 -m pip install --user liteparse 2>/dev/null \
+      && echo "  liteparse installed." \
+      || echo "  WARNING: could not install liteparse — install manually: pip install liteparse"
   fi
 
   # --- Self-register harness in projects.txt (idempotent) ---
@@ -334,16 +345,16 @@ install_globals() {
     case "$SDD_OS" in
       wsl|gitbash)
         if command -v schtasks.exe >/dev/null 2>&1; then
-          bash "$HARNESS_DIR/scripts/setup-global-orchestrator.sh" || \
+          bash "$HARNESS_DIR/scripts/orchestration/setup-global-orchestrator.sh" || \
             echo "  WARNING: scheduled-task bootstrap returned non-zero; daily orchestrator may not be registered."
         fi
         ;;
       macos)
-        bash "$HARNESS_DIR/scripts/setup-mac-orchestrator.sh" || \
+        bash "$HARNESS_DIR/scripts/orchestration/setup-mac-orchestrator.sh" || \
           echo "  WARNING: launchd registration returned non-zero; daily orchestrator may not be registered."
         ;;
       linux)
-        bash "$HARNESS_DIR/scripts/setup-linux-orchestrator.sh" || \
+        bash "$HARNESS_DIR/scripts/orchestration/setup-linux-orchestrator.sh" || \
           echo "  WARNING: crontab registration returned non-zero; daily orchestrator may not be registered."
         ;;
     esac
@@ -358,7 +369,7 @@ print_maintenance_reminder() {
     echo ""
     echo "  ┌─ Local Daily Maintenance ──────────────────────────────────────────────┐"
     echo "  │ Each repo's daily runner is installed at:                              │"
-    echo "  │   .claude/scripts/daily-runner.sh                                      │"
+    echo "  │   .claude/scripts/orchestration/daily-runner.sh                        │"
     echo "  │                                                                        │"
     echo "  │ It runs the daily-maintenance + session-quality + keep-rate pipeline.  │"
     echo "  │                                                                        │"
@@ -371,7 +382,7 @@ print_maintenance_reminder() {
     echo "  │   2. SessionStart hook — if >24h since last run, fires the runner in   │"
     echo "  │      the background when you open Claude in this repo.                 │"
     echo "  │                                                                        │"
-    echo "  │ Disable per-repo: rm .claude/scripts/daily-runner.sh                   │"
+    echo "  │ Disable per-repo: rm .claude/scripts/orchestration/daily-runner.sh     │"
     echo "  │ Disable globally (macOS): launchctl unload -w                          │"
     echo "  │   ~/Library/LaunchAgents/com.sdd.daily-orchestrator.plist              │"
     echo "  │ Disable globally (WSL): schtasks.exe /Delete /TN \"SDD Daily\"          │"

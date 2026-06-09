@@ -17,3 +17,10 @@ logs/
 .dashboard/
 __pycache__/
 *.pyc
+
+# Tool-generated files — runtime state, not source
+headroom_memory.db
+LEAN-CTX.md
+.superpowers/
+.last-drift-review
+.headroom/

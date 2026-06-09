@@ -104,7 +104,6 @@ This runs the full spec pipeline — requirements, design, and task breakdown �
 sdd-harness/
 ├── install.sh                    # Bootstrap a new project
 ├── update.sh                     # Sync harness to all registered projects
-├── generate-project-stack.sh     # Auto-detect project tech stack
 ├── VERSION                       # Last harness update date (auto-managed)
 ├── projects.txt                  # Registry of installed projects (gitignored)
 │
@@ -206,6 +205,7 @@ sdd-harness/
 │       └── memory/               #     Memory file templates (hot, observations, action-items, entities, patterns)
 │
 ├── scripts/                      # Utility scripts (Python, stdlib only)
+│   ├── generate-project-stack.sh #   Auto-detect project tech stack (language, runtime, deps, test commands)
 │   ├── jira_client.py            #   Jira REST API client (PAT + Basic Auth)
 │   ├── jira_capture_ticket.py    #   Capture active ticket from session context
 │   ├── jira_push_comment.py      #   Post implementation summary to Jira
@@ -215,15 +215,15 @@ sdd-harness/
 │   ├── dashboard.py              #   Local harness dashboard with Workshop tab
 │   └── raindrop-setup.sh         #   Auto-installs raindrop-ai in registered repo virtualenvs
 │
-├── hooks/                        # Session lifecycle hooks
-│   ├── session-start-hook.sh     #   On session start: check maintenance status (daily runner); also checks bi-weekly CLAUDE.md review cadence per repo
-│   ├── stop-hook.sh              #   On session exit: check for updates, memory health, re-explanation detection + micro-reflect, agent failure patterns; skips detector when SDD_HEADLESS=1
-│   ├── prompt-hook.sh            #   On prompt submit: inject hot-memory context
-│   ├── pre-tool-use-gitnexus.sh  #   On file read/edit: enrich with GitNexus symbol graph context (callers, deps, processes)
-│   └── scan-pii.sh               #   PII scanner: scan staged files or a path with OPF (exits 1 on secrets/account numbers)
-│
-├── git-hooks/                    # Git lifecycle hooks
-│   └── post-commit               #   On commit: doc sync + harness update detection
+├── hooks/                        # Claude Code and Git lifecycle hooks
+│   ├── claude/                   # Claude Code session hooks (synced to .claude/hooks/ on install/update)
+│   │   ├── session-start-hook.sh #     On session start: check maintenance status; checks bi-weekly CLAUDE.md review cadence
+│   │   ├── stop-hook.sh          #     On session exit: check updates, memory health, re-explanation detection, agent failure patterns
+│   │   ├── prompt-hook.sh        #     On prompt submit: inject hot-memory context
+│   │   ├── pre-tool-use-gitnexus.sh #  On file read/edit: enrich with GitNexus symbol graph context (callers, deps, processes)
+│   │   └── scan-pii.sh           #     PII scanner: scan staged files or a path with OPF (exits 1 on secrets/account numbers)
+│   └── git/                      # Git lifecycle hooks (copied to .git/hooks/ on install/update)
+│       └── post-commit           #     On commit: doc sync + harness update detection
 │
 ├── templates/                    # Project-level templates
 │   ├── CLAUDE.md.template        #   Project constitution (context paths, rules, quality gates)
@@ -420,7 +420,7 @@ Steering files are auto-generated docs that ground every conversation in your pr
 
 **Custom steering** adds domain-specific docs: `authentication.md`, `database.md`, `api-standards.md`, `testing.md`, `deployment.md`, `security.md`, `error-handling.md`.
 
-Additionally, `generate-project-stack.sh` auto-detects your language, runtime, package manager, dependencies, test commands, and Docker services — producing a `PROJECT_STACK.md` summary.
+Additionally, `scripts/generate-project-stack.sh` auto-detects your language, runtime, package manager, dependencies, test commands, and Docker services — producing a `PROJECT_STACK.md` summary.
 
 ---
 
@@ -662,23 +662,23 @@ Install once with Homebrew (`brew install rtk && rtk init -g`) and the global ho
 
 ## Automation & Hooks
 
-### Session Start Hook (`hooks/session-start-hook.sh`)
+### Session Start Hook (`hooks/claude/session-start-hook.sh`)
 
 Runs when a Claude Code session starts (SessionStart). Two modes: (1) if no local `daily-runner.sh` is installed — checks if today's `[judge]` sentinel is absent from `observations.md` and asks Claude to run `/kiro:daily-maintenance`; (2) if `daily-runner.sh` is installed and stale (>24h or never ran) — fires it in the background via `nohup` silently, without consuming session context. Also checks if the per-repo CLAUDE.md review is >2 weeks stale (`.claude/memory/.last-claudemd-review`) and asks Claude to run `/claudemd-review` if so.
 
-### Context Priming Hook (`hooks/prompt-hook.sh`)
+### Context Priming Hook (`hooks/claude/prompt-hook.sh`)
 
 Runs before every user prompt (UserPromptSubmit). Injects the contents of `hot-memory.md` into context so the agent always has current priorities, active specs, and recent decisions.
 
-### Frontend Security Nudge (`hooks/frontend-security-nudge.sh`)
+### Frontend Security Nudge (`hooks/claude/frontend-security-nudge.sh`)
 
 Runs before every user prompt (UserPromptSubmit). When the prompt contains build intent (build/create/implement/scaffold) combined with frontend or design keywords (React, Vue, Svelte, CSS, component, form, modal, etc.), injects a reminder to invoke the `secure-agent-design` skill before starting. Exits in <5ms on non-matching prompts — zero overhead for non-frontend work.
 
-### Raindrop Best Practices (`hooks/raindrop-best-practices.sh`)
+### Raindrop Best Practices (`hooks/claude/raindrop-best-practices.sh`)
 
 Fires before any Raindrop Workshop MCP tool call (`mcp__raindrop__` matcher). Injects five active-observability patterns: batch facets (multiple dimensions → one LLM call), facet-first summarization before clustering, 128K token cap on input, no-LLM nearest-summary classification, and long-tail sampling with HDBSCAN. Ensures trace analysis runs at a fraction of the naïve cost.
 
-### Session Exit Hook (`hooks/stop-hook.sh`)
+### Session Exit Hook (`hooks/claude/stop-hook.sh`)
 
 Runs when a Claude Code session ends. Checks for:
 - Harness updates available (prompts to run `update.sh`)
@@ -700,7 +700,7 @@ Control automation intensity via `SDD_PROFILE` environment variable:
 
 Set with: `export SDD_PROFILE=minimal` (defaults to `standard` if unset).
 
-### PII Scanner (`hooks/scan-pii.sh`)
+### PII Scanner (`hooks/claude/scan-pii.sh`)
 
 Runs OPF on a set of files and exits non-zero if high-severity PII is found. Designed for manual use or as a git pre-commit hook:
 
@@ -716,7 +716,7 @@ A `PreToolUse` hook in `~/.claude/settings.json` fires on every Bash tool call. 
 
 This is a global hook — it applies to every session and every project automatically. No per-project configuration needed.
 
-### Git Post-Commit Hook (`git-hooks/post-commit`)
+### Git Post-Commit Hook (`hooks/git/post-commit`)
 
 Runs after every commit. Triggers two background processes:
 1. **Doc Sync** — If non-`.md` files changed, finds and updates affected documentation
