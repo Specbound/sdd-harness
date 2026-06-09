@@ -1,7 +1,7 @@
 #!/bin/bash
 # Local daily maintenance runner — one repo's daily loop.
 # Designed to be invoked from this repo's working directory:
-#   cd <repo> && bash .claude/scripts/daily-runner.sh
+#   cd <repo> && bash .claude/scripts/orchestration/daily-runner.sh
 #
 # Idempotent: writes today's date to .claude/memory/.last-routine-run at START;
 # a second invocation on the same day exits in <1s.
@@ -14,7 +14,7 @@ REPO_NAME="$(basename "$REPO_DIR")"
 MEMORY_DIR=".claude/memory"
 STATE_FILE="$MEMORY_DIR/.last-routine-run"
 LOCK_DIR="$MEMORY_DIR/.runner.lock"
-PROMPT_TEMPLATE=".claude/scripts/daily-maintenance-prompt.md"
+PROMPT_TEMPLATE=".claude/scripts/routines/daily-maintenance-prompt.md"
 TIMESTAMP="$(date -Iseconds)"
 
 log() {

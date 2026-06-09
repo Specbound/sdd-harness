@@ -1,7 +1,7 @@
 #!/bin/bash
 # Tool-failure review runner — promotes recurring tool failures into memory.
 # Invoke from the repo's working directory:
-#   cd <repo> && bash .claude/scripts/tool-failure-review-runner.sh
+#   cd <repo> && bash .claude/scripts/routines/tool-failure-review-runner.sh
 #
 # Invoked once per day by the daily orchestrator (per repo). The MIN_GAP_DAYS
 # guard self-paces it to ~twice a week: it no-ops unless the last successful

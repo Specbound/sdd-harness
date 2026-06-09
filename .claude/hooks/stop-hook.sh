@@ -9,7 +9,7 @@ if [ "$SDD_PROFILE" = "minimal" ]; then
   exit 0
 fi
 
-HARNESS_DIR="/Users/dansasha/Documents/sdd-harness"
+HARNESS_DIR="/home/dalesser/.claude/sdd-harness"
 LAST_CHECK_FILE=".claude/.last-harness-check"
 
 # --- Harness update check ---

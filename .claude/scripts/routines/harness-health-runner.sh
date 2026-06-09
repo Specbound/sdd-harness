@@ -1,7 +1,7 @@
 #!/bin/bash
 # Local bi-weekly harness health runner — CLAUDE.md review across registered repos
 # plus iterative skill repair. Invoke from the harness repo's working directory:
-#   cd <harness-repo> && bash .claude/scripts/harness-health-runner.sh
+#   cd <harness-repo> && bash .claude/scripts/routines/harness-health-runner.sh
 #
 # Harness-only: exits 0 immediately in non-harness repos (checks for docs/scheduled-tasks/).
 # Cadence: MIN_GAP_DAYS=13 (~bi-weekly). Self-pacing via state file — no separate scheduler.
@@ -15,7 +15,7 @@ REPO_NAME="$(basename "$REPO_DIR")"
 MEMORY_DIR=".claude/memory"
 STATE_FILE="$MEMORY_DIR/.last-harness-health-run"
 LOCK_DIR="$MEMORY_DIR/.harness-health.lock"
-PROMPT_TEMPLATE=".claude/scripts/harness-health-prompt.md"
+PROMPT_TEMPLATE=".claude/scripts/routines/harness-health-prompt.md"
 MIN_GAP_DAYS="${HARNESS_HEALTH_GAP_DAYS:-13}"
 TIMESTAMP="$(date -Iseconds)"
 TODAY="$(date +%Y-%m-%d)"

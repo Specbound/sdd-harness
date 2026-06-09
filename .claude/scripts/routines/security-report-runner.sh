@@ -2,7 +2,7 @@
 # Daily security report runner — scans the repo for security issues and writes
 # a safety report to .claude/reports/security/<date>-security-report.md.
 # Invoke from the repo's working directory:
-#   cd <repo> && bash .claude/scripts/security-report-runner.sh
+#   cd <repo> && bash .claude/scripts/routines/security-report-runner.sh
 #
 # Invoked once per day by the daily orchestrator (per repo). MIN_GAP_DAYS=1 so
 # it runs at most once per day and no-ops between runs. Downtime-tolerant.
@@ -17,7 +17,7 @@ MEMORY_DIR=".claude/memory"
 REPORT_DIR=".claude/reports/security"
 STATE_FILE="$MEMORY_DIR/.last-security-report-run"
 LOCK_DIR="$MEMORY_DIR/.security-report.lock"
-PROMPT_TEMPLATE=".claude/scripts/security-report-prompt.md"
+PROMPT_TEMPLATE=".claude/scripts/routines/security-report-prompt.md"
 MIN_GAP_DAYS="${SECURITY_REPORT_GAP_DAYS:-1}"
 TIMESTAMP="$(date -Iseconds)"
 TODAY="$(date +%Y-%m-%d)"

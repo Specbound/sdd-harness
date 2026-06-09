@@ -2,7 +2,7 @@
 
 > This file is managed by the SDD harness (`sdd-harness/docs/`).
 > It is the single source of truth — do not edit copies in individual projects.
-> _Last synced: 2026-06-08
+> _Last synced: 2026-06-09
 
 A complete, self-contained guide to setting up the Spec-Driven Development (SDD)
 harness used in this project. Follow these steps to replicate the setup in any
@@ -336,7 +336,7 @@ The stop hook runs lightweight checks at the end of every Claude session:
 1. **Harness update check** — if the harness has new commits since last install, prints a nudge to run `update.sh`.
 2. **Memory health check** — if `.claude/memory/observations.md` has >50 entries, prints a nudge to run `/kiro:housekeeping`.
 3. **Agent failure pattern detection** — if `.claude/memory/trace.log` shows 3+ consecutive failures for the same agent, prints a nudge to run `/kiro:evolve` to investigate friction patterns.
-4. **Session signal detection** — runs `scripts/detect_reexplanation.py` against the session transcript (Haiku-based LLM). Drain signals append a `[memory-gap]` observation; charge signals (unambiguous approval) append a `[session-charge]` observation. Both at most once per calendar day. When drain signals are found, `scripts/micro_reflect.py` is immediately called to extract durable facts and append them to `hot-memory.md` as `[auto-learn, YYYY-MM-DD]` entries. These are probationary — housekeeping promotes them to `patterns.md` after 7 days if reinforced, or removes them. The detector is skipped when `SDD_HEADLESS=1` (set by `daily-runner.sh`) to prevent recursive spawning.
+4. **Session signal detection** — runs `scripts/session/detect_reexplanation.py` against the session transcript (Haiku-based LLM). Drain signals append a `[memory-gap]` observation; charge signals (unambiguous approval) append a `[session-charge]` observation. Both at most once per calendar day. When drain signals are found, `scripts/session/micro_reflect.py` is immediately called to extract durable facts and append them to `hot-memory.md` as `[auto-learn, YYYY-MM-DD]` entries. These are probationary — housekeeping promotes them to `patterns.md` after 7 days if reinforced, or removes them. The detector is skipped when `SDD_HEADLESS=1` (set by `daily-runner.sh`) to prevent recursive spawning.
 
 Doc sync and harness updates are **not** triggered here — they fire from the git post-commit hook (Step 8) instead.
 
@@ -576,11 +576,13 @@ Conventions are defined in `.claude/kiro/settings/rules/memory-conventions.md`:
 | SessionStart (maintenance check) | Every Claude session start | **macOS:** clears `com.apple.macl` xattrs from `.claude/hooks/` (Write/Edit tools set this attribute, blocking subprocess execution of edited hook files). Then two modes: (1) if no local `daily-runner.sh` is installed — checks if today's `[judge]` sentinel is absent from `observations.md` and asks Claude to run `/kiro:daily-maintenance`; (2) if `daily-runner.sh` is installed and stale (>24h or never ran) — fires it in the background via `nohup` silently, without consuming session context. Also checks if the per-repo CLAUDE.md review is >2 weeks stale (`.claude/memory/.last-claudemd-review`) and asks Claude to run `/claudemd-review` if so. |
 | Stop (memory health) | Every Claude session end | Nudges `/kiro:housekeeping` if observations >50; nudges `/kiro:evolve` if agent failure patterns detected |
 | Stop (session signal detector) | Every Claude session end | Runs `scripts/detect_reexplanation.py` (Haiku LLM); appends `[memory-gap]` observation for drain signals (re-explanation) and `[session-charge]` for charge signals (approval). Each written at most once per day. When drains are found, `scripts/micro_reflect.py` immediately writes `[auto-learn]` facts to `hot-memory.md`. Skipped when `SDD_HEADLESS=1`. |
+| PostToolUse (action-capture) | Every Bash git-commit, test run, deploy, or failed command | Prompts memory capture after high-signal Bash actions (git-commit, test failures, deploys, struggle); auto-writes `[seed-target:]` observation on non-zero exit. Script: `.claude/hooks/action-capture.sh`. |
+| UserPromptSubmit (doc-parse-nudge) | Every user prompt (keyword-gated) | Fires when prompt mentions document parsing or RAG pipeline building (PDF, DOCX, OCR, embed, ingest, vector store). Injects a reminder to invoke the `document-parsing` skill. Exits <5ms on non-matching prompts. Script: `hooks/claude/doc-parse-nudge.sh`. |
 | PostToolUse (revert detector) | Every git revert/reset/restore Bash call | Immediately appends `[revert]` drain observation to `observations.md` — gives trust-battery Judge concrete evidence. Script: `.claude/hooks/revert-detect-hook.sh`. |
 | PostToolUseFailure (tool-failure capture) | Every failing Bash/MCP tool call | Records the failure into a per-repo ledger `.claude/memory/tool-failures.jsonl`, keyed by a normalized command signature so the same failure shape clusters and its `count` climbs. Capture half of the tool-failure-memory loop. Script: `.claude/hooks/tool-failure-capture.sh`; see the `tool-failure-memory` skill. |
 | PreToolUse (tool-failure recall) | Every Bash/MCP tool call | Soft advisory (never blocks): if this command shape has failed ≥2× and is still open, injects the failure count, last error, and any recorded remedy so Claude reconsiders before repeating it. Once-per-session-per-signature dedupe + 45-day recency gate. Script: `.claude/hooks/tool-failure-recall.sh`. |
 | daily-orchestrator (tool-failure review) | Once per day per repo via the daily orchestrator (self-paces to ~2×/week via `MIN_GAP_DAYS=3`; no-ops unless a promotable ledger entry exists) | Runs `.claude/scripts/tool-failure-review-runner.sh`, which invokes `/kiro:tool-failure-review` headlessly: diagnoses recurring failures (`count ≥ 3`, open, unpromoted) and promotes the understood, reusable ones into memory files + `ERRORS.md`, then marks them resolved on the ledger. Review (promotion) half of the tool-failure-memory loop. Opt out with `SDD_SKIP_TOOL_FAILURE_REVIEW=1`. |
-| Windows Task Scheduler + SessionStart (daily maintenance) | Nightly at 18:00 local (Israel); SessionStart catch-up if >24h stale | Runs per-repo `daily-runner.sh` → `/kiro:daily-maintenance` — Judge → Reflect → Housekeeping → Trust Score → Augment Skills. Auto-registered by `install.sh` / `update.sh` (WSL + schtasks.exe). Opt out: `SDD_SKIP_ROUTINE=1` at install time; `schtasks.exe /Delete /TN "SDD Daily Orchestrator"` globally; `rm .claude/scripts/daily-runner.sh` per-repo. See `SDD-USAGE.md` → "Daily Maintenance". |
+| Windows Task Scheduler + SessionStart (daily maintenance) | Nightly at 18:00 local (Israel); SessionStart catch-up if >24h stale | Runs per-repo `daily-runner.sh` → `/kiro:daily-maintenance` — Judge → Reflect → Housekeeping → Trust Score → Augment Skills. Auto-registered by `install.sh` / `update.sh` (WSL + schtasks.exe). Opt out: `SDD_SKIP_ROUTINE=1` at install time; `schtasks.exe /Delete /TN "SDD Daily Orchestrator"` globally; `rm .claude/scripts/orchestration/daily-runner.sh` per-repo. See `SDD-USAGE.md` → "Daily Maintenance". |
 | UserPromptSubmit (frontend-security-nudge) | Every user prompt (keyword-gated) | Fires when prompt contains build intent (`build a`, `create a`, `implement a`, `scaffold`, etc.) AND a frontend/UI keyword (React, Vue, Svelte, CSS, component, form, modal, etc.). Injects a reminder to invoke `secure-agent-design` before writing the first file. Exits <5ms on non-matching prompts — zero overhead for non-frontend work. Script: `hooks/claude/frontend-security-nudge.sh`. |
 | PreToolUse (raindrop-best-practices) | Every `mcp__raindrop__` tool call | Injects five active-observability patterns before any Raindrop Workshop MCP call: batch facets (multiple dimensions → one LLM call), facet-first summarization before clustering, 128K token cap on input, no-LLM nearest-summary classification, and long-tail sampling with HDBSCAN. Reduces naïve trace analysis cost by ~80–90%. Script: `hooks/claude/raindrop-best-practices.sh`. |
 | PreToolUse (rtk) | Every Bash tool call by any agent | `rtk hook claude` rewrites matching commands to `rtk <cmd>`, compressing output before it reaches the LLM (60–90%+ token reduction). Emits `permissionDecision: "allow"` so rewrites are silent. Passes through commands without filters unchanged. Global — fires in all sessions and projects. |
@@ -589,7 +591,7 @@ Conventions are defined in `.claude/kiro/settings/rules/memory-conventions.md`:
 | PreToolUse (protected path) | Every Write/Edit to a sensitive path (`.env`, crypto keys, credentials, `.aws/`, `.ssh/`) | Injects a confirmation banner; Claude must pause and ask the user before proceeding. Prevents accidental overwrites of secrets files. Implemented in `.claude/hooks/protected-path-hook.sh`. |
 | PreToolUse (skill-validate) | Every Write to `~/.claude/skills/<name>/SKILL.md` | Validates skill frontmatter before writing: `name:` must be kebab-case and match the file path slug; `description:` must exist and be ≥25 chars; warns on vague description starters. Exit 2 hard-blocks on errors. Implemented in `.claude/hooks/skill-validate-hook.sh`. |
 | PreCompact (compaction-discipline) | Every context compaction | Injects boundary-timing principle and state-preservation checklist: compact at workflow phase boundaries (not arbitrary turn counts), preserve artifact paths, cited facts, open questions, and decisions. Use anchored iterative summarization. Implemented in `.claude/hooks/compaction-discipline-hook.sh`. |
-| PostToolUse (hook-added-notify) | Every Write/Edit that creates a new `.claude/hooks/*.sh` | Injects a reminder to document the new hook in `docs/hooks/README.md` (and the Wiring Reference table) before the session ends. Stays silent if the hook is already documented. Implemented in `.claude/hooks/hook-added-notify.sh`. |
+| PostToolUse (hook-added-notify) | Every Write/Edit that creates a new `.claude/hooks/claude/*.sh` | Injects a reminder to document the new hook in `docs/hooks/README.md` (and the Wiring Reference table) before the session ends. Stays silent if the hook is already documented. Implemented in `.claude/hooks/hook-added-notify.sh`. |
 | PostToolUse (lean-ctx nudge) | Every Read of a file ≥16 KB (~4,000 tokens) | Suggests the optimal `ctx_read` mode for the file type (`signatures` for code, `reference` for prose, `aggressive` for unknown); silent for small files and data formats (`.json/.yaml/.toml/.lock`). Implemented in `.claude/hooks/lean-ctx-nudge-hook.sh`. |
 | post-commit (doc sync) | Every `git commit` with non-`.md` source changes | Doc-sync: updates all `.md` files referencing changed code via `claude --dangerously-skip-permissions --print` (background) |
 | post-commit (harness updater) | Every `git commit` with `.claude/` changes (excl. memory) | Updates `SDD-SETUP-GUIDE.md` via `claude --dangerously-skip-permissions --print` (background) |
@@ -606,7 +608,7 @@ The harness includes an optional hook pair that automatically posts a Jira comme
    When you type `/kiro:jira-solve TICKET-ID`, the hook extracts the ticket ID and writes it to `~/.claude/state/active_jira_ticket`. This is a fire-and-forget async hook that never blocks Claude.
 
 2. **Post-push comment** (`PostToolUse Bash` hook — in `.claude/settings.json`):
-   After any `git push` command, the hook checks if a Jira session is active. If so, it calls `.claude/scripts/jira_push_comment.py`, which:
+   After any `git push` command, the hook checks if a Jira session is active. If so, it calls `.claude/scripts/integrations/jira/jira_push_comment.py`, which:
    - Reads `origin/main..HEAD` git log and diff stats
    - Finds the most recently modified `.md` in `docs/` mentioning the ticket
    - Assembles a Jira wiki-markup comment (branch, commits, approach, files changed)
@@ -616,9 +618,9 @@ The harness includes an optional hook pair that automatically posts a Jira comme
 
 | Script | Location | Purpose |
 |---|---|---|
-| `jira_client.py` | `.claude/scripts/jira_client.py` | Stdlib-only Jira REST API client (fetch/comment/search) |
-| `jira_capture_ticket.py` | `.claude/scripts/jira_capture_ticket.py` | Reads stdin JSON, extracts ticket ID from prompt, writes state file |
-| `jira_push_comment.py` | `.claude/scripts/jira_push_comment.py` | Builds and posts Jira comment from git context + docs |
+| `jira_client.py` | `.claude/scripts/integrations/jira/jira_client.py` | Stdlib-only Jira REST API client (fetch/comment/search) |
+| `jira_capture_ticket.py` | `.claude/scripts/integrations/jira/jira_capture_ticket.py` | Reads stdin JSON, extracts ticket ID from prompt, writes state file |
+| `jira_push_comment.py` | `.claude/scripts/integrations/jira/jira_push_comment.py` | Builds and posts Jira comment from git context + docs |
 
 ### Credentials
 
@@ -649,7 +651,7 @@ JIRA_API_TOKEN=your-api-token
         "hooks": [
           {
             "type": "command",
-            "command": "python3 /path/to/repo/.claude/scripts/jira_capture_ticket.py 2>/dev/null || true",
+            "command": "python3 /path/to/repo/.claude/scripts/integrations/jira/jira_capture_ticket.py 2>/dev/null || true",
             "async": true
           }
         ]
@@ -670,7 +672,7 @@ JIRA_API_TOKEN=your-api-token
         "hooks": [
           {
             "type": "command",
-            "command": "jq -r '.tool_input.command' | grep -q '^git push' && python3 /path/to/repo/.claude/scripts/jira_push_comment.py /path/to/repo 2>/dev/null || true"
+            "command": "jq -r '.tool_input.command' | grep -q '^git push' && python3 /path/to/repo/.claude/scripts/integrations/jira/jira_push_comment.py /path/to/repo 2>/dev/null || true"
           }
         ]
       }
@@ -867,7 +869,7 @@ Three integration layers:
 
 ### Setup (automatic after CLI install)
 
-`install.sh` and `update.sh` call `scripts/raindrop-setup.sh` automatically. That script:
+`install.sh` and `update.sh` call `scripts/setup/raindrop-setup.sh` automatically. That script:
 - Adds `RAINDROP_LOCAL_DEBUGGER=http://localhost:5899` to `~/.claude/settings.json` and `~/.bashrc` — **no repo `.env` files are touched**
 - Installs `raindrop-ai` in each registered repo's detected virtualenv (`.venv/`, `venv/`, or `uv`-managed)
 
@@ -977,7 +979,7 @@ Add to your project's `CLAUDE.md` Quality Gates section:
 
 ### Transferring to a new repo
 
-`install.sh` and `update.sh` propagate **every** hook in the harness's `hooks/` directory to each project's `.claude/hooks/` unconditionally — including `impeccable-detect-hook.sh` — and sync `kiro/settings/rules/frontend-anti-patterns.md` and `docs/` automatically. The skill lives at `~/.claude/skills/impeccable-audit/` (global, not per-project). No manual copy step is needed:
+`install.sh` and `update.sh` propagate **every** hook in the harness's `hooks/claude/` directory to each project's `.claude/hooks/` unconditionally — including `impeccable-detect-hook.sh` — and sync `kiro/settings/rules/frontend-anti-patterns.md` and `docs/` automatically. The skill lives at `~/.claude/skills/impeccable-audit/` (global, not per-project). No manual copy step is needed:
 
 ```bash
 ~/.claude/sdd-harness/update.sh        # re-syncs hooks + rules + docs to every registered repo

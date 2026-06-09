@@ -9,12 +9,12 @@ set -eu
 
 # Self-locate the harness root (no hardcoded paths — see scripts/lib/resolve-harness-dir.sh)
 __here="$(cd -P "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
-. "$__here/lib/resolve-harness-dir.sh"
+. "$__here/../lib/resolve-harness-dir.sh"
 
 LABEL="com.sdd.daily-orchestrator"
 PLIST_DIR="$HOME/Library/LaunchAgents"
 PLIST_PATH="$PLIST_DIR/$LABEL.plist"
-ORCHESTRATOR="$HARNESS_DIR/scripts/daily-orchestrator.sh"
+ORCHESTRATOR="$HARNESS_DIR/scripts/orchestration/daily-orchestrator.sh"
 LOG_DIR="$HARNESS_DIR/logs"
 
 FORCE=false

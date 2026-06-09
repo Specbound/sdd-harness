@@ -2,7 +2,7 @@
 # Local weekly skill-curator runner — runs the weekly skill quality audit,
 # description budget audit, and memory governance health check for the sdd-harness.
 # Invoke from the repo's working directory:
-#   cd <harness-repo> && bash .claude/scripts/skill-curator-runner.sh
+#   cd <harness-repo> && bash .claude/scripts/routines/skill-curator-runner.sh
 #
 # Harness-only: exits 0 immediately in non-harness repos (checks for docs/scheduled-tasks/).
 # Cadence: MIN_GAP_DAYS=7 (weekly). Self-pacing via state file — no separate scheduler.
@@ -16,7 +16,7 @@ REPO_NAME="$(basename "$REPO_DIR")"
 MEMORY_DIR=".claude/memory"
 STATE_FILE="$MEMORY_DIR/.last-skill-curator-run"
 LOCK_DIR="$MEMORY_DIR/.skill-curator.lock"
-PROMPT_TEMPLATE=".claude/scripts/skill-curator-prompt.md"
+PROMPT_TEMPLATE=".claude/scripts/routines/skill-curator-prompt.md"
 MIN_GAP_DAYS="${SKILL_CURATOR_GAP_DAYS:-7}"
 TIMESTAMP="$(date -Iseconds)"
 TODAY="$(date +%Y-%m-%d)"

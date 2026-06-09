@@ -1,7 +1,7 @@
 #!/bin/bash
 # Local macro-eval sweep runner — runs the ~twice-weekly Raindrop trace sweep
 # for the current repo. Invoke from the repo's working directory:
-#   cd <repo> && bash .claude/scripts/macro-eval-runner.sh
+#   cd <repo> && bash .claude/scripts/routines/macro-eval-runner.sh
 #
 # Invoked once per day by the daily orchestrator (per repo). The MIN_GAP_DAYS
 # guard self-paces it to roughly twice a week: it no-ops unless the last
@@ -18,7 +18,7 @@ MEMORY_DIR=".claude/memory"
 REPORT_DIR=".claude/reports/macro-evals"
 STATE_FILE="$MEMORY_DIR/.last-macro-eval-run"
 LOCK_DIR="$MEMORY_DIR/.macro-eval.lock"
-PROMPT_TEMPLATE=".claude/scripts/macro-eval-prompt.md"
+PROMPT_TEMPLATE=".claude/scripts/routines/macro-eval-prompt.md"
 MIN_GAP_DAYS="${MACRO_EVAL_GAP_DAYS:-3}"
 TIMESTAMP="$(date -Iseconds)"
 TODAY="$(date +%Y-%m-%d)"

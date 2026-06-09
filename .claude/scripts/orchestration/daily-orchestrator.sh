@@ -1,7 +1,7 @@
 #!/bin/bash
 # Global daily maintenance orchestrator.
 # Reads ~/.claude/sdd-harness/projects.txt and dispatches each repo's
-# .claude/scripts/daily-runner.sh. Per-repo failures are isolated and logged;
+# .claude/scripts/orchestration/daily-runner.sh. Per-repo failures are isolated and logged;
 # the loop never aborts midway.
 #
 # Usage:
@@ -13,7 +13,7 @@ set -u
 
 # Self-locate the harness root (no hardcoded paths — see scripts/lib/resolve-harness-dir.sh)
 __here="$(cd -P "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
-. "$__here/lib/resolve-harness-dir.sh"
+. "$__here/../lib/resolve-harness-dir.sh"
 PROJECTS_FILE="$HARNESS_DIR/projects.txt"
 LOG_FILE="$HARNESS_DIR/logs/orchestrator.log"
 mkdir -p "$(dirname "$LOG_FILE")"
@@ -57,7 +57,7 @@ run_one() {
   fi
 
   local start=$(date +%s)
-  (cd "$repo" && bash .claude/scripts/daily-runner.sh) > /dev/null 2>&1
+  (cd "$repo" && bash .claude/scripts/orchestration/daily-runner.sh) > /dev/null 2>&1
   local exit_code=$?
   local duration=$(($(date +%s) - start))
 
@@ -67,27 +67,27 @@ run_one() {
   # so calling it daily is cheap (it no-ops between runs). Failure-isolated; the
   # sweep's own Step-0 preflight handles an unreachable Raindrop MCP. Opt out with
   # SDD_SKIP_MACRO_EVAL=1.
-  if [ "${SDD_SKIP_MACRO_EVAL:-0}" != "1" ] && [ -f "$repo/.claude/scripts/macro-eval-runner.sh" ]; then
+  if [ "${SDD_SKIP_MACRO_EVAL:-0}" != "1" ] && [ -f "$repo/.claude/scripts/routines/macro-eval-runner.sh" ]; then
     local me_start=$(date +%s)
-    (cd "$repo" && bash .claude/scripts/macro-eval-runner.sh) > /dev/null 2>&1
+    (cd "$repo" && bash .claude/scripts/routines/macro-eval-runner.sh) > /dev/null 2>&1
     local me_exit=$?
     echo "$ts $repo macro-eval exit=$me_exit duration=$(($(date +%s) - me_start))s" >> "$LOG_FILE"
   fi
 
   # Skill-curator sweep — self-paces to weekly (MIN_GAP_DAYS=7). Harness-only;
   # non-harness repos exit 0 immediately. Opt out with SDD_SKIP_SKILL_CURATOR=1.
-  if [ "${SDD_SKIP_SKILL_CURATOR:-0}" != "1" ] && [ -f "$repo/.claude/scripts/skill-curator-runner.sh" ]; then
+  if [ "${SDD_SKIP_SKILL_CURATOR:-0}" != "1" ] && [ -f "$repo/.claude/scripts/routines/skill-curator-runner.sh" ]; then
     local sc_start=$(date +%s)
-    (cd "$repo" && bash .claude/scripts/skill-curator-runner.sh) > /dev/null 2>&1
+    (cd "$repo" && bash .claude/scripts/routines/skill-curator-runner.sh) > /dev/null 2>&1
     local sc_exit=$?
     echo "$ts $repo skill-curator exit=$sc_exit duration=$(($(date +%s) - sc_start))s" >> "$LOG_FILE"
   fi
 
   # Harness-health sweep — self-paces to bi-weekly (MIN_GAP_DAYS=13). Harness-only;
   # non-harness repos exit 0 immediately. Opt out with SDD_SKIP_HARNESS_HEALTH=1.
-  if [ "${SDD_SKIP_HARNESS_HEALTH:-0}" != "1" ] && [ -f "$repo/.claude/scripts/harness-health-runner.sh" ]; then
+  if [ "${SDD_SKIP_HARNESS_HEALTH:-0}" != "1" ] && [ -f "$repo/.claude/scripts/routines/harness-health-runner.sh" ]; then
     local hh_start=$(date +%s)
-    (cd "$repo" && bash .claude/scripts/harness-health-runner.sh) > /dev/null 2>&1
+    (cd "$repo" && bash .claude/scripts/routines/harness-health-runner.sh) > /dev/null 2>&1
     local hh_exit=$?
     echo "$ts $repo harness-health exit=$hh_exit duration=$(($(date +%s) - hh_start))s" >> "$LOG_FILE"
   fi
@@ -96,9 +96,9 @@ run_one() {
   # system learns from its mistakes. Self-paces to ~twice a week (MIN_GAP_DAYS=3)
   # and no-ops unless the ledger has a promotable entry, so calling it daily is
   # cheap. Applies to every repo. Opt out with SDD_SKIP_TOOL_FAILURE_REVIEW=1.
-  if [ "${SDD_SKIP_TOOL_FAILURE_REVIEW:-0}" != "1" ] && [ -f "$repo/.claude/scripts/tool-failure-review-runner.sh" ]; then
+  if [ "${SDD_SKIP_TOOL_FAILURE_REVIEW:-0}" != "1" ] && [ -f "$repo/.claude/scripts/routines/tool-failure-review-runner.sh" ]; then
     local tf_start=$(date +%s)
-    (cd "$repo" && bash .claude/scripts/tool-failure-review-runner.sh) > /dev/null 2>&1
+    (cd "$repo" && bash .claude/scripts/routines/tool-failure-review-runner.sh) > /dev/null 2>&1
     local tf_exit=$?
     echo "$ts $repo tool-failure-review exit=$tf_exit duration=$(($(date +%s) - tf_start))s" >> "$LOG_FILE"
   fi
@@ -107,9 +107,9 @@ run_one() {
   # safety report to .claude/reports/security/<date>-security-report.md. Self-paces
   # to daily (MIN_GAP_DAYS=1). Applies to every repo.
   # Opt out with SDD_SKIP_SECURITY_REPORT=1.
-  if [ "${SDD_SKIP_SECURITY_REPORT:-0}" != "1" ] && [ -f "$repo/.claude/scripts/security-report-runner.sh" ]; then
+  if [ "${SDD_SKIP_SECURITY_REPORT:-0}" != "1" ] && [ -f "$repo/.claude/scripts/routines/security-report-runner.sh" ]; then
     local sr_start=$(date +%s)
-    (cd "$repo" && bash .claude/scripts/security-report-runner.sh) > /dev/null 2>&1
+    (cd "$repo" && bash .claude/scripts/routines/security-report-runner.sh) > /dev/null 2>&1
     local sr_exit=$?
     echo "$ts $repo security-report exit=$sr_exit duration=$(($(date +%s) - sr_start))s" >> "$LOG_FILE"
   fi

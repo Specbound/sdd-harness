@@ -13,11 +13,11 @@ set -eu
 
 # Self-locate the harness root (no hardcoded paths — see scripts/lib/resolve-harness-dir.sh)
 __here="$(cd -P "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
-. "$__here/lib/resolve-harness-dir.sh"
+. "$__here/../lib/resolve-harness-dir.sh"
 
 TASK_NAME="SDD Daily Orchestrator"
 WSL_DISTRO="${WSL_DISTRO_NAME:-Ubuntu}"
-ORCHESTRATOR="$HARNESS_DIR/scripts/daily-orchestrator.sh"
+ORCHESTRATOR="$HARNESS_DIR/scripts/orchestration/daily-orchestrator.sh"
 XML_PATH="/tmp/sdd-orchestrator-task.xml"
 
 FORCE=false

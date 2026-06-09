@@ -136,4 +136,4 @@ Starting-point files for specs, steering docs, and memory files. Used by `spec-i
 
 Installed via `npx cc-sdd@latest --claude-agent --lang en`, then path-remapped with `scripts/remap-ccsdd-paths.sh`. See `SDD-SETUP-GUIDE.md` Steps 3–4 for details.
 
-_Last synced: 2026-06-07_
+_Last synced: 2026-06-09_

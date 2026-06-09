@@ -205,21 +205,42 @@ sdd-harness/
 │       └── memory/               #     Memory file templates (hot, observations, action-items, entities, patterns)
 │
 ├── scripts/                      # Utility scripts (Python, stdlib only)
-│   ├── generate-project-stack.sh #   Auto-detect project tech stack (language, runtime, deps, test commands)
-│   ├── jira_client.py            #   Jira REST API client (PAT + Basic Auth)
-│   ├── jira_capture_ticket.py    #   Capture active ticket from session context
-│   ├── jira_push_comment.py      #   Post implementation summary to Jira
-│   ├── micro_reflect.py          #   Called by stop hook on drain signals; extracts durable facts → [auto-learn] entries in hot-memory.md
-│   ├── detect_reexplanation.py   #   Haiku-based session signal detector (drain/charge classification)
-│   ├── trust_score.py            #   Applies Judge score delta to hot-memory.md trust score line
-│   ├── dashboard.py              #   Local harness dashboard with Workshop tab
-│   └── raindrop-setup.sh         #   Auto-installs raindrop-ai in registered repo virtualenvs
+│   ├── integrations/jira/        #   Jira REST API integration
+│   │   ├── jira_client.py        #     Jira REST API client (PAT + Basic Auth)
+│   │   ├── jira_capture_ticket.py#     Capture active ticket from session context
+│   │   └── jira_push_comment.py  #     Post implementation summary to Jira
+│   ├── orchestration/            #   Daily maintenance scheduling
+│   │   ├── daily-orchestrator.sh #     Global orchestrator (all repos)
+│   │   ├── daily-runner.sh       #     Per-repo daily maintenance loop (idempotent, race-safe)
+│   │   └── setup-*-orchestrator.sh #   OS scheduler registration (global/linux/mac)
+│   ├── routines/                 #   Scheduled routine prompts + runners
+│   │   ├── daily-maintenance-prompt.md
+│   │   ├── macro-eval-runner.sh
+│   │   ├── skill-curator-runner.sh
+│   │   ├── harness-health-runner.sh
+│   │   ├── tool-failure-review-runner.sh
+│   │   └── security-report-runner.sh
+│   ├── session/                  #   Session signal processing
+│   │   ├── detect_reexplanation.py #   Haiku-based drain/charge classifier
+│   │   ├── micro_reflect.py        #   Extracts durable facts → [auto-learn] in hot-memory.md
+│   │   └── trust_score.py          #   Applies Judge score delta to hot-memory.md
+│   ├── setup/                    #   One-time project setup helpers
+│   │   ├── generate-project-stack.sh # Auto-detect tech stack
+│   │   ├── headroom-setup.sh         # Install headroom memory proxy
+│   │   └── raindrop-setup.sh         # Auto-installs raindrop-ai in virtualenvs
+│   └── utils/                    #   Standalone utilities
+│       ├── dashboard.py          #     Local harness dashboard (13 sections, Workshop + Headroom tabs)
+│       ├── ollama_model_test.py  #     Zero-dependency Ollama model test runner
+│       ├── sync-memories-to-headroom.py # Bidirectional harness memory ↔ headroom sync
+│       └── check-no-hardcoded-paths.sh  # Verify no hardcoded paths in hook files
 │
 ├── hooks/                        # Claude Code and Git lifecycle hooks
 │   ├── claude/                   # Claude Code session hooks (synced to .claude/hooks/ on install/update)
-│   │   ├── session-start-hook.sh #     On session start: check maintenance status; checks bi-weekly CLAUDE.md review cadence
+│   │   ├── session-start-hook.sh #     On session start: maintenance check, CLAUDE.md review, headroom sync (background)
 │   │   ├── stop-hook.sh          #     On session exit: check updates, memory health, re-explanation detection, agent failure patterns
 │   │   ├── prompt-hook.sh        #     On prompt submit: inject hot-memory context
+│   │   ├── action-capture.sh     #     PostToolUse(Bash): prompts memory capture after git-commit, test-failure, deploy, or struggle
+│   │   ├── doc-parse-nudge.sh    #     UserPromptSubmit: nudges document-parsing skill on PDF/RAG/OCR prompts
 │   │   ├── pre-tool-use-gitnexus.sh #  On file read/edit: enrich with GitNexus symbol graph context (callers, deps, processes)
 │   │   └── scan-pii.sh           #     PII scanner: scan staged files or a path with OPF (exits 1 on secrets/account numbers)
 │   └── git/                      # Git lifecycle hooks (copied to .git/hooks/ on install/update)
@@ -664,7 +685,7 @@ Install once with Homebrew (`brew install rtk && rtk init -g`) and the global ho
 
 ### Session Start Hook (`hooks/claude/session-start-hook.sh`)
 
-Runs when a Claude Code session starts (SessionStart). Two modes: (1) if no local `daily-runner.sh` is installed — checks if today's `[judge]` sentinel is absent from `observations.md` and asks Claude to run `/kiro:daily-maintenance`; (2) if `daily-runner.sh` is installed and stale (>24h or never ran) — fires it in the background via `nohup` silently, without consuming session context. Also checks if the per-repo CLAUDE.md review is >2 weeks stale (`.claude/memory/.last-claudemd-review`) and asks Claude to run `/claudemd-review` if so.
+Runs when a Claude Code session starts (SessionStart). Two modes: (1) if no local `daily-runner.sh` is installed — checks if today's `[judge]` sentinel is absent from `observations.md` and asks Claude to run `/kiro:daily-maintenance`; (2) if `daily-runner.sh` is installed and stale (>24h or never ran) — fires it in the background via `nohup` silently, without consuming session context. Also checks if the per-repo CLAUDE.md review is >2 weeks stale (`.claude/memory/.last-claudemd-review`) and asks Claude to run `/claudemd-review` if so. Additionally runs a background headroom memory sync (`scripts/utils/sync-memories-to-headroom.py`) when headroom is installed — bidirectional: harness memories to headroom SQLite and new headroom extractions to MEMORY.md.
 
 ### Context Priming Hook (`hooks/claude/prompt-hook.sh`)
 
@@ -683,7 +704,7 @@ Fires before any Raindrop Workshop MCP tool call (`mcp__raindrop__` matcher). In
 Runs when a Claude Code session ends. Checks for:
 - Harness updates available (prompts to run `update.sh`)
 - Memory health (warns if observations exceed cap)
-- Re-explanation detection (scans transcript via `scripts/detect_reexplanation.py`; appends a `[memory-gap]` observation for drains, `[session-charge]` for approvals; calls `scripts/micro_reflect.py` on drains to write `[auto-learn]` facts to `hot-memory.md`; skipped when `SDD_HEADLESS=1`)
+- Re-explanation detection (scans transcript via `scripts/session/detect_reexplanation.py`; appends a `[memory-gap]` observation for drains, `[session-charge]` for approvals; calls `scripts/session/micro_reflect.py` on drains to write `[auto-learn]` facts to `hot-memory.md`; skipped when `SDD_HEADLESS=1`)
 - Agent failure patterns (3+ consecutive failures for the same agent in `trace.log` — suggests running `/kiro:evolve`)
 
 Respects the `SDD_PROFILE` environment variable — skipped entirely when profile is `minimal`.
@@ -782,10 +803,10 @@ git push -u origin main
 
 ## Local Dashboard
 
-A browser-based dashboard that shows trust battery, GitNexus stats, hooks history, scheduled tasks, memory and skill changes, session quality, maintenance status, and Claude Code model spend across all registered repos.
+A browser-based dashboard that shows trust battery, GitNexus stats, Raindrop Workshop traces, compression savings (RTK + headroom), hooks history, scheduled tasks, memory and skill changes, session quality, model spend, and an automation audit timeline across all registered repos.
 
 ```bash
-python3 ~/.claude/sdd-harness/scripts/dashboard.py
+python3 ~/.claude/sdd-harness/scripts/utils/dashboard.py
 ```
 
 This starts a local HTTP server on `http://localhost:4569` and opens the dashboard in your browser. On WSL it uses `wslview` or `explorer.exe` to open the URL.
@@ -800,10 +821,10 @@ This starts a local HTTP server on `http://localhost:4569` and opens the dashboa
 
 ```bash
 # Open dashboard scoped to a specific repo
-python3 ~/.claude/sdd-harness/scripts/dashboard.py --repo aiq-zora-ai-engine
+python3 ~/.claude/sdd-harness/scripts/utils/dashboard.py --repo aiq-zora-ai-engine
 
 # Generate a static file (no server, no browser)
-python3 ~/.claude/sdd-harness/scripts/dashboard.py --static --no-open
+python3 ~/.claude/sdd-harness/scripts/utils/dashboard.py --static --no-open
 ```
 
 Requires at least one project registered in `projects.txt` (added automatically by `install.sh`). The companion server on port 4569 stays alive until you press `Ctrl+C`.
@@ -814,14 +835,17 @@ Requires at least one project registered in `projects.txt` (added automatically 
 |---|---|---|
 | 1 | ⚡ Trust Battery | Arc gauge + 30-day bar chart of daily trust deltas |
 | 2 | 🕸 GitNexus | Stats strip + embedded visual explorer (localhost:4567) |
-| 3 | 🪝 Hooks History | Hook name, event type, last activity, active/inactive badge |
-| 4 | 📅 Scheduled Tasks | OS-scheduler health card + per-routine schedule, last run, next expected, artifact diff, overdue alerts. Includes the Daily Security Scan routine (`security-report-runner.sh`) which scans recent git changes for OWASP patterns, secrets, and injection sinks. |
-| 5 | 🧠 Memory Changes | Git feed of hot-memory, observations, and meta/patterns changes |
-| 6 | 🎯 Skill Changes | Rendered skill-curation-report with audit age |
-| 7 | 📊 Session Quality | Score/keep-rate/memory-gap summary + 30-day chart |
-| 8 | 🧵 Context Health | Sessions per day trend + `/compact` recommendations |
-| 9 | 🔧 Maintenance Status | Per-repo orchestrator log tail and last-run status |
+| 3 | 🔬 Workshop | Raindrop Workshop trace browser; filter by repo, run eval loop, view agent traces |
+| 4 | 🗜 Headroom | Compression savings totals for RTK + headroom proxy; per-session block history with checkpoint-level token savings |
+| 5 | 🪝 Hooks History | Hook name, event type, last activity, active/inactive badge |
+| 6 | 📅 Scheduled Tasks | OS-scheduler health card + per-routine schedule, last run, next expected, artifact diff, overdue alerts. Includes the Daily Security Scan routine (`security-report-runner.sh`) which scans recent git changes for OWASP patterns, secrets, and injection sinks. |
+| 7 | 🧠 Memory Changes | Git feed of hot-memory, observations, and meta/patterns changes |
+| 8 | 🎯 Skill Changes | Rendered skill-curation-report with audit age |
+| 9 | 📊 Session Quality | Score/keep-rate/memory-gap summary + 30-day chart |
 | 10 | 💰 Model Cost | All-time and 30-day spend; 90-day daily cost bar chart; sessions table with model/tokens/cost; cross-provider "What if?" cost switcher |
+| 11 | 🧵 Context Health | Sessions per day trend + `/compact` recommendations |
+| 12 | 🔧 Maintenance Status | Per-repo orchestrator log tail and last-run status |
+| 13 | 🤖 Automation Audit | Timeline of automated events — maintenance runs, trust-judge scores, session signals, and scheduled task outcomes |
 
 The Model Cost section reads session data from `~/.claude/projects/*/`. Pricing is fetched from `models.dev/api.json`, cached at `.dashboard/models-pricing-history.json`, refreshed bi-weekly, with historical snapshots accumulated so past sessions use the rates that were in effect at the time. The "What if?" switcher supports Anthropic, OpenAI, Google, Mistral, DeepSeek, xAI, Cohere, Amazon Bedrock, Azure, Perplexity, and Groq.
 
@@ -891,4 +915,4 @@ The Model Cost section reads session data from `~/.claude/projects/*/`. Pricing 
 
 Private repository. Contact the maintainer for access.
 
-_Last synced: 2026-06-07_
+_Last synced: 2026-06-09_
