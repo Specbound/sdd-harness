@@ -146,7 +146,7 @@ source ~/.bashrc
 # Workshop starts on port 5899
 raindrop workshop &
 # Open harness dashboard → Workshop tab
-python3 ~/.claude/sdd-harness/scripts/dashboard.py
+python3 ~/.claude/sdd-harness/scripts/utils/dashboard.py
 ```
 
 See `docs/raindrop/README.md` for full details on tracing, the eval loop, and troubleshooting.

@@ -704,7 +704,7 @@ Fires before any Raindrop Workshop MCP tool call (`mcp__raindrop__` matcher). In
 Runs when a Claude Code session ends. Checks for:
 - Harness updates available (prompts to run `update.sh`)
 - Memory health (warns if observations exceed cap)
-- Re-explanation detection (scans transcript via `scripts/session/detect_reexplanation.py`; appends a `[memory-gap]` observation for drains, `[session-charge]` for approvals; calls `scripts/session/micro_reflect.py` on drains to write `[auto-learn]` facts to `hot-memory.md`; skipped when `SDD_HEADLESS=1`)
+- Re-explanation detection (scans transcript via `scripts/session/detect_reexplanation.py`; appends a `[memory-gap]` observation for drains, `[session-charge]` for approvals; both written at most once per calendar day)
 - Agent failure patterns (3+ consecutive failures for the same agent in `trace.log` — suggests running `/kiro:evolve`)
 
 Respects the `SDD_PROFILE` environment variable — skipped entirely when profile is `minimal`.

@@ -352,7 +352,7 @@ The rule is added to the appropriate agent file or rule file and distributed via
 
 ### `/kiro:daily-maintenance` — Nightly orchestrator
 
-Runs the full maintenance cycle end-to-end: **Judge → Reflect → Housekeeping → Trust Score → Augment Skills**. Designed to run on a schedule via Windows Task Scheduler (daily at 18:00 local) with a SessionStart hook as catch-up — both registered automatically by `install.sh` and `update.sh` on WSL systems with `schtasks.exe` available.
+Runs the full maintenance cycle end-to-end: **Judge → Reflect → Housekeeping → Trust Score → Augment Skills**. Designed to run on a nightly schedule (18:00 local) with a SessionStart hook as catch-up. The scheduler is registered automatically by `install.sh` / `update.sh`: Windows Task Scheduler on WSL (`setup-global-orchestrator.sh`), cron on Linux (`setup-linux-orchestrator.sh`), and launchd on macOS (`setup-mac-orchestrator.sh`).
 
 ```
 /kiro:daily-maintenance
@@ -392,7 +392,7 @@ Runs from `stop-hook.sh` after each session. Uses Claude Haiku to analyse user t
 
 Both types are written at most once per calendar day. The auto-scoring table in `kiro/settings/rules/session-quality-rubric.md` applies these mechanically — no Judge pass needed.
 
-When drain signals are found, `scripts/session/micro_reflect.py` is immediately called (Haiku) to extract a durable, generalizable fact from each drain and append it to `hot-memory.md` under an `## Auto-learned` section, tagged `[auto-learn, YYYY-MM-DD]`. These are probationary entries — the housekeeping agent promotes them to `meta/patterns.md` after 7 days if reinforced, or removes them if not. The detector is skipped in headless/print sessions (`SDD_HEADLESS=1`) to prevent recursive spawning from `daily-runner.sh`.
+When drain signals are found, `scripts/session/micro_reflect.py` can be called to extract a durable, generalizable fact from each drain and append it to `hot-memory.md` under an `## Auto-learned` section, tagged `[auto-learn, YYYY-MM-DD]`. These are probationary entries — the housekeeping agent promotes them to `meta/patterns.md` after 7 days if reinforced, or removes them if not.
 
 ### Full reference: [`docs/trust-battery/`](trust-battery/)
 

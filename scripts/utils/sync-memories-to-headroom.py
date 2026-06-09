@@ -2,7 +2,7 @@
 """Bidirectional sync: harness markdown memories ↔ headroom SQLite DB.
 
 Run with headroom's Python:
-    ~/.local/share/uv/tools/headroom-ai/bin/python scripts/sync-memories-to-headroom.py
+    ~/.local/share/uv/tools/headroom-ai/bin/python scripts/utils/sync-memories-to-headroom.py
 
 Import direction:  ~/.claude/projects/<harness>/memory/*.md  →  headroom SQLite
 Export direction:  headroom SQLite new memories  →  MEMORY.md (Headroom section)

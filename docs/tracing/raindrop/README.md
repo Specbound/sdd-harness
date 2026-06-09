@@ -43,7 +43,7 @@ raindrop --version
 
 ## Using the Workshop tab
 
-1. Open the harness dashboard (`python3 ~/.claude/sdd-harness/scripts/dashboard.py`)
+1. Open the harness dashboard (`python3 ~/.claude/sdd-harness/scripts/utils/dashboard.py`)
 2. Click **Workshop** in the sidebar
 3. Select a repo from the repo selector
 4. Click **Start raindrop workshop** to launch `raindrop workshop` on port 5899
