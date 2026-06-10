@@ -2,7 +2,7 @@
 """Bidirectional sync: harness markdown memories ↔ headroom SQLite DB.
 
 Run with headroom's Python:
-    ~/.local/share/uv/tools/headroom-ai/bin/python scripts/sync-memories-to-headroom.py
+    ~/.local/share/uv/tools/headroom-ai/bin/python scripts/utils/sync-memories-to-headroom.py
 
 Import direction:  ~/.claude/projects/<harness>/memory/*.md  →  headroom SQLite
 Export direction:  headroom SQLite new memories  →  MEMORY.md (Headroom section)
@@ -23,7 +23,15 @@ from headroom.memory.backends.local import LocalBackend, LocalBackendConfig
 from headroom.memory.sync import sync
 from headroom.memory.sync_adapters.claude_code import ClaudeCodeAdapter
 
-HARNESS_PATH = Path.home() / ".claude" / "sdd-harness"
+# Resolve harness root from this file's location — works regardless of install path.
+# Walk up until we hit the .claude ancestor; its parent is the harness root.
+def _harness_root() -> Path:
+    for parent in Path(__file__).resolve().parents:
+        if parent.name == ".claude":
+            return parent.parent
+    raise RuntimeError(f"sync-memories-to-headroom.py is not inside a .claude/ tree: {__file__}")
+
+HARNESS_PATH = _harness_root()
 DB_PATH = headroom_paths.memory_db_path()  # ~/.headroom/memory.db
 
 
@@ -33,7 +41,7 @@ def _claude_project_dir(project_path: Path) -> str:
 
 
 MEMORY_DIR = Path.home() / ".claude" / "projects" / _claude_project_dir(HARNESS_PATH) / "memory"
-USER_ID = "dalesser"
+USER_ID = Path.home().name
 
 
 async def main() -> int:
@@ -41,6 +49,7 @@ async def main() -> int:
         print(f"[headroom-sync] memory dir missing: {MEMORY_DIR}", file=sys.stderr)
         return 1
 
+    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     config = LocalBackendConfig(db_path=str(DB_PATH))
     backend = LocalBackend(config)
     adapter = ClaudeCodeAdapter(memory_dir=MEMORY_DIR)
