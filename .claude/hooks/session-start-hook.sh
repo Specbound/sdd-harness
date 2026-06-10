@@ -84,6 +84,17 @@ if [ "$should_review" = "1" ]; then
   echo "After the review completes, write today's date to $CLAUDEMD_STATE."
 fi
 
+# --- Steering bootstrap (first session after install) ---
+# install.sh drops .steering-bootstrap-pending when a freshly-installed project
+# has no steering files yet. Prompt steering once, inside a real session where the
+# interactive interview can happen. Claude removes the sentinel when steering is done.
+STEERING_SENTINEL=".claude/memory/.steering-bootstrap-pending"
+if [ -f "$STEERING_SENTINEL" ] && ! ls .claude/steering/*.md >/dev/null 2>&1; then
+  echo "[STEERING-BOOTSTRAP-DUE] This project has no steering files yet (fresh harness install)."
+  echo "Run /kiro:steering now to bootstrap project memory (product.md / tech.md / structure.md)."
+  echo "After steering completes, delete the sentinel: rm $STEERING_SENTINEL"
+fi
+
 # --- Headroom memory sync (background, non-blocking) ---
 # Bidirectional: harness .md memories → headroom SQLite (so dashboard shows them)
 #                headroom SQLite new extractions → MEMORY.md Headroom section

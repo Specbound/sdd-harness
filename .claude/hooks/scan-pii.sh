@@ -17,7 +17,7 @@ RESET='\033[0m'
 
 # --- Check OPF is installed ---
 if ! command -v opf &>/dev/null; then
-  echo -e "${RED}OPF not installed.${RESET} Run: pip install opf"
+  echo -e "${RED}OPF not installed.${RESET} Run: uv tool install --python 3.13 git+https://github.com/openai/privacy-filter.git"
   exit 2
 fi
 

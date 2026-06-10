@@ -27,13 +27,18 @@ The harness integration adds:
 
 ### 1. Install OPF
 
+OPF is **not on PyPI** — it installs from OpenAI's GitHub source. Use `uv tool` so the `opf` CLI lands on your PATH in an isolated env:
+
 ```bash
-pip install opf
-# or via uv (preferred in harness projects):
-uv pip install opf
+# preferred — isolated CLI on PATH:
+uv tool install --python 3.13 git+https://github.com/openai/privacy-filter.git
+# or pipx:
+pipx install --python python3.13 git+https://github.com/openai/privacy-filter.git
+# or plain pip (into the active/user env):
+pip install git+https://github.com/openai/privacy-filter.git
 ```
 
-Model weights (~600MB) download automatically on first run to `~/.opf/privacy_filter`. Set `OPF_CHECKPOINT` to use a custom path.
+Pin to Python 3.13 — torch lacks wheels for the newest CPython, and the system default may be Apple's 3.9. Model weights (~2.8GB) download automatically on first run to `~/.opf/privacy_filter`. Set `OPF_CHECKPOINT` to use a custom path.
 
 ### 2. Verify install
 
@@ -199,8 +204,8 @@ OPF is a **detection aid, not an anonymization or compliance guarantee**:
 
 | Problem | Cause | Fix |
 |---|---|---|
-| `opf: command not found` | Not installed | `pip install opf` or `uv pip install opf` |
-| Slow first run | Downloading model weights (~600MB) | Expected — subsequent runs use cache |
+| `opf: command not found` | Not installed | `uv tool install --python 3.13 git+https://github.com/openai/privacy-filter.git` |
+| Slow first run | Downloading model weights (~2.8GB) | Expected — subsequent runs use cache |
 | `OPF_CHECKPOINT` not found | Custom path misconfigured | Check env var points to valid checkpoint dir |
 | False positives on code identifiers | Variable names resembling PII | Use `--decode-mode argmax` for lower recall |
 | `scan-pii.sh` exits 2 | OPF not installed | Install OPF; script intentionally soft-fails |

@@ -260,12 +260,12 @@ Optional. Blocks commits containing secrets, emails, account numbers, etc.
 which opf
 ```
 
-**If found** — nothing else needed (downloads model weights on first run, ~600MB to `~/.opf/`).
+**If found** — nothing else needed (downloads model weights on first run, ~2.8GB to `~/.opf/`).
 
-**If not found:**
+**If not found** (OPF is not on PyPI — install from OpenAI's GitHub source):
 ```bash
-uv pip install opf
-# or: pip install opf
+uv tool install --python 3.13 git+https://github.com/openai/privacy-filter.git
+# or: pipx install --python python3.13 git+https://github.com/openai/privacy-filter.git
 ```
 
 To wire as a pre-commit hook for a project:
@@ -357,7 +357,7 @@ Run through this on a fresh machine:
 | `gitnexus` | `which gitnexus` | `npm install -g gitnexus` (all platforms) | `/kiro:gitnexus-setup` per-project |
 | `impeccable` | `which impeccable` | `npm install -g impeccable` (all platforms) | automatic via hook |
 | `uv` | `which uv` | Linux/macOS/WSL2: `curl -LsSf https://astral.sh/uv/install.sh \| sh`; Windows: see Step 5 | nothing extra |
-| `opf` | `which opf` | `uv pip install opf` (all platforms) | wire pre-commit hook |
+| `opf` | `which opf` | `uv tool install --python 3.13 git+https://github.com/openai/privacy-filter.git` | wire pre-commit hook |
 | harness | `ls ~/.claude/sdd-harness/install.sh` | clone/copy harness | `install.sh /path/to/project` |
 
 ---

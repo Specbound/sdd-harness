@@ -15,7 +15,7 @@
 set -e
 
 __here="$(cd -P "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
-. "$__here/lib/resolve-harness-dir.sh"
+. "$__here/../lib/resolve-harness-dir.sh"
 PROJECTS_FILE="$HARNESS_DIR/projects.txt"
 BASHRC="$HOME/.bashrc"
 HEADROOM_PKG="headroom-ai"

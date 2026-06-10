@@ -1,4 +1,4 @@
-# {{PROJECT_NAME}}
+# sdd-harness
 
 ## Address
 - Always call the user "Husband" in every reply — no exceptions.

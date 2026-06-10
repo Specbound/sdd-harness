@@ -144,6 +144,31 @@ sync_dir() {
   cp -r "$src" "$dst_parent/"
 }
 
+# ── ensure_gitignore <project_dir> ─────────────────────────────────────────────
+# Append the harness-local entries to the project's .gitignore, idempotently.
+# Harness files are local-only (see CLAUDE.md "Never commit SDD files"), so the
+# whole .claude/ tree, specs/, and CLAUDE.md stay untracked. Each entry is added
+# only if absent, so re-runs and pre-existing .gitignores are safe.
+ensure_gitignore() {
+  local project_dir="$1"
+  local gitignore="$project_dir/.gitignore"
+  local entry added=false
+  touch "$gitignore"
+  for entry in ".claude/" "specs/" "CLAUDE.md"; do
+    # Match the exact line to avoid false positives (e.g. ".claude/" vs ".claudeignore").
+    if ! grep -qxF "$entry" "$gitignore" 2>/dev/null; then
+      if [ "$added" = false ]; then
+        # Separate from prior content with a blank line + header, once.
+        [ -s "$gitignore" ] && printf '\n' >> "$gitignore"
+        echo "# SDD harness — local-only, never committed" >> "$gitignore"
+        added=true
+      fi
+      echo "$entry" >> "$gitignore"
+    fi
+  done
+  [ "$added" = true ] && echo "  Added harness entries to .gitignore (.claude/ specs/ CLAUDE.md)."
+}
+
 # ── pkg_install <name> <brew_formula> <apt_pkg> <winget_id> ──────────────────
 # Pass "-" for any slot a manager genuinely can't satisfy.
 pkg_install() {
@@ -429,13 +454,22 @@ install_global_tools() {
   elif command -v opf >/dev/null 2>&1; then
     ok "opf already installed"
   else
-    if confirm "Install opf?  (downloads ~600MB model weights on first use)"; then
+    if confirm "Install opf?  (downloads ~2.8GB model weights on first use)"; then
+      # opf is OpenAI's privacy-filter — NOT on PyPI. Install from the GitHub
+      # source. Pin to 3.13: torch lacks wheels for the newest CPython, and the
+      # system default here can be 3.9 (Apple) or 3.14 (Homebrew).
+      OPF_GIT="git+https://github.com/openai/privacy-filter.git"
       if command -v uv >/dev/null 2>&1; then
-        uv pip install opf && ok "opf installed via uv"
+        uv tool install --python 3.13 "$OPF_GIT" && ok "opf installed via uv tool" \
+          || err "opf install failed — try manually: uv tool install --python 3.13 $OPF_GIT"
+      elif command -v pipx >/dev/null 2>&1; then
+        pipx install --python python3.13 "$OPF_GIT" && ok "opf installed via pipx" \
+          || err "opf install failed — try manually: pipx install $OPF_GIT"
       elif command -v pip >/dev/null 2>&1; then
-        pip install opf && ok "opf installed via pip"
+        pip install --user "$OPF_GIT" && ok "opf installed via pip" \
+          || err "opf install failed — try manually: pip install $OPF_GIT"
       else
-        err "Neither uv nor pip found — install uv first, then: uv pip install opf"
+        err "Need uv, pipx, or pip — then: uv tool install $OPF_GIT"
       fi
     else
       warn "Skipped opf"
@@ -520,9 +554,15 @@ install_project() {
   fi
 
   # --- CLAUDE.md template (skip if exists) ---
+  # Fill the {{PROJECT_NAME}} placeholder with the project dir's basename so the
+  # file is usable immediately. Nothing else fills this — no hook does it — so the
+  # install is the single source of truth for it.
   if [ ! -f "$PROJECT_DIR/CLAUDE.md" ]; then
-    cp "$HARNESS_DIR/templates/CLAUDE.md.template" "$PROJECT_DIR/CLAUDE.md"
-    echo "  CLAUDE.md created from template — customize for your project."
+    local PROJECT_NAME
+    PROJECT_NAME="$(basename "$PROJECT_DIR")"
+    sed "s|{{PROJECT_NAME}}|$PROJECT_NAME|g" \
+      "$HARNESS_DIR/templates/CLAUDE.md.template" > "$PROJECT_DIR/CLAUDE.md"
+    echo "  CLAUDE.md created from template (project name: $PROJECT_NAME) — refine context as needed."
   fi
 
   # --- settings.json for target project (skip if exists) ---
@@ -534,6 +574,19 @@ install_project() {
   # --- Generate project stack summary ---
   bash "$HARNESS_DIR/scripts/setup/generate-project-stack.sh" "$PROJECT_DIR" || \
     echo "  WARNING: scripts/setup/generate-project-stack.sh returned non-zero — stack file may be missing."
+
+  # --- Ignore harness files in the project repo (local-only) ---
+  ensure_gitignore "$PROJECT_DIR"
+
+  # --- Queue steering bootstrap for the first Claude session ---
+  # /kiro:steering is an interactive slash command (it interviews you about
+  # product/tech/structure), so it can't run from this shell. Drop a sentinel;
+  # session-start-hook.sh sees it on first open and injects [STEERING-BOOTSTRAP-DUE]
+  # so steering runs inside a real Claude session. Skip if steering already exists.
+  if ! ls "$PROJECT_DIR/.claude/steering/"*.md >/dev/null 2>&1; then
+    : > "$PROJECT_DIR/.claude/memory/.steering-bootstrap-pending"
+    echo "  Steering bootstrap queued — /kiro:steering will be prompted on first Claude session."
+  fi
 
   # --- Record install timestamp ---
   date -Iseconds > "$PROJECT_DIR/.claude/.last-harness-check"
@@ -639,12 +692,20 @@ install_globals() {
   # --- LiteParse doc parser ---
   echo ""
   echo "Installing liteparse doc parser..."
-  if python3 -m pip show liteparse >/dev/null 2>&1; then
-    echo "  liteparse already installed."
+  # Pick a wheel-friendly interpreter: prefer 3.13/3.12/3.11 over the bare
+  # `python3` (which can be Apple's 3.9 or a too-new 3.14 lacking wheels).
+  PYBIN=""
+  for cand in python3.13 python3.12 python3.11 python3; do
+    command -v "$cand" >/dev/null 2>&1 && { PYBIN="$cand"; break; }
+  done
+  if [ -z "$PYBIN" ]; then
+    echo "  WARNING: no python3 found — install manually: pip install liteparse"
+  elif "$PYBIN" -m pip show liteparse >/dev/null 2>&1; then
+    echo "  liteparse already installed ($PYBIN)."
   else
-    python3 -m pip install --user liteparse 2>/dev/null \
-      && echo "  liteparse installed." \
-      || echo "  WARNING: could not install liteparse — install manually: pip install liteparse"
+    "$PYBIN" -m pip install --user liteparse 2>/dev/null \
+      && echo "  liteparse installed ($PYBIN)." \
+      || echo "  WARNING: could not install liteparse — install manually: $PYBIN -m pip install --user liteparse"
   fi
 
   # --- Self-register harness in projects.txt (idempotent) ---
@@ -773,10 +834,14 @@ fi
 echo ""
 echo "SDD harness installed successfully."
 echo ""
+echo "Done automatically:"
+echo "  ✓ .gitignore updated (.claude/ specs/ CLAUDE.md — local-only)"
+echo "  ✓ CLAUDE.md created with the project name filled in"
+echo "  ✓ /kiro:steering queued — you'll be prompted to run it on your first Claude session"
+echo ""
 echo "Next steps:"
-echo "  1. Add to .gitignore: .claude/ specs/ CLAUDE.md (keep .claude/settings.local.json)"
-echo "  2. Customize CLAUDE.md with your project name and context"
-echo "  3. Run /kiro:steering to bootstrap project memory"
+echo "  1. Refine CLAUDE.md with project-specific context (the basics are in place)"
+echo "  2. Open Claude Code in the project and run /kiro:steering when prompted"
 if [ "$WITH_GITNEXUS" = false ]; then
   echo ""
   echo "Optional: Run with --with-gitnexus to add code intelligence integration."

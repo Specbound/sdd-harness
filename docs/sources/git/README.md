@@ -46,7 +46,7 @@ GitHub repositories that were passed to `/skill-extraction` and turned into harn
 ## github.com/openai/privacy-filter
 **URL:** https://github.com/openai/privacy-filter | **Added:** 2026-05-06
 
-**What it is:** OpenAI's Privacy Filter (OPF) — an 8-layer bidirectional transformer with sparse MoE FFN (128 experts, top-4) and Viterbi CRF decoder for character-level PII span extraction. 600MB model weights auto-download on first use.
+**What it is:** OpenAI's Privacy Filter (OPF) — an 8-layer bidirectional transformer with sparse MoE FFN (128 experts, top-4) and Viterbi CRF decoder for character-level PII span extraction. ~2.8GB model weights auto-download on first use.
 
 **What we added:**
 - Hook: `hooks/claude/scan-pii.sh` — pre-commit git hook that runs OPF on staged files; exits 2 (warn, don't block) when OPF is missing; exits 1 on high-severity PII detection

@@ -729,7 +729,7 @@ Runs OPF on a set of files and exits non-zero if high-severity PII is found. Des
 - `<path>` — scan a file or directory (text-like files: `.md`, `.json`, `.log`, `.py`, `.ts`, `.sh`, etc.)
 - Exits `0` for clean or low-severity-only findings, `1` for `secret`/`account_number`, `2` if OPF is not installed (soft-fail to not break CI without OPF)
 
-Requires OPF: `pip install opf`.
+Requires OPF (OpenAI privacy-filter — not on PyPI, install from source): `uv tool install --python 3.13 git+https://github.com/openai/privacy-filter.git`. Model weights (~2.8GB) auto-download to `~/.opf/` on first use.
 
 ### Global Token Compression Hook (RTK)
 
