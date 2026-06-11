@@ -326,7 +326,7 @@ Then, inside Claude Code in the project directory, run these once:
 
 Daily maintenance runs automatically via the local OS scheduler (registered by `install.sh` / `update.sh`). No per-project setup is required.
 
-Update `.gitignore` to exclude harness files:
+Update `.gitignore` to exclude harness files. `install.sh` automatically adds the core three entries (`.claude/`, `specs/`, `CLAUDE.md`) under a `# SDD harness` header — skip those below if already present. For the full recommended exclusion set:
 ```gitignore
 CLAUDE.md
 specs/

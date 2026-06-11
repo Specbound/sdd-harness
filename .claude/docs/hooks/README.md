@@ -21,14 +21,16 @@ Hook output is injected into Claude's context as system messages — Claude read
 ### `session-start-hook.sh`
 **Event:** `SessionStart` — **Matcher:** _(all sessions)_
 
-**Purpose:** On macOS, first clears `com.apple.macl` extended attributes from `.claude/hooks/` so that hook files modified by Claude Code's Write/Edit tools remain executable by subprocesses. (The Write/Edit tools set `com.apple.macl`, which blocks subsequent subprocess reads. `session-start-hook.sh` itself is immune — `update.sh` always refreshes it via `cp`, not the Write tool.) Then ensures the daily maintenance pipeline doesn't go unrun: checks whether today's `[judge]` sentinel exists in `observations.md`. If the local `daily-runner.sh` is installed and its state file is stale (>24h or missing), fires the runner in the background without blocking session start. If no local runner is installed and maintenance is overdue, injects a reminder for Claude to run `/kiro:daily-maintenance` interactively.
+**Purpose:** On macOS, first clears `com.apple.macl` extended attributes from `.claude/hooks/` so that hook files modified by Claude Code's Write/Edit tools remain executable by subprocesses. (The Write/Edit tools set `com.apple.macl`, which blocks subsequent subprocess reads. `session-start-hook.sh` itself is immune — `update.sh` always refreshes it via `cp`, not the Write tool.) Then ensures the daily maintenance pipeline doesn't go unrun: checks whether today's `[judge]` sentinel exists in `observations.md`. If the local `daily-runner.sh` is installed and its state file is stale (>24h or missing), fires the runner in the background without blocking session start. If no local runner is installed and maintenance is overdue, injects a reminder for Claude to run `/kiro:daily-maintenance` interactively. Also checks if the per-repo CLAUDE.md review is >2 weeks stale (`.claude/memory/.last-claudemd-review`) and asks Claude to run `/claudemd-review` if so. Finally, checks for a `.claude/memory/.steering-bootstrap-pending` sentinel (dropped by `install.sh` on fresh project installs with no steering files): if the sentinel exists and `.claude/steering/` still has no `.md` files, injects `[STEERING-BOOTSTRAP-DUE]` prompting Claude to run `/kiro:steering` now. Claude removes the sentinel after steering completes.
 
-**Why it's needed:** The Task Scheduler fires at 11:30 IST daily, but the machine may be off or the WSL session closed at that time. The session-start hook is the catch-up path that guarantees maintenance runs at least once per developer day, with zero user friction.
+**Why it's needed:** The Task Scheduler fires at 11:30 IST daily, but the machine may be off or the WSL session closed at that time. The session-start hook is the catch-up path that guarantees maintenance runs at least once per developer day, with zero user friction. The steering bootstrap check ensures `/kiro:steering` runs in a real interactive session where the interview can happen — `install.sh` cannot run it directly from the shell.
 
 **Output / side effect:**
-- Nothing, if maintenance is current (happy path)
+- Nothing, if maintenance is current and no bootstrap pending (happy path)
 - `[SDD-MAINTENANCE-CATCHUP]` — silently fires `daily-runner.sh` in background via `nohup`
 - `[SDD-MAINTENANCE-DUE]` — injected reminder to run `/kiro:daily-maintenance` (no local runner case)
+- `[CLAUDEMD-REVIEW-DUE]` — injected reminder to run `/claudemd-review` (>2 weeks stale)
+- `[STEERING-BOOTSTRAP-DUE]` — injected prompt to run `/kiro:steering` (fresh install, no steering files)
 
 **Respects:** `SDD_PROFILE=minimal` env var — skips entirely in minimal profile.
 

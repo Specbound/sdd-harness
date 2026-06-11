@@ -21,13 +21,14 @@ Utility scripts used by the harness. All Python scripts use stdlib only (no virt
 | `harness-health-runner.sh` | Runs the bi-weekly harness health routine (CLAUDE.md review + skill repair). |
 | `skill-curator-runner.sh` | Runs `/kiro:skill-extract` to curate and augment skills from session learnings. |
 | `tool-failure-review-runner.sh` | Promotes recurring tool failures from `.claude/memory/tool-failures.jsonl` into `ERRORS.md` + memory. |
+| `security-report-runner.sh` | Daily security scan: runs the security-report prompt headlessly, writes report to `.claude/reports/security/`. Runs at most once per day (`SECURITY_REPORT_GAP_DAYS`). Opt out with `SDD_SKIP_SECURITY_REPORT=1`. |
 
 ## Session Intelligence
 
 | Script | Purpose |
 |---|---|
 | `detect_reexplanation.py` | Haiku-based session signal detector. Classifies sessions as drain (re-explanation) or charge (approval). Called by `hooks/claude/stop-hook.sh`. |
-| `micro_reflect.py` | Extracts durable facts from drain sessions → writes `[auto-learn]` entries to `hot-memory.md`. Called by `stop-hook.sh` on drain signals. |
+| `micro_reflect.py` | Extracts durable facts from drain sessions → writes `[auto-learn]` entries to `hot-memory.md`. Can be invoked standalone on drain signals. |
 | `trust_score.py` | Applies Judge score delta to the trust score line in `hot-memory.md`. |
 
 ## Integrations
@@ -47,6 +48,7 @@ Utility scripts used by the harness. All Python scripts use stdlib only (no virt
 | `dashboard.py` | Local harness dashboard (browser-based). Includes Workshop tab for Raindrop traces. |
 | `check-no-hardcoded-paths.sh` | CI guard — fails if any harness script contains a hardcoded `/home/` path. |
 | `headroom-setup.sh` | Configure disk/memory headroom thresholds for the daily runner. |
+| `sync-memories-to-headroom.py` | Bidirectional sync: harness markdown memories ↔ headroom SQLite DB. Called at session start when headroom is installed. |
 
 ## Prompts (used by runners)
 
@@ -57,3 +59,5 @@ Utility scripts used by the harness. All Python scripts use stdlib only (no virt
 | `macro-eval-prompt.md` | Prompt for macro evaluation sweeps. |
 | `security-report-prompt.md` | Prompt for the security report runner. |
 | `skill-curator-prompt.md` | Prompt for skill curation runs. |
+
+_Last synced: 2026-06-09_
