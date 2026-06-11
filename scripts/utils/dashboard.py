@@ -15,11 +15,6 @@ Multi-repo mode (default):
 
         echo /path/to/your/repo >> ~/.claude/sdd-harness/projects.txt
 
-    Current repos (projects.txt):
-        /mnt/c/dev/aiq-zora-ai-engine
-        /home/dalesser/aiq-purina-salesorderintelligence-poc
-        /mnt/c/dev/aiq-zora-agent-skill-foundation
-
 Single-repo override:
     python3 scripts/utils/dashboard.py --repo /path/to/repo
 
@@ -50,7 +45,23 @@ from urllib.error import URLError
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 
-HARNESS_DIR    = Path(__file__).resolve().parent.parent.parent
+def _find_harness_root() -> Path:
+    """Locate the harness root regardless of install path or script depth.
+
+    Walks up from __file__ looking for the directory that owns both
+    projects.txt and install.sh — the only ancestor that satisfies both is
+    the harness root.  Works whether run from the canonical source
+    (scripts/utils/) or the installed copy (.claude/scripts/utils/).
+    """
+    for p in Path(__file__).resolve().parents:
+        if (p / "projects.txt").is_file() and (p / "install.sh").is_file():
+            return p
+    raise RuntimeError(
+        f"Cannot locate harness root from {__file__}. "
+        "Expected a parent directory containing both projects.txt and install.sh."
+    )
+
+HARNESS_DIR    = _find_harness_root()
 PROJECTS_FILE  = HARNESS_DIR / "projects.txt"
 DASHBOARD_DIR  = HARNESS_DIR / ".dashboard"
 OUTPUT_FILE    = DASHBOARD_DIR / "index.html"

@@ -19,7 +19,7 @@
 set -u
 
 __here="$(cd -P "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
-. "$__here/lib/resolve-harness-dir.sh"
+. "$__here/../lib/resolve-harness-dir.sh"
 cd "$HARNESS_DIR" || exit 1
 
 # Banned patterns — machine/user-specific absolutes and the hardcoded harness
@@ -50,7 +50,7 @@ mapfile -t FILES < <(
     | grep -Ev '^\.claude/' \
     | grep -Ev '^docs/' \
     | grep -Ev '^scripts/lib/resolve-harness-dir\.sh$' \
-    | grep -Ev '^scripts/check-no-hardcoded-paths\.sh$'
+    | grep -Ev '^scripts/utils/check-no-hardcoded-paths\.sh$'
 )
 
 # Fallback when not in a git repo (e.g. tarball): walk the filesystem instead.

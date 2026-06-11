@@ -2,11 +2,11 @@
 """SDD Harness Dashboard — starts a local server and opens the dashboard in the browser.
 
 Quickstart (run from anywhere — harness root is resolved from the script path):
-    python3 ~/.claude/sdd-harness/scripts/dashboard.py
+    python3 ~/.claude/sdd-harness/scripts/utils/dashboard.py
 
 Or from inside the harness repo:
     cd ~/.claude/sdd-harness
-    python3 scripts/dashboard.py
+    python3 scripts/utils/dashboard.py
 
 Multi-repo mode (default):
     The dashboard reads ~/.claude/sdd-harness/projects.txt — one absolute repo path per line.
@@ -15,13 +15,8 @@ Multi-repo mode (default):
 
         echo /path/to/your/repo >> ~/.claude/sdd-harness/projects.txt
 
-    Current repos (projects.txt):
-        /mnt/c/dev/aiq-zora-ai-engine
-        /home/dalesser/aiq-purina-salesorderintelligence-poc
-        /mnt/c/dev/aiq-zora-agent-skill-foundation
-
 Single-repo override:
-    python3 scripts/dashboard.py --repo /path/to/repo
+    python3 scripts/utils/dashboard.py --repo /path/to/repo
 
 Options:
     --repo PATH     Show only the given repo (overrides projects.txt)
@@ -50,7 +45,23 @@ from urllib.error import URLError
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 
-HARNESS_DIR    = Path(__file__).resolve().parent.parent
+def _find_harness_root() -> Path:
+    """Locate the harness root regardless of install path or script depth.
+
+    Walks up from __file__ looking for the directory that owns both
+    projects.txt and install.sh — the only ancestor that satisfies both is
+    the harness root.  Works whether run from the canonical source
+    (scripts/utils/) or the installed copy (.claude/scripts/utils/).
+    """
+    for p in Path(__file__).resolve().parents:
+        if (p / "projects.txt").is_file() and (p / "install.sh").is_file():
+            return p
+    raise RuntimeError(
+        f"Cannot locate harness root from {__file__}. "
+        "Expected a parent directory containing both projects.txt and install.sh."
+    )
+
+HARNESS_DIR    = _find_harness_root()
 PROJECTS_FILE  = HARNESS_DIR / "projects.txt"
 DASHBOARD_DIR  = HARNESS_DIR / ".dashboard"
 OUTPUT_FILE    = DASHBOARD_DIR / "index.html"
@@ -61,19 +72,12 @@ HEADROOM_PORT    = 8787
 HEADROOM_SAVINGS = Path.home() / ".headroom" / "proxy_savings.json"
 
 SECTION_DEFS = [
-    ("trust_battery",      "⚡", "Trust Battery"),
-    ("gitnexus",           "🕸", "GitNexus"),
-    ("workshop",           "🔬", "Workshop"),
-    ("headroom",           "🗜", "Headroom"),
-    ("hooks_history",      "🪝", "Hooks History"),
-    ("scheduled_tasks",    "📅", "Scheduled Tasks"),
-    ("memory_changes",     "🧠", "Memory Changes"),
-    ("skill_changes",      "🎯", "Skill Changes"),
-    ("session_quality",    "📊", "Session Quality"),
-    ("model_cost",         "💰", "Model Cost"),
-    ("context_health",     "🧵", "Context Health"),
-    ("maintenance_status", "🔧", "Maintenance Status"),
-    ("automation_audit",   "🤖", "Automation Audit"),
+    ("session_health",    "⚡", "Session Health"),
+    ("gitnexus",          "🕸", "GitNexus"),
+    ("workshop",          "🔬", "Workshop"),
+    ("budget_efficiency", "💰", "Budget & Efficiency"),
+    ("automation",        "🤖", "Automation"),
+    ("knowledge_base",    "🧠", "Knowledge Base"),
 ]
 
 PRICING_HISTORY = DASHBOARD_DIR / "models-pricing-history.json"
@@ -180,6 +184,39 @@ def badge(text, style="default"):
 def empty_state(msg):
     return (f'<div style="padding:48px;text-align:center;color:var(--overlay0);'
             f'font-size:13px">{h(msg)}</div>')
+
+def _inner(section_html: str) -> str:
+    """Strip outer section-inner wrapper and section-title h2 from a render_* result."""
+    s = section_html.strip()
+    prefix = '<div class="section-inner">'
+    if s.startswith(prefix):
+        s = s[len(prefix):]
+        idx = s.rfind('</div>')
+        if idx != -1:
+            s = s[:idx]
+    s = re.sub(r'^\s*<h2 class="section-title">.*?</h2>\s*', '', s, flags=re.DOTALL)
+    return s.strip()
+
+def _combined_section(title: str, prefix: str, subs: list) -> str:
+    """Combine multiple render_* outputs into a single tabbed section.
+    subs: list of (name, icon, label, html) tuples.
+    """
+    names = [s[0] for s in subs]
+    names_js = "['" + "','".join(names) + "']"
+    tabs = ''
+    panes = ''
+    for i, (name, icon, label, html) in enumerate(subs):
+        active = ' active' if i == 0 else ''
+        tabs += (f'<button id="{prefix}-tab-{name}" class="sub-tab{active}" '
+                 f'onclick="switchTab(\'{prefix}\',\'{name}\',{names_js})">'
+                 f'{icon} {h(label)}</button>')
+        display = 'block' if i == 0 else 'none'
+        panes += f'<div id="{prefix}-pane-{name}" style="display:{display}">{_inner(html)}</div>'
+    return (f'<div class="section-inner">'
+            f'<h2 class="section-title">{h(title)}</h2>'
+            f'<div class="sub-tab-bar">{tabs}</div>'
+            f'{panes}'
+            f'</div>')
 
 def section_desc(text, *, icon="ℹ", color="var(--blue)"):
     return (f'<div style="background:rgba(49,50,68,0.5);border-left:3px solid {color}44;'
@@ -1726,7 +1763,7 @@ def render_model_cost(sessions, pricing_snapshots):
 </div>"""
 
 
-def render_scheduled_tasks(hd):
+def render_scheduled_tasks(hd, repos_data=None):
     routines  = hd.get("scheduled_tasks", [])
     scheduler = hd.get("scheduler", {}) or {}
 
@@ -1796,10 +1833,88 @@ def render_scheduled_tasks(hd):
         "snapshot from the previous run."
     )
 
+    # ── Daily maintenance run status ─────────────────────────────────────────
+    maintenance_html = ""
+    if repos_data:
+        orch_runs = hd.get("orchestrator_runs", [])
+        latest_run: dict = {}
+        for run in orch_runs:
+            if run.get("runner") not in (None, "daily-maintenance"):
+                continue
+            p = run["path"]
+            if p not in latest_run or run["ts"] > latest_run[p]["ts"]:
+                latest_run[p] = run
+
+        SCHED_HOUR = 18
+        GRACE_SECS = 2 * 3600
+        repo_cards = ""
+        for rd in repos_data:
+            path     = rd["path"]
+            name     = Path(path).name
+            last_run = rd.get("last_routine_run")
+            run_info = latest_run.get(path)
+
+            if last_run:
+                now_local   = datetime.now()
+                today_sched = now_local.replace(hour=SCHED_HOUR, minute=0, second=0, microsecond=0)
+                last_local  = (last_run.astimezone().replace(tzinfo=None)
+                               if last_run.tzinfo else last_run)
+                if last_local.date() == now_local.date():
+                    run_status = "ok"
+                elif now_local < today_sched + timedelta(seconds=GRACE_SECS):
+                    run_status = "pending"
+                else:
+                    run_status = "overdue"
+                run_str = rel_time(last_run.isoformat())
+                sbadge  = {"ok": badge("OK", "ok"),
+                           "pending": badge("PENDING", "warn"),
+                           "overdue": badge("OVERDUE", "missed")}[run_status]
+                run_col = {"ok": "var(--green)", "pending": "var(--yellow)",
+                           "overdue": "var(--red)"}[run_status]
+            else:
+                run_str = "never run"
+                sbadge  = badge("UNKNOWN", "default")
+                run_col = "var(--overlay0)"
+
+            ec_html = ""
+            if run_info:
+                ec     = run_info["exit"]
+                ec_col = "var(--green)" if ec == 0 else "var(--red)"
+                ec_html = (f'<span style="color:{ec_col};font-size:10px"> · exit {ec}</span>')
+
+            repo_cards += (
+                f'<div style="background:var(--surface0);border-radius:6px;padding:10px 12px">'
+                f'<div style="font-size:11px;font-weight:600;color:var(--text);margin-bottom:4px;'
+                f'overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{h(name)}</div>'
+                f'<div style="display:flex;gap:6px;align-items:center">{sbadge}'
+                f'<span style="color:{run_col};font-size:10px">{h(run_str)}</span>{ec_html}</div></div>'
+            )
+
+        log_tail = ""
+        if ORCH_LOG.exists():
+            lines    = ORCH_LOG.read_text().splitlines()[-12:]
+            log_tail = (
+                f'<details style="margin-top:10px">'
+                f'<summary style="cursor:pointer;font-size:9px;text-transform:uppercase;'
+                f'letter-spacing:1px;color:var(--overlay0);list-style:none;padding:4px 0">'
+                f'Orchestrator log (last 12 lines)</summary>'
+                f'<pre style="background:var(--crust);border-radius:6px;padding:12px;margin-top:6px;'
+                f'font-size:10px;color:var(--subtext0);overflow-x:auto;white-space:pre-wrap">'
+                f'{h(chr(10).join(lines))}</pre></details>'
+            )
+
+        maintenance_html = (
+            f'<div style="margin-bottom:20px">'
+            f'<div class="label" style="margin-bottom:8px">Daily Maintenance (18:00 local)</div>'
+            f'<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));'
+            f'gap:8px">{repo_cards}</div>'
+            f'{log_tail}</div>'
+        )
+
     if not routines:
         return (f'<div class="section-inner">'
                 f'<h2 class="section-title">Scheduled Tasks</h2>'
-                f'{scheduler_card}{intro}'
+                f'{scheduler_card}{maintenance_html}{intro}'
                 f'{empty_state("No scheduled tasks configured.")}</div>')
 
     # ── Per-routine cards ────────────────────────────────────────────────────
@@ -1932,7 +2047,7 @@ def render_scheduled_tasks(hd):
 
     return (f'<div class="section-inner">'
             f'<h2 class="section-title">Scheduled Tasks</h2>'
-            f'{scheduler_card}{intro}{cards}</div>')
+            f'{scheduler_card}{maintenance_html}{intro}{cards}</div>')
 
 def render_memory_changes(rd, hd):
     cards    = rd.get("memory_cards", [])
@@ -2725,6 +2840,11 @@ html,body{height:100%;background:var(--mantle);color:var(--text);
 .th{text-align:left;padding:8px 10px;font-size:9px;text-transform:uppercase;
   letter-spacing:.8px;color:var(--overlay0);font-weight:600}
 td{padding:8px 10px;border-bottom:1px solid rgba(49,50,68,.5)}
+.sub-tab-bar{display:flex;gap:0;border-bottom:1px solid var(--surface0);margin-bottom:20px}
+.sub-tab{background:none;border:none;border-bottom:2px solid transparent;padding:8px 16px;
+  font-size:12px;color:var(--overlay0);cursor:pointer;transition:all .12s;white-space:nowrap}
+.sub-tab:hover{color:var(--subtext1);background:rgba(255,255,255,.03)}
+.sub-tab.active{color:var(--mauve);border-bottom-color:var(--mauve)}
 """
 
 # ── JS ────────────────────────────────────────────────────────────────────────
@@ -2732,7 +2852,7 @@ td{padding:8px 10px;border-bottom:1px solid rgba(49,50,68,.5)}
 JS_TEMPLATE = r"""
 const SD = __SECTIONS_JSON__;
 let repo = __INIT_REPO__;
-let sec  = 'trust_battery';
+let sec  = 'session_health';
 
 function show(sectionKey) {
   // Release gitnexus WebGL context before destroying the iframe element
@@ -2749,7 +2869,7 @@ function show(sectionKey) {
   });
   if (sectionKey === 'gitnexus') probeGitnexus();
   if (sectionKey === 'workshop') loadWorkshopRuns();
-  if (sectionKey === 'headroom') loadHeadroom();
+  if (sectionKey === 'budget_efficiency') loadHeadroom();
 }
 
 function switchRepo(v) { repo = v; show(sec); }
@@ -2809,7 +2929,7 @@ function switchTab(prefix, pane, panes) {
   });
 }
 
-document.addEventListener('DOMContentLoaded', function() { show('trust_battery'); });
+document.addEventListener('DOMContentLoaded', function() { show('session_health'); });
 """
 
 # ── HTML Assembly ─────────────────────────────────────────────────────────────
@@ -3231,7 +3351,7 @@ def build_html(repos_data, harness_data, usage_sessions, pricing_snapshots, init
     )
 
     # Render all sections for every repo once
-    scheduled_html  = render_scheduled_tasks(harness_data)
+    scheduled_html  = render_scheduled_tasks(harness_data, repos_data)
     skill_html      = render_skill_changes(harness_data)
     model_cost_html = render_model_cost(usage_sessions, pricing_snapshots)
     headroom_html   = render_headroom()
@@ -3239,19 +3359,26 @@ def build_html(repos_data, harness_data, usage_sessions, pricing_snapshots, init
     sections_map = {}
     for rd in repos_data:
         sections_map[rd["path"]] = {
-            "trust_battery":      render_trust_battery(rd),
-            "gitnexus":           render_gitnexus(rd, companion=companion),
-            "workshop":           render_workshop(rd, companion=companion),
-            "headroom":           headroom_html,
-            "hooks_history":      render_hooks_history(rd),
-            "scheduled_tasks":    scheduled_html,
-            "memory_changes":     render_memory_changes(rd, harness_data),
-            "skill_changes":      skill_html,
-            "session_quality":    render_session_quality(rd),
-            "model_cost":         model_cost_html,
-            "context_health":     render_context_health(rd),
-            "maintenance_status": render_maintenance_status(rd, repos_data, harness_data),
-            "automation_audit":   render_automation_audit(rd, harness_data),
+            "session_health": _combined_section("Session Health", "sh", [
+                ("trust",   "⚡", "Trust Battery",   render_trust_battery(rd)),
+                ("quality", "📊", "Session Quality", render_session_quality(rd)),
+            ]),
+            "gitnexus":       render_gitnexus(rd, companion=companion),
+            "workshop":       render_workshop(rd, companion=companion),
+            "budget_efficiency": _combined_section("Budget & Efficiency", "be", [
+                ("headroom", "🗜", "Headroom",        headroom_html),
+                ("context",  "🧵", "Context Health",  render_context_health(rd)),
+                ("cost",     "💰", "Model Cost",      model_cost_html),
+            ]),
+            "automation": _combined_section("Automation", "au", [
+                ("hooks",  "🪝", "Hooks History",    render_hooks_history(rd)),
+                ("sched",  "📅", "Scheduled Tasks",  scheduled_html),
+                ("audit",  "🤖", "Automation Audit", render_automation_audit(rd, harness_data)),
+            ]),
+            "knowledge_base": _combined_section("Knowledge Base", "kb", [
+                ("memory", "🧠", "Memory Changes", render_memory_changes(rd, harness_data)),
+                ("skills", "🎯", "Skill Changes",  skill_html),
+            ]),
         }
 
     sj  = json.dumps(sections_map, ensure_ascii=False)
