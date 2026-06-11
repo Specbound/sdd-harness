@@ -56,12 +56,18 @@ run_one() {
     return 0
   fi
 
-  local start=$(date +%s)
-  (cd "$repo" && bash .claude/scripts/orchestration/daily-runner.sh) > /dev/null 2>&1
-  local exit_code=$?
-  local duration=$(($(date +%s) - start))
-
-  echo "$ts $repo exit=$exit_code duration=${duration}s" >> "$LOG_FILE"
+  # Only call daily-runner.sh if it hasn't run today — avoids "exit 0 · 0s" audit
+  # clutter when session-start hook already fired it earlier. Sub-runners below still
+  # execute on their own schedules regardless.
+  local today="$(date +%Y-%m-%d)"
+  local last_day="$(cut -dT -f1 "$state" 2>/dev/null || echo "")"
+  if [ "$last_day" != "$today" ]; then
+    local start=$(date +%s)
+    (cd "$repo" && bash .claude/scripts/orchestration/daily-runner.sh) > /dev/null 2>&1
+    local exit_code=$?
+    local duration=$(($(date +%s) - start))
+    echo "$ts $repo exit=$exit_code duration=${duration}s" >> "$LOG_FILE"
+  fi
 
   # Macro-eval sweep — self-paces to ~twice a week via its own MIN_GAP_DAYS guard,
   # so calling it daily is cheap (it no-ops between runs). Failure-isolated; the

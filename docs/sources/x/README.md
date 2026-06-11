@@ -133,3 +133,18 @@ Content passed directly as pasted text to `/skill-extraction` — not a URL, rep
 
 **What we added:**
 - Skill augmentation: `multi-agent-patterns` — added "Dynamic Workflow Patterns" major section covering: the 3 failure modes and which pattern fixes each; all 6 patterns with when-to-use rules and code examples; composition matrix (use case → pattern combination); workflow controls (`/goal`, `/loop`, token budgets); quarantine pattern (read-only reader agent for untrusted input); workflow-as-Skill packaging; and 8-item common-mistakes table. Also updated description frontmatter to include dynamic workflow triggers. Version bumped 1.3.0 → 1.4.0.
+
+---
+
+## Loop Engineering — Designing Systems That Prompt Agents
+**Added:** 2026-06-11
+**Source / Author:** Pasted text — article on loop engineering (@bcherny head of Claude Code, @steipete framing)
+
+**What it's about:** Framework arguing the leverage point in AI coding has shifted from writing good prompts to designing loops that self-prompt agents. Five building blocks: automations (heartbeat), worktrees (parallel isolation), skills (encoded knowledge), connectors (MCP), sub-agents (maker/checker). Plus a 6th: the external state file as loop spine. Key insight: three failure modes worsen *as the loop improves* — cognitive surrender (accepting loop output without judgment), comprehension debt (mental model gap grows as loop ships code you didn't write), and self-preferential maker (loop's learning pipeline grades its own output). Article argues designing the loop is harder than prompt engineering, not easier; the leverage point moved.
+
+**What we added:**
+- Script change: `scripts/routines/daily-maintenance-prompt.md` Step E — changed "apply up to 3 updates" to goal-driven: "address all [seed-target:] observations from today, max 5 as circuit breaker." Closes the arbitrary count → verifiable stop condition gap.
+- Script addition: `scripts/routines/daily-maintenance-prompt.md` Step F — adversarial checker agent spawned after Step E; verifies each [skill-update] against the gap that motivated it; emits [skill-update-verified] or [skill-update-flagged]. Implements maker/checker split in the loop's own learning pipeline.
+- Hook change: `hooks/claude/stop-hook.sh` — added loop-debt detection block: Python inline script checks if [skill-update] entries are ≥3 days old with no [session-charge] since; appends [loop-debt] observation if so. Cognitive surrender proxy.
+- Script change: `scripts/session/trust_score.py` — added [loop-debt] tag to `_tally_tags` and `cmd_auto_score`; penalty of −1 per occurrence (max −2/day) in delta calc. Loop health now a scored signal.
+- Skill augmentation: `skills/multi-agent-patterns/SKILL.md` — added "Loop Health" section with three named failure modes (cognitive surrender → [loop-debt], comprehension debt → keep-rate, self-preferential maker → Step F), harness detection for each, and counter-moves. Version bumped 1.4.0 → 1.5.0.

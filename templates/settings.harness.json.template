@@ -114,6 +114,10 @@
           {
             "type": "command",
             "command": "bash {{HARNESS_DIR}}/.claude/hooks/gbrain-agent-spawn.sh"
+          },
+          {
+            "type": "command",
+            "command": "bash {{HARNESS_DIR}}/.claude/hooks/prompt-quality-check.sh"
           }
         ]
       },

@@ -95,6 +95,45 @@ if [ -f "$STEERING_SENTINEL" ] && ! ls .claude/steering/*.md >/dev/null 2>&1; th
   echo "After steering completes, delete the sentinel: rm $STEERING_SENTINEL"
 fi
 
+# --- Prompt Quality Baseline ---
+# Shows rolling average across last 14 agent spawns so Claude knows its weak dimensions.
+PQ_LOG="$HOME/.code-insights/pq-log.jsonl"
+if [ -f "$PQ_LOG" ]; then
+  python3 - "$PQ_LOG" << 'PYEOF'
+import sys, json
+log_path = sys.argv[1]
+entries = []
+try:
+    with open(log_path) as f:
+        for line in f:
+            line = line.strip()
+            if line:
+                try: entries.append(json.loads(line))
+                except Exception: pass
+except Exception:
+    sys.exit(0)
+recent = entries[-14:] if len(entries) >= 14 else entries
+if not recent:
+    sys.exit(0)
+scores = [e['overall'] for e in recent if isinstance(e.get('overall'), (int, float))]
+if not scores:
+    sys.exit(0)
+avg = round(sum(scores) / len(scores), 1)
+dim_keys = ['context_provision', 'request_specificity', 'scope_management', 'information_timing']
+dim_avgs = {}
+for d in dim_keys:
+    vals = [e['dims'][d] for e in recent if isinstance(e.get('dims', {}).get(d), (int, float))]
+    if vals:
+        dim_avgs[d] = round(sum(vals) / len(vals), 1)
+weakest = sorted(dim_avgs.items(), key=lambda x: x[1])[:2]
+weak_str = ', '.join(f"{d.replace('_',' ')} ({v})" for d, v in weakest)
+icon = '✅' if avg >= 4.0 else '🟡' if avg >= 3.0 else '⚠ '
+print(f"📊 Prompt Quality Baseline (last {len(recent)} agent spawns): {icon} avg {avg}/5 | weakest: {weak_str}")
+if avg < 3.5:
+    print("   → Reminder: front-load context and bound scope on every Agent call. Invoke prompt-quality-assess skill when writing agent prompts.")
+PYEOF
+fi
+
 # --- Headroom memory sync (background, non-blocking) ---
 # Bidirectional: harness .md memories → headroom SQLite (so dashboard shows them)
 #                headroom SQLite new extractions → MEMORY.md Headroom section

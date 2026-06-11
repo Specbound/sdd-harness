@@ -175,11 +175,13 @@ def _tally_tags(tags: str, content: str, counts: dict) -> None:
         kr = re.search(r"(\d+)%", content)
         if kr and int(kr.group(1)) >= 80:
             counts["kr_high"] += 1
+    if "loop-debt" in tags:
+        counts["loop_debts"] += 1
 
 
 def _parse_observations_since(since: date) -> dict:
     counts = {"session_charges": 0, "memory_gaps": 0,
-              "sq_high": 0, "sq_low": 0, "kr_high": 0}
+              "sq_high": 0, "sq_low": 0, "kr_high": 0, "loop_debts": 0}
     if not OBS_FILE.is_file():
         return counts
     pattern = re.compile(r"^- (\d{4}-\d{2}-\d{2}) \[([^\]]+)\]:(.*)")
@@ -217,8 +219,9 @@ def cmd_auto_score() -> int:
     sq_hi = min(c["sq_high"], 1)
     sq_lo = min(c["sq_low"], 1)
     kr_hi = min(c["kr_high"], 1)
+    loop_debts = min(c.get("loop_debts", 0), 2)
 
-    delta = float(charges + sq_hi + kr_hi - gaps * 2 - sq_lo)
+    delta = float(charges + sq_hi + kr_hi - gaps * 2 - sq_lo - loop_debts)
 
     parts = []
     if charges:
@@ -231,6 +234,8 @@ def cmd_auto_score() -> int:
         parts.append(f"{gaps} re-explanation(s)")
     if sq_lo:
         parts.append("session-quality≤2/5")
+    if loop_debts:
+        parts.append(f"{loop_debts} loop-debt(s)")
     summary = "auto-score: " + (", ".join(parts) if parts else "no signals detected")
 
     return cmd_apply(delta, summary)

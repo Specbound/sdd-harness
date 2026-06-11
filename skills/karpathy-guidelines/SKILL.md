@@ -1,6 +1,6 @@
 ---
 name: karpathy-guidelines
-description: Behavioral checklist for EVERY coding task — writing, editing, reviewing, or refactoring code. Principles from Karpathy (coding discipline) and cpojer (dependency ownership, option value): Think Before Coding, Simplicity First, Surgical Changes, Goal-Driven Execution, Review Tiering, Dependency Ownership, Option Value.
+description: Behavioral checklist for EVERY coding task — writing, editing, reviewing, or refactoring code. Principles from Karpathy (coding discipline), cpojer (dependency ownership, option value), and Christina Lin (AI-legible code: blast radius, Rule of Three, vertical slices, fail-fast, context rot).
 license: MIT
 source: https://github.com/multica-ai/andrej-karpathy-skills
 ---
@@ -27,6 +27,8 @@ Run through this checklist mentally:
 - [ ] **Success criteria defined?** — How will you know it's done? Tests? Expected output?
 - [ ] **Adding a dependency?** — Run the ownership check (section 6).
 - [ ] **Architectural decision?** — Run the option value check (section 7).
+- [ ] **Blast radius estimated?** — How many folders/modules will this change touch? If >1, can it be scoped down?
+- [ ] **Rule of Three applied?** — Extracting shared code? Do 3+ real call sites exist yet?
 
 ---
 
@@ -140,6 +142,42 @@ Before finalizing any architectural decision:
 **Flip side:** Don't over-engineer for hypothetical futures (→ Simplicity First). The check is whether this *closes off* obvious future paths, not whether it opens every conceivable one.
 
 **Red flag:** You locked in an architectural choice because it was convenient today, without considering what it prevents tomorrow.
+
+---
+
+## 8. AI-Legible Code
+
+**Write code that AI agents can reason about locally.**
+
+AI has a cognitive load — it's called the context window — and coherence degrades past ~300,000–400,000 tokens (context rot). Write code so that reasoning about a change requires reading as little context as possible.
+
+### Blast Radius First
+Every change should break a small, knowable region. Ask before writing: if this logic is wrong, what is the maximum surface area that could fail?
+- Prefer flat, explicit code over clever indirection
+- A change touching 1 folder beats a change touching 3
+- "Clever" and "safely modifiable by an agent" are frequent opposites
+
+### Rule of Three for Abstractions
+Do not extract a shared function, base class, or generic until the same pattern appears in at least **3 distinct, real call sites**.
+- Two similar implementations = coincidence, not a pattern
+- If the urge to abstract arrives early, leave a comment noting the duplication and move on
+- Prefer explicit duplication over an abstraction that hides intent
+
+### Vertical Slices
+Organize by feature, not by layer.
+- One feature = one folder: routes, logic, data access, types, tests — all colocated
+- Features do not import from other features
+- No `shared/`, `utils/`, `common/`, or `helpers/` folders — these become blast-radius epicenters
+
+### Fail Fast, Fail Loud
+- Validate inputs at every public function boundary
+- Raise specific, named exceptions on bad data — no silent fallbacks, no default values masking missing data
+- No bare `except` / `catch` blocks — re-raise or convert to domain-specific error context
+
+### Reviewer Model Mismatch
+The model that helped write the code is the worst possible reviewer of it — it produces confidence, not error-catching. Use a separate session or a different model for review.
+
+**Red flag:** You extracted a shared abstraction because it appeared in two places. Wait for three.
 
 ---
 

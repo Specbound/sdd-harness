@@ -88,3 +88,37 @@ if [ -f "$TRACE_LOG" ]; then
     echo ""
   fi
 fi
+
+# --- Loop-debt detection (cognitive surrender proxy) ---
+# Emit [loop-debt] if skill updates ran ≥3 days ago with no session-charge since.
+# Signal: loop shipped improvements the human never engaged with.
+if [ -f "$OBS_FILE" ]; then
+  today=$(date +%Y-%m-%d)
+  if ! grep -q "^- $today \[loop-debt\]:" "$OBS_FILE" 2>/dev/null; then
+    python3 - "$OBS_FILE" "$today" <<'PYEOF' >> "$OBS_FILE" 2>/dev/null || true
+import sys, re, datetime
+obs_path, today_str = sys.argv[1], sys.argv[2]
+today = datetime.date.fromisoformat(today_str)
+pat = re.compile(r"^- (\d{4}-\d{2}-\d{2}) \[([^\]]+)\]:")
+last_update = last_charge = None
+for line in open(obs_path).read().splitlines():
+    m = pat.match(line)
+    if not m:
+        continue
+    d = datetime.date.fromisoformat(m.group(1))
+    tag = m.group(2)
+    if tag == "skill-update" and (last_update is None or d > last_update):
+        last_update = d
+    if tag == "session-charge" and (last_charge is None or d > last_charge):
+        last_charge = d
+if last_update is None:
+    sys.exit(0)
+days_since = (today - last_update).days
+if days_since < 3:
+    sys.exit(0)
+if last_charge and last_charge >= last_update:
+    sys.exit(0)
+print(f"- {today_str} [loop-debt]: skill updates from {last_update} ({days_since}d ago) with no session-charge since — possible cognitive surrender")
+PYEOF
+  fi
+fi

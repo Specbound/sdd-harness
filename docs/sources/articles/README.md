@@ -197,3 +197,29 @@ Online articles, blog posts, and documentation pages that were passed to `/skill
 
 **What we added:**
 - Skill enhancement: `karpathy-guidelines` — Section 6 "Before Adding a Dependency" (ownership cost check: what constraints does this lock in? can it be built with agents instead?) and Section 7 "Option Value Check" (does this architectural decision unlock or foreclose future changes?). Also added two conditional checklist items to "Before You Write a Single Line". No new skill created — principles fit cleanly as additions to an existing checklist skill at different decision points (dependency selection, architecture).
+
+---
+
+## How I Actually Code (and Review) With AI in 2026
+**URL:** https://medium.com/google-cloud/how-i-actually-code-and-review-with-ai-in-2026-005c89fbd113
+**Added:** 2026-06-11
+**Source / Author:** Christina Lin — Google Cloud Community
+
+**What it's about:** Practical cookbook for writing code that AI agents can reason about and modify safely. Central thesis: AI has a cognitive load (the context window) that degrades past ~300k–400k tokens (context rot), so code should be designed for local reasoning with minimal blast radius. Covers five concrete patterns: blast-radius-first design, Rule of Three for abstractions (wait for 3 real call sites before extracting), vertical-slice folder organization (feature = one folder, no cross-imports), fail-fast/fail-loud error handling, and the reviewer-model-mismatch principle (the model that wrote the code is the worst reviewer of it).
+
+**What we added:**
+- Skill enhancement: `karpathy-guidelines` — Section 8 "AI-Legible Code" covering all five patterns; two new checklist items ("Blast radius estimated?", "Rule of Three applied?") in "Before You Write a Single Line"; updated frontmatter description. No new skill — principles belong in the always-invoked behavioral checklist.
+- CLAUDE.md: Added "AI-Legible Code" section (6-bullet always-on block) to harness CLAUDE.md so principles are present in every session context without requiring skill invocation.
+
+---
+
+## loops! — Named Agentic Dev Loop Catalog
+**URL:** https://loops.elorm.xyz/loops
+**Added:** 2026-06-11
+**Source / Author:** elorm (elorm.xyz)
+
+**What it's about:** Curated catalog of 8 pre-built, self-pacing agentic dev workflow loops — each defined by a standardized kickoff prompt contract: named goal, max iterations, between-iterations check command, and binary exit condition. Loops include: Ship PR Until Green (CI), De-Sloppify Pass (cleanup), Spec-First Ship (checklist-driven impl), Build Until Green, Coverage Until Threshold, E2E Until Green, PR Self-Review (3 passes), and Pre-Commit Guard. The key insight is the portable loop contract format: a natural-language prompt template Claude can execute in any session without scaffolding.
+
+**What we added:**
+- Skill: `loop-patterns` — The 8 named loop templates as copy-paste kickoff prompts + the loop contract format + authoring guidance for new loops. Fills the gap between heavy `iterative-repair-loop` (JSON handoffs, artifact-specific) and `goal-mode` (evaluator-driven, delegates to sub-skills). Positioned as the lightweight, check-command-driven loop layer.
+- Command: `/kiro:loop` — Interactive picker that lists all 8 loops, accepts a slug argument, and generates + launches the kickoff prompt automatically. Usage: `/kiro:loop ship-pr` or `/kiro:loop` for the picker.

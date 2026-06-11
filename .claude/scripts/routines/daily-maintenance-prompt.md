@@ -58,18 +58,37 @@ Judge verdict: <paste the full judge JSON from Step A, or "no verdict" if Step A
 This is the Sleep-phase Knowledge Seeding step: converts today's drains **and any `[seed-target:]` observations** (auto-written by the action-capture hook during the Wake phase) into targeted, evidence-backed skill improvements. The agent will:
 1. Collect `[seed-target:]` observations as additional evidence alongside judge drains
 2. Run the Dreaming phase to generate synthetic worked examples for each gap
-3. Apply up to 3 skill updates, logging each as `[skill-update]`
+3. Address all `[seed-target:]` observations from TODAY_PLACEHOLDER, logging each as `[skill-update]`. Stop when none remain unaddressed; max 5 updates as circuit breaker.
 
 Idempotent: if `[skill-update]:` entries already exist for TODAY_PLACEHOLDER, the agent exits without duplicate writes.
 
 If Step A failed and no judge verdict is available, pass "no verdict" — the agent falls back to `[seed-target:]` observations only.
 
-## Output
+## Step F — Skill Update Adversarial Check (Maker/Checker Gate)
 
-When all five steps are done, emit a single summary line on stdout:
+Check if any `[skill-update]:` entries were written for TODAY_PLACEHOLDER:
+- If none exist (Step E wrote nothing or was skipped), skip silently.
+- If entries exist, spawn a verification agent via the Agent tool with this task:
 
 ```
-Daily maintenance complete: judge=<delta> session-quality=<N/5> keep-rate=<N%> trust-score=<score>% skill-updates=<N>
+Review today's skill updates in .claude/memory/observations.md (entries tagged [skill-update] for TODAY_PLACEHOLDER).
+For each update:
+1. Find the skill file it modified and read the changed content.
+2. Find the [seed-target] or [memory-gap] observation that motivated the update.
+3. Ask: does the update actually address the gap? Does it contradict existing guidance in the same skill?
+If an update fails either check: append to observations.md as `[skill-update-flagged]: <skill-name> — <reason>`.
+If all updates pass: append `[skill-update-verified]: N updates passed adversarial check (TODAY_PLACEHOLDER)`.
+Be skeptical. Default to flagging if uncertain. You are the checker; Step E was the maker — you share no loyalty to its output.
+```
+
+Idempotent: if `[skill-update-verified]:` or `[skill-update-flagged]:` entries already exist for TODAY_PLACEHOLDER, skip silently.
+
+## Output
+
+When all six steps are done, emit a single summary line on stdout:
+
+```
+Daily maintenance complete: judge=<delta> session-quality=<N/5> keep-rate=<N%> trust-score=<score>% skill-updates=<N> skill-check=<passed|flagged|skipped>
 ```
 
 If any step was skipped or failed, replace the value with `skipped` or `failed`.

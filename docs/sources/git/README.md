@@ -99,6 +99,20 @@ GitHub repositories that were passed to `/skill-extraction` and turned into harn
 
 ---
 
+## github.com/melagiri/code-insights
+**URL:** https://github.com/melagiri/code-insights | **Added:** 2026-06-11
+
+**What it is:** Local session analytics tool that parses AI coding sessions (Claude Code, Cursor, Copilot), extracts structured knowledge (decisions, learnings, cross-session patterns), scores prompt quality across 6 LLM-derived dimensions, and serves a React dashboard at localhost:7890 backed by a local SQLite DB. Privacy-first: no cloud sync, uses your own API key.
+
+**What we added:**
+- Hook: `hooks/claude/prompt-quality-check.sh` (PreToolUse `Agent`) — scores every agent spawn against 6 PQ dimensions (context_provision, request_specificity, scope_management, information_timing, correction_quality, overall) using fast Python heuristics; emits scored feedback to Claude's context; appends to `~/.code-insights/pq-log.jsonl`
+- Hook extension: `hooks/claude/session-start-hook.sh` — added PQ baseline block that reads last 14 log entries and emits quality average + weakest dimensions at every session start
+- Dashboard: `render_prompt_quality()` in `scripts/utils/dashboard.py` — new ✨ Prompt Quality sub-tab under Session Health; shows dimension bars, rolling trend, summary strip; reads `~/.code-insights/pq-log.jsonl`
+- Skill: `prompt-quality-assess` — 6-dimension cognitive rubric with per-dimension rewrite patterns; pre-flight checklist to apply before writing agent prompts
+- Docs: `docs/prompt-quality/README.md` — full system reference: dimensions, log format, files, hook output examples
+
+---
+
 ## github.com/yvgude/lean-ctx
 **URL:** https://github.com/yvgude/lean-ctx | **Added:** 2026-05-18
 
@@ -303,3 +317,16 @@ GitHub repositories that were passed to `/skill-extraction` and turned into harn
 - Hook: `doc-parse-nudge.sh` (UserPromptSubmit, global) — detects action verbs combined with document/RAG keywords and injects a reminder to invoke `document-parsing` before building. Registered in both `~/.claude/settings.json` and `templates/settings.harness.json.template`.
 - Wired: `install.sh` `install_globals()` and `update.sh` tail both include inline `pip install liteparse` (idempotent) — no separate setup script, propagates on next install/update run.
 - Docs: `docs/skills/document-parsing/README.md` — supported formats table, activation instructions, related skills.
+
+---
+
+## github.com/Kaelio/ktx
+**URL:** https://github.com/Kaelio/ktx | **Added:** 2026-06-11
+**Source / Author:** Kaelio (YC-backed)
+
+**What it's about:** Open-source context layer for AI data agents (Apache 2.0). Sits between a warehouse and AI agents — ingests dbt, LookML, and BI tool definitions into git-reviewable YAML/Markdown, then exposes an MCP server that resolves grain, joins, and business metric logic and compiles safe SQL. Prevents LLMs from guessing schema. Supports Snowflake, BigQuery, Redshift, PostgreSQL, Databricks, and ClickHouse; integrates with Claude Code, Cursor, Codex, and LangChain.
+
+**What we added:**
+- Skill: `ktx-data-context` — 4-phase workflow (install/connect → build context → wire MCP server → review loop). Decision matrix for ktx vs raw SQL vs RAG. Full context file shape reference. Fires when building data agents or adding analytics capability to a skill (e.g. `cfo-insights/`).
+- Config: commented-out `mcpServers.ktx` block appended to `templates/settings.json.template` — uncomment and merge to enable `ktx_query` / `ktx_schema` / `ktx_metrics` tools in any project.
+- Docs: `docs/skills/ktx-data-context/README.md` — problem framing, activation conditions, MCP config snippet, warehouse/source support table, related skills.

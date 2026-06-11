@@ -585,9 +585,44 @@ Five agents is not 1× workload done five times. It is 5 cold context reloads, p
 
 ---
 
+## Loop Health: Three Failure Modes That Worsen as Loops Improve
+
+The harness daily loop (orchestrator → runners → observations spine) is already a loop in Cherny/Steipete's sense. Three failure modes become *sharper*, not easier, as the loop runs more reliably:
+
+### 1. Cognitive Surrender — `[loop-debt]` signal
+**Definition:** Accepting loop output without forming an opinion about it. The loop runs, skill updates get written, reports generate — and the human never reads them. Feels like productivity; is actually delegation of judgment.
+
+**Harness detection:** `[loop-debt]` observation, written by stop-hook when `[skill-update]` entries are ≥3 days old with no `[session-charge]` since. Penalizes trust score (−1 per occurrence, max −2/day) via `trust_score.py auto-score`.
+
+**Counter-move:** When you see `[loop-debt]`, read the skill update that triggered it. Take a position on whether it's correct before the next session.
+
+### 2. Comprehension Debt — `keep-rate` proxy
+**Definition:** The faster the loop ships code you didn't write, the bigger the gap between what the codebase contains and what you understand. Unlike cognitive surrender (you chose not to engage), comprehension debt is structural — it accumulates even when you're reading, just slower.
+
+**Harness detection:** `[keep-rate]` observations track lines-added vs lines-still-in-HEAD per Claude-co-authored commit. Keep-rate < 80% is a leading indicator: code the loop shipped is being deleted, which usually means it didn't fit the engineer's mental model.
+
+**Counter-move:** When keep-rate drops, don't increase review cadence — increase *comprehension* first. Understand the module before running the loop against it again.
+
+### 3. Self-Preferential Maker — Step F adversarial check
+**Definition:** The agent that wrote the skill update is too lenient grading its own output. `skill-augment-agent` (Step E of daily maintenance) is the maker; without a checker it grades its own homework.
+
+**Harness detection:** Step F in the daily maintenance loop spawns a fresh verification agent with no loyalty to Step E's output. It checks: does the update address the gap? Does it contradict existing guidance? Flags failures as `[skill-update-flagged]`, confirms passes as `[skill-update-verified]`. Steps E and F use separate agent contexts by construction.
+
+### Loop Health Signal Table
+
+| Failure mode | Observation tag | Trust score effect | Counter-move |
+|---|---|---|---|
+| Cognitive surrender | `[loop-debt]` | −1 each, max −2/day | Read the flagged update; form an opinion |
+| Comprehension debt | `[keep-rate]` < 80% | Existing penalty applies | Understand module before re-running loop |
+| Self-preferential maker | `[skill-update-flagged]` | Informational only | Review flagged update manually |
+
+**Source:** Loop Engineering (@bcherny / @steipete framing), 2026-06-11.
+
+---
+
 ## Skill Metadata
 
 **Created**: 2025-12-20
-**Last Updated**: 2026-06-08
-**Author**: Agent Skills for Context Engineering Contributors; enhanced with arXiv:2605.18747, arXiv:2605.26112, claude.com/blog dynamic-workflows, movez.substack.com dynamic-workflow-patterns article
-**Version**: 1.4.0
+**Last Updated**: 2026-06-11
+**Author**: Agent Skills for Context Engineering Contributors; enhanced with arXiv:2605.18747, arXiv:2605.26112, claude.com/blog dynamic-workflows, movez.substack.com dynamic-workflow-patterns article, loop-engineering article (@bcherny/@steipete)
+**Version**: 1.5.0

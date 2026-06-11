@@ -55,10 +55,6 @@ if { [ "$has_action" = true ] && [ "$has_doc" = true ]; } || \
 ║  → Skill("document-parsing")                                       ║
 ╚════════════════════════════════════════════════════════════════════╝
 NUDGE
-  OBS_FILE=".claude/memory/observations.md"
-  if [ -f "$OBS_FILE" ]; then
-    echo "- $(date +%Y-%m-%d) [doc-parse-nudge]: doc/RAG build detected — document-parsing skill nudge injected" >> "$OBS_FILE"
-  fi
 fi
 
 exit 0

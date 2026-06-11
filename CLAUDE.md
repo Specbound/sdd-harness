@@ -22,6 +22,14 @@
 - Before any significant task, show 2-3 approaches and wait for confirmation before proceeding
 - Maintain `ERRORS.md`: when an approach takes 2+ attempts, log what failed, what worked, and why
 
+## AI-Legible Code
+- **Blast radius**: prefer changes that touch ≤1 folder/module; if >1, scope down first
+- **Rule of Three**: no shared extraction until 3 real call sites exist — two similar = coincidence
+- **Vertical slices**: feature = one folder (routes/logic/data/types/tests); no cross-feature imports; no `shared/`, `utils/`, `common/`
+- **Fail fast**: validate at every public boundary; named exceptions; no bare `except`; no silent fallbacks
+- **Context rot**: AI coherence degrades past ~300k tokens — keep functions and PRs small
+- **Reviewer model mismatch**: use a separate session/model to review AI-generated code
+
 ## Quality Gates (automated)
 - `ruff check`: on every `.py` file write
 - `pytest -x --ignore=tests/integration`: after each impl task

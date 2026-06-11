@@ -2391,6 +2391,138 @@ def render_session_quality(rd):
   {glossary}
 </div>"""
 
+def render_prompt_quality():
+    log_path = Path.home() / ".code-insights" / "pq-log.jsonl"
+    if not log_path.exists():
+        return empty_state(
+            "No prompt quality data yet. The <code>prompt-quality-check.sh</code> hook scores "
+            "every Agent tool call and logs here. Data appears after the first agent spawn."
+        )
+
+    entries = []
+    try:
+        with log_path.open() as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    try:
+                        entries.append(json.loads(line))
+                    except Exception:
+                        pass
+    except Exception:
+        return empty_state("Could not read prompt quality log.")
+
+    if not entries:
+        return empty_state("Prompt quality log is empty.")
+
+    recent = entries[-50:]
+    scores = [(e["ts"][:10], e["overall"]) for e in recent
+              if isinstance(e.get("overall"), (int, float))]
+    if not scores:
+        return empty_state("No scored entries yet.")
+
+    DIM_KEYS = ["context_provision", "request_specificity", "scope_management", "information_timing"]
+    DIM_LABELS = {
+        "context_provision":   "context provision",
+        "request_specificity": "request specificity",
+        "scope_management":    "scope management",
+        "information_timing":  "information timing",
+    }
+    dim_avgs: dict[str, float] = {}
+    for dk in DIM_KEYS:
+        vals = [e["dims"][dk] for e in recent
+                if isinstance(e.get("dims", {}).get(dk), (int, float))]
+        if vals:
+            dim_avgs[dk] = round(sum(vals) / len(vals), 1)
+
+    overall_avg = round(sum(s for _, s in scores) / len(scores), 1)
+    oc = ("#a6e3a1" if overall_avg >= 4.0 else
+          "#f9e2af" if overall_avg >= 3.0 else "#f38ba8")
+
+    # Summary strip
+    total_spawns = len(entries)
+    weakest_dim  = min(dim_avgs, key=lambda k: dim_avgs[k]) if dim_avgs else None
+    weakest_val  = dim_avgs[weakest_dim] if weakest_dim else None
+    summary = f"""<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px">
+    <div class="stat-card">
+      <div class="stat-val" style="color:{oc}">{overall_avg}/5</div>
+      <div class="stat-lbl">avg PQ score (last {len(scores)})</div></div>
+    <div class="stat-card">
+      <div class="stat-val" style="color:var(--subtext1)">{total_spawns}</div>
+      <div class="stat-lbl">total agent spawns scored</div></div>
+    <div class="stat-card">
+      <div class="stat-val" style="color:#f9e2af;font-size:13px">
+        {h(DIM_LABELS.get(weakest_dim, "—")) if weakest_dim else "—"}</div>
+      <div class="stat-lbl">weakest dimension ({weakest_val if weakest_val else "—"}/5)</div></div>
+  </div>"""
+
+    # Dimension bars
+    dim_bars = ""
+    for dk in DIM_KEYS:
+        v = dim_avgs.get(dk)
+        if v is None:
+            continue
+        bc = ("#a6e3a1" if v >= 4.0 else "#f9e2af" if v >= 3.0 else "#f38ba8")
+        bw = int(v / 5 * 100)
+        dim_bars += (
+            f'<div style="margin-bottom:10px">'
+            f'<div style="display:flex;justify-content:space-between;margin-bottom:3px">'
+            f'<span style="font-size:11px;color:var(--subtext1)">{h(DIM_LABELS[dk])}</span>'
+            f'<span style="font-size:11px;color:{bc};font-weight:600">{v}/5</span></div>'
+            f'<div style="background:var(--surface0);border-radius:4px;height:6px">'
+            f'<div style="background:{bc};width:{bw}%;height:6px;border-radius:4px;opacity:0.85"></div>'
+            f'</div></div>'
+        )
+
+    # Score trend (last 20)
+    trend_bars = ""
+    for d, s in scores[-20:]:
+        bh = max(4, int(s / 5 * 44))
+        bc = "#a6e3a1" if s >= 4.0 else "#f9e2af" if s >= 3.0 else "#f38ba8"
+        trend_bars += (
+            f'<div title="{h(d)}: {s}/5" style="flex:1;display:flex;flex-direction:column;'
+            f'align-items:center;justify-content:flex-end;gap:2px;min-width:10px">'
+            f'<div style="font-size:8px;color:{bc};font-weight:600">{s}</div>'
+            f'<div style="background:{bc};height:{bh}px;width:100%;border-radius:2px 2px 0 0;opacity:0.85"></div>'
+            f'</div>'
+        )
+    trend = (
+        f'<div class="label" style="margin-bottom:6px">Score trend (last {min(len(scores),20)} spawns)</div>'
+        f'<div style="display:flex;align-items:flex-end;gap:2px;height:64px;margin-bottom:20px">{trend_bars}</div>'
+    ) if trend_bars else ""
+
+    glossary = """<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-top:16px">
+    <div style="background:var(--surface0);border-radius:6px;padding:10px 12px;font-size:11px">
+      <div style="color:var(--blue);font-weight:600;margin-bottom:4px">✨ What is PQ score?</div>
+      <div style="color:var(--subtext0);line-height:1.55">
+        Heuristic score 1–5 per agent spawn across 4 active dimensions (context provision, request
+        specificity, scope management, information timing). Logged by
+        <code style="font-size:10px">prompt-quality-check.sh</code> on every Agent tool call.
+        Low scores predict agent confusion, wasted spawns, and rework.
+      </div>
+    </div>
+    <div style="background:var(--surface0);border-radius:6px;padding:10px 12px;font-size:11px">
+      <div style="color:var(--teal);font-weight:600;margin-bottom:4px">🛠 How to improve</div>
+      <div style="color:var(--subtext0);line-height:1.55">
+        Invoke the <code style="font-size:10px">prompt-quality-assess</code> skill before
+        writing agent prompts. It applies the same 6-dimension rubric with concrete rewrite
+        patterns for each weak dimension. Target ≥4.0 average overall.
+      </div>
+    </div>
+  </div>"""
+
+    return f"""<div class="section-inner">
+  <h2 class="section-title">Prompt Quality</h2>
+  {section_desc("Scores every agent spawn against 6 PQ dimensions (heuristic, no LLM required). "
+                "Logged to <code>~/.code-insights/pq-log.jsonl</code>. Invoke <code>prompt-quality-assess</code> skill to improve before spawning.",
+                icon="✨", color="var(--mauve)")}
+  {summary}
+  <div style="margin-bottom:20px">{dim_bars}</div>
+  {trend}
+  {glossary}
+</div>"""
+
+
 def render_context_health(rd):
     sessions = rd.get("session_history", [])
     if not sessions:
@@ -3409,6 +3541,7 @@ def build_html(repos_data, harness_data, usage_sessions, pricing_snapshots, init
             "session_health": _combined_section("Session Health", "sh", [
                 ("trust",   "⚡", "Trust Battery",   render_trust_battery(rd)),
                 ("quality", "📊", "Session Quality", render_session_quality(rd)),
+                ("pq",      "✨", "Prompt Quality",  render_prompt_quality()),
             ]),
             "gitnexus":       render_gitnexus(rd, companion=companion),
             "workshop":       render_workshop(rd, companion=companion),
