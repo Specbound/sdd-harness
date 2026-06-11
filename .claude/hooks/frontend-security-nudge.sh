@@ -55,6 +55,10 @@ if [ "$is_build" = true ] && [ "$has_frontend" = true ]; then
 ║  → Skill("secure-agent-design")                                   ║
 ╚═══════════════════════════════════════════════════════════════════╝
 NUDGE
+  OBS_FILE=".claude/memory/observations.md"
+  if [ -f "$OBS_FILE" ]; then
+    echo "- $(date +%Y-%m-%d) [frontend-security-nudge]: frontend/design build detected — secure-agent-design skill nudge injected" >> "$OBS_FILE"
+  fi
 fi
 
 exit 0

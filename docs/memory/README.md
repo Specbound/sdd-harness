@@ -50,7 +50,7 @@ daily-runner Step D → observations.md (scan since last [judge]:)
 
 forward-patterns.md → weekly skill-curator → promote high-confidence entries to skills
 
-Drain signals  → micro_reflect.py → hot-memory.md ## Auto-learned (probationary [auto-learn] facts)
+Drain signals  → micro_reflect.py (standalone) → hot-memory.md ## Auto-learned (probationary [auto-learn] facts)
                              → /kiro:housekeeping (promote to patterns.md if reinforced; remove after 7d if not)
 
 observations.md (>50) → /kiro:housekeeping → glacier/YYYY-MM.md (archive)
@@ -86,7 +86,7 @@ Append-only session log. Each entry tagged with category.
 
 - `enforceable` — Convention violation that could be prevented by a linter rule (feeds the evolve agent's graduation pipeline)
 - `escaped` — Bug that passed validation but was caught later in CI/production (highest priority for graduation)
-- `auto-learn` — Probationary fact written by the micro-reflect stop hook. Tagged `[auto-learn, YYYY-MM-DD]` in `hot-memory.md`. Housekeeping promotes to `patterns.md` after 7 days if reinforced, or removes it if not.
+- `auto-learn` — Probationary fact written by `micro_reflect.py` (invoked standalone on drain signals). Tagged `[auto-learn, YYYY-MM-DD]` in `hot-memory.md`. Housekeeping promotes to `patterns.md` after 7 days if reinforced, or removes it if not.
 - `seed-target` — Auto-written by `action-capture.sh` when a Bash command exits non-zero. Format: `[seed-target:<domain>]`. Maps the failure domain (e.g., `python-pro`, `git-advanced-workflows`) for the nightly `skill-augment-agent` Sleep phase — these entries become explicit seeding targets for skill improvement.
 
 ### action-items.md
@@ -201,4 +201,4 @@ Defined in `kiro/settings/rules/memory-conventions.md`:
 
 See `SDD-SETUP-GUIDE.md` Step 12 for full bootstrap instructions.
 
-_Last synced: 2026-06-07 — added `seed-target` observation tag (auto-written by `action-capture.sh` on Bash failure; consumed by nightly `skill-augment-agent`)._
+_Last synced: 2026-06-09_

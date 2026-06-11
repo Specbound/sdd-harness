@@ -754,7 +754,9 @@ def parse_scheduled_tasks():
     for spec in _scheduled_task_registry():
         last_ts = _read_state_ts(spec["state_file"])
         recent  = runs_by_runner.get(spec["runner_log_token"], [])
-        last_run_record = recent[0] if recent else None
+        # Prefer most recent entry that actually did work (duration > 0); fall back to any.
+        # Guard-hit 0s entries from other repos can otherwise mask real runs.
+        last_run_record = next((r for r in recent if r["duration"] > 0), recent[0] if recent else None)
         if last_run_record and not last_ts:
             try:
                 last_ts = datetime.fromisoformat(
@@ -798,15 +800,23 @@ def parse_scheduled_tasks():
             except Exception:
                 headline = ""
 
-        # Recent-runs strip (last 5 records, across all repos for per-repo routines)
+        # Recent-runs strip — one entry per calendar day (prefer non-0s run for that day).
+        # Without dedup the same 18:xx sweep produces 4 identical dots (one per repo).
         history = []
-        for rec in recent[:5]:
+        seen_days: set = set()
+        for rec in recent:
+            day = rec["ts"][:10]
+            if day in seen_days:
+                continue
+            seen_days.add(day)
             history.append({
                 "ts":       rec["ts"],
                 "repo":     Path(rec["path"]).name if rec["path"] else "—",
                 "exit":     rec["exit"],
                 "duration": rec["duration"],
             })
+            if len(history) >= 5:
+                break
 
         out.append({
             "key":             spec["key"],
@@ -1328,9 +1338,11 @@ def render_hooks_history(rd):
         "gbrain-agent-spawn":   "PreToolUse",
         "gbrain-memory-write":  "PreToolUse",
         "gbrain-external":      "PreToolUse",
-        "compaction-discipline":"PreCompact",
-        "scan-pii":             "PostToolUse",
-        "pre-tool-use-gitnexus":"PreToolUse",
+        "compaction-discipline":   "PreCompact",
+        "scan-pii":                "PostToolUse",
+        "pre-tool-use-gitnexus":   "PreToolUse",
+        "doc-parse-nudge":         "UserPromptSubmit",
+        "frontend-security-nudge": "UserPromptSubmit",
     }
 
     desc = section_desc(
@@ -1393,6 +1405,7 @@ def render_hooks_history(rd):
         event_color = {
             "SessionStart": "#a6e3a1", "Stop": "#f38ba8",
             "PreToolUse": "#89b4fa", "PostToolUse": "#94e2d5", "PreCompact": "#cba6f7",
+            "UserPromptSubmit": "#fab387",
         }.get(event, "#a6adc8")
 
         cards += (
@@ -2934,34 +2947,66 @@ document.addEventListener('DOMContentLoaded', function() { show('session_health'
 
 # ── HTML Assembly ─────────────────────────────────────────────────────────────
 
-RTK_DB          = Path.home() / ".local" / "share" / "rtk" / "history.db"
-LEAN_CTX_STATS  = Path.home() / ".config" / "lean-ctx" / "stats.json"
-CAVEMAN_CONFIG  = Path.home() / ".config" / "caveman" / "config.json"
+RTK_DB           = Path.home() / ".local" / "share" / "rtk" / "history.db"
+LEAN_CTX_STATS   = Path.home() / ".config" / "lean-ctx" / "stats.json"
+LEAN_CTX_LEDGER  = Path.home() / ".config" / "lean-ctx" / "savings" / "ledger.jsonl"
+CAVEMAN_CONFIG   = Path.home() / ".config" / "caveman" / "config.json"
 # Sonnet 4.6 input price per million tokens (used to estimate RTK $ savings)
 _SONNET_INPUT_PER_M = 3.0
 
 
-def _read_lean_ctx_stats() -> dict:
-    """Read lean-ctx CEP compression stats. Returns zeros if not yet used."""
-    empty = {"cep_original": 0, "cep_compressed": 0, "cep_saved": 0,
-             "cep_sessions": 0, "commands": 0, "installed": False}
-    if not LEAN_CTX_STATS.exists():
+def _repo_to_lean_ctx_hash(repo_path: str) -> str:
+    """Compute lean-ctx repo_hash from absolute path (SHA256 first 16 hex chars)."""
+    import hashlib as _hl
+    return _hl.sha256(repo_path.encode()).hexdigest()[:16]
+
+
+def _read_lean_ctx_stats(repo_hash: "str | None" = None) -> dict:
+    """Read lean-ctx savings from ledger.jsonl, optionally filtered by repo_hash."""
+    empty = {"saved_tokens": 0, "actual_tokens": 0, "baseline_tokens": 0,
+             "saved_usd": 0.0, "cep_sessions": 0, "commands": 0, "installed": False}
+    installed = LEAN_CTX_STATS.exists() or LEAN_CTX_LEDGER.exists()
+    if not installed:
         return empty
-    try:
-        d    = json.loads(LEAN_CTX_STATS.read_text())
-        cep  = d.get("cep", {})
-        orig = cep.get("total_tokens_original", 0)
-        comp = cep.get("total_tokens_compressed", 0)
-        return {
-            "cep_original":    orig,
-            "cep_compressed":  comp,
-            "cep_saved":       max(0, orig - comp),
-            "cep_sessions":    cep.get("sessions", 0),
-            "commands":        d.get("total_commands", 0),
-            "installed":       True,
-        }
-    except Exception:
-        return {**empty, "installed": True}
+
+    commands = 0
+    cep_sessions = 0
+    if LEAN_CTX_STATS.exists():
+        try:
+            d = json.loads(LEAN_CTX_STATS.read_text())
+            commands = d.get("total_commands", 0)
+            cep_sessions = d.get("cep", {}).get("sessions", 0)
+        except Exception:
+            pass
+
+    saved_tokens = 0
+    actual_tokens = 0
+    baseline_tokens = 0
+    saved_usd = 0.0
+    if LEAN_CTX_LEDGER.exists():
+        try:
+            for line in LEAN_CTX_LEDGER.read_text().splitlines():
+                if not line.strip():
+                    continue
+                entry = json.loads(line)
+                if repo_hash and entry.get("repo_hash") != repo_hash:
+                    continue
+                saved_tokens    += entry.get("saved_tokens", 0)
+                actual_tokens   += entry.get("actual_tokens", 0)
+                baseline_tokens += entry.get("baseline_tokens", 0)
+                saved_usd       += entry.get("saved_usd", 0.0)
+        except Exception:
+            pass
+
+    return {
+        "saved_tokens":   saved_tokens,
+        "actual_tokens":  actual_tokens,
+        "baseline_tokens": baseline_tokens,
+        "saved_usd":      saved_usd,
+        "cep_sessions":   cep_sessions,
+        "commands":       commands,
+        "installed":      True,
+    }
 
 
 def _read_caveman_config() -> dict:
@@ -3000,8 +3045,9 @@ def _read_rtk_stats() -> dict:
         return {"baseline": 0, "saved": 0, "after": 0, "commands": 0, "effective": 0}
 
 
-def render_headroom() -> str:
-    """Compression pipeline tab — RTK + headroom (+ lean-ctx/caveman placeholders)."""
+def render_headroom(repo_path: "str | None" = None) -> str:
+    """Compression pipeline tab — RTK + headroom + lean-ctx (per-repo if repo_path given)."""
+    repo_hash = _repo_to_lean_ctx_hash(repo_path) if repo_path else None
 
     # ── RTK data ──────────────────────────────────────────────────────────────
     rtk = _read_rtk_stats()
@@ -3086,14 +3132,14 @@ def render_headroom() -> str:
 </div>"""
 
     # ── Per-layer data ────────────────────────────────────────────────────────
-    lctx    = _read_lean_ctx_stats()
+    lctx    = _read_lean_ctx_stats(repo_hash=repo_hash)
     cav_cfg = _read_caveman_config()
 
-    lctx_saved   = lctx["cep_saved"]
-    lctx_orig    = lctx["cep_original"]
-    lctx_comp    = lctx["cep_compressed"]
+    lctx_saved   = lctx["saved_tokens"]
+    lctx_orig    = lctx["baseline_tokens"]
+    lctx_actual  = lctx["actual_tokens"]
     lctx_pct     = (lctx_saved / lctx_orig * 100) if lctx_orig else 0.0
-    lctx_cost_est = lctx_saved * _SONNET_INPUT_PER_M / 1_000_000
+    lctx_cost_est = lctx["saved_usd"]
     total_saved  += lctx_saved
     total_cost_est += lctx_cost_est
 
@@ -3118,20 +3164,21 @@ def render_headroom() -> str:
         note=f"{hr_requests:,} requests",
     )
 
+    scope_note = f" · this repo" if repo_hash else " · all repos"
     if lctx["installed"] and lctx_orig > 0:
         leancx_layer = _layer(
             "📄", "lean-ctx — File Reads",
             "raw file tokens", f"{lctx_orig:,}",
             lctx_saved, lctx_pct,
             f"~${lctx_cost_est:.4f}",
-            "compressed", f"{lctx_comp:,}",
-            note=f"{lctx['cep_sessions']} CEP sessions · {lctx['commands']} commands",
+            "after compression", f"{lctx_actual:,}",
+            note=f"{lctx['commands']} commands{scope_note}",
         )
     elif lctx["installed"]:
         leancx_layer = _layer(
             "📄", "lean-ctx — File Reads",
             "–", "–", 0, 0.0, "–", "–", "–",
-            note=f"installed v3 · {lctx['commands']} commands · no CEP sessions yet",
+            note=f"installed · {lctx['commands']} commands · no savings recorded{scope_note}",
             dimmed=False,
         )
     else:
@@ -3350,14 +3397,14 @@ def build_html(repos_data, harness_data, usage_sessions, pricing_snapshots, init
         for key, icon, label in SECTION_DEFS
     )
 
-    # Render all sections for every repo once
+    # Render global (non-repo) sections once
     scheduled_html  = render_scheduled_tasks(harness_data, repos_data)
     skill_html      = render_skill_changes(harness_data)
     model_cost_html = render_model_cost(usage_sessions, pricing_snapshots)
-    headroom_html   = render_headroom()
 
     sections_map = {}
     for rd in repos_data:
+        headroom_html = render_headroom(repo_path=rd["path"])
         sections_map[rd["path"]] = {
             "session_health": _combined_section("Session Health", "sh", [
                 ("trust",   "⚡", "Trust Battery",   render_trust_battery(rd)),

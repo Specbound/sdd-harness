@@ -11,14 +11,10 @@ Execute the three steps below in order. Each is error-isolated — if one step f
 ## Step A — Daily Maintenance (trust-battery loop)
 
 Read `.claude/commands/kiro/daily-maintenance.md` and execute its pipeline:
-1. Judge — score the last 24h of observations using `kiro/settings/rules/session-quality-rubric.md`. Write the `[judge]` observation as usual, but **do NOT call `trust_score.py apply`** — scoring is handled in step 4.
+1. Judge — score the last 24h of observations using `kiro/settings/rules/session-quality-rubric.md`. Write the `[judge]` observation as usual, but **do NOT call `trust_score.py apply`** — scoring is handled in Step D (after session-quality and keep-rate are written).
 2. Reflect — convert drains (especially [memory-gap] entries) into memory updates
 3. Housekeep — archive observations.md if >50 entries
-4. Trust Score — `python3 .claude/scripts/trust_score.py auto-score`
-   This reads observations.md directly and scores mechanically from tagged signals
-   (`[session-charge]`, `[memory-gap]`, `[session-quality]`, `[keep-rate]`).
-   It is idempotent — running it twice on the same day is safe.
-5. Alert — append `[routine-alert]` if any [memory-gap] entries remain unresolved after reflect
+4. Alert — append `[routine-alert]` if any [memory-gap] entries remain unresolved after reflect
 
 The pre-check at the top of daily-maintenance.md skips if today's `[judge]:` entry already exists. Respect that.
 
@@ -40,7 +36,16 @@ Invoke the `keep-rate` skill via the Skill tool. Apply its workflow:
 
 If today's `[keep-rate]:` line already exists, skip silently.
 
-## Step D — Skill Augmentation (Sleep-Phase Knowledge Seeding)
+## Step D — Trust Score
+
+Run `python3 .claude/scripts/trust_score.py auto-score` from the repo root.
+
+**Must run AFTER Steps B and C** so today's `[session-quality]` and `[keep-rate]` observations are visible.
+Reads `observations.md` directly and scores mechanically from tagged signals
+(`[session-charge]`, `[memory-gap]`, `[session-quality]`, `[keep-rate]`).
+Idempotent — running it twice on the same day is safe.
+
+## Step E — Skill Augmentation (Sleep-Phase Knowledge Seeding)
 
 Invoke the `skill-augment-agent` via the Agent tool. Pass this as the task prompt:
 
@@ -61,10 +66,10 @@ If Step A failed and no judge verdict is available, pass "no verdict" — the ag
 
 ## Output
 
-When all four steps are done, emit a single summary line on stdout:
+When all five steps are done, emit a single summary line on stdout:
 
 ```
-Daily maintenance complete: judge=<delta> session-quality=<N/5> keep-rate=<N%> skill-updates=<N>
+Daily maintenance complete: judge=<delta> session-quality=<N/5> keep-rate=<N%> trust-score=<score>% skill-updates=<N>
 ```
 
 If any step was skipped or failed, replace the value with `skipped` or `failed`.
