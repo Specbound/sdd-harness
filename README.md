@@ -695,6 +695,10 @@ Runs before every user prompt (UserPromptSubmit). Injects the contents of `hot-m
 
 Runs before every user prompt (UserPromptSubmit). When the prompt contains build intent (build/create/implement/scaffold) combined with frontend or design keywords (React, Vue, Svelte, CSS, component, form, modal, etc.), injects a reminder to invoke the `secure-agent-design` skill before starting. Exits in <5ms on non-matching prompts — zero overhead for non-frontend work.
 
+### Doc Parse Nudge (`hooks/claude/doc-parse-nudge.sh`)
+
+Runs before every user prompt (UserPromptSubmit). When the prompt combines build intent with document-parsing or RAG keywords (PDF, DOCX, OCR, embedding, vector store, chunk, ingest, Pinecone, Chroma, Qdrant, etc.), injects a reminder to invoke the `document-parsing` skill before starting. Covers format selection (text vs JSON+bbox), OCR config, liteparse, and RAG handoff patterns. Exits in <5ms on non-matching prompts.
+
 ### Raindrop Best Practices (`hooks/claude/raindrop-best-practices.sh`)
 
 Fires before any Raindrop Workshop MCP tool call (`mcp__raindrop__` matcher). Injects five active-observability patterns: batch facets (multiple dimensions → one LLM call), facet-first summarization before clustering, 128K token cap on input, no-LLM nearest-summary classification, and long-tail sampling with HDBSCAN. Ensures trace analysis runs at a fraction of the naïve cost.
@@ -915,4 +919,4 @@ The Model Cost section reads session data from `~/.claude/projects/*/`. Pricing 
 
 Private repository. Contact the maintainer for access.
 
-_Last synced: 2026-06-09_
+_Last synced: 2026-06-11_

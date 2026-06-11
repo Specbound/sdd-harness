@@ -352,7 +352,7 @@ The rule is added to the appropriate agent file or rule file and distributed via
 
 ### `/kiro:daily-maintenance` — Nightly orchestrator
 
-Runs the full maintenance cycle end-to-end: **Judge → Reflect → Housekeeping → Trust Score → Augment Skills**. Designed to run on a nightly schedule (18:00 local) with a SessionStart hook as catch-up. The scheduler is registered automatically by `install.sh` / `update.sh`: Windows Task Scheduler on WSL (`setup-global-orchestrator.sh`), cron on Linux (`setup-linux-orchestrator.sh`), and launchd on macOS (`setup-mac-orchestrator.sh`).
+Runs the full maintenance cycle end-to-end: **Judge → Reflect → Housekeeping → Session Quality → Keep Rate → Trust Score → Augment Skills**. Designed to run on a nightly schedule (18:00 local) with a SessionStart hook as catch-up. The scheduler is registered automatically by `install.sh` / `update.sh`: Windows Task Scheduler on WSL (`setup-global-orchestrator.sh`), cron on Linux (`setup-linux-orchestrator.sh`), and launchd on macOS (`setup-mac-orchestrator.sh`).
 
 ```
 /kiro:daily-maintenance
@@ -363,9 +363,11 @@ Pipeline:
 1. **`session-judge`** — independent adversarial scorer. Reads the last 24h of `observations.md` + trace log, applies the rubric in `kiro/settings/rules/session-quality-rubric.md`, emits a JSON verdict (±1 charges, -2 drains, ±4.5%/day cap). **Proposes no fixes** — if the same agent scored and improved, it would optimize for score, not work.
 2. **`/kiro:reflect`** — consumes the Judge's drains as priority signals, converts them into new memory entries or pattern promotions.
 3. **`/kiro:housekeeping`** — prunes/archives observations, enforces memory caps.
-4. **Trust Score update** — `scripts/session/trust_score.py` applies the Judge's `score_delta`, clamps it, rewrites the `## Harness Trust Score:` line at the top of `hot-memory.md`, appends to `.claude/memory/trust-score.jsonl`.
-5. **Memory-gap alert** — if any `[memory-gap]` observations remain unresolved after reflection, appends a `[routine-alert]` observation so the user sees it next session.
-6. **Skill augmentation** — `skill-augment-agent` reviews today's observations and judge drains, encodes up to 3 evidence-backed improvements into relevant `SKILL.md` files (append-only, ≤150 chars each). Logs each change as a `[skill-update]` observation.
+4. **Memory-gap alert** — if any `[memory-gap]` observations remain unresolved after reflection, appends a `[routine-alert]` observation so the user sees it next session.
+5. **Session quality** — scores the session via the `session-quality` rubric, writes a `[session-quality]` observation.
+6. **Keep rate** — `keep-rate` skill evaluates pattern retention, writes a `[keep-rate]` observation.
+7. **Trust Score update** — `scripts/session/trust_score.py` runs after session quality and keep rate are written so all signals (`[session-charge]`, `[memory-gap]`, `[session-quality]`, `[keep-rate]`) are visible. Rewrites the `## Harness Trust Score:` line in `hot-memory.md`, appends to `.claude/memory/trust-score.jsonl`.
+8. **Skill augmentation** — `skill-augment-agent` reviews today's observations and judge drains, encodes up to 3 evidence-backed improvements into relevant `SKILL.md` files (append-only, ≤150 chars each). Logs each change as a `[skill-update]` observation.
 
 Idempotent per calendar day (uses today's `[judge]` observation as the sentinel). Each step is error-isolated: a bad Judge pass does not block housekeeping.
 
@@ -426,6 +428,16 @@ Reviews the per-repo tool-failure ledger and promotes recurring failures into me
 The loop runs continuously without you: two hooks capture every failing Bash/MCP call (`tool-failure-capture.sh`, PostToolUseFailure) and warn before a known-failing shape is repeated (`tool-failure-recall.sh`, PreToolUse). The review stage runs automatically ~twice weekly via `scripts/routines/tool-failure-review-runner.sh` (MIN_GAP_DAYS=3) inside the daily orchestrator — it no-ops unless the ledger has a signature that failed ≥3× and is still open, so calling it daily is cheap.
 
 Ledger: `.claude/memory/tool-failures.jsonl` (local, per-repo). Report: `.claude/reports/tool-failures/YYYY-MM-DD.md`. Skill: `tool-failure-memory`. Opt-out: `SDD_SKIP_TOOL_FAILURE_REVIEW=1`. Source: ReMe (agentscope-ai/ReMe).
+
+---
+
+### Daily Security Scan (`security-report-runner.sh`)
+
+Runs automatically every day via the daily orchestrator. Performs a static security scan of recent git changes using the `ai-security-workflow` skill: checks for OWASP patterns (injection sinks, XSS vectors, broken auth), exposed secrets, and unsafe patterns introduced in the last commit window. Writes a dated report to `.claude/reports/security/<date>-security-report.md`.
+
+Visible in the dashboard **Scheduled Tasks** section (row 6) with last-run status, artifact diff, and any findings headline.
+
+Self-paces to daily (`MIN_GAP_DAYS=1`). Applies to every repo. Opt-out: `SDD_SKIP_SECURITY_REPORT=1`.
 
 ---
 
@@ -739,4 +751,4 @@ Four protocols extracted from [garrytan/gbrain](https://github.com/garrytan/gbra
 
 Full reference: `docs/gbrain-patterns/gbrain-patterns.md`
 
-_Last synced: 2026-06-09_
+_Last synced: 2026-06-11_

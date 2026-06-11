@@ -73,7 +73,22 @@ Hook output is injected into Claude's context as system messages — Claude read
 
 **Why it's needed:** Security considerations (XSS, injection, input sanitization, prompt injection in agent-fed forms) are easiest to address before the first file is written. A question-only prompt like "how does React work?" does not trigger the nudge — only prompts with build intent.
 
-**Output:** `╔══ Security Nudge ══╗` banner with the instruction to invoke `Skill("secure-agent-design")`. Silent on non-matching prompts.
+**Output:** `╔══ Security Nudge ══╗` banner with the instruction to invoke `Skill("secure-agent-design")`. When the nudge fires, also appends a `[frontend-security-nudge]` observation to `.claude/memory/observations.md` (if present). Silent on non-matching prompts.
+
+---
+
+### `doc-parse-nudge.sh`
+**Event:** `UserPromptSubmit` — **Matcher:** _(all prompts, keyword-gated)_
+
+**Purpose:** Detects when the user is about to build document-parsing or RAG pipeline workflows and injects a reminder to invoke the `document-parsing` skill. Fires on every prompt but exits in <5ms if no keywords match.
+
+**Trigger logic:** Two conditions must BOTH be true:
+1. **Build intent** — prompt contains: `build`, `create`, `set up`, `implement`, `add`, `write`, `design`, `scaffold`, `integrate`, `develop`
+2. **Doc/RAG subject** — prompt mentions document formats (`pdf`, `docx`, `pptx`, `ocr`…) OR RAG/ingestion terms (`rag`, `embedding`, `vector store`, `chunk`, `ingest`, `pinecone`, `chroma`, `qdrant`…)
+
+**Why it's needed:** Local PDF/DOCX/image ingestion has non-obvious format and OCR choices. The `document-parsing` skill covers liteparse, format selection (text vs JSON+bbox), OCR config, and RAG handoff patterns — easiest to apply before the first line of pipeline code is written.
+
+**Output:** `╔══ doc/RAG work detected ══╗` banner with the instruction to invoke `Skill("document-parsing")`. Silent on non-matching prompts.
 
 ---
 
@@ -414,6 +429,7 @@ SessionStart   (all)                                        → caveman-activate
 Stop           → stop-hook.sh
 Stop           (all)                                        → address-check-hook.sh
 UserPromptSubmit (all, keyword-gated)                       → frontend-security-nudge.sh
+UserPromptSubmit (all, keyword-gated)                       → doc-parse-nudge.sh
 PreToolUse     Bash                                          → rtk hook claude  [global, ~/.claude/settings.json — token compression]
 PreToolUse     Write|Edit                                    → memory-discipline-hook.sh
 PreToolUse     Write|Edit                                    → protected-path-hook.sh
@@ -445,5 +461,5 @@ The `tool-failure-*` pair plus the `tool-failure-review` routine form the **tool
 3. Document it in this file (the `hook-added-notify.sh` hook will remind you if you forget).
 4. Update the Wiring Reference table above.
 
-_Last synced: 2026-06-10_
+_Last synced: 2026-06-11_
 
