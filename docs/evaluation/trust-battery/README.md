@@ -52,7 +52,7 @@ Based on a post by [@nityeshaga](https://x.com/nityeshaga/status/204486411468274
 └── session-judge.md               # Haiku-tier adversarial scorer, emits verdict only
 
 .claude/commands/kiro/
-└── daily-maintenance.md           # Orchestrator: Judge → Reflect → Housekeeping → Score → Alert
+└── daily-maintenance.md           # Orchestrator: Judge → Reflect → Housekeeping → Session Quality → Keep Rate → Trust Score → Augment Skills
 
 .claude/kiro/settings/rules/
 └── session-quality-rubric.md      # Charges/drains rubric with evidence requirement
@@ -167,11 +167,15 @@ Output arrows: ▲ (up), ▼ (down), ▬ (flat). 7-day delta is `null` until the
 │                                                              │
 │  Step 3 ── housekeeping-agent ──► pruned / archived memory   │
 │                                                              │
-│  Step 4 ── trust_score.py apply --delta ... ──► scoreboard   │
-│             (rewrites hot-memory.md header, appends jsonl)   │
-│                                                              │
-│  Step 5 ── unresolved [memory-gap] check ──► [routine-alert] │
+│  Step 4 ── memory-gap check ──► [routine-alert]               │
 │             (only if gaps remain after Step 2)               │
+│                                                              │
+│  Step 5 ── session-quality ──► [session-quality] obs         │
+│                                                              │
+│  Step 6 ── keep-rate ──► [keep-rate] obs                     │
+│                                                              │
+│  Step 7 ── trust_score.py apply --delta ... ──► scoreboard   │
+│             (runs after steps 5 & 6; sees all signals)       │
 └──────────────────────────────────────────────────────────────┘
 ```
 

@@ -82,12 +82,16 @@ Append-only session log. Each entry tagged with category.
 - 2026-03-29 [decision]: switched from REST to GraphQL for the dashboard endpoint — reduces frontend round-trips
 ```
 
-**Tags**: `spec`, `impl`, `design`, `debug`, `decision`, `friction`, `insight`, `pattern`, `enforceable`, `escaped`, `skill-update`, `auto-learn`, `seed-target`
+**Tags**: `spec`, `impl`, `design`, `debug`, `decision`, `friction`, `insight`, `pattern`, `enforceable`, `escaped`, `skill-update`, `auto-learn`, `seed-target`, `session-quality`, `keep-rate`, `frontend-security-nudge`, `doc-parse-nudge`
 
 - `enforceable` — Convention violation that could be prevented by a linter rule (feeds the evolve agent's graduation pipeline)
 - `escaped` — Bug that passed validation but was caught later in CI/production (highest priority for graduation)
 - `auto-learn` — Probationary fact written by `micro_reflect.py` (invoked standalone on drain signals). Tagged `[auto-learn, YYYY-MM-DD]` in `hot-memory.md`. Housekeeping promotes to `patterns.md` after 7 days if reinforced, or removes it if not.
 - `seed-target` — Auto-written by `action-capture.sh` when a Bash command exits non-zero. Format: `[seed-target:<domain>]`. Maps the failure domain (e.g., `python-pro`, `git-advanced-workflows`) for the nightly `skill-augment-agent` Sleep phase — these entries become explicit seeding targets for skill improvement.
+- `session-quality` — Written by the daily maintenance pipeline (step B). Records the scored session quality (1–5) from the `session-quality` rubric for that calendar day.
+- `keep-rate` — Written by the daily maintenance pipeline (step C). Records the percentage of Claude-co-authored lines that remain in HEAD after ≥7 days.
+- `frontend-security-nudge` — Auto-written by `frontend-security-nudge.sh` when the hook fires (build intent + frontend keywords). One per calendar day maximum.
+- `doc-parse-nudge` — Auto-written by `doc-parse-nudge.sh` when the hook fires (build intent + document/RAG keywords). One per calendar day maximum.
 
 ### action-items.md
 Cross-session TODOs with priority and dates.
@@ -201,4 +205,4 @@ Defined in `kiro/settings/rules/memory-conventions.md`:
 
 See `SDD-SETUP-GUIDE.md` Step 12 for full bootstrap instructions.
 
-_Last synced: 2026-06-09_
+_Last synced: 2026-06-11_

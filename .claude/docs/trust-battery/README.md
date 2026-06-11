@@ -52,7 +52,7 @@ Based on a post by [@nityeshaga](https://x.com/nityeshaga/status/204486411468274
 └── session-judge.md               # Haiku-tier adversarial scorer, emits verdict only
 
 .claude/commands/kiro/
-└── daily-maintenance.md           # Orchestrator: Judge → Reflect → Housekeeping → Score → Alert
+└── daily-maintenance.md           # Orchestrator: Judge → Reflect → Housekeeping → Session Quality → Keep Rate → Trust Score → Augment Skills
 
 .claude/kiro/settings/rules/
 └── session-quality-rubric.md      # Charges/drains rubric with evidence requirement

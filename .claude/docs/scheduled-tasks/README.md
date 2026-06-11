@@ -16,12 +16,12 @@ All tasks are wired into `scripts/daily-orchestrator.sh`. The orchestrator fires
 **Cadence:** Every day (idempotent; skips if already ran today)
 **Scope:** Every registered repo
 
-**What it does:**
-- Judge — score the previous day's observations via the session-quality rubric
-- Reflect — convert drain entries into memory updates
-- Housekeep — archive observations.md if >50 entries
-- Trust Score — `trust_score.py auto-score` from observations.md signals
-- Morning Brief — draft daily brief to `.claude/memory/daily/YYYY-MM-DD-brief.md`
+**What it does (five steps, error-isolated):**
+- **A** — Judge + Reflect + Housekeep: score the previous day's observations via the session-quality rubric; convert drain entries into memory updates; archive `observations.md` if >50 entries
+- **B** — Session Quality Assessment: collect git activity; score session 1–5; append `[session-quality]` observation
+- **C** — Keep Rate Evaluation: find Claude-co-authored commits older than 7 days; compute lines still in HEAD; append `[keep-rate]` observation
+- **D** — Trust Score update: run `trust_score.py auto-score` after B and C are written, so all signals (`[session-charge]`, `[memory-gap]`, `[session-quality]`, `[keep-rate]`) are visible to the scorer
+- **E** — Skill Augmentation: invoke `skill-augment-agent` with today's judge verdict; encodes up to 3 evidence-backed improvements into skill files
 
 **Opt-out:** `rm .claude/scripts/daily-runner.sh` in that repo; or `SDD_SKIP_ROUTINE=1` to skip registration at install time.
 
@@ -130,4 +130,4 @@ The dashboard's **Scheduled Tasks** tab shows live status for each task: schedul
 
 ---
 
-_Last synced: 2026-06-01_
+_Last synced: 2026-06-11_
