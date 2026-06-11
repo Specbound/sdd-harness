@@ -9,9 +9,10 @@ if [ "$SDD_PROFILE" = "minimal" ]; then
   exit 0
 fi
 
-# Self-locate: this file lives at <harness>/.claude/hooks/ so two levels up = harness root.
-__hook_here="$(cd -P "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
-HARNESS_DIR="$(cd "$__hook_here/../.." && pwd)"
+HARNESS_DIR="$(cat "$HOME/.sdd-harness-root" 2>/dev/null || true)"
+if [ -z "$HARNESS_DIR" ] || [ ! -d "$HARNESS_DIR" ]; then
+  exit 0
+fi
 LAST_CHECK_FILE=".claude/.last-harness-check"
 
 # --- Harness update check ---

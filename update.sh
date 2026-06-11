@@ -93,11 +93,7 @@ do_update() {
   for hook in "$HARNESS_DIR/hooks/claude/"*.sh; do
     [ -f "$hook" ] || continue
     name="$(basename "$hook")"
-    if [ "$name" = "stop-hook.sh" ]; then
-      sed "s|{{HARNESS_DIR}}|$HARNESS_DIR|g" "$hook" > "$proj/.claude/hooks/$name"
-    else
-      cp "$hook" "$proj/.claude/hooks/$name"
-    fi
+    cp "$hook" "$proj/.claude/hooks/$name"
     chmod +x "$proj/.claude/hooks/$name"
   done
 
@@ -149,19 +145,18 @@ else
   done < "$HARNESS_DIR/projects.txt"
 fi
 
+# --- Persist harness root so stop-hook.sh can locate it at runtime ---
+# stop-hook.sh reads this file instead of having the path baked in via sed substitution.
+echo "$HARNESS_DIR" > "$HOME/.sdd-harness-root"
+
 # --- Sync harness's own .claude/ runtime from canonical sources ---
 # hooks/claude/ and scripts/ are the canonical source of truth. The harness's runtime
 # copy under .claude/ is regenerated each update so its own hooks/scripts cannot
-# drift from the source. stop-hook.sh gets {{HARNESS_DIR}} substituted to an
-# absolute path because Claude Code's hook runner does not set CWD.
+# drift from the source.
 for hook in "$HARNESS_DIR/hooks/claude/"*.sh; do
   [ -f "$hook" ] || continue
   name="$(basename "$hook")"
-  if [ "$name" = "stop-hook.sh" ]; then
-    sed "s|{{HARNESS_DIR}}|$HARNESS_DIR|g" "$hook" > "$HARNESS_DIR/.claude/hooks/$name"
-  else
-    cp "$hook" "$HARNESS_DIR/.claude/hooks/$name"
-  fi
+  cp "$hook" "$HARNESS_DIR/.claude/hooks/$name"
   chmod +x "$HARNESS_DIR/.claude/hooks/$name"
 done
 # scripts/ is a nested directory — sync preserves subdirectory structure.

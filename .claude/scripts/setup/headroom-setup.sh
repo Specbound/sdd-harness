@@ -28,8 +28,10 @@ INSTALLED_GLOBALLY=0
 if command -v uv >/dev/null 2>&1; then
     # headroom-ai is a Rust extension (maturin). No pre-built wheel for Python 3.14+,
     # so try 3.12 first where binary wheels exist, then fall back to default.
-    if uv tool install "$HEADROOM_PKG" --python 3.12 -q 2>/dev/null \
-       || uv tool install "$HEADROOM_PKG" -q 2>/dev/null; then
+    if uv tool install "$HEADROOM_PKG" --python 3.12 \
+          --with numpy --with sqlite-vec --with sentence-transformers -q 2>/dev/null \
+       || uv tool install "$HEADROOM_PKG" \
+          --with numpy --with sqlite-vec --with sentence-transformers -q 2>/dev/null; then
         echo "    Installed via uv tool."
         INSTALLED_GLOBALLY=1
     fi
@@ -52,18 +54,6 @@ fi
 if [ "$INSTALLED_GLOBALLY" -eq 0 ]; then
     echo "  WARNING: could not install headroom-ai globally. Install manually:"
     echo "    uv tool install headroom-ai   OR   pip install --user headroom-ai"
-fi
-
-# ── 1b. Install runtime deps required by the memory sync script ────────────
-# headroom-ai's uv tool env ships without numpy/sqlite-vec/sentence-transformers
-# (they're optional extras). Install them so sync-memories-to-headroom.py works.
-_HEADROOM_PY="$HOME/.local/share/uv/tools/headroom-ai/bin/python"
-if [ -x "$_HEADROOM_PY" ] && command -v uv >/dev/null 2>&1; then
-    echo "  Installing headroom memory-sync deps (numpy, sqlite-vec, sentence-transformers)..."
-    uv pip install numpy sqlite-vec sentence-transformers \
-        --python "$_HEADROOM_PY" -q 2>/dev/null \
-        && echo "    Done." \
-        || echo "    WARNING: some deps may have failed — run manually if sync errors occur."
 fi
 
 # ── 2. Add alias to ~/.bashrc ───────────────────────────────────────────────

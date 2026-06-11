@@ -23,13 +23,14 @@ from headroom.memory.backends.local import LocalBackend, LocalBackendConfig
 from headroom.memory.sync import sync
 from headroom.memory.sync_adapters.claude_code import ClaudeCodeAdapter
 
-# Resolve harness root from this file's location — works regardless of install path.
-# Walk up until we hit the .claude ancestor; its parent is the harness root.
 def _harness_root() -> Path:
     for parent in Path(__file__).resolve().parents:
         if parent.name == ".claude":
             return parent.parent
-    raise RuntimeError(f"sync-memories-to-headroom.py is not inside a .claude/ tree: {__file__}")
+    raise RuntimeError(
+        f"sync-memories-to-headroom.py is not inside a .claude/ tree: {__file__}"
+    )
+
 
 HARNESS_PATH = _harness_root()
 DB_PATH = headroom_paths.memory_db_path()  # ~/.headroom/memory.db

@@ -521,11 +521,7 @@ install_project() {
   for hook in "$HARNESS_DIR/hooks/claude/"*.sh; do
     [ -f "$hook" ] || continue
     name="$(basename "$hook")"
-    if [ "$name" = "stop-hook.sh" ]; then
-      sed "s|{{HARNESS_DIR}}|$HARNESS_DIR|g" "$hook" > "$PROJECT_DIR/.claude/hooks/$name"
-    else
-      cp "$hook" "$PROJECT_DIR/.claude/hooks/$name"
-    fi
+    cp "$hook" "$PROJECT_DIR/.claude/hooks/$name"
     chmod +x "$PROJECT_DIR/.claude/hooks/$name"
   done
 
@@ -670,6 +666,9 @@ install_globals() {
     done
     echo "  Global commands installed to ~/.claude/commands/"
   fi
+
+  # --- Persist harness root so stop-hook.sh can locate it at runtime ---
+  echo "$HARNESS_DIR" > "$HOME/.sdd-harness-root"
 
   # --- Regenerate harness's own settings.json with absolute paths ---
   # Always regenerate so hook paths reflect the actual harness location on this machine.

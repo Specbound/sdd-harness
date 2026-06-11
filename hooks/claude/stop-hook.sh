@@ -9,7 +9,10 @@ if [ "$SDD_PROFILE" = "minimal" ]; then
   exit 0
 fi
 
-HARNESS_DIR="{{HARNESS_DIR}}"
+HARNESS_DIR="$(cat "$HOME/.sdd-harness-root" 2>/dev/null || true)"
+if [ -z "$HARNESS_DIR" ] || [ ! -d "$HARNESS_DIR" ]; then
+  exit 0
+fi
 LAST_CHECK_FILE=".claude/.last-harness-check"
 
 # --- Harness update check ---
