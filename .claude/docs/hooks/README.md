@@ -59,6 +59,8 @@ Hook output is injected into Claude's context as system messages — Claude read
 
 **Respects:** `SDD_PROFILE=minimal` env var — skips entirely.
 
+**Path resolution:** Reads harness root from `~/.sdd-harness-root` (written by `install.sh` / `update.sh`). If the file is absent or points to a non-existent directory, the hook exits silently without error.
+
 ---
 
 ### `memory-discipline-hook.sh`
@@ -384,5 +386,5 @@ The `tool-failure-*` pair plus the `tool-failure-review` routine form the **tool
 3. Document it in this file (the `hook-added-notify.sh` hook will remind you if you forget).
 4. Update the Wiring Reference table above.
 
-_Last synced: 2026-06-02 — added `caveman-activate.js` (SessionStart — auto-activates caveman lite every session; user adjusts via /caveman full|ultra or disables with "normal mode"); added `rtk hook claude` to wiring reference (PreToolUse Bash — replaces ztk, 60–90% Bash output compression, global)._
+_Last synced: 2026-06-11_
 

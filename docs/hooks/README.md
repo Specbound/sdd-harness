@@ -60,6 +60,8 @@ Hook output is injected into Claude's context as system messages — Claude read
 
 **Respects:** `SDD_PROFILE=minimal` env var — skips entirely.
 
+**Path resolution:** Reads harness root from `~/.sdd-harness-root` (written by `install.sh` / `update.sh`). If the file is absent or points to a non-existent directory, the hook exits silently without error.
+
 ---
 
 ### `frontend-security-nudge.sh`

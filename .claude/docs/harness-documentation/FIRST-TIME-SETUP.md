@@ -146,7 +146,7 @@ source ~/.bashrc
 # Workshop starts on port 5899
 raindrop workshop &
 # Open harness dashboard → Workshop tab
-python3 ~/.claude/sdd-harness/scripts/dashboard.py
+python3 ~/.claude/sdd-harness/scripts/utils/dashboard.py
 ```
 
 See `docs/raindrop/README.md` for full details on tracing, the eval loop, and troubleshooting.
@@ -381,4 +381,4 @@ Run through this on a fresh machine:
 | **Windows:** `uv` not found after install | PowerShell PATH not reloaded | Restart terminal or run `. $env:USERPROFILE\.cargo\env` (or reopen shell) |
 | **Windows:** `install.sh` fails | Script requires bash | Run from Git Bash or WSL2, not PowerShell or CMD |
 
-_Last synced: 2026-06-01_
+_Last synced: 2026-06-11_

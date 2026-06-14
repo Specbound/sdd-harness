@@ -2,7 +2,7 @@
 
 > This file is managed by the SDD harness (`sdd-harness/docs/`).
 > It is the single source of truth — do not edit copies in individual projects.
-> _Last synced: 2026-06-10
+> _Last synced: 2026-06-11_
 
 A complete, self-contained guide to setting up the Spec-Driven Development (SDD)
 harness used in this project. Follow these steps to replicate the setup in any
@@ -330,6 +330,8 @@ Create `.claude/hooks/stop-hook.sh` and make it executable:
 ```bash
 chmod +x .claude/hooks/stop-hook.sh
 ```
+
+**No path editing required.** The hook reads the harness root from `~/.sdd-harness-root` — a sentinel file written by `install.sh` during setup. This makes it fully portable: rename the harness directory, move to a new machine, or change install depth — the hook resolves correctly without modification.
 
 The stop hook runs lightweight checks at the end of every Claude session. Guarded by `SDD_PROFILE=minimal` — if that variable is set, the hook exits immediately (used by headless runners to suppress interactive output).
 
@@ -896,7 +898,7 @@ source ~/.bashrc
 
 ```bash
 # Start the harness dashboard
-python3 ~/.claude/sdd-harness/scripts/dashboard.py
+python3 ~/.claude/sdd-harness/scripts/utils/dashboard.py
 
 # In the browser: click Workshop → select repo → Start raindrop workshop
 # Traces appear in real-time as agents run
@@ -1086,7 +1088,7 @@ It also ships a **memory sync integration** (`scripts/utils/sync-memories-to-hea
 
 ### Memory sync
 
-`sync-memories-to-headroom.py` runs bidirectional sync between harness markdown memories (`~/.claude/projects/<harness>/memory/*.md`) and headroom's SQLite DB (`~/.headroom/memory.db`). Run with headroom's Python:
+`sync-memories-to-headroom.py` runs bidirectional sync between harness markdown memories and headroom's SQLite DB (`~/.headroom/memory.db`). The script dynamically resolves the harness root by walking up its own directory tree until it finds a `.claude` parent, then encodes the path using Claude Code's project-key convention (replacing `/`, `\`, and `.` with `-`) to locate the correct memory directory. This makes it fully location-agnostic — no hardcoded paths. Run with headroom's Python:
 
 ```bash
 ~/.local/share/uv/tools/headroom-ai/bin/python scripts/utils/sync-memories-to-headroom.py

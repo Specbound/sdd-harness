@@ -331,6 +331,8 @@ Create `.claude/hooks/stop-hook.sh` and make it executable:
 chmod +x .claude/hooks/stop-hook.sh
 ```
 
+**No path editing required.** The hook reads the harness root from `~/.sdd-harness-root` — a sentinel file written by `install.sh` during setup. This makes it fully portable: rename the harness directory, move to a new machine, or change install depth — the hook resolves correctly without modification. If the file is absent or points to a non-existent directory, the hook exits silently.
+
 The stop hook runs lightweight checks at the end of every Claude session:
 
 1. **Harness update check** — if the harness has new commits since last install, prints a nudge to run `update.sh`.
