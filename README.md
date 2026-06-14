@@ -243,6 +243,13 @@ sdd-harness/
 │   │   ├── doc-parse-nudge.sh    #     UserPromptSubmit: nudges document-parsing skill on PDF/RAG/OCR prompts
 │   │   ├── pre-tool-use-gitnexus.sh #  On file read/edit: enrich with GitNexus symbol graph context (callers, deps, processes)
 │   │   └── scan-pii.sh           #     PII scanner: scan staged files or a path with OPF (exits 1 on secrets/account numbers)
+│   ├── global/                   # User-global hooks (wired via ~/.claude/settings.json; not project-synced)
+│   │   ├── caveman-activate.js   #     SessionStart: activates caveman terse-mode, emits ruleset as session context
+│   │   ├── caveman-config.js     #     Shared config module for caveman hooks (mode, flag file path)
+│   │   ├── caveman-mode-tracker.js #   UserPromptSubmit: injects active caveman level into every prompt
+│   │   ├── caveman-stats.js      #     Tracks caveman usage metrics across sessions
+│   │   ├── caveman-statusline.sh #     Statusline command: emits [CAVEMAN] / [CAVEMAN:ULTRA] badge
+│   │   └── lean-ctx-rewrite.sh  #     PreToolUse(Bash): rewrites common shell commands to lean-ctx equivalents
 │   └── git/                      # Git lifecycle hooks (copied to .git/hooks/ on install/update)
 │       └── post-commit           #     On commit: doc sync + harness update detection
 │
@@ -735,6 +742,18 @@ Runs OPF on a set of files and exits non-zero if high-severity PII is found. Des
 
 Requires OPF (OpenAI privacy-filter — not on PyPI, install from source): `uv tool install --python 3.13 git+https://github.com/openai/privacy-filter.git`. Model weights (~2.8GB) auto-download to `~/.opf/` on first use.
 
+### Caveman Mode Hook (`hooks/global/caveman-activate.js`)
+
+Fires on every `SessionStart`. Reads the configured default mode from `caveman-config.js`, writes a flag file at `$CLAUDE_CONFIG_DIR/.caveman-active` (consumed by the statusline), and emits the full caveman ruleset as hidden session context. Reads `skills/caveman/SKILL.md` at runtime so edits to the skill propagate automatically without requiring hook changes. Falls back to a hardcoded minimal ruleset when the skill file isn't present (standalone installs). Companion hooks: `caveman-mode-tracker.js` injects the active level into every prompt; `caveman-stats.js` records usage. `caveman-statusline.sh` is a statusline command (not a lifecycle hook) that emits the `[CAVEMAN]` / `[CAVEMAN:ULTRA]` badge.
+
+All caveman hooks are user-global — wired in `~/.claude/settings.json`, not installed per project.
+
+### lean-ctx Rewrite Hook (`hooks/global/lean-ctx-rewrite.sh`)
+
+A `PreToolUse` hook in `~/.claude/settings.json` that fires on every Bash tool call. When the command matches a registered tool (`git`, `gh`, `cargo`, `npm`, `pnpm`, `pytest`, `rg`, `ls`, `find`, and others), rewrites it to `lean-ctx -c "<original>"` so output passes through the lean-ctx compression layer. Commands not in the match list exit immediately with no rewrite. Complements RTK — RTK compresses output from a broad set of dev tools, lean-ctx rewrites the command to use its own caching and mode-selection layer.
+
+This is a user-global hook — applies to every session and every project automatically. No per-project setup needed.
+
 ### Global Token Compression Hook (RTK)
 
 A `PreToolUse` hook in `~/.claude/settings.json` fires on every Bash tool call. `rtk hook claude` reads the JSON payload, checks if the command has a registered filter (git, test runners, file ops, linters, etc.), and if so emits a rewrite directive (`permissionDecision: "allow"`) telling Claude Code to run `rtk <original>` instead. The proxy executes, compresses the output, and returns it. Commands without filters pass through unchanged.
@@ -919,4 +938,4 @@ The Model Cost section reads session data from `~/.claude/projects/*/`. Pricing 
 
 Private repository. Contact the maintainer for access.
 
-_Last synced: 2026-06-11_
+_Last synced: 2026-06-14_

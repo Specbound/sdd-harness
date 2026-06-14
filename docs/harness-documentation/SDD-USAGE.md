@@ -509,9 +509,10 @@ Generates skills from an approved extraction plan, or runs the full pipeline wit
 
 Output: `~/.claude/skills/<name>/SKILL.md` for each extracted skill.
 
-Every new skill passes two mandatory quality gates before it is logged to the sources index:
+Every new skill passes quality gates and a companion check before it is logged to the sources index:
 - **Phase 5b — SkillOS Quality Gate**: task relevance, operational validity, content quality, compression (≤5,000 words). Failures block completion.
 - **Phase 5c — Identity Alignment Check**: invokes `agent-identity` Mode B — validates description specificity, trigger sharpness, behavioral concreteness, and explicit exclusions. Vague skill identities cause the wrong skill to fire; this gate prevents them from entering the harness.
+- **Phase 5d — Verification Companion Check**: asks whether the skill's domain involves manual checks a human would run after Claude's work (visual inspection, sampling output, checking logs). If yes, invokes `verification-skill-authoring` to create a companion `<domain>-verify` skill before proceeding.
 
 See `docs/skill-extraction/README.md` for full details on scoring, workflow, and security.
 
@@ -782,4 +783,4 @@ Four protocols extracted from [garrytan/gbrain](https://github.com/garrytan/gbra
 
 Full reference: `docs/gbrain-patterns/gbrain-patterns.md`
 
-_Last synced: 2026-06-11_
+_Last synced: 2026-06-14_
