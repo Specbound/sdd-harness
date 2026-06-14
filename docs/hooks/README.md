@@ -348,7 +348,7 @@ Hook output is injected into Claude's context as system messages — Claude read
 
 **Output:** `CAVEMAN MODE ACTIVE — level: lite` followed by the filtered ruleset. If statusline is not configured, appends a setup nudge.
 
-**Location:** `~/.claude/hooks/caveman-activate.js` (global, installed by `npx github:JuliusBrussee/caveman`)
+**Location:** `~/.claude/hooks/caveman-activate.js` (global; ships in the harness at `hooks/global/` and is copied to `~/.claude/hooks/` by `install.sh`). Reads `skills/caveman/SKILL.md` at runtime for the ruleset, falling back to a hardcoded minimal set on standalone installs where that file isn't present.
 
 ---
 
@@ -463,5 +463,5 @@ The `tool-failure-*` pair plus the `tool-failure-review` routine form the **tool
 3. Document it in this file (the `hook-added-notify.sh` hook will remind you if you forget).
 4. Update the Wiring Reference table above.
 
-_Last synced: 2026-06-11_
+_Last synced: 2026-06-14_
 

@@ -39,6 +39,7 @@ The extraction follows a three-stage pipeline:
   - `routine` → `~/.claude/commands/<name>.md` + suggested cron schedule
 - **Phase 5b — SkillOS Quality Gate** (new skills only): scores the skill against 4 dimensions (task relevance, operational validity, content quality, compression) before marking it complete. Failures block installation until fixed.
 - **Phase 5c — Identity Alignment Check** (new skills only): invokes `agent-identity` in Mode B to validate description specificity, trigger sharpness, behavioral concreteness, and explicit exclusions. Runs after Phase 5b passes, before the skill is logged to the sources index.
+- **Phase 5d — Verification Companion Check** (new skills only): asks whether the skill's domain involves manual checks a human would run after Claude's work (visual inspection, sampling output, checking logs). If yes, invokes `verification-skill-authoring` to create a companion `<domain>-verify` skill before proceeding. Runs after Phase 5c.
 
 ---
 
@@ -173,4 +174,4 @@ Skills extracted and logged to `docs/sources/` by source type. See the relevant 
 - `rtk` tool install + `caveman` tool install with auto-lite SessionStart hook — from YouTube transcript on Claude Code token reduction strategies (2026-06-02)
 - `multi-agent-patterns` v1.4.0 enhancement — "Dynamic Workflow Patterns" section: 3 failure modes, 6 patterns (classify-and-act, fan-out-and-synthesize, adversarial verification, generate-and-filter, tournament, loop-until-done), composition matrix, `/goal`+`/loop` controls, quarantine pattern, workflow-as-Skill packaging, 8 common mistakes — from movez.substack.com dynamic-workflow article (2026-06-08)
 
-_Last synced: 2026-06-08 (movez.substack.com → multi-agent-patterns v1.4.0 Dynamic Workflow Patterns section)_
+_Last synced: 2026-06-14 (added Phase 5d — Verification Companion Check, syncing with SDD-USAGE.md)_
