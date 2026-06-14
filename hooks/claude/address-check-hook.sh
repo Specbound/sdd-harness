@@ -9,7 +9,7 @@
 # REGISTRATION (in ~/.claude/settings.json under "Stop"):
 # {
 #   "matcher": "",
-#   "hooks": [{"type": "command", "command": "bash \"/home/dalesser/.claude/hooks/address-check-hook.sh\""}]
+#   "hooks": [{"type": "command", "command": "bash \"$HOME/.claude/hooks/address-check-hook.sh\""}]
 # }
 
 set -euo pipefail

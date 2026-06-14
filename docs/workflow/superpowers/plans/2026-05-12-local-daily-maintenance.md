@@ -1,5 +1,7 @@
 # Local Daily Maintenance Implementation Plan
 
+> **MACHINE-SPECIFIC — do not copy commands verbatim.** This is a dated implementation record from one machine. Absolute paths below (`/home/dalesser/...`, `/mnt/c/dev/...`) reflect that environment; translate to your own `~/.claude/sdd-harness/` and project roots before running anything.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Replace the three auto-disabled CCR routines (Kiro Daily Maintenance, Session Quality Assessor, Keep Rate Evaluator) with a local Task-Scheduler-driven loop + session-start catch-up hook, and fix the never-installed trust-battery stop-hook wiring.

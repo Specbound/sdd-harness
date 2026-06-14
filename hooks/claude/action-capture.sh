@@ -138,5 +138,5 @@ esac
 # REGISTRATION — add to ~/.claude/settings.json PostToolUse array:
 # {
 #   "matcher": "Bash",
-#   "hooks": [{ "type": "command", "command": "bash \"/home/dalesser/.claude/hooks/action-capture.sh\"" }]
+#   "hooks": [{ "type": "command", "command": "bash \"$HOME/.claude/hooks/action-capture.sh\"" }]
 # }

@@ -3,7 +3,8 @@
 # Scans a project repo and writes .claude/docs/PROJECT_STACK.md
 set -e
 
-REPO="$(realpath "${1:-.}")"
+# Portable absolute-path resolution (realpath is not installed on macOS by default)
+REPO="$(cd "${1:-.}" && pwd -P)"
 OUTPUT="$REPO/.claude/docs/PROJECT_STACK.md"
 DATE="$(date +%Y-%m-%d)"
 

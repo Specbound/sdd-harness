@@ -70,7 +70,8 @@ if [ -f "$BASHRC" ]; then
         echo "  headroom wrap alias already correct in ~/.bashrc"
     elif grep -q "headroom wrap" "$BASHRC" 2>/dev/null; then
         # Exists but outdated (missing --memory or has wrong flags) — update in place
-        sed -i "s|alias claude='headroom wrap claude'.*|$DESIRED_ALIAS|" "$BASHRC"
+        # -i.bak then remove: portable across GNU (Linux) and BSD (macOS) sed
+        sed -i.bak "s|alias claude='headroom wrap claude'.*|$DESIRED_ALIAS|" "$BASHRC" && rm -f "$BASHRC.bak"
         echo "  Updated headroom wrap alias to include --memory in ~/.bashrc"
     else
         printf "\n%s\n# --memory: persistent cross-session memory via headroom SQLite\nalias claude='headroom wrap claude --memory'\n" "$MARKER" >> "$BASHRC"
