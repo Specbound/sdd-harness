@@ -4,6 +4,27 @@ Approaches that took 2+ attempts — what failed, what worked, and why.
 
 ---
 
+## 2026-06-14 — headroom proxy fails on terminal `claude` launch (missing deps)
+
+**Symptom:** `claude` from terminal shows "Proxy exited with code 1: FastAPI required" or "h2 package not installed".
+
+**Root cause:** `headroom-setup.sh` uv tool install was missing two deps:
+1. `uvicorn` — FastAPI needs this to serve (was never in `--with` list)
+2. `httpx[http2]` — headroom proxy uses `http2=True`; bare `httpx` doesn't include `h2`
+
+**Fix:** Re-install with all deps:
+```bash
+uv tool install headroom-ai --python 3.12 \
+  --with numpy --with sqlite-vec --with sentence-transformers \
+  --with fastapi --with uvicorn --with "httpx[http2]"
+```
+Then patched `scripts/setup/headroom-setup.sh` to include `--with uvicorn --with "httpx[http2]"` on both uv install lines so it won't regress.
+
+**Lesson:** When headroom proxy errors, check the uv tool env for missing packages first:
+`ls ~/.local/share/uv/tools/headroom-ai/lib/python3.12/site-packages/ | grep -iE "fastapi|uvicorn|httpx|h2"`
+
+---
+
 ## 2026-05-31 — `update.sh` wiped global skills into spilled files (macOS BSD `cp`)
 
 **Symptom:** After running `update.sh`, `~/.claude/skills/` lost every named skill dir (evaluation, macro-evals, …) and the root filled with loose files (`SKILL.md`, `analyze.py`, `resources/`, `scripts/`) — the *contents* of skills dumped at top level, each overwriting the last.

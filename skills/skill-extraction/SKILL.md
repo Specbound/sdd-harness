@@ -1,6 +1,6 @@
 ---
 name: skill-extraction
-description: "Analyze an external resource (link, repo, doc, tool) and extract relevant capabilities to integrate into the harness as skills, hooks, scripts, commands, routines, or config changes. Always proposes before implementing."
+description: "Analyze an external resource (link, repo, doc, tool) and extract relevant capabilities to integrate into the harness. Aggressively gates value — most candidates get rejected. Always proposes before implementing."
 risk: safe
 source: local
 ---
@@ -8,6 +8,8 @@ source: local
 # Skill Extraction
 
 Analyze an external resource and intelligently integrate its capabilities into the harness — as skills, hooks, scripts, commands, routines, or config changes — with user approval at every step.
+
+**The default answer is skip.** Only propose something if it genuinely fills a gap the harness cannot already cover and earns its maintenance cost. A lean harness beats a bloated one. It is correct and expected for most candidates to be rejected.
 
 ## Use this skill when
 
@@ -62,25 +64,30 @@ Before proposing anything, understand what the harness already has. Read in para
 2. **Hooks** — read `~/.claude/settings.json` and `.claude/settings.json` for existing hooks
 3. **Harness docs** — check `~/.claude/sdd-harness/docs/` and `CLAUDE.md` for architecture context
 4. **Memory** — check `~/.claude/projects/*/memory/MEMORY.md` for relevant project context
+5. **Dashboard** — read `~/.claude/sdd-harness/.dashboard/` to understand what widgets/panels already exist and what data they surface
 
-The goal: understand gaps the resource could fill, and avoid re-implementing what already exists.
+The goal: understand gaps the resource could fill, identify what already exists and could be augmented instead of duplicated, and avoid adding anything that merely adds noise.
 
 ### Phase 3: Gap Analysis & Integration Mapping
 
-Map the resource's capabilities to integration types:
+Map the resource's capabilities to integration types, then ruthlessly filter them.
+
+#### Step 3a: Integration Type Mapping
 
 | Integration Type | Output path | When to use |
 |---|---|---|
+| **Augmentation** | Existing file (skill, hook, script, or dashboard widget) | Adding capability to an existing artifact — **ALWAYS preferred over creating new** |
 | **Skill** | `~/.claude/skills/<name>/SKILL.md` | Reusable workflow, decision tree, domain knowledge Claude applies when asked |
 | **Hook** | `~/.claude/hooks/<name>.sh` + settings.json | Automated behavior on Claude events (PreToolUse, PostToolUse, Stop, SessionStart) |
 | **Script** | `~/.claude/scripts/<name>.sh` | Utility automation run directly — no Claude-specific integration needed |
 | **Command** | `~/.claude/commands/<name>.md` | User-invokable `/slash-command` with arguments and an interactive workflow |
 | **Routine** | `~/.claude/commands/<name>.md` + cron note | Recurring/scheduled operation (nightly maintenance, monitoring, reports) |
 | **Config Change** | `~/.claude/settings.json` or `.claude/settings.json` | Settings, env vars, permissions, or MCP server entries |
+| **Dashboard widget** | `~/.claude/sdd-harness/.dashboard/` | New panel or metric visible in the harness dashboard |
 
-A single resource can map to multiple integration types.
+A single resource can map to multiple integration types. Before creating anything new, check whether the capability belongs in an existing artifact.
 
-#### Hook Candidate Assessment (Mandatory)
+#### Step 3b: Hook Candidate Assessment (Mandatory)
 
 Before finalizing the integration map, evaluate each capability against the four hook signals:
 
@@ -96,6 +103,44 @@ For hooks, also determine:
 - **Strength**: soft gate (outputs a warning, Claude decides) vs. hard block (exits non-zero to prevent tool execution)
 - **Matcher**: which tool name to match for PreToolUse/PostToolUse, or blank for all
 
+#### Step 3c: Dashboard Assessment (Mandatory)
+
+For every proposed item, ask:
+
+- Does this produce **persistent output** (metrics, status, reports) a user would want to see across sessions? → Consider a dashboard widget or updating an existing one
+- Does an **existing dashboard widget** already track something adjacent? → Augment it instead of creating a new panel
+- Is this behavior already surfaced somewhere on the dashboard? → Skip the dashboard angle entirely
+
+Only propose a dashboard change if the answer is clearly yes and no existing widget covers it.
+
+#### Step 3d: Automation Assessment (Mandatory for every candidate)
+
+For **every** candidate that survives initial filtering, explicitly answer:
+
+> *"Can this be automated so the user never has to remember to invoke it?"*
+
+| Verdict | Meaning | Action |
+|---|---|---|
+| **Auto — hook** | Fires on a Claude Code lifecycle event | Wire as a hook; skill (if any) becomes its logic |
+| **Auto — routine** | Should run on a schedule (daily/weekly) | Wire into `daily-orchestrator.sh` with a cadence guard |
+| **Auto — both** | Needs event trigger AND scheduled check | Propose both hook and routine |
+| **Not automatable — user-invoked** | Genuinely requires user judgment to trigger | Skill or command only; document WHY it can't be automated |
+| **Not automatable — contextual** | Only makes sense when user is actively working on something specific | Skill only, pulled when relevant |
+
+The goal of the harness is to be self-sustaining. A skill the user must remember to invoke is a half-measure. If something can be automated, automate it. Only leave it as a user-invoked skill when automation would be wrong or dangerous.
+
+#### Step 3e: Value Critic Gate (Mandatory — run before building the proposal)
+
+Before including any candidate in the proposal, apply the harness critic test. For each candidate, answer:
+
+1. **Already covered?** Does any existing skill, hook, script, or command cover >70% of this capability? → Skip or augment, never duplicate.
+2. **Hollow addition?** Does this add new *behavior*, or just new *text* the user could look up elsewhere? → If documentation only, skip.
+3. **Maintenance cost justified?** Will the harness be measurably better with this? Or is this a "nice to have" that adds noise? → If uncertain, skip.
+4. **Better as augmentation?** Could this be a single added section in an existing artifact rather than its own file? → Augment, don't create.
+5. **Automation answer honest?** If the verdict is "not automatable", is that genuinely true — or just harder to wire? → Be honest.
+
+**Only candidates that survive all five checks reach the proposal.** A proposal with 1–2 high-value items is better than one with 7 mediocre ones.
+
 ### Phase 4: Proposal (REQUIRED — always show before implementing)
 
 Present the full integration plan to the user. Format:
@@ -110,10 +155,12 @@ Present the full integration plan to the user. Format:
 
 ### Proposed Integrations
 
-#### 1. [Name] — [Type: Skill / Hook / Script / Command / Routine / Config]
+#### 1. [Name] — [Type: Augmentation / Skill / Hook / Script / Command / Routine / Dashboard widget / Config]
 **What:** [What this integration does]
-**Why:** [Why this fits the harness / gap it fills]
-**Implementation:** [What will be created/changed]
+**Why this adds value:** [The specific gap it fills — what currently fails or is missing without it]
+**Automation path:** [hook event / routine cadence / not automatable + honest reason]
+**Dashboard impact:** [Which existing widget is affected, or "none"]
+**Implementation:** [What will be created or modified]
 **Files:** [Paths of files to create or modify]
 
 #### 2. [Name] — [Type]
@@ -121,8 +168,8 @@ Present the full integration plan to the user. Format:
 
 ---
 
-### Skipped / Not Applicable
-[List anything from the resource that was considered but not proposed, and why]
+### Rejected Candidates
+[Every candidate considered but not proposed. For each: what it was, why it was rejected (already covered / hollow / low value / better as augmentation / maintenance cost not justified). This section is REQUIRED — an empty list means the critic gate did not run.]
 
 ---
 
@@ -166,9 +213,17 @@ After approval, implement each approved item.
 - Use the `update-config` skill to apply local settings.json modifications, and mirror durable changes into `templates/settings.json.template` so they ship to every project.
 - Always show the exact JSON diff before writing.
 
+**For Augmentations:**
+- Read the existing artifact first (`ctx_read`). Make the smallest edit that adds the new capability. Do not restructure the existing file.
+- If augmenting a skill, re-run the SkillOS Quality Gate (Phase 5b) on the modified skill.
+
+**For Dashboard widgets:**
+- Read `~/.claude/sdd-harness/.dashboard/` structure first to understand the existing widget contract.
+- Augment an existing widget if the data fits. Create a new one only if no existing widget is a logical home for it.
+
 After creating source artifacts, remind the user to run `bash ~/.claude/sdd-harness/update.sh` to roll them out to all registered repos (or `update.sh <repo>` for one).
 
-### Phase 5b: SkillOS Quality Gate (for new skills only)
+### Phase 5b: SkillOS Quality Gate (for new and augmented skills)
 
 Before marking any new skill complete, score it against four quality dimensions:
 
@@ -263,9 +318,12 @@ The `📝 Logged` line is required. If Phase 6 was skipped (nothing extracted), 
 
 ## Key Principles
 
+- **The default answer is skip.** A proposal with 1–2 high-value items is better than one with 7 mediocre ones. Err toward rejection.
+- **Augment before creating.** If an existing skill, hook, script, or dashboard widget can absorb this capability in a single added section, augment it. Never create a parallel artifact.
+- **Automate or justify why not.** Every candidate must have an explicit automation verdict (hook / routine / not automatable + reason). A skill the user must remember to invoke is a half-measure.
+- **Dashboard is part of the surface area.** If something produces persistent output or status, ask whether the dashboard should surface it — and whether an existing widget already does.
 - **Never implement without approval.** The proposal step is mandatory, not optional.
-- **Prefer augmenting over duplicating.** If a similar skill exists, propose extending it rather than creating a parallel one.
 - **Match harness conventions.** Read nearby files before creating new ones to follow existing patterns.
 - **One resource can yield multiple integration types.** A repo might give a skill, a hook, and a command.
-- **Be explicit about skips.** Always tell the user what you decided not to extract and why.
+- **Rejected Candidates section is required.** An empty list means the critic gate did not run — go back to Step 3e.
 - **Always log to the sources index first.** Phase 6 must be completed before the Phase 7 summary is shown — provenance is part of the deliverable, not optional metadata.

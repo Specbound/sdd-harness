@@ -213,6 +213,38 @@ That's it — the hook in `.claude/hooks/impeccable-detect-hook.sh` picks it up 
 
 ---
 
+## Step 4b: Proof SDK (Spec Review Gate)
+
+The Proof SDK powers the collaborative review sessions in `spec-requirements`, `spec-design`, and `spec-tasks`. The skill auto-installs it on first use — no manual setup required. This step is just a verify/preflight check.
+
+### Check if already installed
+
+```bash
+ls ~/.claude/tools/proof-sdk/node_modules 2>/dev/null && echo "installed" || echo "not yet — will auto-install on first /kiro:spec-requirements"
+```
+
+**If not installed** — nothing to do. The `proof-collaborative-review` skill installs it automatically when you run any spec phase command for the first time:
+
+```bash
+cd ~/.claude/tools
+git clone https://github.com/EveryInc/proof-sdk
+cd proof-sdk
+npm install
+```
+
+**Prerequisites:** Node.js (already verified in Step 0). No additional global tools needed.
+
+### Remote server (optional)
+
+If your team runs a shared Proof server instead of localhost, set:
+
+```bash
+export PROOF_SERVER_URL=http://your-server:4000
+# Add to ~/.bashrc to persist
+```
+
+---
+
 ## Step 5: uv (Python Package Manager)
 
 Required for autoresearch and any project using `uv`-managed Python environments.
@@ -363,9 +395,12 @@ Run through this on a fresh machine:
 | `raindrop` | `which raindrop` | `curl -fsSL https://raindrop.sh/install \| bash` (all platforms) | automatic via `install.sh`; see Step 2 |
 | `gitnexus` | `which gitnexus` | `npm install -g gitnexus` (all platforms) | `/kiro:gitnexus-setup` per-project |
 | `impeccable` | `which impeccable` | `npm install -g impeccable` (all platforms) | automatic via hook |
+| `proof-sdk` | `ls ~/.claude/tools/proof-sdk/node_modules` | auto-installed on first spec phase run (requires Node.js) | automatic via skill |
 | `uv` | `which uv` | Linux/macOS/WSL2: `curl -LsSf https://astral.sh/uv/install.sh \| sh`; Windows: see Step 5 | nothing extra |
 | `opf` | `which opf` | `uv tool install --python 3.13 git+https://github.com/openai/privacy-filter.git` | wire pre-commit hook |
 | harness | `ls ~/.claude/sdd-harness/install.sh` | clone/copy harness | `install.sh /path/to/project` |
+| caveman hooks | `ls ~/.claude/hooks/caveman-activate.js` | auto-installed from `hooks/global/` by `install.sh` (defaults to lite) | automatic via `install.sh` |
+| lean-ctx | `which lean-ctx` | auto-wired into `~/.claude/settings.json` by `install.sh` if CLI detected | install CLI first, then run `install.sh` |
 
 ---
 

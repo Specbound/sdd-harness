@@ -1,0 +1,10 @@
+# headroom-ai extra dependencies
+# These are NOT declared by headroom-ai itself but are required by its proxy server.
+# Used by headroom-setup.sh via: uv tool install headroom-ai --with-requirements this-file
+# Add new deps here instead of editing --with flags in the script.
+numpy
+sqlite-vec
+sentence-transformers
+fastapi
+uvicorn
+httpx[http2]

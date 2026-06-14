@@ -352,7 +352,7 @@ The rule is added to the appropriate agent file or rule file and distributed via
 
 ### `/kiro:daily-maintenance` — Nightly orchestrator
 
-Runs the full maintenance cycle end-to-end: **Judge → Reflect → Housekeeping → Session Quality → Keep Rate → Trust Score → Augment Skills**. Designed to run on a nightly schedule (18:00 local) with a SessionStart hook as catch-up. The scheduler is registered automatically by `install.sh` / `update.sh`: Windows Task Scheduler on WSL (`setup-global-orchestrator.sh`), cron on Linux (`setup-linux-orchestrator.sh`), and launchd on macOS (`setup-mac-orchestrator.sh`).
+Runs the full maintenance cycle end-to-end: **Judge → Reflect → Housekeeping → Session Quality → Keep Rate → Trust Score → Augment Skills → Adversarial Check**. Designed to run on a nightly schedule (18:00 local) with a SessionStart hook as catch-up. The scheduler is registered automatically by `install.sh` / `update.sh`: Windows Task Scheduler on WSL (`setup-global-orchestrator.sh`), cron on Linux (`setup-linux-orchestrator.sh`), and launchd on macOS (`setup-mac-orchestrator.sh`).
 
 ```
 /kiro:daily-maintenance
@@ -367,7 +367,8 @@ Pipeline:
 5. **Session quality** — scores the session via the `session-quality` rubric, writes a `[session-quality]` observation.
 6. **Keep rate** — `keep-rate` skill evaluates pattern retention, writes a `[keep-rate]` observation.
 7. **Trust Score update** — `scripts/session/trust_score.py` runs after session quality and keep rate are written so all signals (`[session-charge]`, `[memory-gap]`, `[session-quality]`, `[keep-rate]`) are visible. Rewrites the `## Harness Trust Score:` line in `hot-memory.md`, appends to `.claude/memory/trust-score.jsonl`.
-8. **Skill augmentation** — `skill-augment-agent` reviews today's observations and judge drains, encodes up to 3 evidence-backed improvements into relevant `SKILL.md` files (append-only, ≤150 chars each). Logs each change as a `[skill-update]` observation.
+8. **Skill augmentation** — `skill-augment-agent` reviews today's observations and judge drains, encodes up to 5 evidence-backed improvements (circuit breaker cap) into relevant `SKILL.md` files (append-only, ≤150 chars each). Logs each change as a `[skill-update]` observation. Also processes any `[seed-target:]` observations written by the action-capture hook during the session.
+9. **Adversarial check** — a separate verification agent (no loyalty to step 8's output) reviews each `[skill-update]` written today: does it address the stated gap? does it contradict existing guidance? Flags failures as `[skill-update-flagged]`, confirms passes as `[skill-update-verified]`. Skipped if step 8 wrote nothing.
 
 Idempotent per calendar day (uses today's `[judge]` observation as the sentinel). Each step is error-isolated: a bad Judge pass does not block housekeeping.
 
@@ -566,7 +567,7 @@ Starts a local HTTP server at `http://localhost:4569` and opens the browser auto
 | 6 | 📅 Scheduled Tasks | OS scheduler health card + per-routine cards (schedule, last run + exit code, artifact, diff vs. previous run, reasoning excerpt). Includes the Daily Security Scan routine (`security-report-runner.sh`) which scans recent git changes for OWASP patterns, secrets, and injection sinks. |
 | 7 | 🧠 Memory Changes | Git feed of hot-memory, observations, and meta/patterns changes |
 | 8 | 🎯 Skill Changes | Rendered skill-curation-report with audit age |
-| 9 | 📊 Session Quality | Score/keep-rate/memory-gap summary + 30-day chart |
+| 9 | 📊 Session Quality | Score/keep-rate/memory-gap summary + 30-day chart; ✨ **Prompt Quality** sub-tab — per-dimension PQ trends (7-day avg, weakest dimension, rolling score chart) |
 | 10 | 💰 Model Cost | All-time and 30-day spend; 90-day daily cost bar chart; sessions table with model/tokens/cost; cross-provider "What if?" cost switcher |
 | 11 | 🧵 Context Health | Sessions per day trend + `/compact` recommendations |
 | 12 | 🔧 Maintenance Status | Per-repo orchestrator log tail and last-run status |
@@ -663,6 +664,36 @@ npm install -g impeccable
 | Missing focus state | No `:focus-visible` styles |
 
 See `docs/design/impeccable/impeccable.md` for the full rule set.
+
+---
+
+## Proof Collaborative Review (Spec Phase Gates)
+
+Proof is the built-in review layer used by `spec-requirements`, `spec-design`, and `spec-tasks`. After each phase generates an artifact, the harness publishes it to a live Proof document and presents a browser URL for inline review.
+
+### How it works
+
+1. Phase subagent generates the artifact (requirements / design / task list)
+2. `proof-collaborative-review` skill starts a local Proof server (port 4000) and publishes the document
+3. A review URL is presented — open it in any browser to annotate, suggest edits, or rewrite inline
+4. Come back to Claude and say "done" when finished
+5. Skill retrieves the final human-edited version and writes it back to `specs/<feature>/`
+
+### First-time setup (automatic)
+
+No manual steps. The skill auto-installs the Proof SDK into `~/.claude/tools/proof-sdk/` on first use (requires Node.js). Subsequent runs skip the install.
+
+### Remote server
+
+Set `PROOF_SERVER_URL=http://your-host:4000` to point at a shared instance instead of localhost.
+
+### Skill location
+
+```
+~/.claude/sdd-harness/skills/proof-collaborative-review/SKILL.md
+```
+
+Bundled in the harness — replicated to every machine via `install.sh`. No per-machine manual copy needed.
 
 ---
 

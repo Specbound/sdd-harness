@@ -28,12 +28,13 @@ echo "  Installing headroom-ai globally..."
 INSTALLED_GLOBALLY=0
 
 if command -v uv >/dev/null 2>&1; then
+    EXTRAS_FILE="$__here/headroom-extras.txt"
     # headroom-ai is a Rust extension (maturin). No pre-built wheel for Python 3.14+,
     # so try 3.12 first where binary wheels exist, then fall back to default.
     if uv tool install "$HEADROOM_PKG" --python 3.12 \
-          --with numpy --with sqlite-vec --with sentence-transformers --with fastapi -q 2>/dev/null \
+          --with-requirements "$EXTRAS_FILE" -q 2>/dev/null \
        || uv tool install "$HEADROOM_PKG" \
-          --with numpy --with sqlite-vec --with sentence-transformers --with fastapi -q 2>/dev/null; then
+          --with-requirements "$EXTRAS_FILE" -q 2>/dev/null; then
         echo "    Installed via uv tool."
         INSTALLED_GLOBALLY=1
     fi

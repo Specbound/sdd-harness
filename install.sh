@@ -641,6 +641,113 @@ install_project() {
 }
 
 # ════════════════════════════════════════════════════════════════════════════════
+# patch_global_settings <python_snippet>
+# Safely merges hook/MCP entries into ~/.claude/settings.json via Python stdlib.
+# Idempotent: checks for existing entries before adding.
+# ════════════════════════════════════════════════════════════════════════════════
+patch_global_settings() {
+  local global_settings="$HOME/.claude/settings.json"
+  if [ ! -f "$global_settings" ]; then
+    warn "~/.claude/settings.json not found — run Claude Code once to create it, then re-run install.sh"
+    return 0
+  fi
+  python3 - "$global_settings" "$HOME" "$HARNESS_DIR" << 'PYEOF'
+import json, sys, os
+
+settings_path, home, harness_dir = sys.argv[1], sys.argv[2], sys.argv[3]
+hooks_dir = os.path.join(home, '.claude', 'hooks')
+
+with open(settings_path, 'r') as f:
+  raw = f.read()
+
+# Strip JSON5-style // comments (Claude Code settings allow them)
+import re
+clean = re.sub(r'//[^\n]*', '', raw)
+try:
+  s = json.loads(clean)
+except json.JSONDecodeError:
+  s = {}
+
+changed = False
+hooks = s.setdefault('hooks', {})
+
+# ── Caveman — SessionStart ──────────────────────────────────────────────────
+ss = hooks.setdefault('SessionStart', [])
+caveman_ss_cmd = f'node "{hooks_dir}/caveman-activate.js"'
+if not any(caveman_ss_cmd in str(h) for h in ss):
+  ss.append({'hooks': [{'type': 'command', 'command': caveman_ss_cmd}]})
+  print('  [caveman] Added SessionStart hook')
+  changed = True
+
+# ── Caveman — UserPromptSubmit ──────────────────────────────────────────────
+ups = hooks.setdefault('UserPromptSubmit', [])
+caveman_ups_cmd = f'node "{hooks_dir}/caveman-mode-tracker.js"'
+if not any(caveman_ups_cmd in str(h) for h in ups):
+  ups.append({'hooks': [{'type': 'command', 'command': caveman_ups_cmd}]})
+  print('  [caveman] Added UserPromptSubmit hook')
+  changed = True
+
+# ── Caveman — statusLine (only set if not already configured) ───────────────
+caveman_sl_cmd = f'bash "{hooks_dir}/caveman-statusline.sh"'
+if 'statusLine' not in s:
+  s['statusLine'] = {'type': 'command', 'command': caveman_sl_cmd}
+  print('  [caveman] Added statusLine')
+  changed = True
+
+# ── lean-ctx — MCP server ───────────────────────────────────────────────────
+import subprocess
+has_lean_ctx = subprocess.run(['which', 'lean-ctx'], capture_output=True).returncode == 0
+if has_lean_ctx:
+  mcp = s.setdefault('mcpServers', {})
+  if 'lean-ctx' not in mcp:
+    mcp['lean-ctx'] = {'command': 'lean-ctx', 'args': ['--mcp'], 'env': {}}
+    print('  [lean-ctx] Added MCP server')
+    changed = True
+
+  # lean-ctx permissions
+  perms = s.setdefault('permissions', {}).setdefault('allow', [])
+  lc_perms = [
+    'Bash(lean-ctx *)',
+    'mcp__lean-ctx__ctx_read',
+    'mcp__lean-ctx__ctx_search',
+    'mcp__lean-ctx__ctx_shell',
+    'mcp__lean-ctx__ctx_tree',
+    'mcp__lean-ctx__ctx_edit',
+    'mcp__lean-ctx__ctx_overview',
+    'mcp__lean-ctx__ctx_session',
+    'mcp__lean-ctx__ctx_knowledge',
+  ]
+  for p in lc_perms:
+    if p not in perms:
+      perms.append(p)
+      changed = True
+  if changed:
+    print('  [lean-ctx] Added permissions')
+
+  # lean-ctx PreToolUse bash rewrite hook
+  ptu = hooks.setdefault('PreToolUse', [])
+  lc_rewrite_cmd = 'lean-ctx hook rewrite'
+  if not any(lc_rewrite_cmd in str(h) for h in ptu):
+    ptu.append({'matcher': 'Bash', 'hooks': [{'type': 'command', 'command': lc_rewrite_cmd}]})
+    print('  [lean-ctx] Added PreToolUse Bash rewrite hook')
+    changed = True
+
+  lc_redirect_cmd = 'lean-ctx hook redirect'
+  if not any(lc_redirect_cmd in str(h) for h in ptu):
+    ptu.append({'matcher': 'Read', 'hooks': [{'type': 'command', 'command': lc_redirect_cmd}]})
+    print('  [lean-ctx] Added PreToolUse Read redirect hook')
+    changed = True
+
+if changed:
+  with open(settings_path, 'w') as f:
+    json.dump(s, f, indent=2)
+  print('  ~/.claude/settings.json updated.')
+else:
+  print('  ~/.claude/settings.json already up to date.')
+PYEOF
+}
+
+# ════════════════════════════════════════════════════════════════════════════════
 # install_globals
 # Machine-wide setup that must run exactly once regardless of how many projects
 # are installed: harness skills, global commands, the harness's own settings.json,
@@ -655,6 +762,32 @@ install_globals() {
       sync_dir "${skill_dir%/}" "$HOME/.claude/skills"
     done
     echo "  Harness skills installed to ~/.claude/skills/"
+  fi
+
+  # --- Install global hooks (caveman, lean-ctx) to ~/.claude/hooks/ ---
+  if [ -d "$HARNESS_DIR/hooks/global" ]; then
+    mkdir -p "$HOME/.claude/hooks"
+    for hook_file in "$HARNESS_DIR/hooks/global"/*; do
+      [ -f "$hook_file" ] || continue
+      cp "$hook_file" "$HOME/.claude/hooks/"
+      chmod +x "$HOME/.claude/hooks/$(basename "$hook_file")" 2>/dev/null || true
+    done
+    echo "  Global hooks (caveman, lean-ctx) installed to ~/.claude/hooks/"
+  fi
+
+  # --- Default caveman mode: lite (only if flag file is absent) ---
+  local caveman_flag="$HOME/.claude/.caveman-active"
+  if [ ! -f "$caveman_flag" ]; then
+    printf 'lite' > "$caveman_flag"
+    echo "  Caveman mode defaulted to: lite  (~/.claude/.caveman-active)"
+  fi
+
+  # --- Patch ~/.claude/settings.json: caveman wiring + lean-ctx MCP ---
+  section "Global settings patch (caveman + lean-ctx)"
+  if command -v python3 >/dev/null 2>&1; then
+    patch_global_settings
+  else
+    warn "python3 not found — skipping global settings patch. Run install.sh again after installing python3."
   fi
 
   # --- Install global commands ---
