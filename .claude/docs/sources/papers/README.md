@@ -14,6 +14,17 @@ Scientific papers (primarily arXiv) that informed skills or methodology in this 
 
 ---
 
+## SkillOS: Eliciting and Organizing Skills for Autonomous LLM Agents
+**arXiv:** https://arxiv.org/abs/2605.06614 | **Year:** 2026
+**Added:** 2026-05-12
+
+**What it's about:** Introduces SkillOS — a framework for autonomous skill management in LLM agents covering skill elicitation, organization, and quality curation. Key finding: high-quality skill curation (not just accumulation) is the primary bottleneck for self-evolving agents. Defines 4 quality dimensions for skills: task relevance (real repeated use), operational validity (executable steps), content quality (structured phases), and compression (≤5000 words / ≤200-char description). Proposes MERGE, COMPRESS, DELETE as the three maintenance operations.
+
+**What we added:**
+- Skill: `skill-curator` — automated skill library curation using the 4 SkillOS quality dimensions. Implements MERGE (consolidate overlapping skills), COMPRESS (trim to ≤5000 words), DELETE (remove duplicates/stale skills). 6-phase workflow with mandatory human approval before any execution. Weekly CCR routine registered (Mondays 9am IDT) to prevent library bloat as the skill collection grows.
+
+---
+
 ## Automating Skill Acquisition through Large-Scale Mining of Open-Source Agentic Repositories
 **arXiv:** https://arxiv.org/abs/2603.11808 | **Year:** 2026 | **Authors:** Shuzhen Bi, Mengsong Wu, Hao Hao, Keqian Li, Wentao Liu, Siyu Song, Hongbo Zhao, Aimin Zhou
 
@@ -47,3 +58,17 @@ Scientific papers (primarily arXiv) that informed skills or methodology in this 
 **What we added:**
 - New skill: `agent-execution-control` — Plan-Execute-Verify loop (failures are signals, not blockers), Action-Validation Gatekeeper pattern (programmatic safety for irreversible actions), Execution Trace Grounding (intermediate state as repair signals), Contract Formation via Planning (plans as testable specs), Iterative code-grounded repair. Scoped to autonomous multi-step agents only.
 - Enhancement: `multi-agent-patterns` v1.1 — Functional Role Specialization taxonomy (Synthesis / Understanding / Verification / Execution / Planning), Convergence Mechanisms taxonomy (6 types: Correctness, Security, Performance, Score-based, Consensus, Implicit), Adversarial Validation pattern (dedicated falsification agent).
+
+---
+
+## Language Models Need Sleep: Learning to Self-Modify and Consolidate Memories
+**arXiv:** https://arxiv.org/abs/2606.03979 | **Year:** 2026 | **Authors:** Ali Behrouz, Farnoosh Hashemi, Vahab Mirrokni
+**Added:** 2026-06-07
+
+**What it's about:** Proposes a Wake/Sleep paradigm for continual LLM learning without catastrophic forgetting. Wake phase = normal inference with weakness identification; Sleep phase = Knowledge Seeding (targeted demonstrations for observed gaps) + Dreaming (synthetic curriculum generation via RL) + Distillation (parameter-efficient LoRA adapters). Demonstrates measurable improvement on long-horizon tasks, continual learning, knowledge incorporation, and few-shot generalization.
+
+**What we added:**
+- Enhancement: `scripts/daily-maintenance-prompt.md` — new Step D (Knowledge Seeding) wires `skill-augment-agent` into the nightly runner, completing the Wake→Sleep cycle automatically. Output line extended to include `skill-updates=<N>`.
+- Enhancement: `hooks/claude/action-capture.sh` — Wake-phase struggle tagging: detects non-zero Bash exit codes, infers skill domain, auto-writes `[seed-target:<domain>]` to `observations.md` so the Sleep phase has explicit weakness markers.
+- Enhancement: `agents/kiro/skill-augment-agent.md` — two new steps: Step 2.5 collects `[seed-target:]` observations as seeding evidence; Step 3.5 (Dreaming) generates synthetic worked examples per skill gap and writes them to `resources/examples/`.
+- Enhancement: `skills/agent-memory-consolidation/SKILL.md` — new "Sleep Cycle Protocol" section documents the full Wake/Sleep framing, the `[seed-target:]` convention, domain mapping table, and the episodic-first guarantee that raw observations are never rewritten.

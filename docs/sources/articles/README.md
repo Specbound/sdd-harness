@@ -223,3 +223,66 @@ Online articles, blog posts, and documentation pages that were passed to `/skill
 **What we added:**
 - Skill: `loop-patterns` — The 8 named loop templates as copy-paste kickoff prompts + the loop contract format + authoring guidance for new loops. Fills the gap between heavy `iterative-repair-loop` (JSON handoffs, artifact-specific) and `goal-mode` (evaluator-driven, delegates to sub-skills). Positioned as the lightweight, check-command-driven loop layer.
 - Command: `/kiro:loop` — Interactive picker that lists all 8 loops, accepts a slug argument, and generates + launches the kickoff prompt automatically. Usage: `/kiro:loop ship-pr` or `/kiro:loop` for the picker.
+
+---
+
+## Claude Code — Model Configuration
+**URL:** https://code.claude.com/docs/en/model-config
+**Added:** 2026-06-15
+**Source / Author:** Anthropic (Claude Code docs)
+
+**What it's about:** Reference for how Claude Code resolves models — aliases (`opus`/`sonnet`/`haiku`/`fable`/`opusplan`/`default`), the `[1m]` context-window suffix, reasoning effort levels (`low`→`max`, plus `ultracode`), precedence order across `/model`/`--model`/`ANTHROPIC_MODEL`/settings, subagent model config (`CLAUDE_CODE_SUBAGENT_MODEL`), and enterprise controls (`availableModels`, `enforceAvailableModels`, `modelOverrides`, `fallbackModel`, gateway discovery). Notes Fable 5 as the most capable model for long autonomous sessions and Opus 4.8 as the current deep-reasoning tier.
+
+**What we added:**
+- Augmentation: `model-tiers` skill (migrated orphaned skill into harness source `skills/model-tiers/` so it now propagates via `install.sh`) — refreshed the deep-tier model ID `claude-opus-4-7` → `claude-opus-4-8`, added a 5th **autonomous** tier (`claude-fable-5`) for multi-sitting work, and a new "Effort Level — An Orthogonal Dial" section so effort (`low`→`max`) is treated as a lever separate from model choice. Tightened the description to predict WHEN it fires (≤200 chars).
+- Doc sync: corrected stale `opus-4-7` references and added the Fable tier in `docs/memory/gbrain-patterns/gbrain-patterns.md` and `docs/harness-documentation/SDD-USAGE.md` (plus their `.claude/` mirrors).
+
+---
+
+## Don't let the LLM speak, just probe it
+**URL:** https://blog.j11y.io/2026-06-10_hidden-state-probes/
+**Added:** 2026-06-15
+**Source / Author:** James Padolsey (j11y.io)
+
+**What it's about:** When an LLM processes "does content X satisfy criterion Y?", the decision is already computed in the residual stream before any token is generated — generation is just the model translating a decision it has already made. Describes a 5-step recipe: small open model, seed token (`Assessment:`), training triples with varied criteria, hidden states at that seed position at ~70% layer depth, tiny MLP head, isotonic regression calibration. Result: one frozen model + one MLP = any English-criterion classifier at embedding-classifier cost with calibrated probabilities. Optional LoRA trick: train the LoRA to *write* verdicts (next-token loss), then never generate at inference — the text is scaffolding that crystallizes decision geometry at the seed token.
+
+**What we added:**
+- Skill augmentation: `llm-evaluation` — new "### 4. Hidden State Probes (non-generative classifier)" section under Core Evaluation Types, after LLM-as-Judge. Covers when to use over judges (structural criteria, calibrated probabilities, high-volume batch), when NOT to use (CoT needed, API-only model, dataset too small), the 5-step recipe, the LoRA geometry trick, and result framing. Also added a trigger bullet to "Use this skill when".
+
+---
+
+## index.how/to/articulate — Design Vocabulary Reference
+**URL:** https://index.how/to/articulate
+**Added:** 2026-06-15
+**Source / Author:** Emil & Glenn (Index — pre-launch design education platform)
+
+**What it's about:** 188 precisely-defined design terms across 12 categories (typography, color, iconography, layout, interaction, motion, accessibility, IA, copywriting, tools, analysis, components). Each definition contains embedded design opinions — not just "what is X" but "how to use X correctly." Tagline: "Say precisely what you mean."
+
+**What we added:**
+- Augmentation: `frontend-code-quality` skill — added "Visual Design Rules" CSS subsection (disabled state tokens, nested border-radius formula, tabular nums, dvh vs vh, safe area insets, pointer-events on decorative layers, OKLCH for gradients, semantic color tokens); expanded Animations section (ease-out/ease-in asymmetry, 150ms threshold, reduced motion media query); expanded Accessibility section (focus state replacement, 44×44px touch target, DOM order warning, label/for association); updated Quick Review Checklist with 14 new checkboxes across HTML and CSS sections.
+
+---
+
+## Agentic Code Review
+**URL:** https://addyosmani.com/blog/agentic-code-review/
+**Added:** 2026-06-17
+**Source / Author:** Addy Osmani
+
+**What it's about:** When agents make writing code cheap, the leveraged engineering skill becomes *proving* code works. Argues for risk-tiered review (effort proportional to blast radius), heterogeneous reviewers (everyday correctness + production-failure severity), and treating every AI review as a sensor, not a verdict. Sharpest actionable warning: agents take the cheapest path to a passing build — weakening tests or lowering CI thresholds ("gradient descent to green") instead of fixing the code.
+
+**What we added:**
+- Hook: `hooks/claude/test-integrity-guard.sh` (PostToolUse, matcher `Write|Edit|MultiEdit`, soft gate) — fires when a test file or CI/coverage config is edited and flags weakening signals: added skip/xfail/`@Disabled` markers, tautological/stub assertions (`assert True`, `expect(true).toBe(true)`), touched coverage thresholds (`--cov-fail-under`, `fail_under`, `coverageThreshold`), and removed assertions. Names the gradient-descent-to-green anti-pattern and asks Claude to confirm a deliberate spec change vs. a shortcut to green. Never blocks. Fills the gap where the harness reviewed code heavily but never watched the agent weakening the test gate itself.
+- *Rejected:* risk-tiered review and separate-model review (already covered by CLAUDE.md blast-radius + reviewer-model-mismatch rules, `validate-adversarial-agent`, `session-judge`); decision-log/PR-reasoning capture (covered by `action-capture.sh`); prompt-injection scanning (covered by `scan-pii.sh` + `ai-security-workflow`).
+
+---
+
+## UI Skills — Curated UI Skill Directory + Routing Pattern
+**URL:** https://www.ui-skills.com/
+**Added:** 2026-06-17
+**Source / Author:** ibelick (also https://github.com/ibelick/ui-skills)
+
+**What it's about:** Curated directory of ~106 installable UI/frontend skills (design taste, motion, accessibility, React/Vue/Next, Three.js, charts, slides) fronted by a "UI Skills Root" routing skill. The routing skill's core idea is context economy: given a UI goal, identify the category, load the *smallest useful* set of skills, and **never load more than 3** ("prefer 1; 2 only for two clear angles; 3 only for broad review/redesign").
+
+**What we added:**
+- Augmentation: `skills/ui-skills/SKILL.md` — rewrote the prior hollow stub into a **UI build router**. Carries no UI rules of its own; maps task category → the harness's existing UI skills (`ui-ux-pro-max`, `frontend-design`, `wcag-audit-patterns`, `threejs-skills`, `react-best-practices`, etc.) and enforces the "prefer 1, never >3 skills" context-economy discipline via the Skill tool (no `ui-skills` CLI needed). Fills the known wrong-skill-fires / over-selection failure mode in the large UI skill family.
+- *Rejected:* the `ui-skills` CLI + 106-skill registry (duplicate infra; harness already exposes equivalents via the Skill tool); individual Three.js/Vue/React/a11y/chart/slide skills (covered by `threejs-skills`, `react-best-practices`, `wcag-audit-patterns`, `frontend-slides`, etc.); niche design-taste skills (Oklch, Brutalist, Morphing Icons, Web Sounds — bloat, low repeated-task value); new hook/routine (routing is contextual judgment, not enforceable/schedulable); dashboard widget (no persistent output).

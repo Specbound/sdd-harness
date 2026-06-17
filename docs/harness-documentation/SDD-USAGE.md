@@ -571,7 +571,7 @@ Starts a local HTTP server at `http://localhost:4569` and opens the browser auto
 | 9 | 📊 Session Quality | Score/keep-rate/memory-gap summary + 30-day chart; ✨ **Prompt Quality** sub-tab — per-dimension PQ trends (7-day avg, weakest dimension, rolling score chart) |
 | 10 | 💰 Model Cost | All-time and 30-day spend; 90-day daily cost bar chart; sessions table with model/tokens/cost; cross-provider "What if?" cost switcher |
 | 11 | 🧵 Context Health | Sessions per day trend + `/compact` recommendations |
-| 12 | 🔧 Maintenance Status | Per-repo orchestrator log tail and last-run status |
+| 12 | 🔧 Maintenance Status | Per-repo orchestrator log tail and last-run status; **deferred-work banner** — count of `DEBT:` markers (deliberate shortcuts, per `karpathy-guidelines`) found by `git grep` across tracked code, recomputed each dashboard launch |
 | 13 | 🤖 Automation Audit | Timeline of automated events — maintenance runs, trust-judge scores, session signals, and scheduled task outcomes |
 
 ### 💰 Model Cost section
@@ -774,7 +774,8 @@ Four protocols extracted from [garrytan/gbrain](https://github.com/garrytan/gbra
 **Model Tiers** (`~/.claude/skills/model-tiers/`) — Match model to task type:
 - `haiku-4-5` for classification, validation, dedup (utility)
 - `sonnet-4-6` for generation, synthesis, agent work (default)
-- `opus-4-7` only for deep multi-step reasoning (upgrade when sonnet consistently fails)
+- `opus-4-8` only for deep multi-step reasoning (upgrade when sonnet consistently fails)
+- `fable-5` for long, multi-sitting autonomous sessions (`/model fable`)
 - Subagents always use `sonnet`, not opus — latency compounds in tool loops
 
 **Background Work Routing** (`~/.claude/skills/background-work-routing/`) — Stay inline unless a pain signal fires: gateway restart, state drop, parallel > 3, runtime > 5 min, or user frustration. Offer the switch explicitly; never switch silently.

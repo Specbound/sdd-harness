@@ -138,9 +138,12 @@ fi
 # Bidirectional: harness .md memories → headroom SQLite (so dashboard shows them)
 #                headroom SQLite new extractions → MEMORY.md Headroom section
 # Fast no-op when nothing changed (fingerprint check).
+# Harness root is read from the pointer install/update records (~/.sdd-harness-root),
+# never hardcoded — the harness may live anywhere (see stop-hook.sh for the same pattern).
+HARNESS_ROOT="$(cat "$HOME/.sdd-harness-root" 2>/dev/null || true)"
 HEADROOM_PYTHON="$HOME/.local/share/uv/tools/headroom-ai/bin/python"
-HARNESS_SYNC="$HOME/.claude/sdd-harness/scripts/utils/sync-memories-to-headroom.py"
-if [ -f "$HEADROOM_PYTHON" ] && [ -f "$HARNESS_SYNC" ]; then
+HARNESS_SYNC="${HARNESS_ROOT:+$HARNESS_ROOT/scripts/utils/sync-memories-to-headroom.py}"
+if [ -n "$HARNESS_SYNC" ] && [ -f "$HEADROOM_PYTHON" ] && [ -f "$HARNESS_SYNC" ]; then
   "$HEADROOM_PYTHON" "$HARNESS_SYNC" > /dev/null 2>&1 &
   disown 2>/dev/null || true
 fi

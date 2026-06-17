@@ -213,6 +213,38 @@ That's it — the hook in `.claude/hooks/impeccable-detect-hook.sh` picks it up 
 
 ---
 
+## Step 4b: Proof SDK (Spec Review Gate)
+
+The Proof SDK powers the collaborative review sessions in `spec-requirements`, `spec-design`, and `spec-tasks`. The skill auto-installs it on first use — no manual setup required. This step is just a verify/preflight check.
+
+### Check if already installed
+
+```bash
+ls ~/.claude/tools/proof-sdk/node_modules 2>/dev/null && echo "installed" || echo "not yet — will auto-install on first /kiro:spec-requirements"
+```
+
+**If not installed** — nothing to do. The `proof-collaborative-review` skill installs it automatically when you run any spec phase command for the first time:
+
+```bash
+cd ~/.claude/tools
+git clone https://github.com/EveryInc/proof-sdk
+cd proof-sdk
+npm install
+```
+
+**Prerequisites:** Node.js (already verified in Step 0). No additional global tools needed.
+
+### Remote server (optional)
+
+If your team runs a shared Proof server instead of localhost, set:
+
+```bash
+export PROOF_SERVER_URL=http://your-server:4000
+# Add to ~/.bashrc to persist
+```
+
+---
+
 ## Step 5: uv (Python Package Manager)
 
 Required for autoresearch and any project using `uv`-managed Python environments.
@@ -306,7 +338,14 @@ Once global tools are in place, install the harness into each project:
 ```bash
 ~/.claude/sdd-harness/install.sh /c/dev/my-project
 ```
-Or use the WSL2 path if Claude Code is running inside WSL2.
+Or use the WSL2 path if Claude Code is running inside WSL2. From PowerShell, invoke Git Bash with the call operator from inside the repo: `& "C:\Program Files\Git\bin\bash.exe" install.sh /c/dev/my-project` (running the `.sh` directly fails with a `#!`-shebang parser error, and `~/...install.sh` fails as "not recognized as a cmdlet").
+
+**Install into all registered projects at once:** use `--all` to walk `projects.txt`, skipping any project already installed (`.claude/kiro/` present):
+```bash
+~/.claude/sdd-harness/install.sh --all                  # skip already-installed
+~/.claude/sdd-harness/install.sh --all --force          # re-sync every project (push updates)
+~/.claude/sdd-harness/install.sh --all --with-gitnexus  # batch install + GitNexus
+```
 
 `install.sh` propagates **every** hook in the harness's `hooks/` directory into the project's `.claude/hooks/` (and `chmod +x`'s them), syncs `docs/` into `.claude/docs/`, and generates a project stack summary. The harness is the source of truth — which hooks actually fire is governed by the project's `.claude/settings.json` wiring, not by which files are present. Re-run `update.sh` to re-sync after the harness changes.
 
@@ -319,7 +358,7 @@ Then, inside Claude Code in the project directory, run these once:
 
 Daily maintenance runs automatically via the local OS scheduler (registered by `install.sh` / `update.sh`). No per-project setup is required.
 
-Update `.gitignore` to exclude harness files:
+Update `.gitignore` to exclude harness files. `install.sh` automatically adds the core three entries (`.claude/`, `specs/`, `CLAUDE.md`) under a `# SDD harness` header — skip those below if already present. For the full recommended exclusion set:
 ```gitignore
 CLAUDE.md
 specs/
@@ -356,9 +395,12 @@ Run through this on a fresh machine:
 | `raindrop` | `which raindrop` | `curl -fsSL https://raindrop.sh/install \| bash` (all platforms) | automatic via `install.sh`; see Step 2 |
 | `gitnexus` | `which gitnexus` | `npm install -g gitnexus` (all platforms) | `/kiro:gitnexus-setup` per-project |
 | `impeccable` | `which impeccable` | `npm install -g impeccable` (all platforms) | automatic via hook |
+| `proof-sdk` | `ls ~/.claude/tools/proof-sdk/node_modules` | auto-installed on first spec phase run (requires Node.js) | automatic via skill |
 | `uv` | `which uv` | Linux/macOS/WSL2: `curl -LsSf https://astral.sh/uv/install.sh \| sh`; Windows: see Step 5 | nothing extra |
 | `opf` | `which opf` | `uv tool install --python 3.13 git+https://github.com/openai/privacy-filter.git` | wire pre-commit hook |
 | harness | `ls ~/.claude/sdd-harness/install.sh` | clone/copy harness | `install.sh /path/to/project` |
+| caveman hooks | `ls ~/.claude/hooks/caveman-activate.js` | auto-installed from `hooks/global/` by `install.sh` (defaults to lite) | automatic via `install.sh` |
+| lean-ctx | `which lean-ctx` | auto-wired into `~/.claude/settings.json` by `install.sh` if CLI detected | install CLI first, then run `install.sh` |
 
 ---
 
@@ -380,5 +422,6 @@ Run through this on a fresh machine:
 | **Windows:** hooks fail with `bash: /bin/bash: No such file` | Claude Code running on native Windows; hook paths are Linux-style | Use WSL2 so Claude Code runs in Linux, or change hook commands from `/bin/bash` to the Git Bash path (`C:/Program Files/Git/bin/bash.exe`) |
 | **Windows:** `uv` not found after install | PowerShell PATH not reloaded | Restart terminal or run `. $env:USERPROFILE\.cargo\env` (or reopen shell) |
 | **Windows:** `install.sh` fails | Script requires bash | Run from Git Bash or WSL2, not PowerShell or CMD |
+| `headroom` proxy exits with `FastAPI required` or `h2 package not installed` | Missing `uvicorn` or `httpx[http2]` in headroom's uv env | Re-run `install.sh` (patched) or manually: `uv tool install headroom-ai --python 3.12 --with-requirements ~/.claude/sdd-harness/scripts/setup/headroom-extras.txt` |
 
-_Last synced: 2026-06-11_
+_Last synced: 2026-06-14_

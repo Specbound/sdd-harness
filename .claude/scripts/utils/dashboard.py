@@ -2619,6 +2619,30 @@ def render_context_health(rd):
   {summary}{status_line}{chart}{tips}
 </div>"""
 
+def count_debt_markers(repo) -> int:
+    """Count deliberate-deferral markers in tracked code.
+
+    Surfaces shortcuts consciously taken under simplicity pressure (the
+    `DEBT:` convention from the karpathy-guidelines skill) so they stay
+    visible without a command to run. Comment-anchored so prose mentions
+    don't false-match; Markdown is excluded since markers belong in code,
+    not docs. git grep respects .gitignore and scans only tracked files.
+    Recomputed on every dashboard launch.
+    """
+    try:
+        out = subprocess.run(
+            ["git", "-C", str(repo), "grep", "-InE", r"(#|//|--|/\*)\s*DEBT:",
+             "--", ".", ":(exclude)*.md"],
+            capture_output=True, text=True, timeout=10,
+        )
+    except Exception:
+        return 0
+    # git grep exit codes: 0 = matches found, 1 = none, >1 = real error
+    if out.returncode not in (0, 1):
+        return 0
+    return sum(1 for line in out.stdout.splitlines() if line.strip())
+
+
 def render_maintenance_status(selected_rd, all_repos_data, hd):
     runs = hd.get("orchestrator_runs", [])
     # Show the latest *daily-maintenance* run per repo (other runners are surfaced
@@ -2755,9 +2779,27 @@ def render_maintenance_status(selected_rd, all_repos_data, hd):
             f'{h(chr(10).join(lines))}</pre></details>'
         )
 
+    total_debt = sum(rd.get("debt_markers", 0) for rd in all_repos_data)
+    if total_debt:
+        debt_note = (
+            '<div style="margin:6px 0 14px;padding:10px 12px;border-radius:6px;'
+            'background:var(--surface0);border-left:3px solid var(--yellow)">'
+            '<span style="color:var(--yellow);font-weight:600;font-size:12px">'
+            f'⚠ {total_debt} deferred marker{"" if total_debt == 1 else "s"}</span>'
+            '<span style="color:var(--subtext0);font-size:11px;margin-left:8px">'
+            'deliberate shortcuts tagged <code>DEBT:</code> in tracked code &mdash; '
+            'run <code>git grep -nE "(#|//)\\s*DEBT:"</code> to list</span></div>'
+        )
+    else:
+        debt_note = (
+            '<div style="margin:6px 0 14px;font-size:11px;color:var(--overlay0)">'
+            'No deferred <code>DEBT:</code> markers in tracked code.</div>'
+        )
+
     return f"""<div class="section-inner">
   <h2 class="section-title">Maintenance Status</h2>
   {ccr_note}
+  {debt_note}
   {_repo_card(selected_rd)}
   {other_html}
   {log_tail}
@@ -4239,6 +4281,7 @@ def main():
             "memory_changes":   git_log_memory(repo),
             "memory_cards":     read_memory_file_cards(repo),
             "session_history":  parse_session_history(repo),
+            "debt_markers":     count_debt_markers(repo),
         })
 
     skill_content, skill_age = read_skill_report()

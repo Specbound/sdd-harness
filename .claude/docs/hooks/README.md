@@ -9,6 +9,7 @@ Hook output is injected into Claude's context as system messages — Claude read
 |---|---|
 | `SessionStart` | Once, before the first user message in each session |
 | `Stop` | Once, when Claude finishes responding (end of turn) |
+| `UserPromptSubmit` | Before each user prompt is submitted |
 | `PreToolUse` | Before a specific tool is invoked |
 | `PostToolUse` | After a specific tool returns |
 | `PostToolUseFailure` | After a specific tool returns an error |
@@ -63,6 +64,36 @@ Hook output is injected into Claude's context as system messages — Claude read
 
 ---
 
+### `frontend-security-nudge.sh`
+**Event:** `UserPromptSubmit` — **Matcher:** _(all prompts, keyword-gated)_
+
+**Purpose:** Detects when the user is about to build frontend, UI, or design work and injects a reminder to invoke the `secure-agent-design` skill before starting. Fires on every prompt but exits in <5ms if no keywords match.
+
+**Trigger logic:** Two conditions must BOTH be true:
+1. **Build intent** — prompt contains: `build a`, `create a`, `add a`, `implement a`, `write a`, `scaffold`, `set up`
+2. **Frontend subject** — prompt contains framework names (`react`, `vue`, `angular`, `svelte`, `nextjs`, `nuxt`, `remix`, `astro`…) or design keywords (`frontend`, `ui`, `ux`, `component`, `css`, `tailwind`, `form`, `button`, `modal`, `page`, `responsive`…)
+
+**Why it's needed:** Security considerations (XSS, injection, input sanitization, prompt injection in agent-fed forms) are easiest to address before the first file is written. A question-only prompt like "how does React work?" does not trigger the nudge — only prompts with build intent.
+
+**Output:** `╔══ Security Nudge ══╗` banner with the instruction to invoke `Skill("secure-agent-design")`. When the nudge fires, also appends a `[frontend-security-nudge]` observation to `.claude/memory/observations.md` (if present). Silent on non-matching prompts.
+
+---
+
+### `doc-parse-nudge.sh`
+**Event:** `UserPromptSubmit` — **Matcher:** _(all prompts, keyword-gated)_
+
+**Purpose:** Detects when the user is about to build document-parsing or RAG pipeline workflows and injects a reminder to invoke the `document-parsing` skill. Fires on every prompt but exits in <5ms if no keywords match.
+
+**Trigger logic:** Two conditions must BOTH be true:
+1. **Build intent** — prompt contains: `build`, `create`, `set up`, `implement`, `add`, `write`, `design`, `scaffold`, `integrate`, `develop`
+2. **Doc/RAG subject** — prompt mentions document formats (`pdf`, `docx`, `pptx`, `ocr`…) OR RAG/ingestion terms (`rag`, `embedding`, `vector store`, `chunk`, `ingest`, `pinecone`, `chroma`, `qdrant`…)
+
+**Why it's needed:** Local PDF/DOCX/image ingestion has non-obvious format and OCR choices. The `document-parsing` skill covers liteparse, format selection (text vs JSON+bbox), OCR config, and RAG handoff patterns — easiest to apply before the first line of pipeline code is written.
+
+**Output:** `╔══ doc/RAG work detected ══╗` banner with the instruction to invoke `Skill("document-parsing")`. Silent on non-matching prompts.
+
+---
+
 ### `memory-discipline-hook.sh`
 **Event:** `PreToolUse` — **Matcher:** `Write|Edit`
 
@@ -89,18 +120,42 @@ Hook output is injected into Claude's context as system messages — Claude read
 
 ---
 
+
 ### `action-capture.sh`
 **Event:** `PostToolUse` — **Matcher:** `Bash` — _(soft gate, never blocks)_
 
-**Purpose:** After high-signal Bash commands complete, prompts Claude to consider saving a memory observation from the outcome. Watches for three patterns: `git commit`, failing `pytest` runs, and deployment commands (`docker deploy`, `kubectl apply`, `helm upgrade`, etc.).
+**Purpose:** After high-signal Bash commands complete, performs two functions: (1) prompts Claude to consider saving a memory observation from the outcome; (2) **automatically** writes Wake-phase weakness markers when commands fail.
 
-**Design principle:** "Memory from what agents DO, not just what they say" — extracted from Memori's architecture. Current memory is only saved when Claude explicitly decides to. This hook closes the gap for important events that happen during work but go uncaptured.
+**Signal types:**
 
-**Why it's needed:** Git commits, test failures, and deploys are the highest-signal moments in a coding session. Without a prompt at these moments, the workflow lesson (e.g., a recurring test breakage pattern, a deployment gotcha) evaporates at session end. The hook makes the prompt automatic without being prescriptive — Claude still applies the transfer test before saving.
+| Signal | Trigger | Action |
+|--------|---------|--------|
+| `git-commit` | `^git commit` | Advisory banner — prompt to save workflow lesson |
+| `test-failure` | `pytest` + FAILED/ERROR in output | Advisory banner — prompt to save breakage pattern |
+| `deploy` | docker/kubectl/helm deploy commands | Advisory banner — prompt to save env gotcha |
+| `struggle` | Any Bash with non-zero exit code (new) | **Auto-writes** `[seed-target:<domain>]` observation to `observations.md` + advisory banner |
 
-**Noise control:** Only fires on the three specific patterns; silent on all other Bash commands. Test passes are intentionally excluded (low signal). The hook emits a reminder banner but exits 0 always — Claude decides whether anything is worth saving.
+**Wake-phase tagging (Sleep Cycle Protocol):** The `struggle` signal is the harness implementation of the paper's Wake-phase weakness identification (Behrouz et al., 2026). When any Bash command fails, the hook infers a skill domain from the command content, auto-writes a `[seed-target:<domain>]` entry to `.claude/memory/observations.md`, then emits an advisory banner. No Claude decision required — the observation is written unconditionally. The nightly `skill-augment-agent` (Step D of daily maintenance) consumes these entries as seeding targets for the Sleep phase.
 
-**Output:** `╔══ Action Capture ══╗` reminder banner with context-specific guidance for each signal type. Silent on no match.
+**Domain inference table:**
+
+| Command contains | Inferred domain |
+|-----------------|----------------|
+| `pip`, `npm`, `yarn`, `poetry`, `uv` | `dependency-management` |
+| `docker`, `kubectl`, `helm` | `deployment-engineer` |
+| `git` | `git-advanced-workflows` |
+| `curl`, `wget`, `http` | `api-patterns` |
+| `python`, `.py` | `python-pro` |
+| `node`, `npm`, `.ts`, `.tsx` | `nodejs-best-practices` |
+| _(default)_ | `systematic-debugging` |
+
+**Design principle:** "Memory from what agents DO, not just what they say" — extracted from Memori's architecture. The struggle extension adds automatic capture without requiring Claude to decide.
+
+**Why it's needed:** Git commits, test failures, and deploys are high-signal moments. Failed commands are even higher-signal — they reveal exactly where skills are weak. Without automatic capture, these weakness signals evaporate at session end and the nightly improvement pipeline has no targets.
+
+**Noise control:** Advisory signals only fire on the four specific patterns; silent on all other Bash commands. Test passes are intentionally excluded (low signal). The hook exits 0 always.
+
+**Output:** `╔══ Action Capture ══╗` banner (advisory) for all signal types. `[seed-target:]` observation written silently to `observations.md` for `struggle` signal only.
 
 **Location:** `~/.claude/hooks/action-capture.sh` (global — fires across all projects)
 
@@ -178,6 +233,7 @@ Hook output is injected into Claude's context as system messages — Claude read
 
 ---
 
+
 ### `gbrain-external-search.sh`
 **Event:** `PreToolUse` — **Matcher:** `WebFetch|WebSearch`
 
@@ -186,6 +242,24 @@ Hook output is injected into Claude's context as system messages — Claude read
 **Why it's needed:** External web calls are expensive (tokens + latency) and often unnecessary — prior research sessions have already fetched and stored the relevant content in memory. A quick memory search first can avoid the external call entirely.
 
 **Output:** 4-step memory-first checklist: search → semantic search if thin → get_observations for hits → external only if nothing useful found.
+
+---
+
+### `raindrop-best-practices.sh`
+**Event:** `PreToolUse` — **Matcher:** `mcp__raindrop__`
+
+**Purpose:** Before any Raindrop Workshop MCP tool call, injects active observability best practices that reduce token cost and improve cluster quality.
+
+**Rules injected:**
+1. **Batch facets** — run multiple analytical dimensions in one LLM call (not one call per dimension)
+2. **Facet-first** — summarize each trace in 1-2 sentences before clustering (raw traces produce noisy clusters)
+3. **Cap input** — preprocess to ≤128K tokens before LLM analysis (walk spans, deduplicate messages, drop scorer/metric spans)
+4. **No-LLM classify** — at classification time use nearest-summary lookup (~100ms; no LLM call needed once a topic map exists)
+5. **Long tail** — don't sample aggressively; bugs live in rare clusters (HDBSCAN with no pre-specified count; outliers → `no_match`, not forced)
+
+**Why it's needed:** Raindrop trace analysis is token-heavy. Without guidance, the natural pattern is to feed raw trace payloads into LLMs one at a time — multiplying cost. These patterns compress the input surface and batch analytical work so trace evaluation runs at ~10–20% of the naïve cost.
+
+**Output:** `╔══ Active Observability (Raindrop) ══╗` rules banner before every Raindrop MCP call.
 
 ---
 
@@ -274,7 +348,7 @@ Hook output is injected into Claude's context as system messages — Claude read
 
 **Output:** `CAVEMAN MODE ACTIVE — level: lite` followed by the filtered ruleset. If statusline is not configured, appends a setup nudge.
 
-**Location:** `~/.claude/hooks/caveman-activate.js` (global, installed by `npx github:JuliusBrussee/caveman`)
+**Location:** `~/.claude/hooks/caveman-activate.js` (global; ships in the harness at `hooks/global/` and is copied to `~/.claude/hooks/` by `install.sh`). Reads `skills/caveman/SKILL.md` at runtime for the ruleset, falling back to a hardcoded minimal set on standalone installs where that file isn't present.
 
 ---
 
@@ -356,11 +430,14 @@ SessionStart   → session-start-hook.sh
 SessionStart   (all)                                        → caveman-activate.js  [global, ~/.claude/hooks/]
 Stop           → stop-hook.sh
 Stop           (all)                                        → address-check-hook.sh
+UserPromptSubmit (all, keyword-gated)                       → frontend-security-nudge.sh
+UserPromptSubmit (all, keyword-gated)                       → doc-parse-nudge.sh
 PreToolUse     Bash                                          → rtk hook claude  [global, ~/.claude/settings.json — token compression]
 PreToolUse     Write|Edit                                    → memory-discipline-hook.sh
 PreToolUse     Write|Edit                                    → protected-path-hook.sh
 PreToolUse     Write|Edit                                    → skill-validate-hook.sh
 PreToolUse     Agent                                         → gbrain-agent-spawn.sh
+PreToolUse     mcp__raindrop__                               → raindrop-best-practices.sh
 PreToolUse     mcp__plugin_claude-mem_mcp-search__save_obs  → gbrain-memory-write.sh
 PreToolUse     WebFetch|WebSearch                            → gbrain-external-search.sh
 PostToolUse    Write|Edit                                    → impeccable-detect-hook.sh
@@ -386,5 +463,5 @@ The `tool-failure-*` pair plus the `tool-failure-review` routine form the **tool
 3. Document it in this file (the `hook-added-notify.sh` hook will remind you if you forget).
 4. Update the Wiring Reference table above.
 
-_Last synced: 2026-06-11_
+_Last synced: 2026-06-14_
 

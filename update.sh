@@ -90,6 +90,7 @@ do_update() {
   # --- Sync ALL hooks from canonical source ($HARNESS_DIR/hooks/claude/) ---
   # Every .sh in hooks/claude/ is propagated unconditionally to every project.
   # The harness is the source of truth; user-chosen wiring lives in settings.json.
+  mkdir -p "$proj/.claude/hooks"
   for hook in "$HARNESS_DIR/hooks/claude/"*.sh; do
     [ -f "$hook" ] || continue
     name="$(basename "$hook")"
@@ -102,6 +103,7 @@ do_update() {
     [ -f "$proj/.claude/scripts/$s" ] && chmod +x "$proj/.claude/scripts/$s"
   done
   [ -f "$proj/.claude/scripts/utils/ollama_model_test.py" ] && chmod +x "$proj/.claude/scripts/utils/ollama_model_test.py"
+  [ -f "$proj/.claude/scripts/integrations/blackhole/blackhole-cursor.py" ] && chmod +x "$proj/.claude/scripts/integrations/blackhole/blackhole-cursor.py"
   [ "$(uname)" = "Darwin" ] && xattr -cr "$proj/.claude/hooks/" 2>/dev/null || true
   if [ -d "$proj/.git" ]; then
     cp "$HARNESS_DIR/hooks/git/post-commit" "$proj/.git/hooks/"

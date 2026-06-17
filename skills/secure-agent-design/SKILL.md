@@ -194,6 +194,48 @@ agent = Agent(
 
 ---
 
+## Pattern 6: Plan-then-Verify — Static Taint & Data-Flow Guards
+
+When an agent's tool calls have consequential side effects (send email, write to a DB, call an external API, move money), **do not let it execute tools one-at-a-time off the cuff.** Have it emit the *entire* planned tool-call sequence first, then statically verify that plan **before any tool runs**. Reject the whole plan on violation.
+
+**Why:** A runtime gatekeeper (see `agent-execution-control` §2) inspects one action in isolation and cannot see that *tainted data from step 1 reaches a dangerous sink in step 4*. The classic attack: an injected instruction inside an email the agent is summarizing tells it to forward the inbox to an attacker. Each individual `send_email` call looks fine; the *flow* — untrusted source → external recipient sink — is the violation. Only whole-plan analysis catches it.
+
+**Three static checks on the planned workflow:**
+
+1. **Taint source→sink** — Tag tool params as taint *sources* (untrusted: email bodies, file contents, web responses) and *sink params* (dangerous destinations: recipient addresses, shell args, URLs). Reject if a source can flow into a forbidden sink.
+2. **Allowlist** — Every tool in the plan must be on an explicit allowlist; default-deny unknown tools.
+3. **Forbidden data-flow rules** — Block specific tool→tool data hops (e.g. `read_inbox` output must never reach `send_email` recipient).
+
+**Implementation principle (verify-first):**
+```python
+# Plan the whole workflow, THEN verify, THEN execute — never interleave.
+plan = agent.plan(task)                      # full tool-call sequence upfront
+result = verify(plan, policy, registry)      # static: taint, allowlist, data-flow
+if not result.ok:
+    raise SecurityViolation(result.violations)  # reject plan; no tool has run yet
+executor.run(plan)                           # only reached if plan is clean
+```
+
+**Declarative policy (decorator/rule style):**
+```python
+@agent.tool(taint_labels=["untrusted"])      # read_inbox produces tainted data
+def read_inbox(): ...
+
+@agent.tool(sink_params=["to"])              # send_email's `to` is a guarded sink
+def send_email(to: str, body: str): ...
+
+agent.no_data_flow("read_inbox", "send_email.to")   # forbidden hop
+agent.deny(send_email, lambda c: not c["to"].endswith("@ourco.com"))
+```
+
+**Rules:**
+- Verify the **plan**, not individual calls — flow violations are invisible per-action.
+- Static checks (taint, data-flow) run **before execution**; allowlist/preconditions can *also* re-check at runtime.
+- This is design-time security architecture, not a runtime hook — wire it into the agent's plan→execute boundary.
+- Reference implementation: `metareflection/guardians` (taint analysis + security automata + Z3). Adopt the *pattern*; the solver machinery is optional.
+
+---
+
 ## Checklist: Before Shipping an Agent
 
 - [ ] All untrusted input wrapped in `<untrusted_data>` in every prompt
@@ -201,4 +243,5 @@ agent = Agent(
 - [ ] Parallel agents funnel through a serial judge before writing to shared state
 - [ ] Egress is documented and restricted to an explicit allowlist
 - [ ] No credentials in working directory; injected as env vars only
+- [ ] For consequential tool calls: whole plan verified (taint source→sink + allowlist) before any tool runs
 - [ ] Tested with a deliberately adversarial input (`Ignore all previous instructions...`)

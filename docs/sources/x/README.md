@@ -148,3 +148,14 @@ Content passed directly as pasted text to `/skill-extraction` — not a URL, rep
 - Hook change: `hooks/claude/stop-hook.sh` — added loop-debt detection block: Python inline script checks if [skill-update] entries are ≥3 days old with no [session-charge] since; appends [loop-debt] observation if so. Cognitive surrender proxy.
 - Script change: `scripts/session/trust_score.py` — added [loop-debt] tag to `_tally_tags` and `cmd_auto_score`; penalty of −1 per occurrence (max −2/day) in delta calc. Loop health now a scored signal.
 - Skill augmentation: `skills/multi-agent-patterns/SKILL.md` — added "Loop Health" section with three named failure modes (cognitive surrender → [loop-debt], comprehension debt → keep-rate, self-preferential maker → Step F), harness detection for each, and counter-moves. Version bumped 1.4.0 → 1.5.0.
+
+---
+
+## Building a Good Vertical Agent — Context as a Layered Cache (Pasted text)
+**Added:** 2026-06-15
+**Source / Author:** Pasted text — Peter Wang (@BrainsAndTennis), builder of the Shortcut spreadsheet agent
+
+**What it's about:** Argues a good agent is a faithful compression of its task distribution, and that context (system prompt + tools + artifacts) should be structured like a CPU memory hierarchy. Users bring a long-tailed task distribution; the objective is to minimize context spent per task averaged over that distribution. L1 = always-resident bread-and-butter ops (the 80%), made token-compressed and consequence-reporting. L2 = curated, gotcha-aware English specs fetched in one discovery step (the ~15%). L3 = the raw complete substrate on disk plus a short skill that teaches the agent to mine it with grep (the long tail). Placement is the craft: resident tokens are paid every task, discovery tokens only on a miss. The boundary slides down a tier as models strengthen, but the hierarchy never disappears. Also argues for one `execute_code` tool over many (covered already by `tool-design`).
+
+**What we added:**
+- Skill augmentation: `agent-harness-design` — added "Context as a Layered Cache (L1/L2/L3)" subsection to the 𝒞 (Context Constructor) component: a placement decision rule (minimize resident + discovery cost over the task distribution), a tier table mapping L1/L2/L3 onto harness artifacts (CLAUDE.md + SKILL.md bodies / `resources/` + deferred tools / on-disk references + grep-recipe skill), the consequence-reporting property for L1 ops, and the "tiers slide with model strength" note. Cross-referenced `context-optimization` (intra-tier mechanics) and the existing temporal-scaling tiers (when interventions act vs. where capability lives). Rejected: one-tool (dup of `tool-design`), read/write compression specifics (spreadsheet-domain), and a standalone skill (would add a 4th overlapping context-* skill).

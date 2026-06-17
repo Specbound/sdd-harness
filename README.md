@@ -240,6 +240,7 @@ sdd-harness/
 │   │   ├── stop-hook.sh          #     On session exit: check updates, memory health, re-explanation detection, agent failure patterns
 │   │   ├── prompt-hook.sh        #     On prompt submit: inject hot-memory context
 │   │   ├── action-capture.sh     #     PostToolUse(Bash): prompts memory capture after git-commit, test-failure, deploy, or struggle
+│   │   ├── test-integrity-guard.sh #   PostToolUse(Write/Edit/MultiEdit): soft gate flagging "gradient descent to green" — weakened test assertions, added skips, lowered coverage thresholds
 │   │   ├── doc-parse-nudge.sh    #     UserPromptSubmit: nudges document-parsing skill on PDF/RAG/OCR prompts
 │   │   ├── pre-tool-use-gitnexus.sh #  On file read/edit: enrich with GitNexus symbol graph context (callers, deps, processes)
 │   │   └── scan-pii.sh           #     PII scanner: scan staged files or a path with OPF (exits 1 on secrets/account numbers)

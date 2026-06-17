@@ -352,7 +352,7 @@ The rule is added to the appropriate agent file or rule file and distributed via
 
 ### `/kiro:daily-maintenance` — Nightly orchestrator
 
-Runs the full maintenance cycle end-to-end: **Judge → Reflect → Housekeeping → Trust Score → Augment Skills**. Designed to run on a schedule via Windows Task Scheduler (daily at 18:00 local) with a SessionStart hook as catch-up — both registered automatically by `install.sh` and `update.sh` on WSL systems with `schtasks.exe` available.
+Runs the full maintenance cycle end-to-end: **Judge → Reflect → Housekeeping → Session Quality → Keep Rate → Trust Score → Augment Skills → Adversarial Check**. Designed to run on a nightly schedule (18:00 local) with a SessionStart hook as catch-up. The scheduler is registered automatically by `install.sh` / `update.sh`: Windows Task Scheduler on WSL (`setup-global-orchestrator.sh`), cron on Linux (`setup-linux-orchestrator.sh`), and launchd on macOS (`setup-mac-orchestrator.sh`).
 
 ```
 /kiro:daily-maintenance
@@ -363,9 +363,12 @@ Pipeline:
 1. **`session-judge`** — independent adversarial scorer. Reads the last 24h of `observations.md` + trace log, applies the rubric in `kiro/settings/rules/session-quality-rubric.md`, emits a JSON verdict (±1 charges, -2 drains, ±4.5%/day cap). **Proposes no fixes** — if the same agent scored and improved, it would optimize for score, not work.
 2. **`/kiro:reflect`** — consumes the Judge's drains as priority signals, converts them into new memory entries or pattern promotions.
 3. **`/kiro:housekeeping`** — prunes/archives observations, enforces memory caps.
-4. **Trust Score update** — `scripts/trust_score.py` applies the Judge's `score_delta`, clamps it, rewrites the `## Harness Trust Score:` line at the top of `hot-memory.md`, appends to `.claude/memory/trust-score.jsonl`.
-5. **Memory-gap alert** — if any `[memory-gap]` observations remain unresolved after reflection, appends a `[routine-alert]` observation so the user sees it next session.
-6. **Skill augmentation** — `skill-augment-agent` reviews today's observations and judge drains, encodes up to 3 evidence-backed improvements into relevant `SKILL.md` files (append-only, ≤150 chars each). Logs each change as a `[skill-update]` observation.
+4. **Memory-gap alert** — if any `[memory-gap]` observations remain unresolved after reflection, appends a `[routine-alert]` observation so the user sees it next session.
+5. **Session quality** — scores the session via the `session-quality` rubric, writes a `[session-quality]` observation.
+6. **Keep rate** — `keep-rate` skill evaluates pattern retention, writes a `[keep-rate]` observation.
+7. **Trust Score update** — `scripts/session/trust_score.py` runs after session quality and keep rate are written so all signals (`[session-charge]`, `[memory-gap]`, `[session-quality]`, `[keep-rate]`) are visible. Rewrites the `## Harness Trust Score:` line in `hot-memory.md`, appends to `.claude/memory/trust-score.jsonl`.
+8. **Skill augmentation** — `skill-augment-agent` reviews today's observations and judge drains, encodes up to 5 evidence-backed improvements (circuit breaker cap) into relevant `SKILL.md` files (append-only, ≤150 chars each). Logs each change as a `[skill-update]` observation. Also processes any `[seed-target:]` observations written by the action-capture hook during the session.
+9. **Adversarial check** — a separate verification agent (no loyalty to step 8's output) reviews each `[skill-update]` written today: does it address the stated gap? does it contradict existing guidance? Flags failures as `[skill-update-flagged]`, confirms passes as `[skill-update-verified]`. Skipped if step 8 wrote nothing.
 
 Idempotent per calendar day (uses today's `[judge]` observation as the sentinel). Each step is error-isolated: a bad Judge pass does not block housekeeping.
 
@@ -381,9 +384,9 @@ Starts at 20% on fresh install. Daily cap ±4.5%. History lives in `.claude/memo
 SDD_SKIP_ROUTINE=1 ~/.claude/sdd-harness/install.sh /path/to/project
 ```
 
-Or after install: `schtasks.exe /Delete /TN "SDD Daily Orchestrator"` (global) or `rm .claude/scripts/daily-runner.sh` (per-repo).
+Or after install: `schtasks.exe /Delete /TN "SDD Daily Orchestrator"` (global) or `rm .claude/scripts/orchestration/daily-runner.sh` (per-repo).
 
-### `scripts/detect_reexplanation.py` — session signal detector
+### `scripts/session/detect_reexplanation.py` — session signal detector
 
 Runs from `stop-hook.sh` after each session. Uses Claude Haiku to analyse user turns for two signal types:
 
@@ -392,7 +395,7 @@ Runs from `stop-hook.sh` after each session. Uses Claude Haiku to analyse user t
 
 Both types are written at most once per calendar day. The auto-scoring table in `kiro/settings/rules/session-quality-rubric.md` applies these mechanically — no Judge pass needed.
 
-When drain signals are found, `scripts/micro_reflect.py` is immediately called (Haiku) to extract a durable, generalizable fact from each drain and append it to `hot-memory.md` under an `## Auto-learned` section, tagged `[auto-learn, YYYY-MM-DD]`. These are probationary entries — the housekeeping agent promotes them to `meta/patterns.md` after 7 days if reinforced, or removes them if not. The detector is skipped in headless/print sessions (`SDD_HEADLESS=1`) to prevent recursive spawning from `daily-runner.sh`.
+When drain signals are found, `scripts/session/micro_reflect.py` can be called to extract a durable, generalizable fact from each drain and append it to `hot-memory.md` under an `## Auto-learned` section, tagged `[auto-learn, YYYY-MM-DD]`. These are probationary entries — the housekeeping agent promotes them to `meta/patterns.md` after 7 days if reinforced, or removes them if not.
 
 ### Full reference: [`docs/trust-battery/`](trust-battery/)
 
@@ -407,7 +410,7 @@ Clusters recurring failure patterns across Raindrop Workshop traces, ranks by im
 /kiro:macro-eval-sweep 4 zora       # last 4 days, runs matching "zora"
 ```
 
-Runs automatically twice weekly via `scripts/macro-eval-runner.sh` (MIN_GAP_DAYS=3) inside the daily orchestrator. In headless or scheduler contexts, preflight confirms the Raindrop MCP server is reachable — fails loudly with a `*-SKIPPED.md` report rather than pretending success.
+Runs automatically twice weekly via `scripts/routines/macro-eval-runner.sh` (MIN_GAP_DAYS=3) inside the daily orchestrator. In headless or scheduler contexts, preflight confirms the Raindrop MCP server is reachable — fails loudly with a `*-SKIPPED.md` report rather than pretending success.
 
 Output: `.claude/reports/macro-evals/YYYY-MM-DD.md` with a pattern leaderboard, top-3 diagnoses (focus event + suspect step), and a delta vs. previous sweep. Span-level and run-level Workshop annotations are posted for confirmed recurring failure patterns (cap: ~5 runs per pattern).
 
@@ -423,9 +426,19 @@ Reviews the per-repo tool-failure ledger and promotes recurring failures into me
 /kiro:tool-failure-review 5          # only signatures that failed >= 5x
 ```
 
-The loop runs continuously without you: two hooks capture every failing Bash/MCP call (`tool-failure-capture.sh`, PostToolUseFailure) and warn before a known-failing shape is repeated (`tool-failure-recall.sh`, PreToolUse). The review stage runs automatically ~twice weekly via `scripts/tool-failure-review-runner.sh` (MIN_GAP_DAYS=3) inside the daily orchestrator — it no-ops unless the ledger has a signature that failed ≥3× and is still open, so calling it daily is cheap.
+The loop runs continuously without you: two hooks capture every failing Bash/MCP call (`tool-failure-capture.sh`, PostToolUseFailure) and warn before a known-failing shape is repeated (`tool-failure-recall.sh`, PreToolUse). The review stage runs automatically ~twice weekly via `scripts/routines/tool-failure-review-runner.sh` (MIN_GAP_DAYS=3) inside the daily orchestrator — it no-ops unless the ledger has a signature that failed ≥3× and is still open, so calling it daily is cheap.
 
 Ledger: `.claude/memory/tool-failures.jsonl` (local, per-repo). Report: `.claude/reports/tool-failures/YYYY-MM-DD.md`. Skill: `tool-failure-memory`. Opt-out: `SDD_SKIP_TOOL_FAILURE_REVIEW=1`. Source: ReMe (agentscope-ai/ReMe).
+
+---
+
+### Daily Security Scan (`security-report-runner.sh`)
+
+Runs automatically every day via the daily orchestrator. Performs a static security scan of recent git changes using the `ai-security-workflow` skill: checks for OWASP patterns (injection sinks, XSS vectors, broken auth), exposed secrets, and unsafe patterns introduced in the last commit window. Writes a dated report to `.claude/reports/security/<date>-security-report.md`.
+
+Visible in the dashboard **Scheduled Tasks** section (row 6) with last-run status, artifact diff, and any findings headline.
+
+Self-paces to daily (`MIN_GAP_DAYS=1`). Applies to every repo. Opt-out: `SDD_SKIP_SECURITY_REPORT=1`.
 
 ---
 
@@ -496,9 +509,10 @@ Generates skills from an approved extraction plan, or runs the full pipeline wit
 
 Output: `~/.claude/skills/<name>/SKILL.md` for each extracted skill.
 
-Every new skill passes two mandatory quality gates before it is logged to the sources index:
+Every new skill passes quality gates and a companion check before it is logged to the sources index:
 - **Phase 5b — SkillOS Quality Gate**: task relevance, operational validity, content quality, compression (≤5,000 words). Failures block completion.
 - **Phase 5c — Identity Alignment Check**: invokes `agent-identity` Mode B — validates description specificity, trigger sharpness, behavioral concreteness, and explicit exclusions. Vague skill identities cause the wrong skill to fire; this gate prevents them from entering the harness.
+- **Phase 5d — Verification Companion Check**: asks whether the skill's domain involves manual checks a human would run after Claude's work (visual inspection, sampling output, checking logs). If yes, invokes `verification-skill-authoring` to create a companion `<domain>-verify` skill before proceeding.
 
 See `docs/skill-extraction/README.md` for full details on scoring, workflow, and security.
 
@@ -534,13 +548,13 @@ See `docs/gitnexus/README.md` for full details.
 
 ## Local Dashboard
 
-A browser-based dashboard (`scripts/dashboard.py`, stdlib only) that surfaces harness telemetry for all registered repos.
+A browser-based dashboard (`scripts/utils/dashboard.py`, stdlib only) that surfaces harness telemetry for all registered repos.
 
 ```bash
-python3 ~/.claude/sdd-harness/scripts/dashboard.py
+python3 ~/.claude/sdd-harness/scripts/utils/dashboard.py
 ```
 
-Starts a local HTTP server at `http://localhost:4569` and opens the browser automatically. Use `--repo <name|path>` to pre-select a repo, `--no-open` to suppress browser launch, or `--static` to write a static `.dashboard/index.html` instead.
+Starts a local HTTP server at `http://localhost:4569` and opens the browser automatically. Use `--repo <name|path>` to pre-select a repo, `--no-open` to suppress browser launch, `--port <PORT>` to set a custom port, or `--static` to write a static `.dashboard/index.html` instead.
 
 **Sections:**
 
@@ -548,14 +562,17 @@ Starts a local HTTP server at `http://localhost:4569` and opens the browser auto
 |---|---|---|
 | 1 | ⚡ Trust Battery | Arc gauge + 30-day bar chart of daily trust deltas |
 | 2 | 🕸 GitNexus | Stats strip + embedded visual explorer (localhost:4567) |
-| 3 | 🪝 Hooks History | Hook name, event type, last activity, active/inactive badge |
-| 4 | 📅 Scheduled Tasks | OS scheduler health card + per-routine cards (schedule, last run + exit code, artifact, diff vs. previous run, reasoning excerpt) |
-| 5 | 🧠 Memory Changes | Git feed of hot-memory, observations, and meta/patterns changes |
-| 6 | 🎯 Skill Changes | Rendered skill-curation-report with audit age |
-| 7 | 📊 Session Quality | Score/keep-rate/memory-gap summary + 30-day chart |
-| 8 | 🧵 Context Health | Sessions per day trend + `/compact` recommendations |
-| 9 | 🔧 Maintenance Status | Per-repo orchestrator log tail and last-run status |
+| 3 | 🔬 Workshop | Raindrop Workshop trace browser; filter by repo, run eval loop, view agent traces |
+| 4 | 🗜 Headroom | Compression savings totals for RTK + headroom proxy; per-session block history with checkpoint-level token savings |
+| 5 | 🪝 Hooks History | Hook name, event type, last activity, active/inactive badge |
+| 6 | 📅 Scheduled Tasks | OS scheduler health card + per-routine cards (schedule, last run + exit code, artifact, diff vs. previous run, reasoning excerpt). Includes the Daily Security Scan routine (`security-report-runner.sh`) which scans recent git changes for OWASP patterns, secrets, and injection sinks. |
+| 7 | 🧠 Memory Changes | Git feed of hot-memory, observations, and meta/patterns changes |
+| 8 | 🎯 Skill Changes | Rendered skill-curation-report with audit age |
+| 9 | 📊 Session Quality | Score/keep-rate/memory-gap summary + 30-day chart; ✨ **Prompt Quality** sub-tab — per-dimension PQ trends (7-day avg, weakest dimension, rolling score chart) |
 | 10 | 💰 Model Cost | All-time and 30-day spend; 90-day daily cost bar chart; sessions table with model/tokens/cost; cross-provider "What if?" cost switcher |
+| 11 | 🧵 Context Health | Sessions per day trend + `/compact` recommendations |
+| 12 | 🔧 Maintenance Status | Per-repo orchestrator log tail and last-run status; **deferred-work banner** — count of `DEBT:` markers (deliberate shortcuts, per `karpathy-guidelines`) found by `git grep` across tracked code, recomputed each dashboard launch |
+| 13 | 🤖 Automation Audit | Timeline of automated events — maintenance runs, trust-judge scores, session signals, and scheduled task outcomes |
 
 ### 💰 Model Cost section
 
@@ -574,7 +591,7 @@ All registered repos emit traces automatically whenever agents run. No commands 
 ### Dashboard Workshop tab
 
 ```bash
-python3 ~/.claude/sdd-harness/scripts/dashboard.py
+python3 ~/.claude/sdd-harness/scripts/utils/dashboard.py
 # → Workshop tab in the sidebar
 ```
 
@@ -648,6 +665,36 @@ npm install -g impeccable
 | Missing focus state | No `:focus-visible` styles |
 
 See `docs/design/impeccable/impeccable.md` for the full rule set.
+
+---
+
+## Proof Collaborative Review (Spec Phase Gates)
+
+Proof is the built-in review layer used by `spec-requirements`, `spec-design`, and `spec-tasks`. After each phase generates an artifact, the harness publishes it to a live Proof document and presents a browser URL for inline review.
+
+### How it works
+
+1. Phase subagent generates the artifact (requirements / design / task list)
+2. `proof-collaborative-review` skill starts a local Proof server (port 4000) and publishes the document
+3. A review URL is presented — open it in any browser to annotate, suggest edits, or rewrite inline
+4. Come back to Claude and say "done" when finished
+5. Skill retrieves the final human-edited version and writes it back to `specs/<feature>/`
+
+### First-time setup (automatic)
+
+No manual steps. The skill auto-installs the Proof SDK into `~/.claude/tools/proof-sdk/` on first use (requires Node.js). Subsequent runs skip the install.
+
+### Remote server
+
+Set `PROOF_SERVER_URL=http://your-host:4000` to point at a shared instance instead of localhost.
+
+### Skill location
+
+```
+~/.claude/sdd-harness/skills/proof-collaborative-review/SKILL.md
+```
+
+Bundled in the harness — replicated to every machine via `install.sh`. No per-machine manual copy needed.
 
 ---
 
@@ -727,7 +774,8 @@ Four protocols extracted from [garrytan/gbrain](https://github.com/garrytan/gbra
 **Model Tiers** (`~/.claude/skills/model-tiers/`) — Match model to task type:
 - `haiku-4-5` for classification, validation, dedup (utility)
 - `sonnet-4-6` for generation, synthesis, agent work (default)
-- `opus-4-7` only for deep multi-step reasoning (upgrade when sonnet consistently fails)
+- `opus-4-8` only for deep multi-step reasoning (upgrade when sonnet consistently fails)
+- `fable-5` for long, multi-sitting autonomous sessions (`/model fable`)
 - Subagents always use `sonnet`, not opus — latency compounds in tool loops
 
 **Background Work Routing** (`~/.claude/skills/background-work-routing/`) — Stay inline unless a pain signal fires: gateway restart, state drop, parallel > 3, runtime > 5 min, or user frustration. Offer the switch explicitly; never switch silently.
@@ -735,3 +783,5 @@ Four protocols extracted from [garrytan/gbrain](https://github.com/garrytan/gbra
 **Compiled Truth Pattern** (`~/.claude/skills/compiled-truth-pattern/`) — Every memory observation has two zones: `## State` (rewrite in place when evidence changes, each fact cited) and `## Evidence / Timeline` (append-only dated log, never edited).
 
 Full reference: `docs/gbrain-patterns/gbrain-patterns.md`
+
+_Last synced: 2026-06-14_

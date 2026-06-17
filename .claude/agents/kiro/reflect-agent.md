@@ -112,22 +112,6 @@ If observations reveal cross-session TODOs:
 - Format: `- [ ] task | due:YYYY-MM-DD | pri:high/medium/low | added:YYYY-MM-DD`
 - Only add items that outlive the current session
 
-### Step 6: Session Clean State Check
-
-Verify the five clean-state dimensions for the session just completed:
-
-| Dimension | Check |
-|---|---|
-| Build passes | Run verify command or check last CI status |
-| Tests pass | All tests pass, including pre-existing ones |
-| Progress recorded | Feature list and/or PROGRESS.md reflects current state |
-| No stale artifacts | No debug code, temp files, or unresolved TODO markers in changed files |
-| Startup path functional | Next session can begin without manual intervention |
-
-For each dimension, report: `✅ met` / `⚠️ partial` / `❌ not met`.
-
-If any dimension is `❌ not met`, add a corrective action item. The session is not fully complete until all five are addressed — note this plainly in the output rather than omitting it.
-
 ## Output
 
 Chat summary only (files updated directly):
@@ -151,17 +135,6 @@ Chat summary only (files updated directly):
 
 ## Action Items
 - Added: [list or "None"]
-
-## Clean State
-| Dimension | Status |
-|---|---|
-| Build passes | ✅/⚠️/❌ |
-| Tests pass | ✅/⚠️/❌ |
-| Progress recorded | ✅/⚠️/❌ |
-| No stale artifacts | ✅/⚠️/❌ |
-| Startup path functional | ✅/⚠️/❌ |
-- Overall: CLEAN / PARTIAL / INCOMPLETE
-- Corrective actions: [list or "None"]
 ```
 
 ## Safety & Fallback

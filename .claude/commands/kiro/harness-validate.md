@@ -1,6 +1,6 @@
 ---
 description: Check structural integrity of the SDD harness — broken references, missing files, convention violations
-allowed-tools: Read, Task, Glob
+allowed-tools: Read, Task, Glob, Bash
 ---
 
 # Kiro Harness Validate — Structural Integrity Check
@@ -16,6 +16,16 @@ No arguments required. Validates the harness installation in the current project
 ## Pre-Check
 
 Verify `.claude/` directory exists. If not, report: "No harness installed. Run install.sh first."
+
+## Deterministic Checks (run first)
+
+Before delegating to the agent, run the hardcoded-path guard and fold its result into the report. This is a hard gate — any violation is a CRITICAL finding:
+
+```
+bash .claude/scripts/utils/check-no-hardcoded-paths.sh
+```
+
+It scans harness scripts for machine/user-specific absolute paths and the hardcoded `$HOME/.claude/sdd-harness` root. Every path must instead be self-located via `scripts/lib/resolve-harness-dir.sh` or computed from `$HARNESS_DIR`. If it exits non-zero, report each offending `file:line` and do not issue a "pass" verdict.
 
 ## Invoke Subagent
 

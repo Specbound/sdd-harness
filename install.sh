@@ -531,6 +531,7 @@ install_project() {
     [ -f "$PROJECT_DIR/.claude/scripts/$s" ] && chmod +x "$PROJECT_DIR/.claude/scripts/$s"
   done
   [ -f "$PROJECT_DIR/.claude/scripts/utils/ollama_model_test.py" ] && chmod +x "$PROJECT_DIR/.claude/scripts/utils/ollama_model_test.py"
+  [ -f "$PROJECT_DIR/.claude/scripts/integrations/blackhole/blackhole-cursor.py" ] && chmod +x "$PROJECT_DIR/.claude/scripts/integrations/blackhole/blackhole-cursor.py"
 
   # --- Set up git post-commit hook ---
   cp "$HARNESS_DIR/hooks/git/post-commit" "$PROJECT_DIR/.git/hooks/"

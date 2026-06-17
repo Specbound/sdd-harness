@@ -136,37 +136,6 @@ Build this by:
 - outcome: pass / fail
 ```
 
-### Step 8: Instruction Architecture Audit
-
-Check the primary entry instruction file (CLAUDE.md or AGENTS.md at repo root):
-
-1. **Line count**: Warn if >200 lines (target: 50–200)
-2. **Hard constraint count**: Count rules in the MUST/hard-constraints section — warn if >15
-3. **Topic document pointers**: Check whether the entry file links to topic documents in subdirectories, or contains all content inline (inline = architectural smell)
-4. **Middle placement**: Grep for hard constraint patterns (NEVER, ALWAYS, MUST NOT) that appear after line 50 — these are at risk of "lost in the middle" effect
-5. **Instruction metadata**: Check if instructions carry source/applicability/expiry annotations (absence is a maintenance smell, not a hard error)
-
-Report:
-- Entry file line count and target range
-- Hard constraint count
-- Whether topic documents are used (yes/no/partial)
-- Count of hard-constraint phrases appearing after line 50
-- Recommendation: "instruction-architecture skill applies" if entry file >200 lines or constraints >15
-
-### Step 9: Feature List Primitive Audit
-
-If feature tracking files exist (`feature_list.json`, `features.md`, or similar):
-
-1. Check that each feature entry has: behavior description + verification command + state field
-2. Verify state values are from: `not_started`, `active`, `blocked`, `passing`
-3. Count features in `active` state — warn if >1 (WIP=1 discipline)
-4. Check that `passing` features have evidence (commit hash or test output reference)
-
-Report:
-- Feature list format compliance (triple structure present: yes/no/partial)
-- WIP violations (active count > 1)
-- Entries missing verification commands
-
 ## Safety & Fallback
 
 - **Read-only**: This agent examines but does not modify any files

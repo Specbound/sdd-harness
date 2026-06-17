@@ -330,3 +330,45 @@ GitHub repositories that were passed to `/skill-extraction` and turned into harn
 - Skill: `ktx-data-context` — 4-phase workflow (install/connect → build context → wire MCP server → review loop). Decision matrix for ktx vs raw SQL vs RAG. Full context file shape reference. Fires when building data agents or adding analytics capability to a skill (e.g. `cfo-insights/`).
 - Config: commented-out `mcpServers.ktx` block appended to `templates/settings.json.template` — uncomment and merge to enable `ktx_query` / `ktx_schema` / `ktx_metrics` tools in any project.
 - Docs: `docs/skills/ktx-data-context/README.md` — problem framing, activation conditions, MCP config snippet, warehouse/source support table, related skills.
+
+---
+
+## github.com/metareflection/guardians
+**URL:** https://github.com/metareflection/guardians | **Added:** 2026-06-17
+**Source / Author:** metareflection (Erik Meijer et al.)
+
+**What it's about:** Python library (~1900 LOC core, MIT) that verifies an AI agent's *entire planned* tool-call workflow **before** any tool executes. Three independent static checks over the workflow AST: taint analysis (does untrusted data flow from a source to a forbidden sink?), security automata (does the tool-call sequence reach an error state?), and Z3 theorem proving (do pre/post/frame conditions hold?). `verify_first=True` guarantees flow checks run before execution. Canonical demo: an injected instruction inside an email tells the agent to forward the inbox to an attacker — the source→sink flow is rejected and the workflow never runs. The transferable insight is the **plan-the-whole-workflow → statically verify → execute** paradigm + taint source→sink; the Z3/automata/pydantic machinery is library-specific deployment detail.
+
+**What we added** (one augmentation — the default-skip gate rejected everything else):
+- Skill augmentation: `secure-agent-design` — new **Pattern 6: Plan-then-Verify — Static Taint & Data-Flow Guards**. Captures the design pattern: emit the full tool-call plan upfront, tag tool params with taint labels (sources) + sink params (forbidden destinations), statically check source→sink reachability + allowlist + forbidden data-flow rules, and reject the whole plan on violation before any tool fires. Complements `agent-execution-control` §2 (which gates one *runtime* action in isolation and is blind to cross-step data flow). Added a matching pre-ship checklist line. Guardians cited as reference implementation.
+
+**Rejected:** standalone skill (better as augmentation), adopting guardians as a zora-repo dependency (product decision, heavyweight z3-solver), enforcement hook (no reliable static-analysis trigger), Z3/automata reference doc (hollow — text not behavior).
+
+---
+
+## github.com/s0xDk/ghostty-blackhole
+**URL:** https://github.com/s0xDk/ghostty-blackhole | **Added:** 2026-06-17
+**Source / Author:** s0xDk (MIT)
+
+**What it's about:** A Ghostty fragment shader that renders a ray-traced black hole sized to the live Claude Code context-window fill. A single Python script, wired as a `statusLine` plus `SessionStart`/`SessionEnd` hooks, reads the session JSON Claude pipes on stdin, computes context fill (`context_window.used_percentage`), and encodes it into the **cursor color** via an `OSC 12` escape (amber base + 16-bit signature/checksum so a theme color can't accidentally drive the hole). `blackhole.glsl` decodes `iCurrentCursorColor` every frame and sizes the hole; cursor color is per-surface so each split/window gets its own. Requires Ghostty 1.3+. Ships a macOS Swift/SwiftUI tuner app (ignored — macOS-only).
+
+**What we added** (implemented as fully opt-in per user request — two gates: not template-wired + `SDD_BLACKHOLE` env):
+- Script: `scripts/integrations/blackhole/blackhole-cursor.py` — the encoder (statusLine + SessionStart/SessionEnd, self-routed on `hook_event_name`). `apply()` no-ops unless `SDD_BLACKHOLE=1`, so hooks/statusLine stay dormant by default and the statusLine still prints its readout without touching the cursor.
+- Resource: `scripts/integrations/blackhole/blackhole.glsl` (verbatim, `SIZE_MODE MODE_TOKENS`) + `SETUP.md` (Ghostty `custom-shader` line, the exact `settings.json` snippet to paste, the `SDD_BLACKHOLE=1` toggle). Deliberately **not** added to `templates/settings.json.template` — a `statusLine` entry would replace Claude's default status line for every repo.
+- Docs: `docs/integrations/blackhole/README.md` — what it is, data-flow diagram, the two-gate opt-in design, files, requirements, caveats.
+
+**Rejected:** auto-wiring `statusLine` into the settings template (breaks opt-in — would replace everyone's default status line); the Swift/SwiftUI tuner app (macOS-only, no WSL/Linux home); a dashboard context-fill widget (the hole already *is* the live gauge — redundant); a separate bash SessionEnd clear-hook + SessionStart augmentation (the one Python script already self-routes all three roles — fewer moving parts).
+
+---
+
+## github.com/DietrichGebert/ponytail
+**URL:** https://github.com/DietrichGebert/ponytail | **Added:** 2026-06-17
+**Source / Author:** Dietrich Gebert
+
+**What it's about:** A cross-agent (~13 hosts) skill/ruleset plugin (JS ~93%, Python ~6%) that constrains AI coding agents to write minimal code. Two Node.js lifecycle hooks **re-inject** a YAGNI "ladder" ruleset (does it need to exist? → stdlib? → native platform feature? → already-installed dependency? → one line? → minimum) on **every turn** at intensity levels `lite`/`full`/`ultra`/`off`, while protecting validation/error-handling/security from being stripped. Separately, deliberate shortcuts get a `ponytail:` inline comment marker, collected on demand by **manual** commands (`/ponytail-review`, `/ponytail-audit`, `/ponytail-debt`). Claimed: "80-94% less code · 3-6× faster · 42-75% cheaper." The default-skip gate rejected almost everything — the harness already enforces this thesis hard (CLAUDE.md AI-Legible Code every session, CAVEMAN every-turn injection, `karpathy-guidelines`, `simplify`).
+
+**What we added** (two items — the minimalism ruleset itself was already covered):
+- Skill augmentation: `karpathy-guidelines` §2 "Simplicity First" — a **deliberate-deferral marker** rule. When a real need is *consciously* postponed under simplicity pressure, tag it inline `# DEBT: <what was skipped> — revisit when <trigger>` (never for genuine YAGNI). No ledger file: `git grep -nE "(#|//)\s*DEBT:"` lists them. This is the one gap — the harness forces "do less" but had no way to track conscious tradeoffs. See also the prior `karpathy-guidelines` entry (2026-05-31).
+- Dashboard widget: `count_debt_markers()` + a Maintenance Status banner in `scripts/utils/dashboard.py` — comment-anchored `git grep` (Markdown excluded so prose can't false-match; only tracked files), recomputed on **every dashboard launch**. **Improves on ponytail**, whose `/ponytail-debt` is a command you must remember — our count is always-current the next time you open the dashboard, with no command to run.
+
+**Rejected:** the full YAGNI-ladder skill (>70% covered by `karpathy-guidelines`); a per-turn minimalism re-injection hook (duplicate of CLAUDE.md AI-Legible + CAVEMAN — noise/conflict); `/ponytail-debt` command + a dedicated daily runner (premature — scans nothing until markers accumulate; the dashboard line surfaces them for free, and `git grep` is the on-demand path); intensity levels (already modeled by CAVEMAN); dependency-bloat guard (covered by `karpathy-guidelines` §6).

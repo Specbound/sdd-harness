@@ -21,9 +21,24 @@ All tasks are wired into `scripts/daily-orchestrator.sh`. The orchestrator fires
 - **B** — Session Quality Assessment: collect git activity; score session 1–5; append `[session-quality]` observation
 - **C** — Keep Rate Evaluation: find Claude-co-authored commits older than 7 days; compute lines still in HEAD; append `[keep-rate]` observation
 - **D** — Trust Score update: run `trust_score.py auto-score` after B and C are written, so all signals (`[session-charge]`, `[memory-gap]`, `[session-quality]`, `[keep-rate]`) are visible to the scorer
-- **E** — Skill Augmentation: invoke `skill-augment-agent` with today's judge verdict; encodes up to 3 evidence-backed improvements into skill files
+- **E** — Skill Augmentation (Sleep-Phase Knowledge Seeding): invoke `skill-augment-agent` with today's judge verdict. The agent collects `[seed-target:]` observations written by the `action-capture.sh` hook during the Wake phase (failed Bash commands), maps them to skill domains, generates synthetic worked examples (Dreaming), and applies up to 3 evidence-backed skill improvements. Logs each as `[skill-update]`. Idempotent — skips if `[skill-update]` entries already exist for today. This step closes the full Wake→Sleep cycle: struggles during active sessions automatically become targeted skill updates overnight.
 
 **Opt-out:** `rm .claude/scripts/daily-runner.sh` in that repo; or `SDD_SKIP_ROUTINE=1` to skip registration at install time.
+
+---
+
+### Daily Security Scan
+**Runner:** `.claude/scripts/security-report-runner.sh`
+**Cadence:** Every day (`MIN_GAP_DAYS=1`; applies to every repo)
+**Scope:** Every registered repo
+
+**What it does:**
+- Static security scan of recent git changes using the `ai-security-workflow` skill
+- Checks for OWASP patterns (injection sinks, XSS vectors, broken auth), exposed secrets, and unsafe patterns introduced in the last commit window
+- Writes a dated report to `.claude/reports/security/<date>-security-report.md`
+- Visible in the dashboard **Scheduled Tasks** section with last-run status, artifact diff, and any findings headline
+
+**Opt-out:** `SDD_SKIP_SECURITY_REPORT=1` env var.
 
 ---
 
@@ -68,6 +83,7 @@ This is the **review** stage of the tool-failure-memory loop (capture → recall
 **Scope:** Harness repo only (exits 0 in non-harness repos via `docs/scheduled-tasks/` guard)
 
 **What it does:**
+0. **Forward-pattern intake** — reads `.claude/memory/forward-patterns.md` from every registered repo; surfaces confidence 4–5 entries as incorporate/promote/defer candidates; included in the curation report
 1. **Skill quality audit** — scores all `~/.claude/skills/*/SKILL.md` against four SkillOS dimensions; flags low-quality candidates and duplicate pairs
 2. **Description budget audit** — measures description field length; flags >150 chars for compression
 3. **Memory governance health** — checks five compaction-discipline hook failure modes

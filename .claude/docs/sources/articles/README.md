@@ -4,6 +4,49 @@ Online articles, blog posts, and documentation pages that were passed to `/skill
 
 ---
 
+## Cursor: Continually Improving with AI Feedback Loops
+**URL:** https://cursor.com/blog/continually-improving | **Added:** 2026-05-07 | **Source:** Cursor Engineering Blog
+
+**What it's about:** How Cursor instruments its AI coding agent to continuously improve through behavioral governance — specifically, how memory contamination by case-specific facts (rather than reusable workflow patterns) is the #1 silent failure mode in long-running agents per the OpenAI cookbook. Covers compaction boundary timing, memory write discipline, and the distinction between investigation artifacts (ephemeral) and workflow patterns (persistent).
+
+**What we added:**
+- Hook: `hooks/claude/memory-discipline-hook.sh` (PreToolUse, gate on `*/memory/*.md` and `MEMORY.md` writes) — displays discipline rules before any memory write executes, enabling self-correction of violations (case-specific facts, pronouns, duplicated content)
+- Hook: `hooks/claude/compaction-discipline-hook.sh` (PreCompact) — injects boundary-timing principles before every compaction: compact at workflow phase boundaries, preserve artifact paths/decisions/open questions, merge not regenerate (regeneration compounds LLM sampling drift)
+- Skill: `agent-memory-discipline` — canonical reference for memory governance; 3-tier type system, body structure rules, what to save vs. skip
+- Skill enhancement: `context-compression` — new "Compaction Modes and Boundary Timing" section (3-mode taxonomy: routine, phase-boundary, crisis)
+
+---
+
+## Overloaded Context: Why Agent Memory Fails at Scale
+**URL:** https://www.dbreunig.com/2026/05/10/overloaded-context | **Added:** 2026-05-12 | **Source:** Drew Breunig (dbreunig.com)
+
+**What it's about:** Analysis of why agents reach for external search too eagerly — burning tokens and introducing latency — when the answer already exists in session memory or the memory-first lookup chain. Argues for a retrieval priority hierarchy: local memory → external search, not the reverse.
+
+**What we added:**
+- Design context for `hooks/claude/gbrain-external-search.sh` — the hook's memory-first lookup chain (search → get_observations → timeline before any WebFetch/WebSearch) directly implements this article's retrieval priority hierarchy. The article was the reasoning input for that hook's design alongside the garrytan/gbrain patterns.
+
+---
+
+## Claude Code `/goal` — Goal-Driven Autonomous Execution
+**URL:** https://code.claude.com/docs/en/goal | **Added:** 2026-05-14 | **Source:** Anthropic / Claude Code documentation
+
+**What it's about:** Documents the `/goal` primitive in Claude Code — a completion evaluator (Haiku) that runs after each turn, checks whether the stated goal has been met, and either continues autonomously or stops when done. Enables running any workflow without permission stops until a verifiable condition is met.
+
+**What we added:**
+- Skill: `goal-mode` — patterns for running any feature development workflow in autonomous mode (goal-driven, runs until completion) vs interactive mode (permission steps, debuggable). Fills gap in the existing 53 development workflow skills which had no goal-driven autonomous execution pattern.
+
+---
+
+## Continuous Evaluation for Skill Extraction Workflows
+**URL:** https://huggingface.co/blog/continuous_eval | **Added:** 2026-05-18 | **Source:** Hugging Face
+
+**What it's about:** Methodology for continuous evaluation of LLM-powered pipelines — specifically, the principle that deterministic enforcement patterns should be implemented as hooks (run every time, measurable) rather than as skills or prompts (advisory, easily skipped). Introduces 4 evaluation signals for identifying hook candidates.
+
+**What we added:**
+- Skill enhancement: `skill-extraction` — Phase 3 now has a mandatory "Hook Candidate Assessment" section that invokes the `hook-design` skill to evaluate each extracted capability against 4 signals before proposing integration type: (1) must run every time, (2) describes enforcement, (3) lifecycle-aware, (4) prompt would fail to enforce. If any signal is positive → Hook entry in the proposal.
+
+---
+
 ## How is Linear So Fast? A Technical Breakdown
 **URL:** https://performance.dev/how-is-linear-so-fast-a-technical-breakdown | **Added:** 2026-05-27
 
@@ -97,31 +140,6 @@ Online articles, blog posts, and documentation pages that were passed to `/skill
 
 ---
 
-## The Website Specification
-**URL:** https://specification.website | **Added:** 2026-06-02
-
-**What it's about:** A platform-agnostic, machine-readable reference for 100+ web standards across 10 categories: Foundations, SEO, Accessibility, Security, Well-Known URIs, Agent Readiness, Performance, Privacy, Resilience, and Internationalisation. Every spec is tagged `required` / `recommended` / `optional` / `avoid`. Accessible as Markdown endpoints, `/llms-full.txt`, or via a stateless HTTP MCP server at `https://mcp.specification.website/mcp` (tools: `search`, `list_topics`, `get_topic`, `get_checklist`, `audit_url`). The site also publishes its own Agent Skill at `/.well-known/agent-skills/specification-website/SKILL.md`.
-
-**What we added:**
-- Skill: `website-spec` — when/how to use the specification.website MCP, audit workflow (required → recommended → optional), status level semantics, Agent Readiness category guide (llms.txt, MCP discovery, A2A, DNS-AID, Web Bot Auth), and citation rules.
-- Config: `specification-website` MCP server registered in user scope (`~/.claude.json`) via `claude mcp add --transport http`.
-
----
-
-## The AI Agent Bottleneck Isn't Model Performance — It's Permissions
-**URL:** https://venturebeat.com/orchestration/the-ai-agent-bottleneck-isnt-model-performance-its-permissions | **Added:** 2026-06-02 | **Source:** VentureBeat
-
-**What it's about:** Enterprise AI agents stall not on model capability but on authorization design. The core argument: permissions must live where the data lives (in the system of record, not a separate governance layer), agents must be scoped to a strict subset of the authorizing human's actual permissions, high-stakes actions need a separate pre-execution verification model (not self-check), and audit trails must be co-located with the data in-transaction. Quotes Workday's Sana agent architecture (Gemini base + context engine + verification models + SoR-scoped execution + SoR audit write) and practitioners from Würk and Compance.AI.
-
-**What we added:**
-- Skill: `agent-permissions-design` — five-principle framework (scope inheritance, system-of-record authority, pre-execution verification gates, agent identity transparency, audit co-location), 7-step design workflow, action classification table (read-only / reversible write / irreversible write / cross-system), agent identity record schema, anti-pattern catalogue, and the Sana reference architecture diagram.
-- Enhancement: `ai-agents-architect` — added "Permissions & Scope" section pointing to `agent-permissions-design` as a first-class design concern; added it to Related Skills.
-- Hook: `skill-permissions-gate.sh` — PostToolUse on `Write|Edit` to `*/skills/*/SKILL.md`; fires a soft gate after every skill write prompting Claude to invoke `agent-permissions-design` and verify tool access, irreversible action gates, scope boundaries, and external access before marking skill creation complete. Registered in harness `.claude/settings.json`.
-- Enhancement: `skill-creator` Phase 4c — explicit Permissions & Scope Review step added before installation.
-- Enhancement: `skill-extraction` Phase 5d — explicit Permissions & Scope Review step added before the Confirm phase.
-
----
-
 ## Introducing Dynamic Workflows in Claude Code
 **URL:** https://claude.com/blog/introducing-dynamic-workflows-in-claude-code
 **Added:** 2026-05-31
@@ -134,6 +152,19 @@ Online articles, blog posts, and documentation pages that were passed to `/skill
 
 ---
 
+## Agent Judge: Solving Long-Context Evaluations
+**URL:** https://www.judgmentlabs.ai/blogs/agent-judge-solving-long-context-evaluations
+**Added:** 2026-06-01
+**Source / Author:** JudgmentLabs
+
+**What it's about:** Describes the "Agent Judge" architecture for evaluating long-horizon agents where standard LLM judges fail — specifically when trajectories exceed context limits, actions modify external state (CRM, GitHub, AWS, DB), or evaluation criteria drift as agent behavior evolves. Three core capabilities: Search (slice long trajectories into targeted evidence chunks via worker agents), Verify (cross-check agent claims against external system state rather than trusting agent descriptions), and Adapt (Rubric Builder — closed-loop calibration of rubrics against human labels and production outcomes). Empirical results on trajectory-level hallucination detection: Agent Judge (refined) 0.86 accuracy / 0.79 F1 vs. 0.74 / 0.65 for a standard LLM judge across difficulty deciles.
+
+**What we added:**
+- Skill: `evaluation/long-trajectory` — three-phase workflow (Search / Verify / Adapt), evidence-slice strategies, external system verification checklist (API, DB, GitHub, cloud, logs, filesystem), Rubric Builder iteration loop with calibration signals and trigger conditions. Part of the consolidated `evaluation/` skill family.
+- Restructure: consolidated `evaluation`, `macro-evals`, and `llm-eval-funnel` into a single `evaluation/` skill family with a router (`evaluation/SKILL.md`) and four sub-skills (`micro`, `macro`, `funnel`, `long-trajectory`). Router provides a decision tree and supports loading multiple sub-skills for cross-layer tasks. Documentation added at `docs/evaluation/README.md`.
+
+---
+
 ## Agentic RL: Token-In, Token-Out Done Right
 **URL:** https://qgallouedec-tito.hf.space | **Added:** 2026-06-02 | **Source:** Hugging Face (qgallouedec)
 
@@ -141,3 +172,117 @@ Online articles, blog posts, and documentation pages that were passed to `/skill
 
 **What we added:**
 - Skill: `agentic-rl-tito` — TITO invariant, correct loop algorithm, prefix-preservation property test with code, model compat table, `compute_tool_delta()` pattern, edge case recipes. Fires only on RL fine-tuning / multi-turn training loop tasks. Full code patterns in `resources/code-patterns.md`.
+
+---
+
+## Running an AI-Native Engineering Organization
+**URL:** https://claude.com/blog/running-an-ai-native-engineering-org
+**Added:** 2026-06-07
+**Source / Author:** Anthropic (Claude Code team)
+
+**What it's about:** Anthropic's Claude Code team describes how they restructured engineering around agentic coding — shifting bottlenecks from writing code to verification, review, and security. Covers four process changes (JIT planning, ask-Claude-first context, AI/human review tiering, blurred team roles), three org principles (dogfood, flat teams, kill obsolete processes), specific adoption metrics (onboarding ramp, PR cycle time, Claude-assisted commit rate), and the "pick your noisiest workflow" prioritization heuristic.
+
+**What we added:**
+- Skill: `ai-native-org-patterns` — five-phase framework: process audit ("noisiest workflow" heuristic), JIT planning pattern, AI/human review tiering table, ask-Claude-first context gathering, adoption metrics with targets, and three non-negotiable org principles.
+- Skill enhancement: `karpathy-guidelines` — added "Review Tiering" section (Section 5) with explicit AI-owns-mechanical / human-owns-judgment split table and updated "How to Know It's Working" checklist.
+
+---
+
+## Modern Engineering Values
+**URL:** https://cpojer.net/posts/modern-engineering-values
+**Added:** 2026-06-07
+**Source / Author:** Christoph Nakazawa (cpojer) — creator of Jest/Metro
+
+**What it's about:** Five engineering principles that remain essential — and are amplified — when AI agents handle most code execution: Strong Ownership, Taste (judgment over execution), Strict Guardrails & Fast Feedback, Context in the Repo, and Own your Stack. Argues the engineering bottleneck shifts from writing code to exercising judgment. Adds Option Value as a design principle: every architectural choice should unlock future options, not foreclose them.
+
+**What we added:**
+- Skill enhancement: `karpathy-guidelines` — Section 6 "Before Adding a Dependency" (ownership cost check: what constraints does this lock in? can it be built with agents instead?) and Section 7 "Option Value Check" (does this architectural decision unlock or foreclose future changes?). Also added two conditional checklist items to "Before You Write a Single Line". No new skill created — principles fit cleanly as additions to an existing checklist skill at different decision points (dependency selection, architecture).
+
+---
+
+## How I Actually Code (and Review) With AI in 2026
+**URL:** https://medium.com/google-cloud/how-i-actually-code-and-review-with-ai-in-2026-005c89fbd113
+**Added:** 2026-06-11
+**Source / Author:** Christina Lin — Google Cloud Community
+
+**What it's about:** Practical cookbook for writing code that AI agents can reason about and modify safely. Central thesis: AI has a cognitive load (the context window) that degrades past ~300k–400k tokens (context rot), so code should be designed for local reasoning with minimal blast radius. Covers five concrete patterns: blast-radius-first design, Rule of Three for abstractions (wait for 3 real call sites before extracting), vertical-slice folder organization (feature = one folder, no cross-imports), fail-fast/fail-loud error handling, and the reviewer-model-mismatch principle (the model that wrote the code is the worst reviewer of it).
+
+**What we added:**
+- Skill enhancement: `karpathy-guidelines` — Section 8 "AI-Legible Code" covering all five patterns; two new checklist items ("Blast radius estimated?", "Rule of Three applied?") in "Before You Write a Single Line"; updated frontmatter description. No new skill — principles belong in the always-invoked behavioral checklist.
+- CLAUDE.md: Added "AI-Legible Code" section (6-bullet always-on block) to harness CLAUDE.md so principles are present in every session context without requiring skill invocation.
+
+---
+
+## loops! — Named Agentic Dev Loop Catalog
+**URL:** https://loops.elorm.xyz/loops
+**Added:** 2026-06-11
+**Source / Author:** elorm (elorm.xyz)
+
+**What it's about:** Curated catalog of 8 pre-built, self-pacing agentic dev workflow loops — each defined by a standardized kickoff prompt contract: named goal, max iterations, between-iterations check command, and binary exit condition. Loops include: Ship PR Until Green (CI), De-Sloppify Pass (cleanup), Spec-First Ship (checklist-driven impl), Build Until Green, Coverage Until Threshold, E2E Until Green, PR Self-Review (3 passes), and Pre-Commit Guard. The key insight is the portable loop contract format: a natural-language prompt template Claude can execute in any session without scaffolding.
+
+**What we added:**
+- Skill: `loop-patterns` — The 8 named loop templates as copy-paste kickoff prompts + the loop contract format + authoring guidance for new loops. Fills the gap between heavy `iterative-repair-loop` (JSON handoffs, artifact-specific) and `goal-mode` (evaluator-driven, delegates to sub-skills). Positioned as the lightweight, check-command-driven loop layer.
+- Command: `/kiro:loop` — Interactive picker that lists all 8 loops, accepts a slug argument, and generates + launches the kickoff prompt automatically. Usage: `/kiro:loop ship-pr` or `/kiro:loop` for the picker.
+
+---
+
+## Claude Code — Model Configuration
+**URL:** https://code.claude.com/docs/en/model-config
+**Added:** 2026-06-15
+**Source / Author:** Anthropic (Claude Code docs)
+
+**What it's about:** Reference for how Claude Code resolves models — aliases (`opus`/`sonnet`/`haiku`/`fable`/`opusplan`/`default`), the `[1m]` context-window suffix, reasoning effort levels (`low`→`max`, plus `ultracode`), precedence order across `/model`/`--model`/`ANTHROPIC_MODEL`/settings, subagent model config (`CLAUDE_CODE_SUBAGENT_MODEL`), and enterprise controls (`availableModels`, `enforceAvailableModels`, `modelOverrides`, `fallbackModel`, gateway discovery). Notes Fable 5 as the most capable model for long autonomous sessions and Opus 4.8 as the current deep-reasoning tier.
+
+**What we added:**
+- Augmentation: `model-tiers` skill (migrated orphaned skill into harness source `skills/model-tiers/` so it now propagates via `install.sh`) — refreshed the deep-tier model ID `claude-opus-4-7` → `claude-opus-4-8`, added a 5th **autonomous** tier (`claude-fable-5`) for multi-sitting work, and a new "Effort Level — An Orthogonal Dial" section so effort (`low`→`max`) is treated as a lever separate from model choice. Tightened the description to predict WHEN it fires (≤200 chars).
+- Doc sync: corrected stale `opus-4-7` references and added the Fable tier in `docs/memory/gbrain-patterns/gbrain-patterns.md` and `docs/harness-documentation/SDD-USAGE.md` (plus their `.claude/` mirrors).
+
+---
+
+## Don't let the LLM speak, just probe it
+**URL:** https://blog.j11y.io/2026-06-10_hidden-state-probes/
+**Added:** 2026-06-15
+**Source / Author:** James Padolsey (j11y.io)
+
+**What it's about:** When an LLM processes "does content X satisfy criterion Y?", the decision is already computed in the residual stream before any token is generated — generation is just the model translating a decision it has already made. Describes a 5-step recipe: small open model, seed token (`Assessment:`), training triples with varied criteria, hidden states at that seed position at ~70% layer depth, tiny MLP head, isotonic regression calibration. Result: one frozen model + one MLP = any English-criterion classifier at embedding-classifier cost with calibrated probabilities. Optional LoRA trick: train the LoRA to *write* verdicts (next-token loss), then never generate at inference — the text is scaffolding that crystallizes decision geometry at the seed token.
+
+**What we added:**
+- Skill augmentation: `llm-evaluation` — new "### 4. Hidden State Probes (non-generative classifier)" section under Core Evaluation Types, after LLM-as-Judge. Covers when to use over judges (structural criteria, calibrated probabilities, high-volume batch), when NOT to use (CoT needed, API-only model, dataset too small), the 5-step recipe, the LoRA geometry trick, and result framing. Also added a trigger bullet to "Use this skill when".
+
+---
+
+## index.how/to/articulate — Design Vocabulary Reference
+**URL:** https://index.how/to/articulate
+**Added:** 2026-06-15
+**Source / Author:** Emil & Glenn (Index — pre-launch design education platform)
+
+**What it's about:** 188 precisely-defined design terms across 12 categories (typography, color, iconography, layout, interaction, motion, accessibility, IA, copywriting, tools, analysis, components). Each definition contains embedded design opinions — not just "what is X" but "how to use X correctly." Tagline: "Say precisely what you mean."
+
+**What we added:**
+- Augmentation: `frontend-code-quality` skill — added "Visual Design Rules" CSS subsection (disabled state tokens, nested border-radius formula, tabular nums, dvh vs vh, safe area insets, pointer-events on decorative layers, OKLCH for gradients, semantic color tokens); expanded Animations section (ease-out/ease-in asymmetry, 150ms threshold, reduced motion media query); expanded Accessibility section (focus state replacement, 44×44px touch target, DOM order warning, label/for association); updated Quick Review Checklist with 14 new checkboxes across HTML and CSS sections.
+
+---
+
+## Agentic Code Review
+**URL:** https://addyosmani.com/blog/agentic-code-review/
+**Added:** 2026-06-17
+**Source / Author:** Addy Osmani
+
+**What it's about:** When agents make writing code cheap, the leveraged engineering skill becomes *proving* code works. Argues for risk-tiered review (effort proportional to blast radius), heterogeneous reviewers (everyday correctness + production-failure severity), and treating every AI review as a sensor, not a verdict. Sharpest actionable warning: agents take the cheapest path to a passing build — weakening tests or lowering CI thresholds ("gradient descent to green") instead of fixing the code.
+
+**What we added:**
+- Hook: `hooks/claude/test-integrity-guard.sh` (PostToolUse, matcher `Write|Edit|MultiEdit`, soft gate) — fires when a test file or CI/coverage config is edited and flags weakening signals: added skip/xfail/`@Disabled` markers, tautological/stub assertions (`assert True`, `expect(true).toBe(true)`), touched coverage thresholds (`--cov-fail-under`, `fail_under`, `coverageThreshold`), and removed assertions. Names the gradient-descent-to-green anti-pattern and asks Claude to confirm a deliberate spec change vs. a shortcut to green. Never blocks. Fills the gap where the harness reviewed code heavily but never watched the agent weakening the test gate itself.
+- *Rejected:* risk-tiered review and separate-model review (already covered by CLAUDE.md blast-radius + reviewer-model-mismatch rules, `validate-adversarial-agent`, `session-judge`); decision-log/PR-reasoning capture (covered by `action-capture.sh`); prompt-injection scanning (covered by `scan-pii.sh` + `ai-security-workflow`).
+
+---
+
+## UI Skills — Curated UI Skill Directory + Routing Pattern
+**URL:** https://www.ui-skills.com/
+**Added:** 2026-06-17
+**Source / Author:** ibelick (also https://github.com/ibelick/ui-skills)
+
+**What it's about:** Curated directory of ~106 installable UI/frontend skills (design taste, motion, accessibility, React/Vue/Next, Three.js, charts, slides) fronted by a "UI Skills Root" routing skill. The routing skill's core idea is context economy: given a UI goal, identify the category, load the *smallest useful* set of skills, and **never load more than 3** ("prefer 1; 2 only for two clear angles; 3 only for broad review/redesign").
+
+**What we added:**
+- Augmentation: `skills/ui-skills/SKILL.md` — rewrote the prior hollow stub into a **UI build router**. Carries no UI rules of its own; maps task category → the harness's existing UI skills (`ui-ux-pro-max`, `frontend-design`, `wcag-audit-patterns`, `threejs-skills`, `react-best-practices`, etc.) and enforces the "prefer 1, never >3 skills" context-economy discipline via the Skill tool (no `ui-skills` CLI needed). Fills the known wrong-skill-fires / over-selection failure mode in the large UI skill family.
+- *Rejected:* the `ui-skills` CLI + 106-skill registry (duplicate infra; harness already exposes equivalents via the Skill tool); individual Three.js/Vue/React/a11y/chart/slide skills (covered by `threejs-skills`, `react-best-practices`, `wcag-audit-patterns`, `frontend-slides`, etc.); niche design-taste skills (Oklch, Brutalist, Morphing Icons, Web Sounds — bloat, low repeated-task value); new hook/routine (routing is contextual judgment, not enforceable/schedulable); dashboard widget (no persistent output).

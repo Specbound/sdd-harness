@@ -46,7 +46,8 @@ Also applies when spawning agents: run memory lookup first, then include finding
 |---|---|---|
 | utility | `claude-haiku-4-5-20251001` | classification, validation, expansion, dedup |
 | reasoning | `claude-sonnet-4-6` | generation, synthesis, chat — **DEFAULT** |
-| deep | `claude-opus-4-7` | complex multi-step reasoning, high-stakes judgment |
+| deep | `claude-opus-4-8` | complex multi-step reasoning, high-stakes judgment |
+| autonomous | `claude-fable-5` | long, multi-sitting autonomous sessions (`/model fable`) |
 | subagent | `claude-sonnet-4-6` | Agent() calls — use sonnet, not opus |
 
 The non-obvious rule: **subagents run sonnet, not opus.** Subagents run multi-turn tool loops; latency compounds and the bottleneck is tool-call reliability, not reasoning depth. Opus buys little here at 3× the cost.

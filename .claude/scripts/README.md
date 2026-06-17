@@ -40,6 +40,7 @@ Utility scripts used by the harness. All Python scripts use stdlib only (no virt
 | `jira_push_comment.py` | Post implementation summary as a Jira comment. |
 | `raindrop-setup.sh` | Auto-installs `raindrop-ai` in registered repo virtualenvs. |
 | `ollama_model_test.py` | Smoke-test local Ollama model endpoints. |
+| `integrations/blackhole/blackhole-cursor.py` | Opt-in Ghostty context-fill gauge: encodes context-window fill into cursor color (OSC 12) for `blackhole.glsl`. Dormant unless `SDD_BLACKHOLE=1`. See [docs/integrations/blackhole](../docs/integrations/blackhole/README.md). |
 
 ## Utilities
 

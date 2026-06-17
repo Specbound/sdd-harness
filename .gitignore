@@ -24,3 +24,8 @@ LEAN-CTX.md
 .superpowers/
 .last-drift-review
 .headroom/
+
+# SDD harness — local-only, never committed
+.claude/
+specs/
+CLAUDE.md

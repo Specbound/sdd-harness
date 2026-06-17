@@ -29,9 +29,12 @@ MEDIUM RIGID — The HTML and CSS rules are close to absolute; follow them unles
 
 ### Accessibility
 - `alt` text must describe content, not the element (`alt=Company`, not `alt=Logo`)
-- Interactive elements must be actual buttons/links — no `<div class=button>`
+- Interactive elements must be actual buttons/links — no `<div class=button>` (a `<button>` gets keyboard events, focus, and ARIA role for free; a div needs all of it added back manually)
 - Never rely exclusively on color to communicate information
-- All form inputs must be explicitly labelled
+- All form inputs must be explicitly labelled — link `<label for=X>` to `<input id=X>`; clicking the label must focus the field
+- **Focus states**: never just `outline: none` — replace with a custom visible style; removing focus indicators is an accessibility failure
+- **Touch targets**: minimum 44×44px tappable area — the visual element can be smaller, but the hit area must not be
+- **DOM order**: don't reorder elements visually with CSS (e.g. `order`, `flex-direction: row-reverse`) while leaving DOM order unchanged — screen readers follow DOM order, not visual order
 
 ### Language & Encoding
 - Always declare `lang` on `<html>`
@@ -71,8 +74,21 @@ MEDIUM RIGID — The HTML and CSS rules are close to absolute; follow them unles
 
 ### Animations
 - Favor `transition` over `@keyframes animation`
-- Only animate `opacity` and `transform` — never `width`, `height`, `margin`, or other layout properties
+- Only animate `opacity` and `transform` — never `width`, `height`, `margin`, or other layout properties (forces layout recalc every frame; performance difference is significant)
+- Hover transitions ~150ms; 400ms+ with no feedback looks broken
+- **Ease asymmetry**: `ease-out` for entering elements (decelerates into place), `ease-in` for exiting (accelerates away) — never mirror the enter animation for exit
+- **Reduced motion**: any significant movement must check `@media (prefers-reduced-motion: reduce)` — ignoring it can trigger vestibular symptoms
 - Remove obsolete vendor prefixes; when needed, prefix before standard property
+
+### Visual Design Rules
+- **Disabled states**: use a specific muted token (e.g. `--color-text-disabled`), not `opacity: 0.5` — opacity can pass or fail contrast unpredictably depending on background
+- **Nested border-radius**: inner element radius = outer radius − padding (e.g. outer 12px, padding 4px → inner 8px); matching both creates a visible gap
+- **Tabular nums**: apply `font-variant-numeric: tabular-nums` to any column of numbers that updates — keeps digits aligned as values change
+- **Mobile viewport**: use `dvh` not `vh` for full-screen layouts — `vh` ignores the browser chrome that shows/hides on scroll and causes overflow
+- **Safe area**: fixed bottom elements must account for the home indicator — use `padding-bottom: env(safe-area-inset-bottom)`
+- **Decorative layers**: set `pointer-events: none` on decorative overlays so they don't intercept clicks
+- **Color**: prefer OKLCH for gradients and generated palettes — HSL/sRGB midpoints go grey; OKLCH stays vivid and is perceptually accurate
+- **Semantic color tokens**: name tokens for purpose, not value — `--color-border-subtle` not `#e0e0e0`; a single token change updates everything
 
 ### Misc
 - Draw simple shapes (circles, lines) with CSS instead of loading an image over HTTP
@@ -125,6 +141,10 @@ HTML
 [ ] Interactive elements are real <button>/<a> tags
 [ ] lang + charset declared
 [ ] Scripts deferred / at end of body
+[ ] Focus styles replaced (not just removed)
+[ ] Touch targets >= 44x44px
+[ ] DOM order matches visual order (no CSS-only reordering)
+[ ] Labels linked via for/id (clicking label focuses field)
 
 CSS
 [ ] Global box-sizing set, not per-element
@@ -134,6 +154,14 @@ CSS
 [ ] Shorthand used everywhere
 [ ] Unitless zeros, rem not em, seconds not ms
 [ ] Only opacity/transform animated (no layout props)
+[ ] Ease-out enter / ease-in exit (not mirrored)
+[ ] prefers-reduced-motion respected
+[ ] Disabled states use muted token, not opacity
+[ ] Nested border-radius = outer - padding
+[ ] Tabular nums on updating number columns
+[ ] dvh not vh for full-screen mobile layouts
+[ ] Safe area inset on fixed bottom elements
+[ ] Decorative overlays have pointer-events: none
 
 JS
 [ ] No for/while loops (array methods or recursion)
@@ -151,3 +179,5 @@ JS
 ## Source
 
 Rules derived from: [bendc/frontend-guidelines](https://github.com/bendc/frontend-guidelines) — a concise, opinionated coding standards guide for HTML, CSS, and JavaScript.
+
+Visual design rules (disabled states, nested radius, tabular nums, dvh, safe area, ease asymmetry, reduced motion, OKLCH, semantic tokens) extracted from: [index.how/to/articulate](https://index.how/to/articulate) — 188-term designer vocabulary reference.

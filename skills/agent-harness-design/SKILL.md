@@ -85,6 +85,20 @@ Four governance axes:
 | Traceability | Every context item has a source attribution for audit and failure analysis |
 | Refresh Policy | Stale content is updated or evicted; environment state is checked before high-stakes actions |
 
+#### Context as a Layered Cache (L1/L2/L3)
+
+The governance axes say *what* good context looks like; this says *where* each capability should live. A user's task distribution is long-tailed — a few bread-and-butter operations dominate every session, a handful of capabilities recur occasionally, and a long tail of rare needs each still has to work. You cannot hold the union of everything in context at once. So the objective is sharper than "have everything available": **place each capability at the tier that minimizes total cost across the task distribution** — where cost = resident tokens (paid every task) + discovery tokens (paid on a miss).
+
+| Tier | Placement | Pays | Use for |
+|---|---|---|---|
+| **L1** — resident | Always in context (CLAUDE.md, SKILL.md body, system prompt) | Tokens on *every* task | The 80%: bread-and-butter ops. Make them token-compressed and **consequence-reporting** (return what changed + what looks wrong, not just success). |
+| **L2** — on demand | Fetched in one step (a `resources/` spec, a `getXInfo()`-style lookup, a deferred tool loaded via ToolSearch) | One cheap discovery call on a miss; zero until needed | The ~15%: important-but-occasional. Write curated, gotcha-aware specs — the canonical recipe and constraints, not just signatures. |
+| **L3** — escape hatch | Raw complete substrate on disk; a short skill maps it with grep recipes | A bounded handful of tool calls on a rare miss | The long tail: the obscure need you can't anticipate. Don't paste the tome — ship the ~100-line skill that teaches how to mine it. The agent must never be truly stuck. |
+
+Placement is the craft: push to L1 and it's instant but taxes every task; push to L3 and it's free until needed but costs several calls to find. This maps directly onto harness artifacts — L1 = CLAUDE.md + SKILL.md bodies, L2 = `resources/` files and deferred tools, L3 = on-disk references + a grep-recipe skill.
+
+The boundary is not fixed — it slides with model strength. Stronger models absorb larger L2 specs and reason over more raw L3 detail in one shot, so yesterday's L3 becomes tomorrow's L2 and L2 collapses into L1. The hierarchy itself never disappears: context is always scarce relative to what could fill it, and noise always costs accuracy. (For the eviction/summarization mechanics within a tier, see `context-optimization`; for *when* interventions act over time, see the temporal-scaling tiers below.)
+
 ### 𝒮 — Skill-Routing Layer
 
 The mechanism that selects which skill, tool, or subagent handles a given subtask.

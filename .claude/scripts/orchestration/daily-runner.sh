@@ -59,6 +59,13 @@ fi
 # --- Substitute today's date into prompt ---
 PROMPT="$(sed "s|TODAY_PLACEHOLDER|$TODAY|" "$PROMPT_TEMPLATE")"
 
+# --- Sync mandatory tools to all repos ---
+SYNC_SCRIPT="$HOME/.claude/scripts/sync-mandatory-tools.sh"
+if [ -x "$SYNC_SCRIPT" ]; then
+  log "syncing mandatory tools to repos"
+  bash "$SYNC_SCRIPT" 2>&1 | while IFS= read -r line; do log "$line"; done
+fi
+
 # --- Mark started (commits us to today; do this only after pre-flight passes) ---
 echo "$TIMESTAMP" > "$STATE_FILE"
 log "starting daily maintenance"

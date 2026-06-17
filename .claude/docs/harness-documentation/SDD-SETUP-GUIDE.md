@@ -2,7 +2,7 @@
 
 > This file is managed by the SDD harness (`sdd-harness/docs/`).
 > It is the single source of truth — do not edit copies in individual projects.
-> _Last synced: 2026-06-11_
+> _Last synced: 2026-06-14
 
 A complete, self-contained guide to setting up the Spec-Driven Development (SDD)
 harness used in this project. Follow these steps to replicate the setup in any
@@ -331,32 +331,20 @@ Create `.claude/hooks/stop-hook.sh` and make it executable:
 chmod +x .claude/hooks/stop-hook.sh
 ```
 
-**No path editing required.** The hook reads the harness root from `~/.sdd-harness-root` — a sentinel file written by `install.sh` during setup. This makes it fully portable: rename the harness directory, move to a new machine, or change install depth — the hook resolves correctly without modification.
+**No path editing required.** The hook reads the harness root from `~/.sdd-harness-root` — a sentinel file written by `install.sh` during setup. This makes it fully portable: rename the harness directory, move to a new machine, or change install depth — the hook resolves correctly without modification. If the file is absent or points to a non-existent directory, the hook exits silently.
 
-The stop hook runs lightweight checks at the end of every Claude session. Guarded by `SDD_PROFILE=minimal` — if that variable is set, the hook exits immediately (used by headless runners to suppress interactive output).
+The stop hook runs lightweight checks at the end of every Claude session:
 
 1. **Harness update check** — if the harness has new commits since last install, prints a nudge to run `update.sh`.
 2. **Memory health check** — if `.claude/memory/observations.md` has >50 entries, prints a nudge to run `/kiro:housekeeping`.
-3. **Memory-gap detection** — runs `scripts/session/detect_reexplanation.py` in a background subshell. If today's `[memory-gap]` entry is absent from `observations.md`, the detector appends one for drain signals (user re-explained context). Idempotent — at most one entry per calendar day.
-4. **Session depth tracking** — appends a UTC timestamp to `.claude/memory/.session-history` (capped at 30 entries rolling window) for context-health analytics used by the trust battery.
-5. **Agent failure pattern detection** — if `.claude/memory/trace.log` shows 3+ consecutive failures for the same agent, prints a nudge to run `/kiro:evolve` to investigate friction patterns.
+3. **Agent failure pattern detection** — if `.claude/memory/trace.log` shows 3+ consecutive failures for the same agent, prints a nudge to run `/kiro:evolve` to investigate friction patterns.
+4. **Session signal detection** — runs `scripts/session/detect_reexplanation.py` against the session transcript (Haiku-based LLM). Drain signals append a `[memory-gap]` observation; charge signals (unambiguous approval) append a `[session-charge]` observation. Both at most once per calendar day.
 
 Doc sync and harness updates are **not** triggered here — they fire from the git post-commit hook (Step 8) instead.
 
 **Design principle**: Doc sync belongs in the git lifecycle, not the Claude session lifecycle. Running `claude --print` background agents on every session stop blocks Claude Code and spawns subprocesses on every message. The post-commit hook fires exactly once per commit, with a clear scope (the changed files in that commit).
 
 See the full script in `.claude/hooks/stop-hook.sh`.
-
-### Optional: Global address-check hook
-
-`address-check-hook.sh` is a personal-preference Stop hook registered globally in `~/.claude/settings.json` (not per-repo). It verifies that every response addresses the user by their preferred name. If the term is absent, it exits 2 to block the stop and inject a `/compact` + re-read correction prompt — a self-correcting context-health signal.
-
-To install it on a new machine, copy `~/.claude/hooks/address-check-hook.sh` and add the entry to `~/.claude/settings.json` under `hooks.Stop`:
-```json
-{ "matcher": "", "hooks": [{ "type": "command", "command": "bash \"~/.claude/hooks/address-check-hook.sh\"" }] }
-```
-
-The CLAUDE.md template already includes the `## Address` rule, so the prompt-level instruction is present in every repo automatically. The hook provides enforcement when context degrades.
 
 ---
 
@@ -454,7 +442,6 @@ The memory system provides persistent cross-session context using a cog-inspired
 ├── observations.md            # Append-only session log (max 50 entries before archival)
 ├── action-items.md            # Cross-session TODOs with due dates and priority
 ├── entities.md                # Project entity registry (services, APIs, databases)
-├── setup-knowledge.md         # Auto-captured setup sequences (written by stop-hook at session end)
 ├── meta/
 │   ├── self-observations.md   # SDD workflow learnings (what worked, what didn't)
 │   └── patterns.md            # Distilled workflow rules (<70 lines, read at session start)
@@ -584,30 +571,51 @@ Conventions are defined in `.claude/kiro/settings/rules/memory-conventions.md`:
 |---|---|---|
 | PostToolUse (lint) | Every `.py` write in Claude | `uv run ruff check --fix {file}` |
 | PostToolUse (impeccable) | Every frontend file Write/Edit (`.tsx/.jsx/.css/.vue/.svelte/.html`) | Runs `impeccable detect {file}` and surfaces anti-pattern violations. No-ops silently if CLI not installed. Requires one-time `npm install -g impeccable`. |
+| PostToolUse (test-integrity-guard) | Every Write/Edit/MultiEdit to a test file or CI/coverage config (`test_*`, `*_test.*`, `*.spec/.test.*`, `tests/`, `pytest.ini`, `pyproject.toml`, `.coveragerc`, jest/vitest config, CI YAML) | Soft gate (never blocks): flags "gradient descent to green" test weakening — added skip/xfail/`@Disabled` markers, tautological assertions (`assert True`), touched coverage thresholds (`--cov-fail-under`, `coverageThreshold`), or removed assertions. Asks Claude to confirm a deliberate spec change vs. a shortcut to pass. Script: `.claude/hooks/test-integrity-guard.sh`. |
 | spec-refactor (internal) | After each impl task's SELF-REVIEW step (Step 5) | Spawned by spec-tdd-impl-agent; reviews touched files, fixes issues, re-runs tests |
 | PostToolUse (Jira comment) | Every `git push` Bash command | Posts Jira comment with branch/commits/docs summary if a `jira-solve` session is active |
 | UserPromptSubmit (Jira capture) | Every user prompt | Captures ticket ID from `/kiro:jira-solve TICKET-ID` prompts, writes to `~/.claude/state/active_jira_ticket` |
 | UserPromptSubmit (context priming) | Every user prompt | Injects `.claude/memory/hot-memory.md` contents (wrapped in `--- Active Context ---` markers) so the agent always primes on current state before responding. Fast (<1s); no-ops if hot-memory is missing or empty. Implemented in `.claude/hooks/prompt-hook.sh`. |
-| SessionStart (maintenance check) | Every Claude session start | **macOS:** clears `com.apple.macl` xattrs from `.claude/hooks/` (Write/Edit tools set this attribute, blocking subprocess execution of edited hook files). Then two modes: (1) if no local `daily-runner.sh` is installed — checks if today's `[judge]` sentinel is absent from `observations.md` and asks Claude to run `/kiro:daily-maintenance`; (2) if `daily-runner.sh` is installed and stale (>24h or never ran) — fires it in the background via `nohup` silently, without consuming session context. Also checks if the per-repo CLAUDE.md review is >2 weeks stale (`.claude/memory/.last-claudemd-review`) and asks Claude to run `/claudemd-review` if so. Also checks for `.claude/memory/.steering-bootstrap-pending` sentinel — if present and no `.claude/steering/*.md` files exist yet, asks Claude to run `/kiro:steering` to bootstrap project memory (`product.md` / `tech.md` / `structure.md`) and delete the sentinel when done. The sentinel is dropped by `install.sh` on fresh installs that have no steering files. |
-| Stop (memory health) | Every Claude session end | Nudges `/kiro:housekeeping` if observations >50; nudges `/kiro:evolve` if agent failure patterns detected. No-ops when `SDD_PROFILE=minimal`. |
-| Stop (memory-gap detection) | Every Claude session end | Runs `scripts/session/detect_reexplanation.py` in background; appends `[memory-gap]` to `observations.md` for drain sessions. Idempotent — at most once per calendar day (skipped if today's entry already exists). |
-| Stop (session depth) | Every Claude session end | Appends UTC timestamp to `.claude/memory/.session-history` (rolling 30-entry cap) for context-health analytics. |
+| SessionStart (maintenance check) | Every Claude session start | **macOS:** clears `com.apple.macl` xattrs from `.claude/hooks/` (Write/Edit tools set this attribute, blocking subprocess execution of edited hook files). Then two modes: (1) if no local `daily-runner.sh` is installed — checks if today's `[judge]` sentinel is absent from `observations.md` and asks Claude to run `/kiro:daily-maintenance`; (2) if `daily-runner.sh` is installed and stale (>24h or never ran) — fires it in the background via `nohup` silently, without consuming session context. Also checks if the per-repo CLAUDE.md review is >2 weeks stale (`.claude/memory/.last-claudemd-review`) and asks Claude to run `/claudemd-review` if so. Also checks for a `.claude/memory/.steering-bootstrap-pending` sentinel (dropped by `install.sh` for fresh installs with no steering files): if present and no steering `.md` files exist, injects `[STEERING-BOOTSTRAP-DUE]` prompting `/kiro:steering`. Claude removes the sentinel after steering completes. |
+| Stop (memory health) | Every Claude session end | Nudges `/kiro:housekeeping` if observations >50; nudges `/kiro:evolve` if agent failure patterns detected |
+| Stop (session signal detector) | Every Claude session end | Runs `scripts/session/detect_reexplanation.py` (Haiku LLM); appends `[memory-gap]` observation for drain signals (re-explanation) and `[session-charge]` for charge signals (approval). Each written at most once per day. |
+| PostToolUse (action-capture) | Every Bash git-commit, test run, deploy, or failed command | Prompts memory capture after high-signal Bash actions (git-commit, test failures, deploys, struggle); auto-writes `[seed-target:]` observation on non-zero exit. Script: `.claude/hooks/action-capture.sh`. |
+| UserPromptSubmit (doc-parse-nudge) | Every user prompt (keyword-gated) | Fires when prompt mentions document parsing or RAG pipeline building (PDF, DOCX, OCR, embed, ingest, vector store). Injects a reminder to invoke the `document-parsing` skill. When the nudge fires, also appends a `[doc-parse-nudge]` observation to `observations.md`. Exits <5ms on non-matching prompts. Script: `hooks/claude/doc-parse-nudge.sh`. |
 | PostToolUse (revert detector) | Every git revert/reset/restore Bash call | Immediately appends `[revert]` drain observation to `observations.md` — gives trust-battery Judge concrete evidence. Script: `.claude/hooks/revert-detect-hook.sh`. |
-| PostToolUse (setup buffer) | Every Bash call matching a setup pattern (package install, docker, db migrate, .env, git clone, make setup, etc.) | Appends the command to `.claude/memory/.setup-session-buffer.log` for later reference and pattern capture. Script: `.claude/hooks/setup-buffer-hook.sh`. |
 | PostToolUseFailure (tool-failure capture) | Every failing Bash/MCP tool call | Records the failure into a per-repo ledger `.claude/memory/tool-failures.jsonl`, keyed by a normalized command signature so the same failure shape clusters and its `count` climbs. Capture half of the tool-failure-memory loop. Script: `.claude/hooks/tool-failure-capture.sh`; see the `tool-failure-memory` skill. |
 | PreToolUse (tool-failure recall) | Every Bash/MCP tool call | Soft advisory (never blocks): if this command shape has failed ≥2× and is still open, injects the failure count, last error, and any recorded remedy so Claude reconsiders before repeating it. Once-per-session-per-signature dedupe + 45-day recency gate. Script: `.claude/hooks/tool-failure-recall.sh`. |
 | daily-orchestrator (tool-failure review) | Once per day per repo via the daily orchestrator (self-paces to ~2×/week via `MIN_GAP_DAYS=3`; no-ops unless a promotable ledger entry exists) | Runs `.claude/scripts/tool-failure-review-runner.sh`, which invokes `/kiro:tool-failure-review` headlessly: diagnoses recurring failures (`count ≥ 3`, open, unpromoted) and promotes the understood, reusable ones into memory files + `ERRORS.md`, then marks them resolved on the ledger. Review (promotion) half of the tool-failure-memory loop. Opt out with `SDD_SKIP_TOOL_FAILURE_REVIEW=1`. |
-| Windows Task Scheduler + SessionStart (daily maintenance) | Nightly at 18:00 local (Israel); SessionStart catch-up if >24h stale | Runs per-repo `daily-runner.sh` → `/kiro:daily-maintenance` — Judge → Reflect → Housekeeping → Trust Score → Augment Skills. Auto-registered by `install.sh` / `update.sh` (WSL + schtasks.exe). Opt out: `SDD_SKIP_ROUTINE=1` at install time; `schtasks.exe /Delete /TN "SDD Daily Orchestrator"` globally; `rm .claude/scripts/daily-runner.sh` per-repo. See `SDD-USAGE.md` → "Daily Maintenance". |
+| daily-orchestrator (security report) | Once per day per repo via the daily orchestrator (self-paces to daily via `MIN_GAP_DAYS=1`; applies to every repo) | Runs `.claude/scripts/routines/security-report-runner.sh`: static security scan of recent git changes using the `ai-security-workflow` skill — checks for OWASP patterns, secrets, injection sinks. Writes `.claude/reports/security/<date>-security-report.md`. Visible in the dashboard Scheduled Tasks section. Opt out with `SDD_SKIP_SECURITY_REPORT=1`. |
+| OS Scheduler + SessionStart (daily maintenance) | Nightly at 18:00 local; SessionStart catch-up if >24h stale | Runs per-repo `daily-runner.sh` → `/kiro:daily-maintenance` — Judge → Reflect → Housekeeping → Session Quality → Keep Rate → Trust Score → Augment Skills → Adversarial Check. The orchestrator skips `daily-runner.sh` if it already ran today (dedup via state-file date check), so the SessionStart catch-up never double-fires. Auto-registered by `install.sh` / `update.sh`: Windows Task Scheduler on WSL (`setup-global-orchestrator.sh`), cron on Linux (`setup-linux-orchestrator.sh`), launchd on macOS (`setup-mac-orchestrator.sh`). Opt out: `SDD_SKIP_ROUTINE=1` at install time; `schtasks.exe /Delete /TN "SDD Daily Orchestrator"` (Windows); `crontab -l | grep -vF sdd-daily-orchestrator | crontab -` (Linux); `launchctl unload ~/Library/LaunchAgents/com.sdd.daily-orchestrator.plist` (macOS); `rm .claude/scripts/orchestration/daily-runner.sh` per-repo. See `SDD-USAGE.md` → "Daily Maintenance". |
+| UserPromptSubmit (frontend-security-nudge) | Every user prompt (keyword-gated) | Fires when prompt contains build intent (`build a`, `create a`, `implement a`, `scaffold`, etc.) AND a frontend/UI keyword (React, Vue, Svelte, CSS, component, form, modal, etc.). Injects a reminder to invoke `secure-agent-design` before writing the first file. When the nudge fires, also appends a `[frontend-security-nudge]` observation to `observations.md`. Exits <5ms on non-matching prompts — zero overhead for non-frontend work. Script: `hooks/claude/frontend-security-nudge.sh`. |
+| PreToolUse (prompt-quality-check) | Every `Agent` tool call | Scores the agent prompt against 6 PQ dimensions (context provision, request specificity, scope management, information timing, correction quality, overall) using fast Python heuristics — no LLM required. Outputs a scored report to Claude's context and appends a JSON entry to `~/.code-insights/pq-log.jsonl`. Scores < 3.5 surface improvement tips per dimension. Scores ≥ 4.0 confirm the prompt is ready. Script: `hooks/claude/prompt-quality-check.sh`. Dashboard: Session Quality → Prompt Quality (✨) sub-tab. |
+| PreToolUse (raindrop-best-practices) | Every `mcp__raindrop__` tool call | Injects five active-observability patterns before any Raindrop Workshop MCP call: batch facets (multiple dimensions → one LLM call), facet-first summarization before clustering, 128K token cap on input, no-LLM nearest-summary classification, and long-tail sampling with HDBSCAN. Reduces naïve trace analysis cost by ~80–90%. Script: `hooks/claude/raindrop-best-practices.sh`. |
 | PreToolUse (rtk) | Every Bash tool call by any agent | `rtk hook claude` rewrites matching commands to `rtk <cmd>`, compressing output before it reaches the LLM (60–90%+ token reduction). Emits `permissionDecision: "allow"` so rewrites are silent. Passes through commands without filters unchanged. Global — fires in all sessions and projects. |
 | PreToolUse (GitNexus) | Every file Read/Edit by any agent | Enriches file operations with 360° symbol graph context (callers, dependencies, process participation); no-ops gracefully when GitNexus is not installed |
 | PreToolUse (memory-discipline) | Every Write/Edit to `*/memory/*.md` or `MEMORY.md` | Gates memory writes with discipline rules — valid content: workflow patterns, user preferences, reusable lessons. Invalid: case-specific facts, citations, investigation outcomes. Claude sees the rules before executing the write and can revise content. Implemented in `.claude/hooks/memory-discipline-hook.sh`. |
 | PreToolUse (protected path) | Every Write/Edit to a sensitive path (`.env`, crypto keys, credentials, `.aws/`, `.ssh/`) | Injects a confirmation banner; Claude must pause and ask the user before proceeding. Prevents accidental overwrites of secrets files. Implemented in `.claude/hooks/protected-path-hook.sh`. |
 | PreToolUse (skill-validate) | Every Write to `~/.claude/skills/<name>/SKILL.md` | Validates skill frontmatter before writing: `name:` must be kebab-case and match the file path slug; `description:` must exist and be ≥25 chars; warns on vague description starters. Exit 2 hard-blocks on errors. Implemented in `.claude/hooks/skill-validate-hook.sh`. |
 | PreCompact (compaction-discipline) | Every context compaction | Injects boundary-timing principle and state-preservation checklist: compact at workflow phase boundaries (not arbitrary turn counts), preserve artifact paths, cited facts, open questions, and decisions. Use anchored iterative summarization. Implemented in `.claude/hooks/compaction-discipline-hook.sh`. |
-| PostToolUse (hook-added-notify) | Every Write/Edit that creates a new `.claude/hooks/*.sh` | Injects a reminder to document the new hook in `docs/hooks/README.md` (and the Wiring Reference table) before the session ends. Stays silent if the hook is already documented. Implemented in `.claude/hooks/hook-added-notify.sh`. |
+| PostToolUse (hook-added-notify) | Every Write/Edit that creates a new `.claude/hooks/claude/*.sh` | Injects a reminder to document the new hook in `docs/hooks/README.md` (and the Wiring Reference table) before the session ends. Stays silent if the hook is already documented. Implemented in `.claude/hooks/hook-added-notify.sh`. |
 | PostToolUse (lean-ctx nudge) | Every Read of a file ≥16 KB (~4,000 tokens) | Suggests the optimal `ctx_read` mode for the file type (`signatures` for code, `reference` for prose, `aggressive` for unknown); silent for small files and data formats (`.json/.yaml/.toml/.lock`). Implemented in `.claude/hooks/lean-ctx-nudge-hook.sh`. |
 | post-commit (doc sync) | Every `git commit` with non-`.md` source changes | Doc-sync: updates all `.md` files referencing changed code via `claude --dangerously-skip-permissions --print` (background) |
 | post-commit (harness updater) | Every `git commit` with `.claude/` changes (excl. memory) | Updates `SDD-SETUP-GUIDE.md` via `claude --dangerously-skip-permissions --print` (background) |
+| Stop (address-check) | Every Claude session end | Checks the last assistant turn for the "Husband" address rule from `CLAUDE.md`. If missing, injects a correction banner (exit 2). No-ops silently if transcript is unreadable. Script: `hooks/claude/address-check-hook.sh`. |
+
+---
+
+## Global Hooks (bundled — auto-installed by `install.sh`)
+
+These hooks live in `~/.claude/hooks/` (not per-project `.claude/hooks/`) and fire from `~/.claude/settings.json`. They are stored in the harness at `hooks/global/` and installed by `install_globals()` during `install.sh`. No manual copy needed.
+
+| Hook | Script | Purpose | Setup |
+|---|---|---|---|
+| **Caveman mode (activate)** | `~/.claude/hooks/caveman-activate.js` | Injects terse-response mode at session start. Reads `~/.claude/.caveman-active` for mode level (defaults to `lite`). Requires `node` in PATH. | Auto-installed by `install.sh`; default level `lite` created if not present |
+| **Caveman mode (tracker)** | `~/.claude/hooks/caveman-mode-tracker.js` | Fires on `UserPromptSubmit` to sustain caveman mode across turns | Auto-installed by `install.sh` |
+| **lean-ctx bash rewrite** | `~/.claude/hooks/lean-ctx-rewrite.sh` | Rewrites common shell commands through `lean-ctx` for compressed output | Auto-wired in `~/.claude/settings.json` by `install.sh` if `lean-ctx` CLI is detected |
+| **lean-ctx read redirect** | `~/.claude/hooks/lean-ctx-redirect.sh` | No-op placeholder that allows native Read so Edit works | Auto-wired alongside lean-ctx rewrite hook |
+
+> **Note:** `install.sh` copies `hooks/global/*` → `~/.claude/hooks/` and patches `~/.claude/settings.json` automatically. Caveman defaults to `lite`; override by writing `~/.claude/.caveman-active` with `full` or `ultra`. lean-ctx hooks only wire if the `lean-ctx` CLI is installed.
 
 ---
 
@@ -621,7 +629,7 @@ The harness includes an optional hook pair that automatically posts a Jira comme
    When you type `/kiro:jira-solve TICKET-ID`, the hook extracts the ticket ID and writes it to `~/.claude/state/active_jira_ticket`. This is a fire-and-forget async hook that never blocks Claude.
 
 2. **Post-push comment** (`PostToolUse Bash` hook — in `.claude/settings.json`):
-   After any `git push` command, the hook checks if a Jira session is active. If so, it calls `.claude/scripts/jira_push_comment.py`, which:
+   After any `git push` command, the hook checks if a Jira session is active. If so, it calls `.claude/scripts/integrations/jira/jira_push_comment.py`, which:
    - Reads `origin/main..HEAD` git log and diff stats
    - Finds the most recently modified `.md` in `docs/` mentioning the ticket
    - Assembles a Jira wiki-markup comment (branch, commits, approach, files changed)
@@ -631,9 +639,9 @@ The harness includes an optional hook pair that automatically posts a Jira comme
 
 | Script | Location | Purpose |
 |---|---|---|
-| `jira_client.py` | `.claude/scripts/jira_client.py` | Stdlib-only Jira REST API client (fetch/comment/search) |
-| `jira_capture_ticket.py` | `.claude/scripts/jira_capture_ticket.py` | Reads stdin JSON, extracts ticket ID from prompt, writes state file |
-| `jira_push_comment.py` | `.claude/scripts/jira_push_comment.py` | Builds and posts Jira comment from git context + docs |
+| `jira_client.py` | `.claude/scripts/integrations/jira/jira_client.py` | Stdlib-only Jira REST API client (fetch/comment/search) |
+| `jira_capture_ticket.py` | `.claude/scripts/integrations/jira/jira_capture_ticket.py` | Reads stdin JSON, extracts ticket ID from prompt, writes state file |
+| `jira_push_comment.py` | `.claude/scripts/integrations/jira/jira_push_comment.py` | Builds and posts Jira comment from git context + docs |
 
 ### Credentials
 
@@ -664,7 +672,7 @@ JIRA_API_TOKEN=your-api-token
         "hooks": [
           {
             "type": "command",
-            "command": "python3 /path/to/repo/.claude/scripts/jira_capture_ticket.py 2>/dev/null || true",
+            "command": "python3 /path/to/repo/.claude/scripts/integrations/jira/jira_capture_ticket.py 2>/dev/null || true",
             "async": true
           }
         ]
@@ -685,7 +693,7 @@ JIRA_API_TOKEN=your-api-token
         "hooks": [
           {
             "type": "command",
-            "command": "jq -r '.tool_input.command' | grep -q '^git push' && python3 /path/to/repo/.claude/scripts/jira_push_comment.py /path/to/repo 2>/dev/null || true"
+            "command": "jq -r '.tool_input.command' | grep -q '^git push' && python3 /path/to/repo/.claude/scripts/integrations/jira/jira_push_comment.py /path/to/repo 2>/dev/null || true"
           }
         ]
       }
@@ -883,9 +891,8 @@ Three integration layers:
 ### Setup (automatic after CLI install)
 
 `install.sh` and `update.sh` call `scripts/setup/raindrop-setup.sh` automatically. That script:
-- Adds `RAINDROP_LOCAL_DEBUGGER=http://localhost:5899/v1/` to `~/.claude/settings.json` and `~/.bashrc` — **no repo `.env` files are touched**
+- Adds `RAINDROP_LOCAL_DEBUGGER=http://localhost:5899` to `~/.claude/settings.json` and `~/.bashrc` — **no repo `.env` files are touched**
 - Installs `raindrop-ai` in each registered repo's detected virtualenv (`.venv/`, `venv/`, or `uv`-managed)
-- **Auto-instruments uninstrumented repos** — for any repo where `raindrop-ai` is importable but no `raindrop.begin()` call exists, spawns a background `claude --print` agent using the `instrument-agent` skill. Logs to `/tmp/raindrop-instrument-<repo>.log`.
 
 The only manual step is installing the CLI binary (once, globally):
 
@@ -993,7 +1000,7 @@ Add to your project's `CLAUDE.md` Quality Gates section:
 
 ### Transferring to a new repo
 
-`install.sh` and `update.sh` propagate **every** hook in the harness's `hooks/` directory to each project's `.claude/hooks/` unconditionally — including `impeccable-detect-hook.sh` — and sync `kiro/settings/rules/frontend-anti-patterns.md` and `docs/` automatically. The skill lives at `~/.claude/skills/impeccable-audit/` (global, not per-project). No manual copy step is needed:
+`install.sh` and `update.sh` propagate **every** hook in the harness's `hooks/claude/` directory to each project's `.claude/hooks/` unconditionally — including `impeccable-detect-hook.sh` — and sync `kiro/settings/rules/frontend-anti-patterns.md` and `docs/` automatically. The skill lives at `~/.claude/skills/impeccable-audit/` (global, not per-project). No manual copy step is needed:
 
 ```bash
 ~/.claude/sdd-harness/update.sh        # re-syncs hooks + rules + docs to every registered repo
@@ -1004,6 +1011,60 @@ Add to your project's `CLAUDE.md` Quality Gates section:
 The PostToolUse wiring ships in `templates/settings.json.template` and is installed automatically (see Step 6 above for the equivalent manual entry).
 
 See `docs/design/impeccable/impeccable.md` for the full rule set and workflow placement.
+
+---
+
+## Proof Collaborative Review (Built-in — Spec Phase Gates)
+
+The harness uses [Proof](https://github.com/EveryInc/proof-sdk) (by Every Inc.) for human review gates at each SDD spec phase (`spec-requirements`, `spec-design`, `spec-tasks`). When a phase completes, the skill publishes the artifact to a live Proof document, presents a browser URL, and waits for your review before writing the approved version back.
+
+### What it does
+
+- Publishes the generated markdown artifact (requirements, design, task list) to a self-hosted Proof server
+- Presents a URL — open in any browser to annotate, comment, or rewrite inline
+- Waits for your "done" signal, then retrieves the final human-edited version
+- Tears down the server only if the skill started it (PID-file guard)
+
+### Where the skill lives
+
+The skill ships with the harness — no separate installation needed:
+
+```
+~/.claude/sdd-harness/skills/proof-collaborative-review/SKILL.md   ← harness repo (replicated to all machines)
+~/.claude/skills/proof-collaborative-review/SKILL.md               ← global (symlinked by install.sh)
+```
+
+`install.sh` propagates the skill to every project's skill lookup path automatically.
+
+### Proof SDK (Node.js — auto-installed on first use)
+
+The skill clones and installs the Proof SDK on first use into `~/.claude/tools/proof-sdk/`:
+
+```bash
+mkdir -p ~/.claude/tools
+cd ~/.claude/tools
+git clone https://github.com/EveryInc/proof-sdk
+cd proof-sdk
+npm install
+```
+
+The skill detects `~/.claude/tools/proof-sdk/node_modules/` — if present, it skips the install. Never runs `npm install` twice.
+
+**Prerequisites:** Node.js (already required by the harness, see Prerequisites above).
+
+### Remote Proof server (optional)
+
+By default the skill starts a local server at `http://localhost:4000`. To use a shared remote instance instead:
+
+```bash
+export PROOF_SERVER_URL=http://your-server:4000
+```
+
+Add to `~/.bashrc` or `~/.claude/settings.json` → `env` block to persist across sessions.
+
+### CLAUDE.md additions
+
+No CLAUDE.md changes needed — the skill is invoked automatically by the kiro spec commands at each phase gate.
 
 ---
 
@@ -1068,47 +1129,6 @@ See `docs/context-management/rtk/README.md` for full filter coverage, configurat
 
 ---
 
-## Headroom (Automatic — Context Compression)
-
-The harness integrates [headroom-ai](https://headroom.sh) — a context-compression layer that wraps Claude Code at the process level and compresses prompts/messages before they reach the LLM (60–95% savings). This is **complementary to RTK**: RTK compresses Bash command *output* inside the context window; headroom compresses the *context itself* before the API call.
-
-### What it does
-
-`headroom wrap claude` intercepts every message sent to the Claude API and applies compression (semantic deduplication, structural condensation). The wrapped binary behaves identically to `claude` from the user's perspective.
-
-It also ships a **memory sync integration** (`scripts/utils/sync-memories-to-headroom.py`) that keeps harness markdown memories and headroom's SQLite knowledge base in sync — bidirectional, fingerprint-based (cheap no-ops when nothing changed).
-
-### Setup (automatic)
-
-`install.sh` and `update.sh` call `scripts/setup/headroom-setup.sh` automatically. That script:
-- Installs `headroom-ai` globally via `uv tool install --python 3.12` (falls back to `pipx` or `pip --user`)
-- Installs memory-sync deps (`numpy`, `sqlite-vec`, `sentence-transformers`) into headroom's isolated uv env
-- Adds `alias claude='headroom wrap claude'` to `~/.bashrc`
-- Installs `headroom-ai` into each registered repo's detected virtualenv (for Python API use)
-
-### Memory sync
-
-`sync-memories-to-headroom.py` runs bidirectional sync between harness markdown memories and headroom's SQLite DB (`~/.headroom/memory.db`). The script dynamically resolves the harness root by walking up its own directory tree until it finds a `.claude` parent, then encodes the path using Claude Code's project-key convention (replacing `/`, `\`, and `.` with `-`) to locate the correct memory directory. This makes it fully location-agnostic — no hardcoded paths. Run with headroom's Python:
-
-```bash
-~/.local/share/uv/tools/headroom-ai/bin/python scripts/utils/sync-memories-to-headroom.py
-```
-
-Output is silent on no-op (fingerprints match). Emits a summary line only when memories are imported or exported.
-
-### Verifying it works
-
-```bash
-source ~/.bashrc      # activate alias
-headroom verify       # check installation
-```
-
-### CLAUDE.md additions
-
-No CLAUDE.md changes needed — headroom is fully automatic and global once the alias is installed.
-
----
-
 ## Context Hub (Automatic API Documentation)
 
 The harness includes [Context Hub](https://github.com/andrewyng/context-hub) as an MCP server. It provides a curated registry of LLM-optimized documentation for third-party libraries and APIs (OpenAI, Stripe, Anthropic, etc.) so agents use accurate, up-to-date API signatures instead of hallucinating from training data.
@@ -1153,15 +1173,17 @@ Each harness subsystem has a detailed reference doc:
 | Cog Memory | `docs/memory/README.md` | Tier architecture, file formats, conventions, data flow |
 | Jira Integration | `docs/jira/README.md` | Hook architecture, scripts, credentials, troubleshooting |
 | AutoResearch | `docs/autoresearch/README.md` | Interview protocol, loop mechanics, agent behavior |
-| Trust Battery | `docs/trust-battery/README.md` | Nightly Judge/Reflector loop, rubric, scoreboard, `auto-score` session success ratio (uncorrected sessions earn passive positive credit, read from `.claude/memory/.session-history`), opt-out, non-goals. Scoring script `.claude/scripts/session/trust_score.py` is Python 3.9+ compatible (`from __future__ import annotations` for PEP 604 `X | None` syntax on 3.9 hosts). |
+| Trust Battery | `docs/trust-battery/README.md` | Nightly Judge/Reflector loop, rubric, scoreboard, `auto-score` session success ratio (uncorrected sessions earn passive positive credit, read from `.claude/memory/.session-history`), opt-out, non-goals |
 | RTK | `docs/context-management/rtk/README.md` | Token compression proxy — filter coverage, install, configuration, upgrading |
-| Headroom | `scripts/setup/headroom-setup.sh`, `scripts/utils/sync-memories-to-headroom.py` | Context-layer compression (process-level, complements RTK); memory↔SQLite bidirectional sync |
 | Context Hub | [github.com/andrewyng/context-hub](https://github.com/andrewyng/context-hub) | MCP server for third-party API docs (external) |
 | Design Quality | `docs/design/README.md` | Visual design quality integrations index |
 | Impeccable | `docs/design/impeccable/impeccable.md` | 27 anti-pattern rules, skill usage, hook setup, transfer instructions |
+| Proof Collaborative Review | `~/.claude/sdd-harness/skills/proof-collaborative-review/SKILL.md` | Spec phase-gate review sessions — Proof SDK setup, server lifecycle, API reference |
 | Raindrop Workshop | `docs/raindrop/README.md` | AI-agent tracing — instrumented repos, eval loop, dashboard tab, troubleshooting |
 | Scheduled Tasks | `docs/scheduled-tasks/README.md` | All scheduled routines (daily maintenance, macro-eval, skill-curator, harness health, drift review); OS scheduler setup; dashboard **Scheduled Tasks** tab |
-| Privacy Filter | `docs/privacy-filter/README.md` | PII detection and scanning (OPF) — install via `uv tool install --python 3.13 git+https://github.com/openai/privacy-filter.git`, `scan-pii.sh` usage, optional git pre-commit integration, output modes, graceful degradation |
+| Hooks Reference | `docs/hooks/README.md` | Complete hook documentation — event types, purpose, wiring reference for all active hooks |
+| Local LLM Eval | `docs/local-llm-eval/README.md` | Offline prompt evaluation with Ollama via OMT — multi-model comparison, variance testing |
+| Structured Web Dataset | `docs/structured-web-dataset/README.md` | Building tabular datasets from NL descriptions — web research mode and synthetic mode |
 
 ---
 
@@ -1192,3 +1214,5 @@ claude --dangerously-skip-permissions --print "..." 2>/dev/null &
 - Background doc agents belong in git hooks (commit-scoped) or manual slash commands
 
 The Stop hook should only contain **passive checks** (e.g., nudging housekeeping when observations exceed a threshold). See `.claude/hooks/stop-hook.sh` for the reference implementation.
+
+_Last synced: 2026-06-14_

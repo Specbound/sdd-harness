@@ -58,6 +58,17 @@ Before implementing:
 
 **The test:** Would a senior engineer say this is overcomplicated? If yes, simplify.
 
+**Mark deliberate deferrals.** Simplicity pressure sometimes makes you *consciously* skip a real need — validation you'll add once inputs vary, an abstraction deferred until the 3rd call site, a fast path that skips a rare edge case. That is correct, but it rots unseen. Tag it inline at the skip site:
+
+```
+# DEBT: skips multi-currency totals — revisit when a non-USD account onboards
+```
+
+- Use a code comment leading with `DEBT:` (`#`, `//`, `--`, `/* */` — whatever the language uses).
+- State **what was skipped** and the **trigger** that should bring you back.
+- Only for real needs you're *postponing* — never for genuine YAGNI (things that should never exist). If it shouldn't exist, delete it; don't tag it.
+- No separate ledger to maintain: `git grep -nE "(#|//)\s*DEBT:"` lists them, and the harness dashboard (Maintenance Status) counts them fresh on every launch — so deferrals stay visible without a command to run.
+
 ---
 
 ## 3. Surgical Changes

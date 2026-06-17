@@ -5,11 +5,11 @@ Jira REST API v2 client for the SDD workflow.
 Reads credentials from ~/.env.jira:
 
     PAT (Personal Access Token) — Jira Data Center:
-        JIRA_URL=https://jira.tools.deloitteinnovation.us
+        JIRA_URL=https://your-jira-host.example.com
         JIRA_PAT=your-personal-access-token
 
     Basic auth (Jira Cloud / legacy):
-        JIRA_URL=https://jira.tools.deloitteinnovation.us
+        JIRA_URL=https://your-domain.atlassian.net
         JIRA_USERNAME=your.email@example.com
         JIRA_API_TOKEN=your-api-token-or-password
 
@@ -61,10 +61,10 @@ def load_credentials() -> dict[str, str]:
         print(
             f"ERROR: Credential file not found at {ENV_FILE}\n"
             f"Create it with (PAT / Data Center):\n"
-            f"  JIRA_URL=https://jira.tools.deloitteinnovation.us\n"
+            f"  JIRA_URL=https://your-jira-host.example.com\n"
             f"  JIRA_PAT=your-personal-access-token\n"
             f"Or (Basic auth / Cloud):\n"
-            f"  JIRA_URL=https://jira.tools.deloitteinnovation.us\n"
+            f"  JIRA_URL=https://your-domain.atlassian.net\n"
             f"  JIRA_USERNAME=your.email@example.com\n"
             f"  JIRA_API_TOKEN=your-api-token-or-password",
             file=sys.stderr,

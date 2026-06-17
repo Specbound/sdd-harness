@@ -14,6 +14,7 @@ Without it, every Claude session starts from zero. With it, Claude reads `hot-me
 .claude/memory/
 ├── hot-memory.md              # HOT — <50 lines, loaded at session start
 ├── observations.md            # WARM — append-only session log (max 50 entries)
+├── forward-patterns.md        # WARM — patterns flagged for skill promotion by daily scoring
 ├── action-items.md            # WARM — cross-session TODOs with due dates
 ├── entities.md                # WARM — project entity registry
 ├── setup-knowledge.md         # AUTO — setup commands captured by stop-hook (append-only)
@@ -43,7 +44,13 @@ Session work → /kiro:reflect → observations.md (append)
                              → patterns.md (promote recurring themes)
                              → hot-memory.md (update current state)
 
-Drain signals  → micro_reflect.py → hot-memory.md ## Auto-learned (probationary [auto-learn] facts)
+daily-runner Step D → observations.md (scan since last [judge]:)
+                    → forward-patterns.md (append PROMOTE-scored entries, confidence 4–5)
+                    → observations.md (append [pattern-score] summary line)
+
+forward-patterns.md → weekly skill-curator → promote high-confidence entries to skills
+
+Drain signals  → micro_reflect.py (standalone) → hot-memory.md ## Auto-learned (probationary [auto-learn] facts)
                              → /kiro:housekeeping (promote to patterns.md if reinforced; remove after 7d if not)
 
 observations.md (>50) → /kiro:housekeeping → glacier/YYYY-MM.md (archive)
@@ -75,11 +82,16 @@ Append-only session log. Each entry tagged with category.
 - 2026-03-29 [decision]: switched from REST to GraphQL for the dashboard endpoint — reduces frontend round-trips
 ```
 
-**Tags**: `spec`, `impl`, `design`, `debug`, `decision`, `friction`, `insight`, `pattern`, `enforceable`, `escaped`, `skill-update`, `auto-learn`
+**Tags**: `spec`, `impl`, `design`, `debug`, `decision`, `friction`, `insight`, `pattern`, `enforceable`, `escaped`, `skill-update`, `auto-learn`, `seed-target`, `session-quality`, `keep-rate`, `frontend-security-nudge`, `doc-parse-nudge`
 
 - `enforceable` — Convention violation that could be prevented by a linter rule (feeds the evolve agent's graduation pipeline)
 - `escaped` — Bug that passed validation but was caught later in CI/production (highest priority for graduation)
-- `auto-learn` — Probationary fact written by the micro-reflect stop hook. Tagged `[auto-learn, YYYY-MM-DD]` in `hot-memory.md`. Housekeeping promotes to `patterns.md` after 7 days if reinforced, or removes it if not.
+- `auto-learn` — Probationary fact written by `micro_reflect.py` (invoked standalone on drain signals). Tagged `[auto-learn, YYYY-MM-DD]` in `hot-memory.md`. Housekeeping promotes to `patterns.md` after 7 days if reinforced, or removes it if not.
+- `seed-target` — Auto-written by `action-capture.sh` when a Bash command exits non-zero. Format: `[seed-target:<domain>]`. Maps the failure domain (e.g., `python-pro`, `git-advanced-workflows`) for the nightly `skill-augment-agent` Sleep phase — these entries become explicit seeding targets for skill improvement.
+- `session-quality` — Written by the daily maintenance pipeline (step B). Records the scored session quality (1–5) from the `session-quality` rubric for that calendar day.
+- `keep-rate` — Written by the daily maintenance pipeline (step C). Records the percentage of Claude-co-authored lines that remain in HEAD after ≥7 days.
+- `frontend-security-nudge` — Auto-written by `frontend-security-nudge.sh` when the hook fires (build intent + frontend keywords). One per calendar day maximum.
+- `doc-parse-nudge` — Auto-written by `doc-parse-nudge.sh` when the hook fires (build intent + document/RAG keywords). One per calendar day maximum.
 
 ### action-items.md
 Cross-session TODOs with priority and dates.
@@ -144,6 +156,34 @@ A `PreToolUse` hook fires before every Write/Edit to any `memory/*.md` file. It 
 
 The canonical reference is `~/.claude/skills/agent-memory-discipline/SKILL.md`.
 
+### Memory Body Sub-Types
+
+The four memory *types* (user/feedback/project/reference) determine the file and metadata. Within the body, use these sub-types to structure content precisely:
+
+| Sub-type | Belongs in | What it captures |
+|---|---|---|
+| **attributes** | `user` | Role, expertise, context |
+| **people** | `user` | Relationships, team members |
+| **preferences** | `feedback` | Behavioral patterns, style choices |
+| **rules** | `feedback` | "Always/never" constraints |
+| **facts** | `project` | Durable project truths |
+| **events** | `project` | Decisions made, incidents, notable occurrences |
+| **skills** | `user` or `project` | Capabilities learned about user or their systems |
+
+Label sub-types with a bold heading when a memory file contains more than one (e.g. `**Preferences:**`, `**Rules:**`).
+
+### Session Attribution
+
+Add an optional `session:` field to frontmatter when a memory emerged from a specific task or branch:
+
+```markdown
+metadata:
+  type: feedback
+  session: zora-redis-worker-refactor
+```
+
+Use the git branch name or a short task descriptor. Omit for general memories not tied to a specific task. Enables targeted retrieval: "what did I learn *during* this work?"
+
 ## Conventions
 
 Defined in `kiro/settings/rules/memory-conventions.md`:
@@ -165,4 +205,4 @@ Defined in `kiro/settings/rules/memory-conventions.md`:
 
 See `SDD-SETUP-GUIDE.md` Step 12 for full bootstrap instructions.
 
-_Last synced: 2026-06-02 — added `setup-knowledge.md` to architecture diagram and conventions; auto-written by `stop-hook.sh` + `setup-buffer-hook.sh`._
+_Last synced: 2026-06-11_
