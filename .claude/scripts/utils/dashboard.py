@@ -2248,7 +2248,140 @@ def render_memory_changes(rd, hd):
   </div>
 </div>"""
 
+def render_skill_usage():
+    """Hot/cold skill statistics from the skill-usage-tracker hook log.
+
+    The PostToolUse(Skill) hook appends one JSON line per skill invocation to
+    logs/skill-usage.jsonl. This surfaces the evidence the skill-curator uses
+    to deprecate cold skills (Hermes-agent usage-log pattern). Returns '' when
+    no log exists yet, so it composes cleanly above the curation report.
+    """
+    log_path = Path.home() / ".claude" / "sdd-harness" / "logs" / "skill-usage.jsonl"
+    if not log_path.exists():
+        return (
+            '<div class="label" style="margin-bottom:6px">Skill Usage</div>'
+            + empty_state(
+                "No usage data yet. The <code>skill-usage-tracker.sh</code> "
+                "PostToolUse hook logs every skill invocation here. Data appears "
+                "after the first skill fires."
+            )
+            + '<div style="height:20px"></div>'
+        )
+
+    entries = []
+    try:
+        with log_path.open() as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    entries.append(json.loads(line))
+                except Exception:
+                    continue
+    except Exception:
+        return ""
+
+    now = datetime.now(timezone.utc)
+    cutoff = now - timedelta(days=30)
+
+    total_fires = 0
+    fires_30d = 0
+    counts_30d = {}        # skill -> count in last 30d
+    last_seen = {}         # skill -> latest datetime
+    for e in entries:
+        sk = e.get("skill", "")
+        if not sk:
+            continue
+        total_fires += 1
+        ts = None
+        try:
+            ts = datetime.fromisoformat(e.get("ts", "").replace("Z", "+00:00"))
+        except Exception:
+            ts = None
+        if ts is not None:
+            if last_seen.get(sk) is None or ts > last_seen[sk]:
+                last_seen[sk] = ts
+            if ts >= cutoff:
+                fires_30d += 1
+                counts_30d[sk] = counts_30d.get(sk, 0) + 1
+
+    # Installed skills → compute cold (never-fired-in-30d) candidates.
+    installed = set()
+    skills_root = Path.home() / ".claude" / "skills"
+    try:
+        for p in skills_root.glob("*/SKILL.md"):
+            installed.add(p.parent.name)
+    except Exception:
+        pass
+
+    fired_30d_set = set(counts_30d.keys())
+    cold = sorted(installed - fired_30d_set) if installed else []
+    used_30d = len(fired_30d_set)
+    cold_n = len(cold)
+
+    cn = ("var(--green)" if cold_n == 0 else
+          "var(--yellow)" if cold_n < 40 else "var(--red)")
+
+    summary = f"""<div style="display:grid;grid-template-columns:repeat(4,1fr);
+                       gap:12px;margin-bottom:16px">
+    <div class="stat-card">
+      <div class="stat-val">{total_fires}</div>
+      <div class="stat-lbl">total invocations</div></div>
+    <div class="stat-card">
+      <div class="stat-val">{fires_30d}</div>
+      <div class="stat-lbl">invocations (30d)</div></div>
+    <div class="stat-card">
+      <div class="stat-val" style="color:var(--blue)">{used_30d}</div>
+      <div class="stat-lbl">skills used (30d)</div></div>
+    <div class="stat-card">
+      <div class="stat-val" style="color:{cn}">{cold_n}</div>
+      <div class="stat-lbl">cold skills (30d)</div></div>
+  </div>"""
+
+    top = sorted(counts_30d.items(), key=lambda kv: (-kv[1], kv[0]))[:10]
+    top_html = ""
+    if top:
+        mx = top[0][1]
+        rows = ""
+        for sk, c in top:
+            w = int(c / mx * 100) if mx else 0
+            rows += (
+                f'<div style="display:flex;align-items:center;gap:8px;margin:3px 0">'
+                f'<div style="flex:0 0 180px;font-size:11px;color:var(--subtext1);'
+                f'overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{h(sk)}</div>'
+                f'<div style="flex:1;background:var(--surface0);border-radius:3px;height:14px">'
+                f'<div style="width:{w}%;background:var(--blue);height:100%;border-radius:3px;'
+                f'opacity:0.8"></div></div>'
+                f'<div style="flex:0 0 32px;text-align:right;font-size:11px;'
+                f'color:var(--overlay1)">{c}</div></div>'
+            )
+        top_html = (
+            '<div class="label" style="margin-bottom:6px">Top skills (30d)</div>'
+            f'<div style="margin-bottom:16px">{rows}</div>'
+        )
+
+    cold_html = ""
+    if cold:
+        sample = ", ".join(h(s) for s in cold[:25])
+        more = f" <span style='color:var(--overlay0)'>+{cold_n - 25} more</span>" if cold_n > 25 else ""
+        cold_html = (
+            '<div class="label" style="margin-bottom:6px">Cold skills — '
+            'deprecate candidates (no invocation in 30d)</div>'
+            f'<div style="font-size:11px;color:var(--subtext0);line-height:1.6;'
+            f'margin-bottom:20px">{sample}{more}<br>'
+            '<span style="color:var(--overlay0)">The weekly skill-curator uses this '
+            'list as evidence for pruning. Pin a skill to protect it.</span></div>'
+        )
+
+    return (
+        '<div class="label" style="margin-bottom:6px;font-size:13px;color:var(--text)">'
+        'Skill Usage</div>'
+        + summary + top_html + cold_html
+    )
+
 def render_skill_changes(hd):
+    usage    = render_skill_usage()
     content  = hd.get("skill_report_content")
     last_mod = hd.get("skill_report_age")
     if not content:
@@ -2263,11 +2396,13 @@ def render_skill_changes(hd):
         )
         return f"""<div class="section-inner">
   <h2 class="section-title">Skill Changes</h2>
+  {usage}
   {d}
   {empty_state("No report yet — waiting for first scheduled run.")}
 </div>"""
     return f"""<div class="section-inner">
   <h2 class="section-title">Skill Changes</h2>
+  {usage}
   <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
     <span style="color:var(--overlay0);font-size:12px">
       Last audit: <strong style="color:var(--subtext1)">{h(last_mod)}</strong></span>

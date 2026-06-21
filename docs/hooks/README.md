@@ -473,6 +473,7 @@ PostToolUse    Write|Edit                                    → impeccable-dete
 PostToolUse    Write|Edit                                    → hook-added-notify.sh
 PostToolUse    Write|Edit  (*/skills/*/SKILL.md only)        → skill-permissions-gate.sh
 PostToolUse    Write|Edit|MultiEdit (test/CI config only)     → test-integrity-guard.sh
+PostToolUse    Skill                                         → skill-usage-tracker.sh
 PostToolUse    Bash                                          → action-capture.sh
 PostToolUse    Bash                                          → revert-detect-hook.sh
 PostToolUse    Bash                                          → setup-buffer-hook.sh
@@ -493,5 +494,5 @@ The `tool-failure-*` pair plus the `tool-failure-review` routine form the **tool
 3. Document it in this file (the `hook-added-notify.sh` hook will remind you if you forget).
 4. Update the Wiring Reference table above.
 
-_Last synced: 2026-06-17
+_Last synced: 2026-06-21
 

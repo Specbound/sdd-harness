@@ -28,6 +28,29 @@ Compression heuristic: skill content should be ≤30% of the context it would re
 
 ---
 
+## Phase 1.5 — Usage Evidence Audit
+
+The `skill-usage-tracker.sh` PostToolUse hook logs every real skill invocation to
+`logs/skill-usage.jsonl` (one `{"ts","skill"}` line per fire). This is the evidence
+layer for deprecation — use it instead of guessing from file mtime.
+
+1. If `logs/skill-usage.jsonl` does not exist or is empty, record "no usage data yet"
+   and skip the rest of this phase (the tracker hook may be freshly installed).
+2. Parse the log. For each skill compute: total fires, fires in the last 30 days,
+   and last-seen date.
+3. Cross-reference against the globbed skill list from Phase 1:
+   - **Deprecate candidate**: zero invocations in the last 30 days.
+   - **Archive candidate**: zero invocations in the last 90 days.
+   - A skill with `pinned: true` in its frontmatter is protected — never flag it.
+4. This phase is purely mechanical (no judgment) — it produces a candidate list only.
+   Combine it with the Phase 1 quality score: a skill that is BOTH low-quality (≤6)
+   AND cold (no 30d use) is the strongest deletion candidate.
+
+Do NOT delete anything here — the weekly sweep only reports. Deletion happens through
+the human-invoked `/skill-curator` skill.
+
+---
+
 ## Phase 2 — Description Budget Audit
 
 For each skill found in Phase 1, check the `description:` frontmatter value:
@@ -70,7 +93,17 @@ Write `docs/skill-curation-report.md` with this structure:
 - Low-quality flags: N
 - Duplicate pairs: N
 - Description flags (>150 chars): N
+- Cold skills (no use in 30d): N | Archive candidates (90d): N
 - Memory governance: <ok|warn|critical>
+
+## Usage Evidence
+[From logs/skill-usage.jsonl. If no data yet, write "No usage data yet — tracker hook freshly installed."]
+
+### Deprecate Candidates (no invocation in 30d)
+[skill name] — last seen DATE (or "never") — quality N/12
+
+### Archive Candidates (no invocation in 90d)
+[skill name] — last seen DATE (or "never")
 
 ## Description Budget
 

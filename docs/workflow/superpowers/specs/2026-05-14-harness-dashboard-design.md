@@ -4,7 +4,7 @@
 **Status:** Implemented  
 **Output:** `scripts/dashboard.py` → serves at `http://localhost:4569` (companion server mode, default); use `--static` for file output
 
-_Last synced: 2026-06-17
+_Last synced: 2026-06-21
 
 ---
 
@@ -179,9 +179,10 @@ if overdue > interval_seconds * 0.25:  # MISSED
 
 ### 6. 🎯 Skill Changes
 
-**Data:** `docs/skill-curation-report.md`, git log on that file
+**Data:** `logs/skill-usage.jsonl` (from the `skill-usage-tracker.sh` PostToolUse hook), `docs/skill-curation-report.md`, git log on that file
 
 **Layout:**
+- **Skill usage stats** (via `render_skill_usage()`, shown above the curation report) — four stat cards (total invocations, 30d invocations, skills used in 30d, cold-skill count), a top-skills (30d) bar list, and a cold-skills deprecate-candidate list (installed skills with no invocation in 30d). Empty-state when no `skill-usage.jsonl` log exists yet.
 - "Last audit: N days ago" header
 - Rendered markdown content (inline converter: headings, bold, lists, code, tables)
 - "Next audit expected in N days" footer

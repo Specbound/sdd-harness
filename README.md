@@ -264,6 +264,7 @@ sdd-harness/
     ├── kiro/README.md            #   Spec engine deep dive
     ├── memory/README.md          #   Memory architecture guide
     ├── jira/README.md            #   Jira integration setup
+    ├── channels/README.md        #   Outbound Slack/Discord/Teams webhook notifications
     ├── autoresearch/README.md    #   ML experiment loop guide
     ├── gitnexus/README.md        #   Code intelligence + visual explorer guide
     ├── context-management/rtk/README.md  #   Token compression proxy — filters, install, upgrading
@@ -939,4 +940,4 @@ The Model Cost section reads session data from `~/.claude/projects/*/`. Pricing 
 
 Private repository. Contact the maintainer for access.
 
-_Last synced: 2026-06-14_
+_Last synced: 2026-06-21_

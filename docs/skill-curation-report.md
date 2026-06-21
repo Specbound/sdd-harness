@@ -1,158 +1,125 @@
-# Skill Curation Report — 2026-06-08
+# Skill Curation Report — 2026-06-21
 
 ## Summary
-
-- Skills audited: 997
-- Low-quality flags: 0 (harness-relevant subset; all scored ≥8/12)
-- Duplicate pairs: 5 confirmed pairs (see below)
-- Description flags (>150 chars): 565 (349 red 🔴 + 216 warn ⚠️)
+- Skills audited: 980
+- Low-quality flags: 112 (malformed description frontmatter)
+- Duplicate pairs: 8 strong (cross-import-source, identical command scope)
+- Description flags (>150 chars): 570 (353 RED >200, 217 WARN 151–200)
+- Cold skills (no use in 30d): N/A — no usage data yet | Archive candidates (90d): N/A
 - Memory governance: **ok**
 
----
+> Scope note: `~/.claude/skills/` holds **980** skills (mostly bulk-imported plugin
+> families — azure=116, *-automation=83). This is a global skill library, not a
+> per-repo set. The weekly sweep reports only; deletion/edits are human-gated via
+> `/skill-curator`.
+
+## Usage Evidence
+
+No usage data yet — `logs/skill-usage.jsonl` does not exist in this repo or under
+`~/.claude/`. The `skill-usage-tracker.sh` PostToolUse hook appears not yet installed
+or has not fired. **Deprecate/Archive candidate detection is blocked until the tracker
+logs real invocations.** Install the tracker hook to enable evidence-based deprecation.
+
+### Deprecate Candidates (no invocation in 30d)
+None computable — no usage log.
+
+### Archive Candidates (no invocation in 90d)
+None computable — no usage log.
 
 ## Description Budget
 
-Total: 997 skills | 141,249 chars | ~35,313 tokens
-
-> **Note**: Description text loads into every system-reminder as part of the available-skills manifest.
-> 349 skills exceed the 200-char threshold, contributing measurable system-reminder pressure.
-
-### Top 50 by Character Count
+Total: 980 skills | ~160,085 desc chars | **~40,000 tokens** of system-reminder pressure
+(floor estimate ~35k single-line; upper bound inflated by 3 block-scalar over-captures — see caveat).
 
 | Skill | Chars | Status |
 |-------|-------|--------|
-| prompt-master | 444 | 🔴 >200 |
-| multi-agent-patterns | 437 | 🔴 >200 |
-| evaluation/long-trajectory | 394 | 🔴 >200 |
-| llm-fine-tuning | 379 | 🔴 >200 |
-| structured-web-dataset | 378 | 🔴 >200 |
-| agent-permissions-design | 358 | 🔴 >200 |
-| agentic-rl-tito | 357 | 🔴 >200 |
-| context-degradation | 349 | 🔴 >200 |
-| evaluation/funnel | 344 | 🔴 >200 |
-| evaluation/macro | 342 | 🔴 >200 |
-| adapt-to-repo | 338 | 🔴 >200 |
-| karpathy-guidelines | 320 | 🔴 >200 |
-| rtk-token-reduction | 320 | 🔴 >200 |
-| git-pushing | 313 | 🔴 >200 |
-| frontend-slides | 311 | 🔴 >200 |
-| local-llm-eval | 311 | 🔴 >200 |
-| impeccable-audit | 309 | 🔴 >200 |
-| agent-harness-design | 306 | 🔴 >200 |
-| cag-implementation | 295 | 🔴 >200 |
-| session-quality | 291 | 🔴 >200 |
-| vibe-check | 288 | 🔴 >200 |
-| website-spec | 288 | 🔴 >200 |
-| gitnexus | 285 | 🔴 >200 |
-| context-optimization | 284 | 🔴 >200 |
-| evaluation/micro | 283 | 🔴 >200 |
-| cma-outcomes | 280 | 🔴 >200 |
-| grill-with-docs | 278 | 🔴 >200 |
-| secure-agent-design | 275 | 🔴 >200 |
-| frontend-performance | 274 | 🔴 >200 |
-| privacy-filter | 274 | 🔴 >200 |
-| claudemd-review | 268 | 🔴 >200 |
-| keep-rate | 267 | 🔴 >200 |
-| agent-memory-consolidation | 264 | 🔴 >200 |
-| compiled-truth-pattern | 264 | 🔴 >200 |
-| lean-ctx | 256 | 🔴 >200 |
-| ai-native-org-patterns | 254 | 🔴 >200 |
-| tool-design | 254 | 🔴 >200 |
-| evaluation | 248 | 🔴 >200 |
-| rag-implementation | 241 | 🔴 >200 |
-| tool-failure-memory | 240 | 🔴 >200 |
-| iterative-repair-loop | 237 | 🔴 >200 |
-| sonar-hotspot-review | 237 | 🔴 >200 |
-| active-observability | 232 | 🔴 >200 |
-| codebase-legibility | 231 | 🔴 >200 |
-| gitnexus-cli | 231 | 🔴 >200 |
-| gitnexus-exploring | 231 | 🔴 >200 |
-| gitnexus-pr-review | 231 | 🔴 >200 |
-| agent-identity | 228 | 🔴 >200 |
-| gitnexus-guide | 228 | 🔴 >200 |
-| skill-extraction | 221 | 🔴 >200 |
+| agent-execution-control | 9420* | 🔴 parse caveat — unquoted folded block scalar, verify frontmatter manually |
+| skill-creator-ms | 7391* | 🔴 parse caveat — same |
+| get-api-docs | 2898* | 🔴 parse caveat — same |
+| progressive-complexity-ladder | 594 | 🔴 real — compress |
+| prompt-master | 444 | 🔴 real — compress |
+| multi-agent-patterns | 437 | 🔴 real — compress |
+| llm-fine-tuning | 379 | 🔴 real — compress |
+| structured-web-dataset | 378 | 🔴 real — compress |
+| agent-permissions-design | 358 | 🔴 real — compress |
+| agentic-rl-tito | 357 | 🔴 real — compress |
+| context-degradation | 349 | 🔴 real — compress |
+| adapt-to-repo | 338 | 🔴 real — compress |
+| setup-agent-replay | 332 | 🔴 real — compress |
+| feature-list-primitive | 332 | 🔴 real — compress |
+| instruction-architecture | 321 | 🔴 real — compress |
 
----
+\* Char counts marked `*` are parser over-captures: these skills use an unquoted
+`description: >` folded block scalar and the extractor slurped body text past the
+description. Real description length is unknown — needs manual frontmatter inspection.
+
+**Aggregate:** 353 skills exceed 200 chars (🔴 measurable pressure), 217 in the
+151–200 WARN band. Compressing the 353 RED descriptions to ≤150 chars would reclaim
+an estimated 8–12k tokens of standing system-reminder budget.
 
 ## Quality Findings
 
-### Harness-Relevant Skill Scores (38 skills audited)
-
-All harness-relevant skills scored ≥8/12. No low-quality flags.
-
-| Skill | Score | Notes |
-|-------|-------|-------|
-| lean-ctx | 12/12 | — |
-| tool-failure-memory | 12/12 | — |
-| context-optimization | 12/12 | — |
-| gitnexus | 12/12 | — |
-| local-llm-eval | 12/12 | — |
-| adapt-to-repo | 11/12 | — |
-| rtk-token-reduction | 11/12 | — |
-| skill-developer | 11/12 | — |
-| skill-creator | 11/12 | — |
-| skill-extraction | 11/12 | — |
-| raindrop-eval-loop | 11/12 | — |
-| active-observability | 11/12 | — |
-| vibe-check | 11/12 | — |
-| verification-before-completion | 11/12 | — |
-| structured-web-dataset | 11/12 | — |
-| verification-skill-authoring | 11/12 | — |
-| context-degradation | 11/12 | — |
-| secure-agent-design | 11/12 | — |
-| agent-harness-design | 11/12 | — |
-| raindrop-instrument-agent | 9/12 | Trigger could be clearer |
-| session-quality | 10/12 | — |
-| brainstorming | 9/12 | Trigger phrase could be crisper |
-| hook-design | 9/12 | Description hedges scope ("framework for deciding") |
-| skill-curator | 9/12 | — |
-| context-fundamentals | 8/12 | Informational, not action-oriented |
-
 ### Low-Quality Candidates
 
-None identified in harness-relevant subset.
+**112 skills — malformed description frontmatter (broken).** These use a *quoted*
+block-scalar marker: `description: ">-"` (or `">"`, `"|"`). The author meant the
+unquoted form `description: >-`; quoting it makes the value the literal 2-char string
+`>-`, with the intended description orphaned on following indented lines. A standard
+YAML loader resolves these to a useless 2-char description → broken skill routing.
+
+Almost all are bulk-imported azure SDK skills. Sample:
+- azure-ai-contentsafety-py
+- azure-ai-textanalytics-py
+- azure-appconfiguration-py
+- azure-cosmos-rust
+- azure-cosmos-java
+- azure-ai-voicelive-ts
+- (…107 more — `grep -lE '^description:[ ]*"(>-?|\|-?)"[ ]*$' ~/.claude/skills/*/SKILL.md`)
+
+Recommended fix (human-gated, mechanical): strip the surrounding quotes so the marker
+becomes a real YAML block scalar. One-line sed candidate per file, but verify a sample
+first.
+
+> Per-skill 0–12 scoring across all 980 skills is not performed in the automated weekly
+> sweep (cost-prohibitive and judgment-heavy). The malformed-frontmatter set above is
+> the highest-confidence mechanical low-quality signal. Run `/skill-curator` for
+> interactive deep scoring of specific candidates.
 
 ### Duplicate Pairs
 
-| Pair | Overlap |
-|------|---------|
-| `api-documentation` ↔ `api-documentation-generator` ↔ `api-documenter` | All three cover OpenAPI/API doc generation — 3-way overlap |
-| `agent-memory-systems` ↔ `memory-systems` | Both cover short-term/long-term/graph memory architectures |
-| `context-management-context-restore` ↔ `code-refactoring-context-restore` | Scope nearly identical — context restore after compaction |
-| `skill-creator` ↔ `skill-creator-ms` | Near-identical scope; `ms` variant is Microsoft-environment flavour |
-| `context-optimization` ↔ `context-window-management` | Both guide token/context reduction strategies |
+Strong duplicates — same command scope, different prefix from separate import sources:
 
----
+| Skill A | Skill B | Overlap |
+|---------|---------|---------|
+| code-refactoring-tech-debt | codebase-cleanup-tech-debt | identical tech-debt scope |
+| code-refactoring-refactor-clean | codebase-cleanup-refactor-clean | identical refactor scope |
+| comprehensive-review-pr-enhance | git-pr-workflows-pr-enhance | identical PR-enhance scope |
+| debugging-toolkit-smart-debug | error-diagnostics-smart-debug | identical smart-debug scope |
+| parallel-agents | dispatching-parallel-agents | parallel-agent dispatch |
+| memory-systems | agent-memory-systems | agent memory overlap |
+| instrument-agent | raindrop-instrument-agent | agent instrumentation overlap |
+| dependency-management-deps-audit | codebase-cleanup-deps-audit | deps-audit scope |
+
+Borderline (generic-vs-specific, keep both): `testing-patterns` vs per-lang
+`*-testing-patterns`; `security-audit` vs `laravel-security-audit`;
+`skill-creator` vs `skill-creator-ms`; `mcp-builder` vs `mcp-builder-ms`.
 
 ## Memory Governance Health
 
 | Check | Status | Notes |
 |-------|--------|-------|
-| stop-hook writes observations | ✅ ok | Hook monitors observations.md entry count; triggers /kiro:housekeeping at >50 entries |
-| session-start catch-up logic | ✅ ok | `.last-routine-run` check present; fires daily-runner.sh in background if >24h stale |
-| memory-conventions.md intact | ✅ ok | 4,074 bytes, non-empty, header intact |
-| observations.md recency | ✅ ok | Last entry: 2026-06-08 (today); 17 total entries |
-| hot-memory.md recency | ✅ ok | Last modified: 2026-06-08 (today) |
+| stop-hook writes observations | ok | 3 `observations.md` write refs present |
+| stop-hook memory-conventions ref | note | 0 refs — by design; PreToolUse memory gate enforces conventions, not the stop hook |
+| session-start catch-up logic | ok | reads `.last-routine-run` (2 refs) |
+| memory-conventions.md intact | ok | 121 lines, not truncated |
+| observations.md recency | ok | last entry: 2026-06-21 (today) |
+| hot-memory.md recency | ok | last modified: 2026-06-21 (today) |
 
----
+**Overall: ok.**
 
-## Recommendations
-
-1. **Description compression sweep** — 349 skills exceed 200 chars. Priority targets (>300 chars): `prompt-master`, `multi-agent-patterns`, `evaluation/long-trajectory`, `llm-fine-tuning`, `structured-web-dataset`. Apply grammar compression: drop articles, use imperative verb form, replace filler with direct trigger nouns.
-
-2. **API documentation triad** — `api-documentation`, `api-documentation-generator`, `api-documenter` have overlapping scope. Consolidate or add clear differentiation to each description so the model can route correctly.
-
-3. **`context-fundamentals` (8/12)** — Informational rather than action-oriented. Lacks a concrete trigger. Consider reframing description as a "use when X" pattern.
-
-4. **`hook-design` (9/12)** — Description hedges with "framework for deciding" — replace with direct trigger noun ("Design or audit Claude Code hooks").
-
----
-
-## Iterative Repair Run — 2026-06-08
-
-> Source: No formal Low-Quality Candidates in report (all harness-relevant skills ≥8/12). Repair applied to lowest-scoring skills from Recommendations.
-
-| Skill | Before | After | Status |
-|-------|--------|-------|--------|
-| context-fundamentals | 8/12 | 10/12 | repaired — description rewritten to trigger form; malformed auto-generated "When to Use" text removed |
-| hook-design | 9/12 | 9/12 | stalled — description fix yields ≤1 delta; content otherwise sound |
+## Action Items (for human-invoked `/skill-curator`)
+1. **Install `skill-usage-tracker.sh`** PostToolUse hook → unblocks deprecation evidence.
+2. **Fix 112 malformed `description:` frontmatter** (quoted block-scalar markers).
+3. **Compress 353 RED descriptions** (>200 chars) → reclaim ~8–12k tokens.
+4. **Resolve 8 duplicate pairs** — pick the canonical skill per pair, delete the other.
+5. **Manual-check 3 parse-caveat skills** (agent-execution-control, skill-creator-ms, get-api-docs).

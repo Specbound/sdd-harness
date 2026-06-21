@@ -46,7 +46,7 @@ Utility scripts used by the harness. All Python scripts use stdlib only (no virt
 
 | Script | Purpose |
 |---|---|
-| `dashboard.py` | Local harness dashboard (browser-based). Includes Workshop tab for Raindrop traces. |
+| `dashboard.py` | Local harness dashboard (browser-based). Includes Workshop tab for Raindrop traces. Maintenance Status section also shows a deferred-markers count via `count_debt_markers()`, which git-greps comment-anchored `DEBT:` markers across tracked non-md code (convention from the karpathy-guidelines skill). |
 | `check-no-hardcoded-paths.sh` | CI guard — fails if any harness script contains a machine-specific absolute path (`/home/`, `/Users/`, `/c/Users/`, `/mnt/c/Users/`, `C:\Users\`, or hardcoded `$HOME/.claude/sdd-harness`). Every path must be self-located via `lib/resolve-harness-dir.sh`. |
 | `headroom-setup.sh` | Configure disk/memory headroom thresholds for the daily runner. |
 | `sync-memories-to-headroom.py` | Bidirectional sync: harness markdown memories ↔ headroom SQLite DB. Called at session start when headroom is installed. |
@@ -61,4 +61,4 @@ Utility scripts used by the harness. All Python scripts use stdlib only (no virt
 | `security-report-prompt.md` | Prompt for the security report runner. |
 | `skill-curator-prompt.md` | Prompt for skill curation runs. |
 
-_Last synced: 2026-06-11_
+_Last synced: 2026-06-17

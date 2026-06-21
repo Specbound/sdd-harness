@@ -33,11 +33,19 @@ if [ ! -f "$PROMPT_TEMPLATE" ]; then
 fi
 
 # --- Race protection (mkdir is atomic; works on macOS and Linux) ---
+# Stale lock: if >2h old it was left by a SIGKILL'd run — safe to remove.
+if [ -d "$LOCK_DIR" ]; then
+  LOCK_AGE=$(( $(date +%s) - $(stat -c %Y "$LOCK_DIR" 2>/dev/null || echo 0) ))
+  if [ "$LOCK_AGE" -gt 7200 ]; then
+    log "removing stale lock (age=${LOCK_AGE}s)"
+    rm -rf "$LOCK_DIR"
+  fi
+fi
 if ! mkdir "$LOCK_DIR" 2>/dev/null; then
   log "another runner active, skipping"
   exit 0
 fi
-trap 'rm -rf "$LOCK_DIR"' EXIT
+trap 'rm -rf "$LOCK_DIR"' EXIT INT TERM
 
 # --- Date check (cheap short-circuit) ---
 # Extract YYYY-MM-DD prefix from ISO timestamp — portable, no GNU date needed.
@@ -70,9 +78,22 @@ fi
 echo "$TIMESTAMP" > "$STATE_FILE"
 log "starting daily maintenance"
 
-# --- Invoke claude ---
-echo "$PROMPT" | SDD_HEADLESS=1 claude --print --output-format text --permission-mode bypassPermissions
-EXIT=$?
+# --- Invoke claude (capture output for the optional channel summary) ---
+OUTPUT_FILE="$(mktemp 2>/dev/null || echo "$MEMORY_DIR/.daily-runner.out")"
+echo "$PROMPT" | SDD_HEADLESS=1 claude --print --output-format text --permission-mode bypassPermissions | tee "$OUTPUT_FILE"
+EXIT=${PIPESTATUS[1]}
+
+# --- Optional: post a summary to chat channels ---
+# No-op unless ~/.env.channels exists (so callers run unconditionally).
+# Opt out with SDD_SKIP_CHANNEL_NOTIFY=1.
+NOTIFY=".claude/scripts/integrations/channels/notify.py"
+if [ "${SDD_SKIP_CHANNEL_NOTIFY:-0}" != "1" ] && [ -f "$HOME/.env.channels" ] \
+   && [ -f "$NOTIFY" ] && command -v python3 >/dev/null 2>&1; then
+  SUMMARY="$(tail -n 20 "$OUTPUT_FILE" 2>/dev/null)"
+  python3 "$NOTIFY" --title "Daily maintenance — $REPO_NAME (exit=$EXIT)" "$SUMMARY" \
+    >/dev/null 2>&1 || log "channel notify failed"
+fi
+rm -f "$OUTPUT_FILE"
 
 log "completed exit=$EXIT"
 exit $EXIT
