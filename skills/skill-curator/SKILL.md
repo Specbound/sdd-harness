@@ -66,7 +66,7 @@ Total: N skills | X chars | ~Y tokens
 
 Present all findings in one view before proposing any actions:
 
-1. **From weekly report:** duplicate pairs, quality scores below threshold, unused candidates
+1. **From weekly report:** duplicate pairs, quality scores below threshold, and the **Usage Evidence** section — deprecate candidates (no invocation in 30d) and archive candidates (90d), backed by real `logs/skill-usage.jsonl` fire data rather than file mtime
 2. **From Phase 2:** descriptions over the 150-char threshold
 
 For each finding, determine the action type:
@@ -75,8 +75,8 @@ For each finding, determine the action type:
 |--------|------|
 | **Merge** | Two skills have overlapping scope; keep the better one, fold unique content in |
 | **Compress description** | Description > 150 chars; propose shorter text inline |
-| **Delete** | Low quality score + no recent use + no unique content |
-| **No action** | Flagged but justified; note reason explicitly |
+| **Delete** | Low quality score + cold (no invocation in 30d per Usage Evidence) + no unique content |
+| **No action** | Flagged but justified; note reason explicitly. Never flag a `pinned: true` skill |
 
 ### Phase 4: Propose Actions
 

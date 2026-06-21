@@ -909,6 +909,19 @@ echo "  OS: $SDD_OS ($ARCH)"
 # Step 1: Install global tools (rtk, gitnexus, raindrop CLI, uv, etc.)
 install_global_tools
 
+# Step 1.5: Pre-ship gate — scan harness source for leaked secrets / over-broad
+# perms before any files are copied into a repo. Blocking finding aborts install
+# so secrets never propagate. Opt out: SDD_SKIP_SHIP_SCAN=1. Strict: SDD_SHIP_STRICT=1.
+if [ "${SDD_SKIP_SHIP_SCAN:-0}" != "1" ] && [ -f "$HARNESS_DIR/scripts/lib/ship-safety-scan.sh" ]; then
+  echo ""
+  __scan_args=("$HARNESS_DIR")
+  [ "${SDD_SHIP_STRICT:-0}" = "1" ] && __scan_args+=(--strict)
+  if ! bash "$HARNESS_DIR/scripts/lib/ship-safety-scan.sh" "${__scan_args[@]}"; then
+    echo "Aborting install — ship-safety scan failed. (Override: SDD_SKIP_SHIP_SCAN=1)" >&2
+    exit 1
+  fi
+fi
+
 # Step 2: Per-project harness file sync
 echo ""
 if [ "$ALL" = true ]; then

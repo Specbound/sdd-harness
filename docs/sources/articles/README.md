@@ -286,3 +286,44 @@ Online articles, blog posts, and documentation pages that were passed to `/skill
 **What we added:**
 - Augmentation: `skills/ui-skills/SKILL.md` — rewrote the prior hollow stub into a **UI build router**. Carries no UI rules of its own; maps task category → the harness's existing UI skills (`ui-ux-pro-max`, `frontend-design`, `wcag-audit-patterns`, `threejs-skills`, `react-best-practices`, etc.) and enforces the "prefer 1, never >3 skills" context-economy discipline via the Skill tool (no `ui-skills` CLI needed). Fills the known wrong-skill-fires / over-selection failure mode in the large UI skill family.
 - *Rejected:* the `ui-skills` CLI + 106-skill registry (duplicate infra; harness already exposes equivalents via the Skill tool); individual Three.js/Vue/React/a11y/chart/slide skills (covered by `threejs-skills`, `react-best-practices`, `wcag-audit-patterns`, `frontend-slides`, etc.); niche design-taste skills (Oklch, Brutalist, Morphing Icons, Web Sounds — bloat, low repeated-task value); new hook/routine (routing is contextual judgment, not enforceable/schedulable); dashboard widget (no persistent output).
+
+---
+
+## Forward Future "Loop Library" — 45 Community Agent Loops
+**URL:** https://signals.forwardfuture.ai/loop-library/
+**Added:** 2026-06-21
+**Source / Author:** Forward Future (forwardfuture.ai)
+
+**What it's about:** Curated catalog of 45 community-contributed agent "loops" — self-pacing prompts that iterate → verify against explicit criteria → fix the highest-impact issue → re-test → stop on success/budget/stall. The site distills them to 6 universal principles: define success up front, one change per iteration, independent verification (separate builder/reviewer, adversarial critics, or two models), evidence required (root cause + before/after proof + changed files), fresh/clean state, and stop conditions. Nearly all 45 are domain variations on the same meta-pattern the harness `loop-patterns` skill already encodes.
+
+**What we added** (augment-not-create — the existing `loop-patterns` skill is the engine; only genuinely-absent loop *classes* survived the value gate):
+- Augmentation: `loop-patterns` skill — added loop **#9 Fresh-Clone Onboarding** (verify README/install docs from a disposable clean checkout; fix docs not environment) and **#10 Recent-Feedback Sweep** (turn one user correction into a project-wide fix + regression guard). Both fill loop categories the existing 8 CI/build/test loops lacked. Also added a **"Fresh/clean state"** guardrail (run reproducibility/onboarding passes from a disposable env to prevent false-green from a warmed workspace). Updated description count 8→10. See also: prior loop-library source entry "loops! — Named Agentic Dev Loop Catalog" (elorm.xyz) that created the skill.
+- *Rejected:* new `loop-library` skill of all 45 (>70% duplicate of `loop-patterns` engine; bloat, fails compression); multi-LLM convergence (covered by `validate-adversarial`/`codex-review` + existing "two models/sessions" guardrail); builder-reviewer (covered by `subagent-driven-development` + `spec-refactor-agent`); accessibility repair (covered by `wcag-audit-patterns`/`accessibility-compliance`); test-stabilizer (covered by E2E-Until-Green + `test-fixing`); housekeeper (covered by `housekeeping-agent`/`simplify`); Goal Forge/SPEC.md (covered by `kiro:spec-*`); propagation/compliance loop (motion subsumed by Recent-Feedback Sweep; held back for leanness); new command/hook/routine/dashboard (`kiro:loop` exists; loops aren't lifecycle-automatable — contextual, user-triggered).
+
+---
+
+## Async Multi-Agent Orchestration — Anthropic Cookbook
+**URL:** https://platform.claude.com/cookbook/patterns-agents-async-multi-agent-orchestration
+**Added:** 2026-06-21
+**Source / Author:** Anthropic Cookbook
+
+**What it's about:** Bare-mechanics skeleton (Anthropic Python SDK + `asyncio`) for two multi-agent shapes — fixed N-agent peer team and dynamic spawn — built on a shared message `Hub` (per-agent inbox + `asyncio.Event`), a `spawn → status → collect → kill` lifecycle, and `send_message`/`wait_for_message` as the only inter-agent channel. Key non-obvious trick: peer messages are **appended to the last tool result** so agents receive them inline in their tool-use loop rather than polling.
+
+**What we added:**
+- Augmentation: `multi-agent-patterns` skill — added "### Implementing Async Peer-to-Peer Agents (raw SDK)" subsection under Detailed Topics (after Framework Considerations) summarizing the Hub + Event mechanics, the append-to-tool-result delivery trick, and the spawn→status→collect→kill lifecycle. Full code skeleton moved to `references/async-sdk-orchestration.md` (compression). Added cookbook to the References section. Fills the gap where the skill covered multi-agent *design*/tool-selection but had zero raw-SDK *implementation* mechanics.
+- *Rejected:* new standalone skill (better as augmentation — `multi-agent-patterns` is the logical home; parallel skill would fragment "how to multi-agent" and risk wrong-skill firing); hook/routine (nothing fires every-time or on a schedule); script/command (reference knowledge, not an invokable action); dashboard widget (no persistent output); augmenting `async-python-patterns` (that skill is generic I/O-bound asyncio, not agent-specific).
+
+---
+
+## Vercel Eve: Open-Source Agent Framework
+**URL:** https://vercel.com/blog/introducing-eve | **Added:** 2026-06-21 | **Source:** Vercel Blog
+
+**What it's about:** Vercel's open-source framework that treats an agent as a directory of files (model, instructions, tools, skills, subagents, channels, schedules) — the framework owns the agent loop. Ships durable sessions, sandboxed compute, human-in-the-loop approvals, tracing/evals, and "channels" (Slack/Discord/Teams surfaces). Nearly all of it maps onto capabilities the harness already has; only the outbound-channel idea filled a real gap.
+
+**What we added:**
+- Script: `scripts/integrations/channels/notify.py` — stdlib-only sender that POSTs a message to whichever Slack/Discord/Teams incoming webhooks are configured in `~/.env.channels`; fills the harness's missing outbound-notification path
+- Template: `templates/.env.channels.template` — copy to `~/.env.channels` (home dir, chmod 600, outside every repo); webhook URL is the credential, no OAuth
+- Command: `commands/global/notify.md` — `/notify <message>` in-session broadcast to configured channels
+- Routine wiring: `scripts/orchestration/daily-runner.sh` posts each repo's daily-maintenance summary to channels, gated on `~/.env.channels` existence (no-op otherwise; `SDD_SKIP_CHANNEL_NOTIFY=1` opts out)
+- Docs: `docs/integrations/channels/README.md` — setup + per-platform webhook walkthrough
+- Rejected: inbound channels / bot listeners (harness is a local CLI, not a deployed service)

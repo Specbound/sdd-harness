@@ -135,6 +135,19 @@ do_update() {
   echo "  Done."
 }
 
+# --- Pre-ship gate: scan harness source for leaked secrets / over-broad perms ---
+# Runs once before anything is copied into a target repo. A blocking finding
+# (exit 1) aborts the whole update so secrets never propagate. Opt out with
+# SDD_SKIP_SHIP_SCAN=1; tighten perm warnings to failures with SDD_SHIP_STRICT=1.
+if [ "${SDD_SKIP_SHIP_SCAN:-0}" != "1" ] && [ -f "$HARNESS_DIR/scripts/lib/ship-safety-scan.sh" ]; then
+  __scan_args=("$HARNESS_DIR")
+  [ "${SDD_SHIP_STRICT:-0}" = "1" ] && __scan_args+=(--strict)
+  if ! bash "$HARNESS_DIR/scripts/lib/ship-safety-scan.sh" "${__scan_args[@]}"; then
+    echo "Aborting update — ship-safety scan failed. (Override: SDD_SKIP_SHIP_SCAN=1)" >&2
+    exit 1
+  fi
+fi
+
 if [ -n "$TARGET" ]; then
   do_update "$(realpath "$TARGET")"
 else

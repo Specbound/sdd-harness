@@ -1,6 +1,6 @@
 ---
 name: loop-patterns
-description: Library of 8 named agentic dev loops (ship PR, self-review, spec-first, coverage, E2E, etc.) with kickoff prompt templates and loop contract format. Use when user wants to run a named loop or design a new one.
+description: Library of 10 named agentic dev loops (ship PR, self-review, coverage, E2E, fresh-clone onboarding, feedback sweep, etc.) with kickoff templates and loop contract format. Use to run a named loop or design a new one.
 ---
 
 # Loop Patterns
@@ -43,6 +43,38 @@ passes or max iterations is reached. Give a short status update each pass.
 ```
 
 The **between-iterations command** is the loop's heartbeat — Claude runs it after each pass and reads the output to decide whether to continue.
+
+---
+
+## Loop Guardrails
+
+A self-pacing loop has two failure modes: it **stops too early** (a half-passing check looks like success) and it **runs away** (it spins forever, or hammers the same failing approach). The cap alone catches neither — it only bounds total spend. Every loop carries these guardrails regardless of which named loop is running.
+
+### Dual-condition exit (guards stopping too early)
+
+Do **not** exit on the check command alone. Before declaring the loop done, confirm **both**:
+
+1. The check command output objectively meets the exit condition (e.g. exit 0, all checks `success`, coverage ≥ threshold), AND
+2. You can state in one line *why* that output means the goal is truly met — not flaky-green, not a partial pass, not a skipped suite.
+
+If the check passes but condition 2 is shaky, treat it as not met and do one more verifying pass. State the explicit confirmation in the status update before stopping.
+
+### Circuit breakers (guard runaway), checked every pass
+
+Abort the loop early — independent of the max-iteration cap — when either fires:
+
+- **No-progress:** 2 consecutive passes where the check output is no closer to the goal (same failure count, same coverage number, same unchecked count). Stalled, not converging.
+- **Same-error:** 2 consecutive passes failing on the **identical** error/test. The current approach is wrong; repeating it won't help.
+
+On trip, **stop and report** — name the breaker, show the repeated output, and hand back to the user. Never silently keep looping. Optionally add explicit fields to the contract to tune thresholds:
+
+```
+Stop early if: same error 2 passes in a row, OR no measurable progress for 2 passes.
+```
+
+### Fresh/clean state (guards false-green from a dirty environment)
+
+When the loop's goal is about reproducibility, onboarding, or setup — anything a stale local environment could mask — run each verifying pass from a **disposable, dependency-free state** (fresh temp dir, clean clone, new session), not your already-warmed workspace. A check that only passes because your machine is pre-configured is a false green. Fix the artifact (docs, scripts, config), never the throwaway environment.
 
 ---
 
@@ -221,6 +253,54 @@ Step 1: Run the test suite. If red, fix the failures before committing.
 
 Self-pace this loop. After each iteration, run the check command, read the output, and only continue if the exit condition is not met. Stop when the exit condition passes or max iterations is reached. Give a short status update each pass.
 ```
+
+---
+
+### 9. Fresh-Clone Onboarding
+**Category:** Onboarding / Docs  
+**Goal:** A new dev can go from clean clone to running project using only the README/install docs — no hidden setup  
+**Max iterations:** 5  
+**Check cmd:** `setup in a fresh temp dir following ONLY the docs, then run the project's smoke check`  
+**Exit when:** a from-scratch run succeeds with zero undocumented steps
+
+```
+Start the "Fresh-Clone Onboarding" loop.
+
+Goal: a new dev reaches a running project using only the README/install docs — no hidden setup assumptions
+Max iterations: 5
+Between iterations run: in a fresh disposable temp dir, clone/copy the repo, follow ONLY the documented setup steps, then run the smoke check (build/test/start)
+Exit when: a from-clean run succeeds with zero steps you had to improvise outside the docs
+
+Step 1: Act as a first-time user in a clean temp dir. Follow the docs literally. The first time you must do something the docs don't say, STOP, fix the docs (not your environment) to cover it, then retry from a fresh dir.
+
+Self-pace this loop. After each iteration, run the check command, read the output, and only continue if the exit condition is not met. Stop when the exit condition passes or max iterations is reached. Give a short status update each pass.
+```
+
+Critical rule: fix the **docs**, never your live environment — the whole point is to surface assumptions a clean machine doesn't satisfy. Run each pass from a disposable, dependency-free dir (see "Fresh/clean state" guardrail).
+
+---
+
+### 10. Recent-Feedback Sweep
+**Category:** Review / Hardening  
+**Goal:** A correction the user just made is fixed everywhere it occurs, with a regression guard so the class of mistake can't recur  
+**Max iterations:** 4  
+**Check cmd:** `the project's grep/search for the anti-pattern + the test suite`  
+**Exit when:** no remaining instances of the pattern AND a guard exists
+
+```
+Start the "Recent-Feedback Sweep" loop.
+
+Goal: turn a single recent correction into a project-wide fix + regression guard
+Max iterations: 4
+Between iterations run: search the codebase for other instances of the same anti-pattern, then run the test suite
+Exit when: zero remaining instances AND a test/lint rule guards against reintroduction
+
+Step 1: State the correction as a falsifiable rule (what was wrong, what is right). Search the whole project for that class of mistake. Fix the highest-impact instance, add a regression guard (test or lint rule) for it, then re-search.
+
+Self-pace this loop. After each iteration, run the check command, read the output, and only continue if the exit condition is not met. Stop when the exit condition passes or max iterations is reached. Give a short status update each pass.
+```
+
+Scope discipline: fix only the **class** named by the correction — do not expand into unrelated cleanup. A correction without a regression guard is a half-fix; the guard is the exit gate, not the fix itself.
 
 ---
 

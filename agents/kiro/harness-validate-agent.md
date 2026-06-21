@@ -102,6 +102,20 @@ Build this by:
 2. Parsing each agent for rule and template file path references
 3. Cross-referencing to build the `referenced_by` lists
 
+### Step 8: Ship-Safety Scan
+
+The harness ships to every registered repo and machine via `install.sh`/`update.sh`, so a leaked secret or an over-broad permission rule in the source tree propagates silently. Run the same gate the installers use:
+
+```bash
+bash "$HARNESS_DIR/scripts/lib/ship-safety-scan.sh" "$HARNESS_DIR"
+```
+
+Interpret the result:
+- **Secrets (BLOCK)** — structured key shapes (AWS `AKIA…`, GitHub `ghp_…`, `sk-ant-…`, private-key headers) or a populated `.env`. Report as a **blocking** issue; the installers refuse to ship until resolved.
+- **Permissions (WARN)** — wildcard-all allow rules (`Bash(*)`, `Edit(**)`), empty `"deny": []`, or a settings template missing the standard danger denies (`Bash(rm -rf*)`, `Bash(git push*)`, `Edit(.env*)`, `Edit(secrets/*)`). Report under Warnings.
+
+Surface the script's findings verbatim in the report; this agent does not modify files — fixes are the operator's call.
+
 ## Output Description
 
 ```
@@ -130,6 +144,10 @@ Build this by:
 ### L0 Coverage
 - Steering: N/M files have L0 headers
 - Memory: N/M files have L0 headers
+
+### Ship-Safety
+- Secrets: N blocking (or "clean")
+- Permissions: N warnings (or "scoped")
 
 ## Trace
 - agent: harness-validate

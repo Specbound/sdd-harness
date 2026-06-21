@@ -1,4 +1,4 @@
-desc: Launch a named agentic dev loop (ship-pr, self-review, de-sloppify, spec-first, build, coverage, e2e, pre-commit). No arg = show picker.
+desc: Launch a named agentic dev loop (ship-pr, self-review, de-sloppify, spec-first, build, coverage, e2e, pre-commit, fresh-clone, feedback-sweep). No arg = show picker.
 allowed-tools: Read, Bash
 argument-hint: [loop-slug]
 
@@ -26,6 +26,8 @@ Available loops:
   e2e            E2E Until Green — fix E2E failures until suite passes
   self-review    PR Self-Review — three senior-level review passes on current diff
   pre-commit     Pre-Commit Guard — run tests before committing; never commit red
+  fresh-clone    Fresh-Clone Onboarding — verify setup docs from a clean disposable checkout
+  feedback-sweep Recent-Feedback Sweep — turn one correction into a project-wide fix + guard
 
 Which loop? (type the slug)
 ```
@@ -144,6 +146,34 @@ Between iterations run: npm test
 Exit when: tests exit 0
 
 Step 1: Run the test suite. If red, fix the failures before committing.
+
+Self-pace this loop. After each iteration, run the check command, read the output, and only continue if the exit condition is not met. Stop when the exit condition passes or max iterations is reached. Give a short status update each pass.
+```
+
+### fresh-clone
+```
+Start the "Fresh-Clone Onboarding" loop.
+
+Goal: a new dev reaches a running project using only the README/install docs — no hidden setup assumptions
+Max iterations: 5
+Between iterations run: in a fresh disposable temp dir, clone/copy the repo, follow ONLY the documented setup steps, then run the smoke check (build/test/start)
+Exit when: a from-clean run succeeds with zero steps you had to improvise outside the docs
+
+Step 1: Act as a first-time user in a clean temp dir. Follow the docs literally. The first time you must do something the docs don't say, STOP, fix the docs (not your environment) to cover it, then retry from a fresh dir.
+
+Self-pace this loop. After each iteration, run the check command, read the output, and only continue if the exit condition is not met. Stop when the exit condition passes or max iterations is reached. Give a short status update each pass.
+```
+
+### feedback-sweep
+```
+Start the "Recent-Feedback Sweep" loop.
+
+Goal: turn a single recent correction into a project-wide fix + regression guard
+Max iterations: 4
+Between iterations run: search the codebase for other instances of the same anti-pattern, then run the test suite
+Exit when: zero remaining instances AND a test/lint rule guards against reintroduction
+
+Step 1: State the correction as a falsifiable rule (what was wrong, what is right). Search the whole project for that class of mistake. Fix the highest-impact instance, add a regression guard (test or lint rule) for it, then re-search.
 
 Self-pace this loop. After each iteration, run the check command, read the output, and only continue if the exit condition is not met. Stop when the exit condition passes or max iterations is reached. Give a short status update each pass.
 ```

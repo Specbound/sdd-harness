@@ -4,6 +4,10 @@ VERSION
 .claude/settings.json
 .claude/docs/superpowers/
 
+# Channel webhook credentials — belt-and-suspenders (real file lives in ~/)
+*.env.channels
+channels.env
+
 # Per-user memory — stays local, never shared
 .claude/memory/**
 !.claude/memory/daily/

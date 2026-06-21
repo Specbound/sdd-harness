@@ -33,7 +33,13 @@
       "Edit(**/*.md)",
       "Write(**/*.md)"
     ],
-    "deny": [],
+    "deny": [
+      "Bash(rm -rf*)",
+      "Bash(git push*)",
+      "Edit(.env*)",
+      "Edit(secrets/*)",
+      "Read(secrets/*)"
+    ],
     "additionalDirectories": ["/tmp"]
   },
   "hooks": {

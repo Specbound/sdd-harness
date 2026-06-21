@@ -461,6 +461,12 @@ The post-condition can be lightweight: a schema check, an assertion, a test, or 
 
 Different frameworks implement these patterns with different philosophies. LangGraph uses graph-based state machines with explicit nodes and edges. AutoGen uses conversational/event-driven patterns with GroupChat. CrewAI uses role-based process flows with hierarchical crew structures.
 
+### Implementing Async Peer-to-Peer Agents (raw SDK)
+
+Building a multi-agent app directly on the Anthropic SDK (no framework)? The plumbing reduces to a shared message **Hub** (per-agent inbox + `asyncio.Event`, event-driven not polled), two agent tools (`send_message` / `wait_for_message` as the *only* inter-agent channel), and a `spawn → status → collect → kill` lifecycle. Key trick: deliver peer messages by **appending them to the last tool result** so agents read mail inline in their tool-use loop — zero polling.
+
+Full skeleton (Hub class, append-delivery, lifecycle, mitigations): see [references/async-sdk-orchestration.md](references/async-sdk-orchestration.md).
+
 ## Practical Guidance
 
 ### Failure Modes and Mitigations
@@ -547,6 +553,7 @@ External resources:
 - [CrewAI Documentation](https://docs.crewai.com/) - Hierarchical agent processes
 - [Research on Multi-Agent Coordination](https://arxiv.org/abs/2308.00352) - Survey of multi-agent systems
 - [Code as Agent Harness](https://arxiv.org/abs/2605.18747) - Ning et al. 2026; source for functional role taxonomy, convergence mechanisms, adversarial validation
+- [Async Multi-Agent Orchestration (Anthropic Cookbook)](https://platform.claude.com/cookbook/patterns-agents-async-multi-agent-orchestration) - SDK Hub/inbox/Event skeleton, spawn→status→collect→kill lifecycle, append-to-tool-result delivery
 
 ---
 

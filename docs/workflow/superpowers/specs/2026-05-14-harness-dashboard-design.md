@@ -4,7 +4,7 @@
 **Status:** Implemented  
 **Output:** `scripts/dashboard.py` → serves at `http://localhost:4569` (companion server mode, default); use `--static` for file output
 
-_Last synced: 2026-05-31_
+_Last synced: 2026-06-17
 
 ---
 
@@ -233,6 +233,7 @@ Each line: ISO 8601 UTC timestamp of a session end event. File is capped at 30 e
   - Yellow "OVERDUE" if `.last-routine-run` > 25 hours old
 - Global log tail: last 10 lines from `orchestrator.log` (monospace scrollable)
 - "Next scheduled: 18:00 today / tomorrow"
+- **Deferred markers note:** a count of comment-anchored `DEBT:` markers in tracked non-md code, surfaced via `count_debt_markers()` (git-greps the worktree). Flags accumulated deferred work alongside routine status. `DEBT:` convention comes from the karpathy-guidelines skill.
 
 **Log format:** `2026-05-13T13:18:53+03:00 /path/to/repo exit=0 duration=338s`
 

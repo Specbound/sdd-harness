@@ -401,7 +401,7 @@ Each command delegates to one or more autonomous subagents. Agents receive a pro
 - **`harness-validate-agent`** — Checks structural integrity: command→agent references, template existence, memory caps, L0 headers, generates component index; Step 8 audits instruction architecture (entry file line count, constraint count, topic doc adoption, middle-placement check); Step 9 audits feature list primitive compliance (triple structure, WIP=1, pass-state gating)
 - **`gitnexus-setup-agent`** — Installs GitNexus, indexes the repo, configures MCP server and editor integration
 - **`jira-solve-agent`** — Analyzes ticket type and routes to the appropriate workflow
-- **`skill-augment-agent`** — After each daily-maintenance run (Step E), collects judge drains plus `[seed-target:]` observations auto-written by the action-capture hook during the Wake phase. Runs a Dreaming phase to generate synthetic worked examples for each skill gap. Encodes up to 3 evidence-backed improvements into relevant `SKILL.md` files (append-only, ≤150 chars each). Logs changes as `[skill-update]` observations.
+- **`skill-augment-agent`** — After each daily-maintenance run (Step E), collects judge drains plus `[seed-target:]` observations auto-written by the action-capture hook during the Wake phase. Also loads today's `type: feedback` memories (user corrections) as **highest-trust, auto-qualifying evidence ranked above the LLM judge** — human ground-truth drives the skill diff (Warp self-improvement-loop pattern). Runs a Dreaming phase to generate synthetic worked examples for each skill gap. Encodes up to 3 evidence-backed improvements into relevant `SKILL.md` files (append-only, ≤150 chars each). Logs changes as `[skill-update]` observations.
 
 ---
 

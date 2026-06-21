@@ -159,3 +159,42 @@ Content passed directly as pasted text to `/skill-extraction` — not a URL, rep
 
 **What we added:**
 - Skill augmentation: `agent-harness-design` — added "Context as a Layered Cache (L1/L2/L3)" subsection to the 𝒞 (Context Constructor) component: a placement decision rule (minimize resident + discovery cost over the task distribution), a tier table mapping L1/L2/L3 onto harness artifacts (CLAUDE.md + SKILL.md bodies / `resources/` + deferred tools / on-disk references + grep-recipe skill), the consequence-reporting property for L1 ops, and the "tiers slide with model strength" note. Cross-referenced `context-optimization` (intra-tier mechanics) and the existing temporal-scaling tiers (when interventions act vs. where capability lives). Rejected: one-tool (dup of `tool-design`), read/write compression specifics (spreadsheet-domain), and a standalone skill (would add a 4th overlapping context-* skill).
+
+---
+
+## Self-Improvement Loop for Skills (Warp blog, pasted text)
+**Added:** 2026-06-18
+**Source / Author:** Pasted text — Warp blog on self-improvement loops for Skills (issue-triage example, Oz cloud agents)
+See also: [git/README.md](../git/README.md) — companion repo https://github.com/warpdotdev-demos/issue-triage-loop
+
+**What it's about:** A two-loop pattern for skills that improve from external feedback. Inner loop applies a skill and records every run (file/trace/external system). Outer loop runs on a schedule, observes the inner runs — especially where a human *overrode* the agent's output and said why — and diffs the SKILL.md to fix it. Thesis: the human override is the gold training signal; an automated grader can substitute only when the goal is machine-gradable.
+
+**What we added** (one augmentation — the harness already implements the two-loop architecture via `daily-maintenance` Step E + `skill-augment-agent`; everything else rejected as duplicate):
+- Agent augmentation: `agents/kiro/skill-augment-agent.md` — new Step 1.5 loads today's `type: feedback` memories (user corrections) as a first-class evidence source, **auto-qualifying (2/2) and drafted before LLM judge-drain evidence** — encodes Warp's "human override outranks the grader" thesis. Closes the gap where skill-shaped user corrections lived only in memory and never reached the skill diff. Rides existing nightly automation; no new hook/routine. Mirrored to README.md, SDD-USAGE.md, scheduled-tasks/README.md.
+- Rejected: two-loop framework (already = Step E + augment agent), GitHub Action inner-loop trigger (no issue-tracker goal), scheduled outer agent (= daily-maintenance), `improve-triage-skill`/`triage-issue` skills (domain-specific), human-correction capture hook (noisy detection; capture already exists via `detect_reexplanation.py` + `type: feedback` memories — only routing was missing).
+
+---
+
+## The Stanford STORM Method (Pasted text, Nav)
+**Added:** 2026-06-21
+**Source / Author:** Pasted text — popularization of Stanford OVAL's STORM (Synthesis of Topic Outlines through Retrieval and Multi-perspective Question Asking, NAACL 2024)
+
+**What it's about:** A 4-prompt research workflow that compresses PhD-style topic research: simulate 5 adversarial expert perspectives (Practitioner/Academic/Skeptic/Economist/Historian) → map their contradictions (incl. unanimous agreement = likely true, unaddressed = field blind spot) → synthesize a reliability-ranked briefing → adversarially peer-review the briefing for bias. Stanford's published result: multi-perspective articles ~25% more organized, ~10% broader than single-prompt.
+
+**What we added:**
+- Skill: `storm-research` — the 4-phase method as a harness-native skill. Default **Workflow mode** fans the 5 personas out as *parallel* agents (no voice contaminates another) then runs contradiction → synthesis → adversarial peer-review as serial downstream stages; **Inline mode** runs the 4 verbatim prompts sequentially for quick passes. Verbatim prompts live in `resources/prompts.md`. Adds a grounding rule (personas don't invent citations — ground empirical claims via WebSearch) the source lacked.
+- Rejected: augment `multi-agent-brainstorming` (sharp identity = review of a *proposed design*, not unknown-topic research — would blur it); augment `deep-research` (external paid Gemini API, opaque internals); `/storm` command (Skill is the right surface); hook (no lifecycle event / on-demand only); routine (not scheduled); dashboard widget (no persistent metric).
+
+---
+
+## Hermes Agent — Self-Improving Loop (Pasted text)
+**Added:** 2026-06-21
+**Source / Author:** Pasted text — "Hermes Agent FULL GUIDE: Architecture, Setup, and the Self-Improving Loop" (Nous Research)
+
+**What it's about:** A cloud-resident messenger agent whose self-improving loop (trigger system → background review agent → curator) maintains its own skill library. The curator's distinguishing mechanic is a hidden **usage log** — load count + last-use timestamp per skill — feeding a token-free mechanical pass that deprecates agent-generated skills unused >30d and archives those unused >90d (with pinning), *before* any LLM review.
+
+**What we added** (one integration — the harness already implements the loop via reflect/evolve/skill-augment/skill-curator/agent-memory-consolidation + daily-orchestrator; only the usage-evidence layer was a genuine gap):
+- Hook: `skill-usage-tracker.sh` (`PostToolUse` matcher `Skill`, silent, zero tokens) — logs `{ts,skill}` per skill invocation to global `logs/skill-usage.jsonl`. Closes the gap where `skill-curator` claimed to prune "unused" skills but had no usage data (it guessed from file mtime).
+- Curator augmentation: new **Phase 1.5 — Usage Evidence Audit** in `skill-curator-prompt.md` + report **Usage Evidence** section; `skill-curator` SKILL.md Delete criterion now requires evidence-backed cold status (no 30d use) and protects `pinned: true`.
+- Dashboard: `render_skill_usage()` in `dashboard.py` adds hot/cold stats (total/30d invocations, skills used, cold count), a top-skills bar chart, and a deprecate-candidate list to the **Skill Changes** tab.
+- Rejected: self-improving loop / triggers / curator (core of harness already); model routing for aux tasks (`model-tiers` + `background-work-routing`); skill-struggle real-time trigger (covered by `skill-augment-agent` + `action-capture` struggle detection); cron `-no-agent` token-free scripts (daily-runner already does this); curator auto-backup + rename map (git = backup, human-approval gate exists); webhooks/Kanban/goal-judge/terminal-backends/memory-engines (cloud-agent architecture, N/A to local harness).

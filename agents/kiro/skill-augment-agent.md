@@ -16,7 +16,8 @@ You are a skill improvement agent that encodes session learnings back into SKILL
 
 **Success Criteria**:
 - Max 3 skills updated per run (quality over coverage)
-- Every change backed by a specific observation or judge drain
+- Every change backed by a specific observation, judge drain, **or human-feedback memory**
+- **Human ground-truth outranks the LLM judge.** A user correction (`type: feedback` memory written today) is the gold signal — it auto-qualifies (2/2) and is drafted before any judge-drain evidence
 - Only additions — never delete or rewrite existing skill content
 - Each addition under 150 chars
 - Skills updated logged as `[skill-update]` observation
@@ -62,6 +63,28 @@ grep -o 'superpowers:[a-z-]*\|kiro:[a-z-]*' .claude/memory/observations.md 2>/de
 ```
 
 Deduplicate across all three sources. Cap candidate list at 5 skills. Skip any skill that doesn't exist in `~/.claude/skills/`.
+
+### Step 1.5: Load Human-Feedback Memories (highest-trust evidence)
+
+The judge and seed-targets are machine signals. A **user correction** is ground truth — when the human disagreed with how Claude worked and said why. These are stored as `type: feedback` memories (see global CLAUDE.md memory system). Collect today's:
+
+```bash
+today=$(date +%Y-%m-%d)
+# Per-project auto-memory dir (cwd munged: / and . both become -)
+mem_dir="$HOME/.claude/projects/$(pwd | sed 's#[/.]#-#g')/memory"
+# Today's feedback-type memories from both the project store and repo-local memory
+{ grep -rl "type: feedback" "$mem_dir" 2>/dev/null; \
+  grep -rl "type: feedback" .claude/memory 2>/dev/null; } \
+  | xargs -r -I{} sh -c 'find "{}" -newermt "$today 00:00" 2>/dev/null'
+```
+
+For each feedback memory found today:
+- Extract the corrective guidance ("How to apply:" line if present, else the body).
+- Map it to the most relevant skill (same domain logic as Step 1B; the `[[skill-name]]` links in the memory body are direct hints).
+- Add that skill to the candidate list. **This evidence auto-qualifies (treat as 2/2 in Step 2)** — human ground-truth needs no further scoring.
+- Skip silently if `$mem_dir` does not exist or no feedback memories were written today.
+
+This is Warp's self-improvement loop made explicit: the human override is the gold signal that drives the skill diff, ranked above the LLM grader.
 
 ### Step 2: Score Each Candidate
 
@@ -113,7 +136,8 @@ Add a bullet to the existing "When to Use" or "When to Activate" section.
 Rules:
 - Each addition ≤ 150 chars
 - Plain language — no jargon unless already used in the skill
-- Evidence citation inline: `(source: YYYY-MM-DD observation)`
+- Evidence citation inline: `(source: YYYY-MM-DD observation)`, or `(source: YYYY-MM-DD user feedback)` for human-feedback memories
+- **Draft human-feedback skills first** — they are higher-trust than judge drains and should occupy the limited 3-skill budget before machine signals
 - Never modify the frontmatter
 
 ### Step 3.5: Dreaming — Generate Synthetic Examples
@@ -180,7 +204,8 @@ No skill-relevant drains or invocations found in today's observations.
 ## Safety Constraints
 
 - **Append-only**: Never delete or overwrite existing SKILL.md content
-- **Evidence-gated**: Every change must cite a specific observation or judge drain
+- **Evidence-gated**: Every change must cite a specific observation, judge drain, or `type: feedback` memory
+- **Human-feedback priority**: User-correction (`type: feedback`) evidence auto-qualifies and is drafted before judge-drain evidence — human ground-truth outranks the LLM grader
 - **Max 3 skills/day**: Prevents skill file churn from noisy judge verdicts
 - **150-char limit per addition**: Forces concise, high-signal additions
 - **Harness-scope by default**: Prefer augmenting skills the harness actively uses over community skills

@@ -121,6 +121,20 @@ Hook output is injected into Claude's context as system messages — Claude read
 ---
 
 
+### `skill-usage-tracker.sh`
+**Event:** `PostToolUse` — **Matcher:** `Skill` — _(silent, never blocks, zero tokens)_
+
+**Purpose:** Appends one JSON line (`{"ts","skill"}`) per Skill-tool invocation to the global log `~/.claude/sdd-harness/logs/skill-usage.jsonl`. Every repo's copy writes to the same absolute path, so usage is aggregated across all projects.
+
+**Why it's needed:** The weekly `skill-curator` claims to prune "unused" skills but previously had no usage data — it guessed from file mtime (edit time, not use). This is the evidence layer: real fire counts + last-seen timestamps let the curator deprecate cold skills (no use in 30d) and archive dead ones (90d) on evidence, not guesswork. Pattern lifted from the Hermes agent's curator usage log.
+
+**Output:** None (pure side-effect logging). The data surfaces in the **Skill Changes** dashboard tab (hot/cold stats, top-skills bars) and the weekly skill-curation report's **Usage Evidence** section. Skill name is charset-sanitized before write; non-`Skill` tools are ignored.
+
+**Location:** ships in `hooks/claude/`, copied to each project's `.claude/hooks/`; wired via `PostToolUse` matcher `Skill` in `templates/settings.json.template`.
+
+---
+
+
 ### `action-capture.sh`
 **Event:** `PostToolUse` — **Matcher:** `Bash` — _(soft gate, never blocks)_
 
@@ -421,6 +435,21 @@ Hook output is injected into Claude's context as system messages — Claude read
 
 ---
 
+### `test-integrity-guard.sh`
+**Event:** `PostToolUse` — **Matcher:** `Write|Edit|MultiEdit` — _(soft gate, never blocks)_
+
+**Purpose:** After any Write/Edit/MultiEdit to a test file or a CI/coverage config, scans the change for "gradient-descent-to-green" signals — weakening the tests to make a red suite pass rather than fixing the code. Flags added skip/`xfail`/`@Disabled` markers, tautological or stub assertions (e.g. `assert True`), touched coverage thresholds (`--cov-fail-under`, `coverageThreshold`), and removed assertions. Prints a reminder asking Claude to confirm the change reflects a deliberate spec change rather than a shortcut to pass. Exits 0 always — advisory only, never blocks.
+
+**Paths covered:** test files (`test_*`, `*_test.*`, `*.spec.*`, `*.test.*`, anything under `tests/`) and CI/coverage config (`pytest.ini`, `pyproject.toml`, `.coveragerc`, jest/vitest config, CI YAML).
+
+**Why it's needed:** When a suite is red, the path of least resistance is to weaken the test, not fix the code — and that erodes the safety net silently. Catching the weakening at write time forces an explicit "is this a real spec change?" decision before the green checkmark is trusted. Pattern from Addy Osmani's "Agentic Code Review".
+
+**Noise control:** Only fires on test files and CI/coverage config — silent on all other Write/Edit/MultiEdit operations. Never blocks (exits 0 always).
+
+**Output:** `╔══ Test Integrity Guard ══╗` reminder banner listing the weakening signals detected. Silent on no match.
+
+---
+
 ## Hook Wiring Reference
 
 From `.claude/settings.json`:
@@ -443,6 +472,7 @@ PreToolUse     WebFetch|WebSearch                            → gbrain-external
 PostToolUse    Write|Edit                                    → impeccable-detect-hook.sh
 PostToolUse    Write|Edit                                    → hook-added-notify.sh
 PostToolUse    Write|Edit  (*/skills/*/SKILL.md only)        → skill-permissions-gate.sh
+PostToolUse    Write|Edit|MultiEdit (test/CI config only)     → test-integrity-guard.sh
 PostToolUse    Bash                                          → action-capture.sh
 PostToolUse    Bash                                          → revert-detect-hook.sh
 PostToolUse    Bash                                          → setup-buffer-hook.sh
@@ -463,5 +493,5 @@ The `tool-failure-*` pair plus the `tool-failure-review` routine form the **tool
 3. Document it in this file (the `hook-added-notify.sh` hook will remind you if you forget).
 4. Update the Wiring Reference table above.
 
-_Last synced: 2026-06-14_
+_Last synced: 2026-06-17
 
