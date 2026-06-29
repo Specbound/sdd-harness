@@ -41,6 +41,7 @@ Utility scripts used by the harness. All Python scripts use stdlib only (no virt
 | `raindrop-setup.sh` | Auto-installs `raindrop-ai` in registered repo virtualenvs. |
 | `ollama_model_test.py` | Smoke-test local Ollama model endpoints. |
 | `integrations/blackhole/blackhole-cursor.py` | Opt-in Ghostty context-fill gauge: encodes context-window fill into cursor color (OSC 12) for `blackhole.glsl`. Dormant unless `SDD_BLACKHOLE=1`. See [docs/integrations/blackhole](../docs/integrations/blackhole/README.md). |
+| `integrations/channels/notify.py` | Stdlib-only outbound webhook sender for Slack / Discord / Teams. Reads `~/.env.channels`; clean no-op when absent. Powers the `/notify` command and the daily-runner summary post. See [docs/integrations/channels](../docs/integrations/channels/README.md). |
 
 ## Utilities
 
@@ -48,6 +49,7 @@ Utility scripts used by the harness. All Python scripts use stdlib only (no virt
 |---|---|
 | `dashboard.py` | Local harness dashboard (browser-based). Includes Workshop tab for Raindrop traces. Maintenance Status section also shows a deferred-markers count via `count_debt_markers()`, which git-greps comment-anchored `DEBT:` markers across tracked non-md code (convention from the karpathy-guidelines skill). |
 | `check-no-hardcoded-paths.sh` | CI guard — fails if any harness script contains a machine-specific absolute path (`/home/`, `/Users/`, `/c/Users/`, `/mnt/c/Users/`, `C:\Users\`, or hardcoded `$HOME/.claude/sdd-harness`). Every path must be self-located via `lib/resolve-harness-dir.sh`. |
+| `lib/ship-safety-scan.sh` | Pre-ship gate run by `install.sh` / `update.sh` before any source is copied into a repo. Hard-blocks on leaked secrets / populated `.env` files (exit 1); soft-warns on over-broad permission rules in settings templates. Opt out with `SDD_SKIP_SHIP_SCAN=1`; promote warnings to failures with `SDD_SHIP_STRICT=1`. |
 | `headroom-setup.sh` | Configure disk/memory headroom thresholds for the daily runner. |
 | `sync-memories-to-headroom.py` | Bidirectional sync: harness markdown memories ↔ headroom SQLite DB. Called at session start when headroom is installed. |
 
@@ -61,4 +63,4 @@ Utility scripts used by the harness. All Python scripts use stdlib only (no virt
 | `security-report-prompt.md` | Prompt for the security report runner. |
 | `skill-curator-prompt.md` | Prompt for skill curation runs. |
 
-_Last synced: 2026-06-17
+_Last synced: 2026-06-21

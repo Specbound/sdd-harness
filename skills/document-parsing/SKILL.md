@@ -31,18 +31,30 @@ metadata:
 
 ## Phase 1: Install
 
+**liteparse is already installed** in the harness-owned venv (built by
+`scripts/setup/liteparse-setup.sh` on install/update — a pinned Python ≥3.10, so
+no `pip`/PEP-668 fuss). Use that interpreter and CLI directly:
+
 ```bash
-# Python (recommended for agentic workflows)
-pip install liteparse
+HARNESS="${SDD_HARNESS_HOME:-$HOME/.claude/sdd-harness}"   # symlinks to the harness root
+PY="$HARNESS/.venv-tools/bin/python"                       # Windows: .venv-tools/Scripts/python.exe
+LIT="$HARNESS/.venv-tools/bin/lit"                         # Windows: .venv-tools/Scripts/lit.exe
 
-# Node.js / CLI
-npm i @llamaindex/liteparse       # includes `lit` CLI
+"$PY" -c 'import liteparse; print(liteparse.__name__)'     # sanity check
+"$LIT" parse document.pdf                                  # CLI via the venv
+```
 
-# Rust CLI only
-cargo install liteparse
+> In the CLI/Python examples below, `lit` means `"$LIT"` and `python`/`import
+> liteparse` means running under `"$PY"` — the bare `python3` on the machine may
+> be too old (e.g. Apple's 3.9) to import liteparse.
 
-# Browser (WASM — text extraction only, no OCR)
-npm i @llamaindex/liteparse-wasm
+Alternative installs (only outside the harness, e.g. a standalone Node/Rust app):
+
+```bash
+pip install liteparse                 # needs Python >=3.10 in a writable env
+npm i @llamaindex/liteparse           # Node.js — includes `lit` CLI
+cargo install liteparse               # Rust CLI only
+npm i @llamaindex/liteparse-wasm      # Browser (WASM — text only, no OCR)
 ```
 
 Prerequisites for non-PDF formats:

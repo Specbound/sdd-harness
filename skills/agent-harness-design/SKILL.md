@@ -145,6 +145,11 @@ Design questions:
 
 Failure mode: governance is only outcome-based ("did the task complete?") — process failures go undetected.
 
+## Anti-Patterns in Governance (𝒢)
+
+### ❌ Portability Guard That Isn't Portable
+A guard against platform-specific regressions must itself run on all target platforms — bash-4-only features fail on macOS default 3.2. (source: 2026-06-14)
+
 ## Phase 2: Temporal Scaling Tiers
 
 Every intervention operates at one of three timescales. Mismatching a solution to the wrong tier is a common source of fragility.

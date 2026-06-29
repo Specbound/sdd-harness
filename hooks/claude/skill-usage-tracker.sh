@@ -11,8 +11,12 @@ set -euo pipefail
 EVENT=$(cat)
 
 # Global aggregation point — every repo's copy of this hook appends here, so
-# usage is counted once across all projects (absolute path, not cwd-relative).
-LOG_DIR="$HOME/.claude/sdd-harness/logs"
+# usage is counted once across all projects. This is a deliberate cross-repo
+# SINGLETON, not per-repo self-location: the dashboard/orchestrator read this one
+# central log, so resolving a per-repo $HARNESS_DIR would scatter the data and
+# break aggregation. Portable via $SDD_HARNESS_HOME override for non-standard
+# installs; defaults to the canonical $HOME-relative location.
+LOG_DIR="${SDD_HARNESS_HOME:-$HOME/.claude/sdd-harness}/logs"
 LOG_FILE="$LOG_DIR/skill-usage.jsonl"
 
 # Extract the skill name from tool_input.skill. Bail silently on anything odd.

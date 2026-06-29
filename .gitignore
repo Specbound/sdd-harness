@@ -22,6 +22,9 @@ logs/
 __pycache__/
 *.pyc
 
+# Harness-owned tool venv (liteparse etc.) — built by scripts/setup/liteparse-setup.sh
+.venv-tools/
+
 # Tool-generated files — runtime state, not source
 headroom_memory.db
 LEAN-CTX.md

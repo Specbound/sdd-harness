@@ -229,14 +229,11 @@ echo "Refreshing headroom context compression setup..."
 bash "$HARNESS_DIR/scripts/setup/headroom-setup.sh" || \
   echo "  WARNING: setup/headroom-setup.sh returned non-zero — re-run manually if needed."
 
-# Refresh liteparse document parser install.
+# Refresh liteparse document parser install (owned in a dedicated >=3.10 venv).
 echo ""
 echo "Refreshing liteparse install..."
-python3 -m pip show liteparse >/dev/null 2>&1 \
-  && echo "  liteparse already installed." \
-  || { python3 -m pip install --user liteparse 2>/dev/null \
-       && echo "  liteparse installed." \
-       || echo "  WARNING: liteparse install failed — run manually: pip install liteparse"; }
+bash "$HARNESS_DIR/scripts/setup/liteparse-setup.sh" || \
+  echo "  WARNING: liteparse setup returned non-zero — re-run manually: bash $HARNESS_DIR/scripts/setup/liteparse-setup.sh"
 
 echo ""
 echo "All projects updated to harness version $(cat "$HARNESS_DIR/VERSION")."

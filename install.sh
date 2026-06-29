@@ -822,24 +822,11 @@ install_globals() {
   bash "$HARNESS_DIR/scripts/setup/headroom-setup.sh" || \
     echo "  WARNING: setup/headroom-setup.sh returned non-zero — re-run manually if needed."
 
-  # --- LiteParse doc parser ---
+  # --- LiteParse doc parser (owned in a dedicated >=3.10 venv) ---
   echo ""
   echo "Installing liteparse doc parser..."
-  # Pick a wheel-friendly interpreter: prefer 3.13/3.12/3.11 over the bare
-  # `python3` (which can be Apple's 3.9 or a too-new 3.14 lacking wheels).
-  PYBIN=""
-  for cand in python3.13 python3.12 python3.11 python3; do
-    command -v "$cand" >/dev/null 2>&1 && { PYBIN="$cand"; break; }
-  done
-  if [ -z "$PYBIN" ]; then
-    echo "  WARNING: no python3 found — install manually: pip install liteparse"
-  elif "$PYBIN" -m pip show liteparse >/dev/null 2>&1; then
-    echo "  liteparse already installed ($PYBIN)."
-  else
-    "$PYBIN" -m pip install --user liteparse 2>/dev/null \
-      && echo "  liteparse installed ($PYBIN)." \
-      || echo "  WARNING: could not install liteparse — install manually: $PYBIN -m pip install --user liteparse"
-  fi
+  bash "$HARNESS_DIR/scripts/setup/liteparse-setup.sh" || \
+    echo "  WARNING: liteparse setup returned non-zero — re-run manually: bash $HARNESS_DIR/scripts/setup/liteparse-setup.sh"
 
   # --- Self-register harness in projects.txt (idempotent) ---
   touch "$HARNESS_DIR/projects.txt"

@@ -29,6 +29,9 @@ cd "$HARNESS_DIR" || exit 1
 #   - bare mount prefixes (/mnt/c/, C:\) in path-CONVERSION utilities
 #   - the conventional "~/.claude/sdd-harness/..." string in help/usage text
 #     (it documents where the harness is meant to live; it does not execute)
+#   - an OVERRIDABLE env default, i.e. ${SDD_HARNESS_HOME:-...}: the literal is
+#     just a fallback that any non-standard install can override, so it is
+#     portable by construction (used by the cross-repo skill-usage-tracker hook)
 # The patterns below require a concrete USER segment or the executable $HOME
 # assignment, which is exactly the anti-pattern that breaks on other machines.
 PATTERNS=(
@@ -43,7 +46,10 @@ PATTERNS=(
 
 # Collect candidate files: tracked + newly-added (not-yet-committed, not
 # gitignored) *.sh and *.py, minus the exclusions.
-mapfile -t FILES < <(
+FILES=()
+while IFS= read -r line; do
+  FILES+=("$line")
+done < <(
   { git ls-files '*.sh' '*.py' 2>/dev/null
     git ls-files --others --exclude-standard '*.sh' '*.py' 2>/dev/null
   } | sort -u \
@@ -55,7 +61,9 @@ mapfile -t FILES < <(
 
 # Fallback when not in a git repo (e.g. tarball): walk the filesystem instead.
 if [ "${#FILES[@]}" -eq 0 ]; then
-  mapfile -t FILES < <(
+  while IFS= read -r line; do
+    FILES+=("$line")
+  done < <(
     find . \( -name '*.sh' -o -name '*.py' \) \
       -not -path './.claude/*' \
       -not -path './docs/*' \
@@ -72,7 +80,9 @@ for entry in "${PATTERNS[@]}"; do
   for f in "${FILES[@]}"; do
     [ -f "$f" ] || continue
     # Skip comment-only matches? No — a hardcoded path in a comment still rots.
-    matches="$(grep -nE "$regex" "$f" 2>/dev/null)" || continue
+    # But DO skip overridable env defaults (${SDD_HARNESS_HOME:-...}) — the
+    # literal there is a portable fallback, not a machine-locked path.
+    matches="$(grep -nE "$regex" "$f" 2>/dev/null | grep -v 'SDD_HARNESS_HOME')" || continue
     if [ -n "$matches" ]; then
       while IFS= read -r line; do
         echo "HARDCODED PATH: $f:$line"

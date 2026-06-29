@@ -46,10 +46,14 @@ if [ ! -d "$ROOT" ]; then
 fi
 
 # Directories never worth scanning (noise / VCS / generated).
-PRUNE='-path */.git -o -path */node_modules -o -path */__pycache__ -o -path */.venv -o -path */venv -o -path */memory/glacier -o -path */.dashboard/data'
+PRUNE='-path */.git -o -path */node_modules -o -path */__pycache__ -o -path */.venv -o -path */.venv-tools -o -path */venv -o -path */memory/glacier -o -path */.dashboard/data'
 
 # Collect shipping text files (skip binaries by extension heuristic + grep -I).
-mapfile -t FILES < <(find "$ROOT" \( $PRUNE \) -prune -o -type f -print 2>/dev/null)
+# bash 3.2 (macOS default) lacks `mapfile`, so read null-delimited into the array.
+FILES=()
+while IFS= read -r -d '' f; do
+  FILES+=("$f")
+done < <(find "$ROOT" \( $PRUNE \) -prune -o -type f -print0 2>/dev/null)
 
 blocking=0
 warnings=0
@@ -88,7 +92,10 @@ done
 # ── Check 2: Over-broad permissions (SOFT WARN) ───────────────────────────────
 # Inspect settings templates for wildcard-all allows and missing danger denies.
 echo "── permissions ──"
-mapfile -t SETTINGS < <(find "$ROOT/templates" -type f -name '*settings*.json*' 2>/dev/null)
+SETTINGS=()
+while IFS= read -r -d '' f; do
+  SETTINGS+=("$f")
+done < <(find "$ROOT/templates" -type f -name '*settings*.json*' -print0 2>/dev/null)
 
 # Standard danger denies a shipped template should carry.
 EXPECTED_DENIES=('Bash(rm -rf*)' 'Bash(git push*)' 'Edit(.env*)' 'Edit(secrets/*)')

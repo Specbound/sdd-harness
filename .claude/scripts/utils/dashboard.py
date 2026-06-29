@@ -917,13 +917,18 @@ def scan_memory_files(repo):
     return [e for _, e in tmp[:30]]
 
 def read_memory_file_cards(repo):
-    """Read .claude/memory/*.md with snapshot-based diffs stored in .dashboard/."""
+    """Read .claude/memory/*.md and diff against yesterday's dated snapshot."""
     import difflib
     mem_dir  = repo / ".claude" / "memory"
     snap_dir = DASHBOARD_DIR / "memory-snapshots" / repo.name
     if not mem_dir.exists():
         return []
-    snap_dir.mkdir(parents=True, exist_ok=True)
+
+    today_str     = NOW.strftime("%Y-%m-%d")
+    yesterday_str = (NOW - timedelta(days=1)).strftime("%Y-%m-%d")
+    today_dir     = snap_dir / today_str
+    yesterday_dir = snap_dir / yesterday_str
+    today_dir.mkdir(parents=True, exist_ok=True)
 
     priority  = ["hot-memory.md", "observations.md", "entities.md", "patterns.md"]
     all_files = sorted(mem_dir.glob("*.md"), key=lambda f: (
@@ -936,27 +941,29 @@ def read_memory_file_cards(repo):
             mtime   = f.stat().st_mtime
             dt      = datetime.fromtimestamp(mtime, tz=timezone.utc)
 
-            snap_f       = snap_dir / f"{f.name}.prev"
+            # Always seed today's snapshot on first dashboard load of the day
+            today_snap = today_dir / f.name
+            if not today_snap.exists():
+                today_snap.write_text(content, encoding="utf-8")
+
             diff_lines   = None
             diff_summary = None
-
-            if snap_f.exists():
-                old = snap_f.read_text(encoding="utf-8", errors="replace")
+            yesterday_snap = yesterday_dir / f.name
+            if yesterday_snap.exists():
+                old = yesterday_snap.read_text(encoding="utf-8", errors="replace")
                 if old != content:
                     raw = list(difflib.unified_diff(
                         old.splitlines(), content.splitlines(),
-                        fromfile="previous", tofile="current", lineterm=""
+                        fromfile="yesterday", tofile="today", lineterm=""
                     ))
                     added   = sum(1 for l in raw if l.startswith("+") and not l.startswith("+++"))
                     removed = sum(1 for l in raw if l.startswith("-") and not l.startswith("---"))
                     diff_lines   = raw
-                    diff_summary = f"+{added} added / −{removed} removed since last snapshot"
-                    snap_f.write_text(content, encoding="utf-8")
+                    diff_summary = f"+{added} added / −{removed} removed since yesterday"
                 else:
-                    diff_summary = "unchanged since last snapshot"
+                    diff_summary = "unchanged since yesterday"
             else:
-                snap_f.write_text(content, encoding="utf-8")
-                diff_summary = "snapshot created — diff will appear after next change"
+                diff_summary = "no yesterday snapshot — diff will appear tomorrow"
 
             cards.append({
                 "name":         f.name,
@@ -2191,11 +2198,12 @@ def render_memory_changes(rd, hd):
                 f'</div>'
             )
 
-        # Full content (always available, collapsed by default when diff exists)
+        # Full content — open by default when no diff, collapsed when diff is shown
         trunc = ('<span style="color:var(--overlay0);font-size:9px"> …truncated</span>'
                  if c.get("truncated") else "")
+        open_attr = "" if c.get("diff_lines") else " open"
         full_html = (
-            f'<details style="border-top:1px solid var(--surface0)">'
+            f'<details{open_attr} style="border-top:1px solid var(--surface0)">'
             f'<summary style="padding:5px 12px;font-size:9px;text-transform:uppercase;'
             f'letter-spacing:1px;color:var(--overlay0);cursor:pointer;list-style:none">'
             f'Full content ({c["lines"]} lines){trunc}</summary>'
@@ -2947,19 +2955,49 @@ def render_automation_audit(rd, hd):
     events = []
     repo_path = rd["path"]
 
-    # 1. Orchestrator maintenance runs for this repo
+    RUNNER_META = {
+        "daily-maintenance": ("🔧", "Daily Maintenance",    "#a6e3a1"),
+        "macro-eval":        ("📊", "Macro-Eval Sweep",     "#89b4fa"),
+        "skill-curator":     ("🎯", "Skill Curator",        "#fab387"),
+        "harness-health":    ("🏥", "Harness Health",       "#cba6f7"),
+        "tool-failure-review":("🔍","Tool-Failure Review",  "#f9e2af"),
+        "security-report":   ("🔒", "Security Report",      "#f38ba8"),
+        "drift-review":      ("📐", "Drift Review",         "#94e2d5"),
+    }
+
+    # 1. Orchestrator runs for this repo — skip duration=0 (not-due checks, pure noise)
+    brief_dir = Path(repo_path) / ".claude" / "memory" / "daily"
     for run in hd.get("orchestrator_runs", []):
-        if run["path"] == repo_path:
-            ok = run["exit"] == 0
-            events.append({
-                "ts":      run["ts"],
-                "icon":    "🔧",
-                "label":   "Daily Maintenance",
-                "color":   "#a6e3a1" if ok else "#f38ba8",
-                "summary": f"exit {run['exit']} · {run['duration']}s",
-                "detail":  None,
-                "scope":   "local",
-            })
+        if run["path"] != repo_path or run["duration"] == 0:
+            continue
+        ok     = run["exit"] == 0
+        runner = run.get("runner", "daily-maintenance")
+        icon, label, color = RUNNER_META.get(runner, ("⚙️", runner, "#a6adc8"))
+        if not ok:
+            color = "#f38ba8"
+
+        # For daily-maintenance, try to surface the brief for that date
+        detail = None
+        if runner == "daily-maintenance":
+            run_date = run["ts"][:10]
+            brief_f  = brief_dir / f"{run_date}-brief.md"
+            if brief_f.exists():
+                try:
+                    detail = brief_f.read_text(encoding="utf-8", errors="replace")[:2000]
+                except Exception:
+                    pass
+            if detail is None:
+                detail = f"Ran for {run['duration']}s · exit={run['exit']}"
+
+        events.append({
+            "ts":      run["ts"],
+            "icon":    icon,
+            "label":   label,
+            "color":   color,
+            "summary": f"ran {run['duration']}s" + ("" if ok else f" · exit={run['exit']}"),
+            "detail":  detail,
+            "scope":   "local",
+        })
 
     # 2. Trust judge entries (structured, from trust-score.jsonl)
     for score in rd.get("trust_scores", []):

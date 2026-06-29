@@ -33,11 +33,20 @@ if [ ! -f "$PROMPT_TEMPLATE" ]; then
 fi
 
 # --- Race protection (mkdir is atomic; works on macOS and Linux) ---
+# Stale lock: if >2h old it was left by a SIGKILL'd run — safe to remove.
+if [ -d "$LOCK_DIR" ]; then
+  # mtime epoch: GNU stat (-c %Y) → BSD/macOS stat (-f %m) → 0. Portable across OSes.
+  LOCK_AGE=$(( $(date +%s) - $(stat -c %Y "$LOCK_DIR" 2>/dev/null || stat -f %m "$LOCK_DIR" 2>/dev/null || echo 0) ))
+  if [ "$LOCK_AGE" -gt 7200 ]; then
+    log "removing stale lock (age=${LOCK_AGE}s)"
+    rm -rf "$LOCK_DIR"
+  fi
+fi
 if ! mkdir "$LOCK_DIR" 2>/dev/null; then
   log "another runner active, skipping"
   exit 0
 fi
-trap 'rm -rf "$LOCK_DIR"' EXIT
+trap 'rm -rf "$LOCK_DIR"' EXIT INT TERM
 
 # --- Date check (cheap short-circuit) ---
 # Extract YYYY-MM-DD prefix from ISO timestamp — portable, no GNU date needed.
