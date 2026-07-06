@@ -864,13 +864,13 @@ Requires at least one project registered in `projects.txt` (added automatically 
 | 4 | 🗜 Headroom | Compression savings totals for RTK + headroom proxy; per-session block history with checkpoint-level token savings |
 | 5 | 🪝 Hooks History | Hook name, event type, last activity, active/inactive badge |
 | 6 | 📅 Scheduled Tasks | OS-scheduler health card + per-routine schedule, last run, next expected, artifact diff, overdue alerts. Includes the Daily Security Scan routine (`security-report-runner.sh`) which scans recent git changes for OWASP patterns, secrets, and injection sinks. |
-| 7 | 🧠 Memory Changes | Git feed of hot-memory, observations, and meta/patterns changes |
+| 7 | 🧠 Memory Changes | Per-file cards for hot-memory, observations, and meta/patterns with day-over-day diffs ("since yesterday") computed from dated snapshots; full content expanded when a file is unchanged |
 | 8 | 🎯 Skill Changes | Rendered skill-curation-report with audit age |
 | 9 | 📊 Session Quality | Score/keep-rate/memory-gap summary + 30-day chart |
 | 10 | 💰 Model Cost | All-time and 30-day spend; 90-day daily cost bar chart; sessions table with model/tokens/cost; cross-provider "What if?" cost switcher |
 | 11 | 🧵 Context Health | Sessions per day trend + `/compact` recommendations |
 | 12 | 🔧 Maintenance Status | Per-repo orchestrator log tail and last-run status |
-| 13 | 🤖 Automation Audit | Timeline of automated events — maintenance runs, trust-judge scores, session signals, and scheduled task outcomes |
+| 13 | 🤖 Automation Audit | Timeline of automated events — runs from every routine (daily-maintenance, macro-eval, skill-curator, harness-health, tool-failure, security, drift), each with its own icon/label; not-due checks (duration 0s) are hidden and daily-maintenance entries expand to show that day's brief; plus trust-judge scores, session signals, and scheduled task outcomes |
 
 The Model Cost section reads session data from `~/.claude/projects/*/`. Pricing is fetched from `models.dev/api.json`, cached at `.dashboard/models-pricing-history.json`, refreshed bi-weekly, with historical snapshots accumulated so past sessions use the rates that were in effect at the time. The "What if?" switcher supports Anthropic, OpenAI, Google, Mistral, DeepSeek, xAI, Cohere, Amazon Bedrock, Azure, Perplexity, and Groq.
 

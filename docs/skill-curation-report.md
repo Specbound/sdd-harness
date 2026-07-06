@@ -1,125 +1,102 @@
-# Skill Curation Report — 2026-06-21
+# Skill Curation Report — 2026-06-28
 
 ## Summary
 - Skills audited: 980
-- Low-quality flags: 112 (malformed description frontmatter)
-- Duplicate pairs: 8 strong (cross-import-source, identical command scope)
-- Description flags (>150 chars): 570 (353 RED >200, 217 WARN 151–200)
-- Cold skills (no use in 30d): N/A — no usage data yet | Archive candidates (90d): N/A
+- Low-quality flags: 3 stubs + 218 malformed-frontmatter (operational-validity)
+- Duplicate pairs: 10 (true exact-description matches)
+- Description flags (>150 chars): 577 (71 over 200, 506 in 150–200)
+- Cold skills (no use in 30d): n/a — no usage data | Archive candidates (90d): n/a
 - Memory governance: **ok**
 
-> Scope note: `~/.claude/skills/` holds **980** skills (mostly bulk-imported plugin
-> families — azure=116, *-automation=83). This is a global skill library, not a
-> per-repo set. The weekly sweep reports only; deletion/edits are human-gated via
-> `/skill-curator`.
+> **Scope note.** `~/.claude/skills/` holds **980** skills — a bulk marketplace install, not a hand-curated set. Per-skill 4-dimension deep reads across 980 files is neither tractable nor useful in a weekly sweep, so the quality audit below is **mechanical**: frontmatter validity, stub detection, exact-duplicate descriptions, and the description budget. Subjective scoring is reserved for the human-invoked `/skill-curator`, which can target the harness's own ~40 skills.
 
 ## Usage Evidence
-
-No usage data yet — `logs/skill-usage.jsonl` does not exist in this repo or under
-`~/.claude/`. The `skill-usage-tracker.sh` PostToolUse hook appears not yet installed
-or has not fired. **Deprecate/Archive candidate detection is blocked until the tracker
-logs real invocations.** Install the tracker hook to enable evidence-based deprecation.
+**No usage data yet** — `logs/skill-usage.jsonl` does not exist. The `skill-usage-tracker.sh` PostToolUse hook appears not to be installed/firing yet. Until it produces data, cold/archive deprecation cannot be evidence-based; deprecation is suspended.
 
 ### Deprecate Candidates (no invocation in 30d)
-None computable — no usage log.
+None determinable — no usage log.
 
 ### Archive Candidates (no invocation in 90d)
-None computable — no usage log.
+None determinable — no usage log.
 
 ## Description Budget
 
-Total: 980 skills | ~160,085 desc chars | **~40,000 tokens** of system-reminder pressure
-(floor estimate ~35k single-line; upper bound inflated by 3 block-scalar over-captures — see caveat).
+Total: 980 skills | 142,330 chars | ~35,583 tokens
 
+> Block-scalar parsing caveat: the 218 malformed-frontmatter skills (see Quality Findings) undercount slightly because only their first description line is measurable. The real total is somewhat higher than 35.6k tokens.
+
+| Bucket | Count | Status |
+|--------|-------|--------|
+| > 200 chars | 71 | 🔴 measurable system-reminder pressure |
+| 150–200 chars | 506 | ⚠️ consider compression |
+| ≤ 150 chars | 403 | ok |
+
+### Longest descriptions (top 15 — compression targets)
 | Skill | Chars | Status |
 |-------|-------|--------|
-| agent-execution-control | 9420* | 🔴 parse caveat — unquoted folded block scalar, verify frontmatter manually |
-| skill-creator-ms | 7391* | 🔴 parse caveat — same |
-| get-api-docs | 2898* | 🔴 parse caveat — same |
-| progressive-complexity-ladder | 594 | 🔴 real — compress |
-| prompt-master | 444 | 🔴 real — compress |
-| multi-agent-patterns | 437 | 🔴 real — compress |
-| llm-fine-tuning | 379 | 🔴 real — compress |
-| structured-web-dataset | 378 | 🔴 real — compress |
-| agent-permissions-design | 358 | 🔴 real — compress |
-| agentic-rl-tito | 357 | 🔴 real — compress |
-| context-degradation | 349 | 🔴 real — compress |
-| adapt-to-repo | 338 | 🔴 real — compress |
-| setup-agent-replay | 332 | 🔴 real — compress |
-| feature-list-primitive | 332 | 🔴 real — compress |
-| instruction-architecture | 321 | 🔴 real — compress |
-
-\* Char counts marked `*` are parser over-captures: these skills use an unquoted
-`description: >` folded block scalar and the extractor slurped body text past the
-description. Real description length is unknown — needs manual frontmatter inspection.
-
-**Aggregate:** 353 skills exceed 200 chars (🔴 measurable pressure), 217 in the
-151–200 WARN band. Compressing the 353 RED descriptions to ≤150 chars would reclaim
-an estimated 8–12k tokens of standing system-reminder budget.
+| prompt-master | 444 | 🔴 |
+| multi-agent-patterns | 435 | 🔴 |
+| agent-execution-control | 431 | 🔴 |
+| performance-engineer | 416 | 🔴 |
+| get-api-docs | 411 | 🔴 |
+| llm-fine-tuning | 379 | 🔴 |
+| structured-web-dataset | 378 | 🔴 |
+| progressive-complexity-ladder | 376 | 🔴 |
+| agent-permissions-design | 356 | 🔴 |
+| agentic-rl-tito | 355 | 🔴 |
+| context-degradation | 349 | 🔴 |
+| adapt-to-repo | 336 | 🔴 |
+| feature-list-primitive | 332 | 🔴 |
+| setup-agent-replay | 332 | 🔴 |
+| instruction-architecture | 321 | 🔴 |
 
 ## Quality Findings
 
 ### Low-Quality Candidates
+**Stubs (<200 char body — replace less context than they consume):**
+- `cc-skill-continuous-learning` — 159-char body — near-empty, also a duplicate-description (see below)
+- `cc-skill-strategic-compact` — 157-char body — near-empty, also a duplicate-description
+- `questions` — 170-char body — minimal content
 
-**112 skills — malformed description frontmatter (broken).** These use a *quoted*
-block-scalar marker: `description: ">-"` (or `">"`, `"|"`). The author meant the
-unquoted form `description: >-`; quoting it makes the value the literal 2-char string
-`>-`, with the intended description orphaned on following indented lines. A standard
-YAML loader resolves these to a useless 2-char description → broken skill routing.
-
-Almost all are bulk-imported azure SDK skills. Sample:
-- azure-ai-contentsafety-py
-- azure-ai-textanalytics-py
-- azure-appconfiguration-py
-- azure-cosmos-rust
-- azure-cosmos-java
-- azure-ai-voicelive-ts
-- (…107 more — `grep -lE '^description:[ ]*"(>-?|\|-?)"[ ]*$' ~/.claude/skills/*/SKILL.md`)
-
-Recommended fix (human-gated, mechanical): strip the surrounding quotes so the marker
-becomes a real YAML block scalar. One-line sed candidate per file, but verify a sample
-first.
-
-> Per-skill 0–12 scoring across all 980 skills is not performed in the automated weekly
-> sweep (cost-prohibitive and judgment-heavy). The malformed-frontmatter set above is
-> the highest-confidence mechanical low-quality signal. Run `/skill-curator` for
-> interactive deep scoring of specific candidates.
+**Malformed YAML frontmatter (218 skills — operational-validity risk):**
+22% of installed skills have a multi-line `description:` written as a closed quoted string followed by un-quoted continuation lines (213 `ParserError`, 5 `ScannerError`). Example (`ai-engineer`):
+```yaml
+description: "Build production-ready LLM applications, advanced RAG systems, and"
+  intelligent agents. Implements vector search, ...
+```
+The Claude Code loader tolerates this, but any strict-YAML tooling (and accurate budget accounting) breaks on it. These are community-source bulk imports. Not urgent, but a portability/hygiene liability — a one-time `>-` block-scalar rewrite would fix all 218.
 
 ### Duplicate Pairs
+True exact-description matches (the `azure-*`/`hig-*` mega-groups reported by naive parsing were false positives from block-scalar indicators, not real duplicates):
 
-Strong duplicates — same command scope, different prefix from separate import sources:
+| Pair | Overlapping scope |
+|------|-------------------|
+| `code-documentation-doc-generate` ↔ `documentation-generation-doc-generate` | Identical doc-generation expert prompt |
+| `code-refactoring-refactor-clean` ↔ `codebase-cleanup-refactor-clean` | Identical clean-code refactoring prompt |
+| `code-refactoring-tech-debt` ↔ `codebase-cleanup-tech-debt` | Identical tech-debt expert prompt |
+| `code-review-ai-ai-review` ↔ `performance-testing-review-ai-review` | Identical AI code-review prompt |
+| `codebase-cleanup-deps-audit` ↔ `dependency-management-deps-audit` | Identical dependency-security prompt |
+| `error-debugging-error-analysis` ↔ `error-diagnostics-error-analysis` | Identical error-analysis prompt |
+| `mcp-builder-ms` ↔ `mcp-builder` | Both: high-quality MCP server build guide |
+| `brand-guidelines-anthropic` ↔ `brand-guidelines-community` | Both: Anthropic brand colors/typography |
+| `internal-comms-anthropic` ↔ `internal-comms-community` | Both: internal-comms writing resources |
+| `cc-skill-continuous-learning` ↔ `cc-skill-strategic-compact` | Both: generic "development skill from everything-claude-code" stub |
 
-| Skill A | Skill B | Overlap |
-|---------|---------|---------|
-| code-refactoring-tech-debt | codebase-cleanup-tech-debt | identical tech-debt scope |
-| code-refactoring-refactor-clean | codebase-cleanup-refactor-clean | identical refactor scope |
-| comprehensive-review-pr-enhance | git-pr-workflows-pr-enhance | identical PR-enhance scope |
-| debugging-toolkit-smart-debug | error-diagnostics-smart-debug | identical smart-debug scope |
-| parallel-agents | dispatching-parallel-agents | parallel-agent dispatch |
-| memory-systems | agent-memory-systems | agent memory overlap |
-| instrument-agent | raindrop-instrument-agent | agent instrumentation overlap |
-| dependency-management-deps-audit | codebase-cleanup-deps-audit | deps-audit scope |
-
-Borderline (generic-vs-specific, keep both): `testing-patterns` vs per-lang
-`*-testing-patterns`; `security-audit` vs `laravel-security-audit`;
-`skill-creator` vs `skill-creator-ms`; `mcp-builder` vs `mcp-builder-ms`.
+Each pair collapses to one with no capability loss. Resolution belongs to human-invoked `/skill-curator`.
 
 ## Memory Governance Health
 
 | Check | Status | Notes |
 |-------|--------|-------|
-| stop-hook writes observations | ok | 3 `observations.md` write refs present |
-| stop-hook memory-conventions ref | note | 0 refs — by design; PreToolUse memory gate enforces conventions, not the stop hook |
-| session-start catch-up logic | ok | reads `.last-routine-run` (2 refs) |
-| memory-conventions.md intact | ok | 121 lines, not truncated |
-| observations.md recency | ok | last entry: 2026-06-21 (today) |
-| hot-memory.md recency | ok | last modified: 2026-06-21 (today) |
+| stop-hook writes observations | ok | References `.claude/memory/observations.md`, counts entries, nudges `/kiro:housekeeping` at >50. Hook manages the file (reflect/housekeeping agents write entries — by design). No `memory-conventions` string in stop-hook, but rule file is intact (next row). |
+| session-start catch-up logic | ok | Daily-maintenance catch-up present; reads `STATE_FILE=.claude/memory/.last-routine-run`, fires if >24h stale. |
+| memory-conventions.md intact | ok | `kiro/settings/rules/memory-conventions.md` present, 121 lines — not emptied/truncated. |
+| observations.md recency | ok | Last entry: 2026-06-28 (today); mtime 2026-06-28 08:56. |
+| hot-memory.md recency | ok | Last modified: 2026-06-28 08:55 (today). |
 
-**Overall: ok.**
-
-## Action Items (for human-invoked `/skill-curator`)
-1. **Install `skill-usage-tracker.sh`** PostToolUse hook → unblocks deprecation evidence.
-2. **Fix 112 malformed `description:` frontmatter** (quoted block-scalar markers).
-3. **Compress 353 RED descriptions** (>200 chars) → reclaim ~8–12k tokens.
-4. **Resolve 8 duplicate pairs** — pick the canonical skill per pair, delete the other.
-5. **Manual-check 3 parse-caveat skills** (agent-execution-control, skill-creator-ms, get-api-docs).
+## Recommended Actions (for human-invoked `/skill-curator`)
+1. **Install/verify** `skill-usage-tracker.sh` PostToolUse hook — without it, no deprecation evidence accrues and every weekly sweep stays blind on cold-skill detection.
+2. **Dedupe** the 10 exact pairs → keep one each.
+3. **Delete or fill** the 3 stubs (`cc-skill-continuous-learning`, `cc-skill-strategic-compact`, `questions`).
+4. **Batch-fix** the 218 malformed-YAML frontmatters with a `>-` block-scalar rewrite script.
+5. **Compress** the 71 descriptions over 200 chars (start with the top-15 table) — recovers system-reminder budget on every session.
