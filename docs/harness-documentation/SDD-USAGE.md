@@ -580,7 +580,7 @@ Reads session JSONL files from `~/.claude/projects/*/`. Pricing is fetched from 
 
 The **"What if?" switcher** lets you recalculate total projected cost against any supported provider (Anthropic, OpenAI, Google, Mistral, DeepSeek, xAI, Cohere, Amazon Bedrock, Azure, Perplexity, Groq) and model — select provider first, then model, and the projected vs. actual totals update instantly.
 
-See `docs/superpowers/specs/2026-05-14-harness-dashboard-design.md` for the full section spec.
+See `docs/workflow/superpowers/specs/2026-05-14-harness-dashboard-design.md` for the full section spec (gitignored — local only).
 
 ---
 
@@ -784,4 +784,4 @@ Four protocols extracted from [garrytan/gbrain](https://github.com/garrytan/gbra
 
 Full reference: `docs/gbrain-patterns/gbrain-patterns.md`
 
-_Last synced: 2026-06-21_
+_Last synced: 2026-07-06_
