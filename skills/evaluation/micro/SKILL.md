@@ -49,6 +49,8 @@ Effective rubrics cover key dimensions scored 0.0–1.0:
 
 Calculate a weighted overall score; set a pass threshold appropriate to your use case (commonly 0.7).
 
+**Eval curation is a product decision, not an engineering task.** The rubric dimensions you choose and the weights you assign determine what the agent optimizes toward — if you weight "source quality" at 30%, you are telling the agent that sourcing matters 3× more than tool efficiency. Before finalizing any rubric, get explicit approval from whoever owns the product outcome. A technically correct rubric that rewards the wrong behavior is worse than no rubric: the agent will faithfully climb the wrong hill. Treat rubric sign-off as a product gate, not an engineering checkbox.
+
 ## Evaluation Methodologies
 
 **LLM-as-Judge**

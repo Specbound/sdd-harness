@@ -192,6 +192,92 @@ This creates a feedback loop: agents using tools generate failure data, which ag
 
 Evaluate tool designs against criteria: unambiguity, completeness, recoverability, efficiency, and consistency. Test tools by presenting representative agent requests and evaluating the resulting tool calls.
 
+## Advanced Tool Use Patterns
+
+Three empirically validated techniques for high-scale tool systems (source: Anthropic Engineering, 2025). These are orthogonal to consolidation and description engineering — apply them after the base design is solid.
+
+Enable via: `betas=["advanced-tool-use-2025-11-20"]`
+
+### Tool Search (Deferred Discovery)
+
+When tool definitions exceed ~10K tokens, load a small core set at startup and let Claude search for tools on demand instead.
+
+**How it works:** Mark tools with `defer_loading: true`. Provide a search tool (regex or BM25) as part of the always-loaded core. Claude searches for capabilities when needed; definitions load only on demand.
+
+**Results:** 85% token reduction on definition-heavy MCP setups. Opus 4.5 accuracy: 79.5% → 88.1% on MCP evals.
+
+**Cache note:** Deferred tools are excluded from the initial prompt entirely — Tool Search does not break prompt caching.
+
+**Decision rule:** Use when you have 10+ tools or >10K tokens in tool definitions. Keep 3–5 most-used tools always loaded; defer the rest.
+
+### Programmatic Tool Calling
+
+Claude writes orchestration code instead of requesting tools one at a time through natural language.
+
+**How it works:** Mark tools with `allowed_callers: ["code_execution_20250825"]`. Claude generates Python that calls tools in sequence, loops, or parallel. Intermediate results stay in the code executor, not Claude's context.
+
+**Results:** 37% token reduction (43,588 → 27,297 tokens on complex 20-tool workflows). Eliminates 19+ inference passes on sequential tool chains. Enables `asyncio.gather()` for genuine parallel tool calls.
+
+**When to use:** 3+ dependent tool calls, large intermediate data that shouldn't accumulate in context, workflows with loops or conditionals.
+
+### Usage Examples in Tool Definitions
+
+Provide concrete JSON examples in tool definitions for patterns JSON Schema cannot express: when to use optional parameters, which combinations make sense, API conventions.
+
+**Results:** Accuracy: 72% → 90% on complex parameter handling.
+
+**Format:** Include 1–5 realistic examples per tool. Focus on ambiguous areas — minimal, partial, and full specification variants. Use real data (actual cities, real prices) not placeholder strings.
+
+```python
+# In tool description:
+"""
+Examples:
+  Minimal: {"city": "Portland"}
+  With dates: {"city": "Portland", "check_in": "2026-08-01", "nights": 3}
+  Full: {"city": "Portland", "check_in": "2026-08-01", "nights": 3, "guests": 2, "room_type": "queen"}
+"""
+```
+
+**Layered strategy:** Start with your primary bottleneck (context bloat → Tool Search; intermediate data → Programmatic Calling; parameter errors → Examples). Add techniques progressively.
+
+---
+
+## CLI-to-Agent Bridging
+
+When making an existing CLI agent-consumable, **keep traditional argument-based interfaces** — do not rewrite to JSON payloads. Empirical data shows args strictly dominate.
+
+Source: Microsoft Developer Blog, 2025 — tested across Haiku 4.5, Sonnet 4.6, multiple shells.
+
+### Why Args Beat JSON
+
+| Metric | Args | JSON |
+|---|---|---|
+| Correctness (all models) | 100% | Degraded on smaller models (Haiku 4.5: 40%) |
+| Token cost | Baseline | 4×–11× more per task |
+| Shell portability | Consistent | Shell escaping creates 9× cost gap (PowerShell vs Bash) |
+
+**The mechanism:** Args constrain the input space, eliminating JSON syntax validation, nesting errors, and shell escaping ambiguities. Narrowing valid inputs compensates for model capability gaps.
+
+**Shell escaping tax:** JSON failures compound across retry cycles. The same model (Sonnet 4.6) ran 9× more expensive on PowerShell than Bash for JSON mode — identical correctness, just a different shell. Args were unaffected.
+
+### The "Don't Rewrite" Rule
+
+Keep existing CLI argument structures intact. If adding structured input:
+- Offer `--json` as an *optional addition*, not a replacement
+- Never force agents toward JSON-first interfaces
+- The rewrite cost is negative: you get worse performance and more tokens for the trouble
+
+### What to Change (Minimal Intervention)
+
+If an existing CLI does need agent-friendliness improvements, focus on:
+1. **Exit codes:** Ensure 0/non-0 are meaningful and consistent — agents need binary success signals
+2. **Quiet mode:** Add `--quiet` or `--no-color` to suppress human-oriented decorations (progress bars, ANSI colors) that break agent parsing
+3. **Machine-readable output flag (optional):** `--json` as an additive flag for structured output; never remove the default arg-based interface
+
+These three changes cover 90% of CLI-to-agent friction without a rewrite.
+
+---
+
 ## Practical Guidance
 
 ### Anti-Patterns to Avoid
@@ -306,6 +392,7 @@ External resources:
 ## Skill Metadata
 
 **Created**: 2025-12-20
-**Last Updated**: 2025-12-23
+**Last Updated**: 2026-07-08
 **Author**: Agent Skills for Context Engineering Contributors
-**Version**: 1.1.0
+**Version**: 1.2.0
+**Sources added**: Anthropic Engineering Advanced Tool Use (advanced tool use patterns); Microsoft Developer Blog (CLI-to-agent bridging)

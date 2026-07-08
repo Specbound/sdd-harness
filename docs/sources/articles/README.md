@@ -339,3 +339,99 @@ Online articles, blog posts, and documentation pages that were passed to `/skill
 - Skill augmentation: `prompt-engineering` — new "XML Tag Delimiting" subsection after Instruction Hierarchy. Teaches wrapping prompt regions in explicit XML tags (`<instructions>`, `<context>`, `<document>`) so the model never confuses instructions with data — Anthropic's most-emphasized structuring primitive, materially relevant on a 1M-context model that concatenates large context blocks, and a first-line prompt-injection defense for untrusted input. The one item literally absent from the existing skill (which taught only a markdown-header Instruction Hierarchy).
 
 **Rejected (29/30, already covered):** few-shot / extended-thinking / context-first / self-eval loop / 1M-context / iterate → `prompt-engineering` sections; be-explicit / output-format / define-"done" / negative-constraints → `prompt-quality-assess` dimensions; agent-mode / multi-persona debate / prompt-chaining / reverse-brainstorming → `agent-execution-control` + `multi-agent-patterns`; the 9 task-specific templates → instances of the existing "Template Systems" pattern (encoding them = bloat). Also rejected the two other links from this batch outright — **DeepSeek dSpark** (GPU inference-serving speedup, a layer the harness never touches) and **Ornith-1.0** (self-scaffolding RL is training-only, baked into weights; the harness trains no models) — zero integrations each.
+
+---
+
+## "How to Kill the Bloat in Claude Code's System Prompt" — aihero.dev
+**URL:** https://www.aihero.dev/how-to-kill-the-bloat-in-claude-codes-system-prompt
+**Added:** 2026-07-08 | **Source:** aihero.dev
+
+**What it's about:** Claude Code injects a hidden per-session startup payload (tool definitions, bundled skills, workflow engine) before any user content — a fixed token tax that runtime optimization techniques (RTK, lean-ctx) never see. The article provides a concrete four-lever taxonomy to reduce this: `disableBundledSkills`, `disableWorkflows`, `permissions.deny` (bare tool name to remove definition entirely), and `skillOverrides: "off"` / `"user-invocable-only"`. Measurement workflow: `/context` for category totals → proxy script for per-tool breakdown → apply levers → verify savings.
+
+**What we added:**
+- Skill augmentation: `context-optimization` — new "Claude Code System Prompt Levers" subsection inside "Two Independent Token Axes: Startup vs Runtime". Expands the previously empty startup axis with: measure-first procedure (`/context` baseline), per-tool inspection via proxy, a five-lever decision table (`disableBundledSkills`, `disableWorkflows`, `permissions.deny`, `skillOverrides: "off"`, `skillOverrides: "user-invocable-only"`), and the key invariant that RTK handles runtime and these levers handle startup — strictly independent axes.
+
+**Rejected:** Standalone `claude-system-prompt-optimization` skill (conceptual home already exists in `context-optimization`); `claude-prompt-audit.sh` script (one-time developer investigation, not a recurring routine); `/claude-payload-audit` command (every decision node requires human judgment, no automation value).
+
+---
+
+## Batch Triage 2026-07-08 — 6 articles (4 AUGMENT, 2 SKIP via separate index files)
+
+The following six articles were triaged in a single parallel batch on 2026-07-08.
+Two additional resources (OpenWiki — git, PACE — papers) are logged in their respective category files.
+
+---
+
+## Autoresearch: The Feedback Loop Behind Self-Improving Agents
+**URL:** https://www.latent.space/p/autoresearch-introspection
+**Added:** 2026-07-08
+**Source / Author:** Latent Space / Gavrilescu
+
+**What it's about:** A Three-Loop Blueprint for self-improving agents: inner loop (task execution) + outer loop (loop improvement) + signal filtering layer. Introduces "Agent Recipes" — versioned artifacts capturing not just agent code/prompts but evals, judges, human expertise examples, failure history, and WHY decisions were made. Advocates git-based audit trails and staged autonomy (start human-heavy, agents absorb preferences over time).
+
+**What we added:**
+- Command augmentation: `commands/kiro/autoresearch.md` — new "Agent Recipe" section describing the `recipe.md` artifact, signal filtering policy, and staged autonomy levels. The inner loop (Karpathy experiment loop) was already handled; this adds the outer loop meta-layer and recipe convention.
+
+**Rejected:** Standalone `agent-recipes` skill (content belongs in the command that uses it, not a separate artifact); outer loop hook (no lifecycle event maps to "the loop should improve itself"); `evolve-agent` augmentation (already handles behavioral audit — MCE concept in agent-harness-design covers the meta-improvement framing more precisely).
+
+---
+
+## Advanced Tool Use
+**URL:** https://www.anthropic.com/engineering/advanced-tool-use
+**Added:** 2026-07-08
+**Source / Author:** Anthropic Engineering
+
+**What it's about:** Three empirically validated techniques for high-scale tool systems: Tool Search (deferred discovery via `defer_loading: true`, 85% token reduction), Programmatic Tool Calling (Claude writes orchestration code, 37% token reduction, enables parallel calls), and Tool Use Examples (concrete JSON examples in definitions, 72%→90% accuracy). Enabled via `betas=["advanced-tool-use-2025-11-20"]`.
+
+**What we added:**
+- Skill augmentation: `skills/tool-design/SKILL.md` — new "Advanced Tool Use Patterns" section covering all three techniques with implementation details and decision rules. These are orthogonal to the existing consolidation/description engineering content.
+
+---
+
+## Anthropic Prompt Caching Documentation
+**URL:** https://platform.claude.com/docs/en/docs/build-with-claude/prompt-caching
+**Added:** 2026-07-08
+**Source / Author:** Anthropic
+
+**What it's about:** Authoritative implementation guide for Anthropic's server-side prefix caching via `cache_control` blocks. Covers: minimum token thresholds by model family, the 20-block lookback window limit, the non-symmetric cache invalidation dependency table (tool changes cascade; tool-choice-only changes don't), pre-warming with `max_tokens: 0`, and automatic vs. explicit breakpoint modes.
+
+**What we added:**
+- Skill augmentation: `skills/context-optimization/SKILL.md` — new "Anthropic API Prompt Caching" section. This is a third, orthogonal caching mechanism distinct from CAG (local HuggingFace KV preloading) and the KV-cache ordering heuristics already in the skill.
+- Skill augmentation: `skills/cag-implementation/SKILL.md` — clarifying note in Limitation 2 pointing to `context-optimization` for the Anthropic API variant, preventing confusion between the two mechanisms.
+
+---
+
+## Graph-Based Agent Memory
+**URL:** https://newsletter.systemdesign.one/p/graph-based-agent-memory
+**Added:** 2026-07-08
+**Source / Author:** System Design Newsletter (Omnigraph case study)
+
+**What it's about:** Omnigraph: typed entity nodes + labeled edges + schema enforcement, with three retrieval layers (graph traversal + BM25 + vector, fused via Reciprocal Rank Fusion). Atomic manifest versioning for all-or-nothing writes, git-like branch isolation for concurrent multi-agent writes, and commit lineage for audit trails.
+
+**What we added:**
+- Skill augmentation: `skills/para-memory-files/SKILL.md` — new "Relationship-First Memory" section extracting the schema enforcement principle, explicit relationship entries (written to both sides), and branch isolation for concurrent writes. Full Omnigraph infrastructure was not extracted (too heavy for the file-based harness model).
+- Reference fix: `skills/multi-agent-patterns/SKILL.md` — fixed two dangling references to a non-existent `memory-systems` skill; replaced with `para-memory-files` pointers (the actual closest equivalent in the harness).
+
+---
+
+## Agent Test Harnesses
+**URL:** https://lilianweng.github.io/posts/2026-07-04-harness/
+**Added:** 2026-07-08
+**Source / Author:** Lilian Weng (lil'log)
+
+**What it's about:** Survey of agent harness engineering patterns: plan→execute→observe→improve loop, persistent filesystem memory for long-horizon tasks, parallel sub-agents, Meta Context Engineering (MCE — a meta-agent that optimizes context management strategy itself), and AlphaEvolve-style evolutionary search. Introduces a seven-bottleneck checklist for diagnosing harness quality plateaus.
+
+**What we added:**
+- Skill augmentation: `skills/agent-harness-design/SKILL.md` — new "Phase 5: Harness Bottleneck Checklist" (7-item table: weak evaluators, memory lifecycle, incentive misalignment, diversity collapse, reward hacking, short-term bias, inappropriate oversight points) and "Meta Context Engineering (MCE)" section (three MCE shapes: agentic crossover, context flow strategy evolution, harness self-repair loop).
+
+---
+
+## Don't Rewrite Your CLI for Agents
+**URL:** https://developer.microsoft.com/blog/dont-rewrite-your-cli-for-agents
+**Added:** 2026-07-08
+**Source / Author:** Microsoft Developer Blog
+
+**What it's about:** Empirical study showing traditional argument-based CLI interfaces strictly outperform JSON payloads for agent use. Key findings: args achieve 100% correctness across all models; JSON degrades smaller models (Haiku 4.5: 40% vs 100%). JSON costs 4×–11× more tokens per task due to retry cycles. Shell escaping tax causes 9× cost gap on PowerShell vs Bash for JSON mode (args unaffected). Core principle: narrowing the valid input space compensates for model capability gaps.
+
+**What we added:**
+- Skill augmentation: `skills/tool-design/SKILL.md` — new "CLI-to-Agent Bridging" section with empirical data table, the "don't rewrite" rule, and a minimal intervention checklist (exit codes, quiet mode, optional `--json` flag). Fills the gap between "design a new tool" (existing content) and "make an existing CLI agent-friendly" (previously uncovered).

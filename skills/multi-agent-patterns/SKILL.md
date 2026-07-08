@@ -531,7 +531,7 @@ def handle_customer_request(request):
 This skill builds on context-fundamentals and context-degradation. It connects to:
 
 - `agent-execution-control` - Execution control patterns for long-horizon autonomous agents (Plan-Execute-Verify, gatekeeper, trace grounding)
-- memory-systems - Shared state management across agents
+- `para-memory-files` - Shared state management across agents (use relationship-first patterns; no standalone memory-systems skill exists)
 - tool-design - Tool specialization per agent
 - context-optimization - Context partitioning strategies
 - progressive-complexity-ladder - Use before designing multi-agent systems; Levels 4–5 of the ladder introduce multi-agent patterns. Load this skill after scoping to the appropriate level.
@@ -543,7 +543,7 @@ Internal reference:
 
 Related skills in this collection:
 - context-fundamentals - Context basics
-- memory-systems - Cross-agent memory
+- `para-memory-files` - Cross-agent memory via PARA + relationship-first patterns
 - context-optimization - Partitioning strategies
 - agent-execution-control - Long-horizon execution control
 

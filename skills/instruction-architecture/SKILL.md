@@ -83,6 +83,26 @@ project/
 Proximity rule: a constraint about API authentication belongs in `src/api/ARCHITECTURE.md`, not in
 the root entry file. When the agent reaches API code, it simultaneously reaches the constraint.
 
+### Preference Origin: Strategic vs Tactical Routing
+
+Where a preference lives in the instruction architecture depends on its origin — not just its content.
+
+**Strategic preferences** are firm-wide trade-offs that should hold across every project: "never store credentials in code", "prefer horizontal scaling over vertical", "always run security audit before push." These belong in the entry file's MUST/SHOULD tier or as standalone harness skills — they persist beyond any single project.
+
+**Tactical preferences** are project-specific constraints: "use Redis for this feature's session cache", "follow this exact payment queue sequence." These belong in the spec's CONTEXT.md or a per-feature `prefs.md` — they should not pollute the entry file where they apply to every future task unnecessarily.
+
+The routing decision:
+
+| Question | If YES → | If NO → |
+|---|---|---|
+| "Should this constraint hold for a project I haven't started yet?" | MUST/SHOULD in entry file or harness skill | Per-spec CONTEXT.md / prefs.md |
+| "Does this constraint only make sense given the current spec's design?" | Per-spec CONTEXT.md / prefs.md | MUST/SHOULD in entry file |
+| "Is this constraint derived from a past incident or firm policy?" | Entry file + source annotation | Evaluate before adding |
+
+Tactical preferences in the entry file are the most common source of instruction bloat. Every feature that got a special rule in the entry file is adding SNR noise to every future task. Before adding any new constraint to the entry file, ask: "Would I want this to apply to next month's unrelated feature?" If not, it belongs in the spec.
+
+Use `/kiro:pref-elicit` at spec-start to explicitly classify preferences as strategic vs. tactical before they accumulate in the wrong layer.
+
 ## "Lost in the Middle" Countermeasures
 
 Research finding (Liu et al., 2023): LLMs process information at text extremes far better than in

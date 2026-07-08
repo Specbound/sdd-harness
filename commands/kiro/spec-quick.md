@@ -59,9 +59,26 @@ Example:
 "User profile feature" → mode=interactive, description="User profile feature"
 ```
 
-### Step 1.5: Idea Refinement (Interactive Mode Only)
+### Step 1.5: Preference Elicitation & Idea Refinement (Interactive Mode Only)
 
-**In Interactive Mode**, assess whether the description is vague or ambiguous:
+**In Automatic Mode**: Skip this step entirely — both sub-steps require user interaction. Proceed directly to Phase 1.
+
+**In Interactive Mode**, run both sub-steps in order:
+
+#### Step 1.5a: Preference Elicitation (mandatory in Interactive Mode)
+
+Execute:
+```
+/kiro:pref-elicit {description}
+```
+
+Wait for the session to complete. This Socratic session surfaces declarative vs. imperative preferences and strategic vs. tactical trade-offs before the spec assumes any defaults. It writes `prefs.md` to the spec directory (or `./prefs.md` if the spec directory doesn't exist yet), which phases 2–5 will use as context.
+
+Do not skip this step in Interactive Mode — it is the primary mechanism for ensuring the generated spec reflects what the user actually wants rather than agent defaults.
+
+#### Step 1.5b: Idea Refinement (if description is vague)
+
+Assess whether the description is vague or ambiguous:
 - Fewer than 10 words with no clear functional scope → suggest refinement
 - Contains only a problem statement without solution direction → suggest refinement
 
@@ -71,8 +88,6 @@ If refinement suggested:
    - Yes: Run `/kiro:idea-refine <description>` to produce a clearer brief
    - No: Continue with current description
 ```
-
-**In Automatic Mode**: Skip this step entirely — proceed directly to Phase 1.
 
 **Create TodoWrite task list**:
 ```json

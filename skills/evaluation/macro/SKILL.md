@@ -47,6 +47,18 @@ Micro evals create the raw signal; macro evals reveal the patterns. Keep the lay
 
 ## Workflow
 
+### Phase 0 — Construct the Population from Traces
+
+Before collecting runs, decide what they should measure. The most common mistake is pulling any available traces and assuming they represent what users actually care about. This phase anchors the benchmark to real user intent.
+
+**Mine production PRDs.** Sample from recent production traces — specifically the initial user requests or task descriptions that launched each run. These are your benchmark tasks. Anonymize, deduplicate (cluster near-duplicate requests), and keep a stratified sample by complexity and task type. Avoid engineering-imagined tasks; the population must reflect what users actually request.
+
+**Pair with natural-language test plans.** For each sampled task, write 2–5 natural-language assertions that describe what a correct outcome looks like at the feature level — not at the implementation level. Example: "The user can create an account and see a confirmation email" not "The POST /auth/register endpoint returns 201." Feature-level assertions stay valid as the agent's implementation strategy evolves; implementation-level assertions go stale.
+
+**Maintain as a living document.** Anchor the population window to a recent time range (e.g., last 30 days of production traces) and refresh it when the trace distribution shifts materially — new feature launches, user segment changes, model upgrades. A benchmark frozen in time is a benchmark for a product that no longer exists.
+
+**Human curation is required.** The PRD-extraction step is not mechanical — engineers must curate which tasks represent meaningful diversity and which are noise or duplicates. Schedule this as a deliberate activity, not a side step. The benchmark only climbs the right hill if a human confirmed the hill is the right one.
+
 ### Phase 1 — Collect & Normalize
 
 Pull a population of traced runs and join any per-run eval labels. Each run becomes a row with: business setup / input context, outcome, severity, important handoffs, review/finding markers, a state-transition digest. Decide the population window (e.g. last N days) and a minimum size — patterns need density (typically ≥24 runs to cluster meaningfully).
@@ -105,6 +117,26 @@ suspect_score = 0.4·proximity + 0.3·frequency + 0.2·bridge + 0.1·role
 - **role** — weight by the step's responsibility (decision > passthrough)
 
 The suspect score is an **inspection guide, not proof of causality.** Output the top suspect steps per pattern for a human to inspect.
+
+### Human Handoff — Hypothesis Selection Gate
+
+After Phase 5 produces the ranked suspect list, the macro sweep ends and a human must take the next action. **The sweep cannot decide which cluster deserves the improvement budget.** That is a judgment call about product priority, engineering effort, and user impact — not a computation.
+
+Present the top 3 candidates in this format:
+
+```
+Cluster A: [name] — impact score X, affects Y% of runs, top suspect: [step]
+  Proposed hypothesis: "Changing [X] will address [failure mode]"
+  Estimated effort: [small / medium / large]
+
+Cluster B: ...
+
+Cluster C: ...
+
+Which should we pursue with the Harness-Improvement Loop? (or "none — run sweep again next cycle")
+```
+
+Wait for human selection before proceeding to the Harness-Improvement Loop (see `loop-patterns` Loop 11). Do not auto-select the highest-impact cluster; impact alone does not capture effort, feasibility, or current product priority.
 
 ## Do's and Don'ts
 

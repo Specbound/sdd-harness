@@ -176,6 +176,28 @@ does nothing for the other.
 | **Runtime payload** | Variable per-turn cost: shell output, file reads, API context, tool observations | RTK (shell), lean-ctx (file reads), Headroom (API context), the techniques above | `rtk gain`, Headroom stats, `ctx_compress` |
 | **Startup payload** | Fixed per-session tax paid *before you do anything*: layered `CLAUDE.md` + `@imports` + `.claude/rules/*` + auto-loaded `MEMORY.md` | Structuring what auto-loads; moving comprehensiveness to read-on-demand; pruning stale/ghost sections | `startup-payload-audit.sh` → dashboard **Context Health** tab |
 
+#### Claude Code System Prompt Levers
+
+Claude Code injects its own hidden startup payload before any user content: tool definitions, bundled skill catalogs, workflow engine descriptors. This is independent of your CLAUDE.md and cannot be reduced by RTK, lean-ctx, or compaction — those techniques never see it. Treat it as a separate tax with its own reduction controls.
+
+**Step 1 — Measure first.** Run `/context` inside Claude Code to get the per-category token baseline. Note totals for Tools, Skills, and Workflows separately. Without a baseline, you cannot know which lever to pull.
+
+**Step 2 — Investigate per-tool cost.** `/context` shows category totals, not per-tool breakdown. To see which individual tools are the largest offenders, set up a lightweight logging proxy (Node.js) that intercepts the Anthropic API request and emits a ranked table of tools by token size. Run one session through the proxy, read the table, identify the top 3 offenders.
+
+**Step 3 — Apply the right lever.**
+
+| Lever | `settings.json` key | Effect | When to use |
+|---|---|---|---|
+| Remove all bundled skills | `disableBundledSkills: true` | Removes entire Anthropic skill catalog | You use only custom skills; bundled ones are unused |
+| Remove Workflow tool | `disableWorkflows: true` | Removes Workflow/multi-agent tool — typically the largest single item | Not using multi-agent workflows |
+| Remove specific tool | `"permissions": {"deny": ["ToolName"]}` (bare name, not scoped) | Removes individual tool definition from payload entirely | Individual tool confirmed unused in your workflow |
+| Remove specific bundled skill | `"skillOverrides": {"skill-name": "off"}` | Removes one bundled skill | Bundled skills partially useful — remove specific ones |
+| Keep skill typeable but hidden | `"skillOverrides": {"skill-name": "user-invocable-only"}` | Skill is available when typed; hidden from autonomous reasoning | Want the skill available without burning startup tokens on every session |
+
+**Step 4 — Verify.** Re-run `/context` after applying changes. Compare baseline to new totals. These are per-session savings that compound across every interaction.
+
+**Key invariant:** RTK handles runtime payload; these levers handle startup payload. They are strictly independent axes. Optimizing one does nothing for the other, and you cannot compress your way out of a bloated startup payload using runtime techniques.
+
 **The inversion principle (from claude-token-optimizer):** *comprehensiveness → archive
 (read on demand); essentiality → startup payload.* Anything the agent needs only sometimes
 should be a read-on-demand pointer, not auto-loaded prose. This is exactly the harness's own
@@ -185,6 +207,85 @@ files, and ghost references (referenced-but-missing paths).
 
 You cannot compress your way out of a bloated startup payload — RTK and lean-ctx never see it.
 Fix it by *structuring what loads*, then let the audit guard regressions.
+
+## Anthropic API Prompt Caching
+
+Server-side prefix caching for Anthropic API calls. This is a **third, orthogonal mechanism** to CAG (local KV cache preloading for HuggingFace models) and the KV-cache ordering heuristics above. All three reduce inference cost via caching, but operate at completely different layers.
+
+**Mechanism:** Add `cache_control: {"type": "ephemeral"}` blocks at stable prefix boundaries. Anthropic's servers cache the KV state up to that point and reuse it on subsequent requests with the same prefix. Billed at 10% of normal input token rate on cache hits.
+
+Source: Anthropic API documentation, platform.claude.com/docs/en/docs/build-with-claude/prompt-caching
+
+### Minimum Token Thresholds (cache is a no-op below these)
+
+| Model family | Minimum cacheable tokens |
+|---|---|
+| Claude Opus 4.8, Sonnet 5 | 1,024 tokens |
+| Claude Opus 4.6/4.5, Haiku 3.5 | 4,096 tokens |
+| Claude Fable/Mythos variants | 512 tokens |
+
+If your stable prefix is under threshold, adding `cache_control` has zero effect and wastes tokens on the metadata.
+
+### Breakpoint Placement Rules
+
+**Automatic mode** (recommended for multi-turn conversations): Claude Code and the API manage breakpoints automatically. No `cache_control` needed. Use for chat-style agents where the conversation history is the stable prefix.
+
+**Explicit mode** (recommended for multi-section prompts): Place `cache_control` at stable section boundaries:
+1. System prompt boundary (after system message)
+2. After tool definitions block (if tools are stable across requests)
+3. After a large stable documents/examples block
+4. Before the variable user message
+
+**Ordering rule:** Place `cache_control` markers at the last stable token before content that changes. Everything before the marker is cached; everything after is re-encoded.
+
+### The Lookback Window Gotcha
+
+The API checks the last **20 `cache_control` blocks** to find a cache hit. If you place a breakpoint on frequently-changing content (e.g., a timestamp, session ID, or rotating examples), that breakpoint consumes a lookback slot and guarantees a miss — re-billing at full price.
+
+**Anti-pattern:** Adding `cache_control` after content that changes every request defeats the purpose and wastes the lookback budget.
+
+### Cache Invalidation Dependency Table
+
+Changes are not independent — they cascade:
+
+| What changed | What gets invalidated |
+|---|---|
+| Tool definitions | System prompt cache + all message caches |
+| Tool choice only | Message caches only (system cache survives) |
+| System prompt | All message caches |
+| User message content | Only that message's cache and subsequent messages |
+
+This is asymmetric and not guessable. Tool definition changes are the most expensive — they cascade to everything below them.
+
+### Pre-Warming Pattern
+
+Send a synthetic request with `max_tokens: 0` before latency-sensitive traffic starts. This forces the server to compute and cache the KV state for your stable prefix without generating any output tokens.
+
+```python
+# Warm the cache for 100ms, then serve real requests at cached latency
+client.messages.create(
+    model="claude-sonnet-4-6",
+    max_tokens=0,          # No generation — pure cache warming
+    system=[{
+        "type": "text",
+        "text": STABLE_SYSTEM_PROMPT,
+        "cache_control": {"type": "ephemeral"}
+    }],
+    messages=[{"role": "user", "content": "warm"}]
+)
+```
+
+Use before: batch processing jobs, request spikes, first request of a new server instance.
+
+### Cache TTL
+
+Default TTL is 5 minutes. Extended TTL (1 hour) is available on request. Design retry logic and session handling around the 5-minute default — a cache miss after TTL expiry costs the same as a cold request.
+
+### Usage Monitoring
+
+The API response includes `cache_creation_input_tokens` and `cache_read_input_tokens` in the usage block. Track these to measure cache hit rate and verify placement is working. A low `cache_read_input_tokens` ratio with high `cache_creation_input_tokens` indicates misplaced breakpoints or content too dynamic to cache.
+
+---
 
 ## Guidelines
 
@@ -225,6 +326,7 @@ External resources:
 ## Skill Metadata
 
 **Created**: 2025-12-20
-**Last Updated**: 2026-05-31
+**Last Updated**: 2026-07-08
 **Author**: Agent Skills for Context Engineering Contributors; enhanced with arXiv:2605.26112
-**Version**: 1.1.0
+**Version**: 1.2.0
+**Sources added**: Anthropic API Prompt Caching documentation (server-side prefix caching mechanics, breakpoint rules, invalidation table)

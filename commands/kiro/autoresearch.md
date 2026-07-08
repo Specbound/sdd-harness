@@ -68,3 +68,32 @@ Show the agent's final summary including:
 - Best val_bpb achieved
 - Changes kept vs reverted
 - Suggested next experiment
+
+## Agent Recipe (Optional)
+
+If `recipe.md` exists in the project root, pass it to the agent as additional context alongside `program.md`. An Agent Recipe is a versioned artifact that tracks the evolution of the research loop — not just the current state but *why* decisions were made.
+
+**recipe.md format:**
+```markdown
+# Experiment Recipe
+
+## What we've tried
+- [date] tried X → result: Y → kept/reverted because Z
+
+## Signal filtering policy
+Only act on signals that: [specific criteria]. Ignore: [noise patterns].
+Currently filtered out: [list of discard patterns discovered empirically]
+
+## Staged autonomy level
+Current stage: [1=human approves every change | 2=human reviews batches | 3=agent autonomous with daily review]
+Move to next stage when: [specific metric or duration]
+
+## What we've learned
+- [non-obvious finding from iteration N]
+```
+
+**First run:** create a skeleton `recipe.md` with the initial signal filtering policy and current autonomy stage. The agent updates it after each batch of experiments.
+
+**Why this matters:** The inner loop (this command) optimizes train.py. The outer loop (recipe.md evolution) optimizes how the inner loop operates. Signal filtering prevents "slop generation" where the agent chases metrics that don't represent real improvement. Staged autonomy prevents overcommitting to full automation before trust is established.
+
+Source: Gavrilescu (2025) via Latent Space — "Autoresearch: The Feedback Loop Behind Self-Improving Agents"

@@ -133,13 +133,28 @@ The goal of the harness is to be self-sustaining. A skill the user must remember
 
 Before including any candidate in the proposal, apply the harness critic test. For each candidate, answer:
 
-1. **Already covered?** Does any existing skill, hook, script, or command cover >70% of this capability? → Skip or augment, never duplicate.
+1. **Already covered?** Does any existing skill, hook, script, or command cover >70% of this capability?
+   → If YES, do **not** immediately reject. Invoke `Skill("better-call")` to compare the challenger against the incumbent. Use its verdict to determine the proposal path (see Step 3f below). Never default to rejection just because something already exists — the incumbent isn't automatically better.
 2. **Hollow addition?** Does this add new *behavior*, or just new *text* the user could look up elsewhere? → If documentation only, skip.
 3. **Maintenance cost justified?** Will the harness be measurably better with this? Or is this a "nice to have" that adds noise? → If uncertain, skip.
 4. **Better as augmentation?** Could this be a single added section in an existing artifact rather than its own file? → Augment, don't create.
 5. **Automation answer honest?** If the verdict is "not automatable", is that genuinely true — or just harder to wire? → Be honest.
 
-**Only candidates that survive all five checks reach the proposal.** A proposal with 1–2 high-value items is better than one with 7 mediocre ones.
+**Only candidates that survive all five checks (or earn passage via a `better-call` verdict) reach the proposal.** A proposal with 1–2 high-value items is better than one with 7 mediocre ones.
+
+#### Step 3f: Translate `better-call` Verdict into Proposal Path
+
+After `better-call` returns its verdict block, map it to a proposal action:
+
+| Verdict | Action |
+|---|---|
+| **KEEP INCUMBENT** | Reject the candidate. Add to "Rejected Candidates" with the `better-call` score table as evidence. |
+| **ADOPT CHALLENGER** | Propose the new capability as a replacement or upgrade to the incumbent. Flag the incumbent for deprecation/removal in the proposal. |
+| **AUGMENT INCUMBENT** | Propose targeted augmentation of the existing artifact. List only the specific ideas worth extracting; discard the rest of the challenger. |
+| **MERGE** | Propose a unified artifact that supersedes both. Include a plan for removing the old incumbent after the merge lands. |
+| **COEXIST** | Propose both as separate items; justify the non-overlap explicitly in the proposal body. |
+
+Include the `better-call` score table and verdict in the proposal (for any verdict other than KEEP INCUMBENT) or in the "Rejected Candidates" section (for KEEP INCUMBENT). The user should be able to see exactly how the comparison was made.
 
 ### Phase 4: Proposal (REQUIRED — always show before implementing)
 

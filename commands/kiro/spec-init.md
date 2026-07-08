@@ -15,6 +15,16 @@ argument-hint: <project-description>
 </background_information>
 
 <instructions>
+## Pre-Check: Preference Elicitation
+
+If running `spec-init` **standalone** (not via `spec-quick`), run preference elicitation first:
+
+```
+/kiro:pref-elicit {$ARGUMENTS}
+```
+
+This surfaces declarative vs. imperative preferences before the spec assumes defaults. Skip this pre-check only if `prefs.md` already exists in the project root or you were invoked from `spec-quick` (which runs it automatically in Interactive Mode).
+
 ## Core Task
 Generate a unique feature name from the project description ($ARGUMENTS) and initialize the specification structure.
 

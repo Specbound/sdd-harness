@@ -317,7 +317,7 @@ model = AutoModelForCausalLM.from_pretrained(
 ## Limitations to Communicate Upfront
 
 1. **Knowledge size ceiling**: Knowledge must fit in the model's context window — not suitable for large corpora
-2. **Local model required**: CAG requires access to model internals (KV cache); not possible with API-only models (OpenAI, Anthropic API)
+2. **Local model required**: CAG requires access to model internals (KV cache); not possible with API-only models (OpenAI, Anthropic API). Note: Anthropic's API has its own *server-side* prefix caching (`cache_control` blocks) — this is a separate, orthogonal mechanism that does not give you access to KV states but does reduce per-request token cost. See `context-optimization` → "Anthropic API Prompt Caching" for that mechanism.
 3. **Context degradation**: LLMs perform worse at the middle of very long contexts — keep utilization below 80% of context window
 4. **Static knowledge**: Cache is invalidated on every knowledge update; frequent updates negate the latency benefit
 5. **VRAM requirements**: Large context windows require significant GPU memory; plan for 2-4x the model's base VRAM

@@ -383,6 +383,25 @@ Do not modify the command or add additional flags.
 - **Narrow bridge with cliffs on both sides**: There's only one safe way forward. Provide specific guardrails and exact instructions (low freedom). Example: database migrations that must run in exact sequence.
 - **Open field with no hazards**: Many paths lead to success. Give general direction and trust Claude to find the best route (high freedom). Example: code reviews where context determines the best approach.
 
+### Declarative vs. Imperative Preferences
+
+The high/medium/low freedom spectrum maps onto a deeper distinction between two types of preference that operate at two scopes:
+
+|  | **Declarative** (outcome, not path) | **Imperative** (exact path specified) |
+|---|---|---|
+| **Strategic** (firm-wide) | "Prioritize safety over throughput across all projects" | "Always spawn an auditor sub-agent before any push" |
+| **Tactical** (per-project) | "Make this endpoint fast — you choose how" | "Use this exact payment queue flow with these exact steps" |
+
+**Declarative preferences** define what you want, not how to get there. They are most powerful when agent capability is high — the agent fills in the implementation. The risk: the agent fills gaps with assumptions that may not match your actual requirements. Guard against this by stating explicit bounds ("fast" → "under 50ms p99") and non-negotiables.
+
+**Imperative preferences** define the exact path. Use them when: the system is fragile to small design perturbations, you have deep domain knowledge of what works, or the stakes of a wrong implementation choice are hard to reverse. The risk: your own assumptions may be suboptimal — leave explicit room for the agent to surface better alternatives within the constraints.
+
+**Strategic preferences** should be encoded as MUST/SHOULD rules in your entry file or as harness skills — they apply across all projects and persist beyond any single spec. **Tactical preferences** belong in per-spec `prefs.md` or CONTEXT.md — they govern one feature without contaminating others.
+
+When in doubt about where a preference falls: if you'd want it to hold for a project you haven't started yet, it's strategic. If it only applies to the current spec, it's tactical.
+
+Use `/kiro:pref-elicit` before starting a spec to surface which of your preferences are declarative vs. imperative and strategic vs. tactical before the agent assumes defaults.
+
 # Persuasion Principles for Agent Communication
 
 Usefull for writing prompts, including but not limited to: commands, hooks, skills for Claude Code, or prompts for sub agents or any other LLM interaction.

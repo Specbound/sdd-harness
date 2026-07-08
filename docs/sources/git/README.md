@@ -426,3 +426,16 @@ GitHub repositories that were passed to `/skill-extraction` and turned into harn
 - Skill: `semantic-data-pipeline` — a lean, library-agnostic **decision** skill: when batch LLM transformation over many rows needs reproducibility, model it as a lazily-evaluated query with a caching/cost/lineage layer, not an ad-hoc loop. Teaches the four-operator taxonomy (extract/classify/predicate/reduce) and the explore→pipeline→governed-tool graduation path, with fenic as the reference implementation. Explicit "Do NOT Activate" boundaries route sourcing → `structured-web-dataset`, retrieval → `rag-architect`, ingestion → `document-parsing`, analysis → `csv-data-summarizer` to prevent wrong-skill firing.
 
 **Rejected:** a fenic-as-a-tool API tutorial skill (the "here's a library that exists" anti-pattern — `get-api-docs` handles docs on demand); `fenic check` linter as a harness pattern (harness authors no library agents call; ruff/serena/pytest already gate its own code); `fenic skill install` (duplicates `skill-creator`/`skill-curator`); operator taxonomy into `rag-architect` (adds vocabulary not decision value; bloats a mature skill); all hook/routine/dashboard/script/command angles (on-demand design decision, nothing to automate).
+
+---
+
+## langchain-ai/openwiki
+**URL:** https://github.com/langchain-ai/openwiki
+**Added:** 2026-07-08
+**Source / Author:** LangChain
+
+**What it's about:** A TypeScript CLI that auto-generates a codebase wiki in `openwiki/` by running an LLM over source files and appending stub instructions to AGENTS.md/CLAUDE.md pointing agents to consult it. Optional LangSmith tracing and CI/CD PR automation for doc updates.
+
+**What we added:** Nothing — SKIP.
+
+**Rejected (all candidates):** Auto-generated wiki content is equivalent to what `adapt-to-repo` derives on-demand from the live codebase. Appending to CLAUDE.md is the exact anti-pattern `instruction-architecture` guards against (uncontrolled growth). The `steering/`, `memory/`, and `specs/` layers cover curated documentation with provenance. CI/CD PR automation for docs conflicts with CLAUDE.md's "never commit SDD files" rule. External binary dependency with no freshness guarantees adds maintenance cost for zero capability gain.

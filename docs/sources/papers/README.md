@@ -72,3 +72,16 @@ Scientific papers (primarily arXiv) that informed skills or methodology in this 
 - Enhancement: `hooks/claude/action-capture.sh` — Wake-phase struggle tagging: detects non-zero Bash exit codes, infers skill domain, auto-writes `[seed-target:<domain>]` to `observations.md` so the Sleep phase has explicit weakness markers.
 - Enhancement: `agents/kiro/skill-augment-agent.md` — two new steps: Step 2.5 collects `[seed-target:]` observations as seeding evidence; Step 3.5 (Dreaming) generates synthetic worked examples per skill gap and writes them to `resources/examples/`.
 - Enhancement: `skills/agent-memory-consolidation/SKILL.md` — new "Sleep Cycle Protocol" section documents the full Wake/Sleep framing, the `[seed-target:]` convention, domain mapping table, and the episodic-first guarantee that raw observations are never rewritten.
+
+---
+
+## PACE: A Proxy for Agentic Capability Evaluation
+**arXiv:** https://arxiv.org/abs/2607.02032
+**Added:** 2026-07-08
+**Year:** 2026
+
+**What it's about:** A method to predict expensive agentic benchmark performance (SWE-Bench, GAIA) using a small, cheap subset of non-agentic evaluation instances selected via SVD leverage scores and Spearman correlation. Achieves ~4% MAE and 0.81 Spearman correlation across 14 models at under 1% of full benchmark cost.
+
+**What we added:** Nothing — SKIP.
+
+**Rejected (all candidates):** PACE answers "which model do I run on expensive benchmarks?" — a question the harness never asks. It requires a calibration corpus of 14+ models scored on 19+ benchmarks, a multi-week offline ML effort the harness has no infrastructure for. The `evaluation/funnel` skill already covers the conceptual equivalent (early-stage filtering before expensive runs) at product-team scale. The capability profiles from PACE (per-benchmark ability requirements) would add noise to `model-tiers`, which routes by task type rather than benchmark rank. No skill, hook, routine, or command candidate survived the critic gate.

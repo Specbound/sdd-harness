@@ -304,6 +304,38 @@ Scope discipline: fix only the **class** named by the correction — do not expa
 
 ---
 
+### 11. Harness-Improvement Loop
+**Category:** Meta / Harness  
+**Goal:** A ranked failure cluster from the macro-eval sweep is addressed — a candidate harness change is measured, and a ship/drop recommendation reaches a human reviewer  
+**Max iterations:** 3 per hypothesis  
+**Check cmd:** Re-run `/kiro:macro-eval-sweep` (or targeted subset) with candidate change active; compare before/after impact scores for the target cluster  
+**Exit when:** hypothesis confirmed (target cluster impact drops ≥20%) OR refuted (two passes with no measurable movement)
+
+```
+Start the "Harness-Improvement Loop".
+
+Goal: turn a ranked failure cluster from the macro-eval sweep into a reviewed candidate change with a ship/drop recommendation
+Max iterations: 3
+Between iterations run: re-run /kiro:macro-eval-sweep over recent traces with the candidate change active; diff before/after cluster impact scores
+Exit when: target cluster impact drops ≥20% (confirmed) OR two consecutive passes show no measurable change (refuted)
+
+Step 1: Read the latest macro-eval sweep report. Identify the highest-impact cluster not yet investigated. Write one falsifiable hypothesis: "Changing [X] will reduce [cluster] by addressing [failure mode]."
+
+⟳ Human gate 1 — hypothesis selection: Present the hypothesis and estimated effort. Wait for human approval before building a candidate. Do not proceed if the human selects a different cluster or rejects the hypothesis.
+
+Step 2: Build the smallest candidate change that tests the hypothesis — edit one skill, adjust one prompt, fix one tool, or add one hook. Do not bundle multiple independent changes into one candidate.
+
+Step 3: Measure — run the check command. Compare before/after impact scores for the target cluster only. Record the delta.
+
+Self-pace this loop. After each iteration, run the check command, read the output, and only continue if the exit condition is not met. Stop when the exit condition passes or max iterations is reached. Give a short status update each pass.
+
+⟳ Human gate 2 — ship decision: Present evidence (before/after cluster scores, affected users, blast radius of the change). Await human approval or rejection before merging the change into the harness source.
+```
+
+**Human gates are mandatory and cannot be skipped.** Hypothesis selection (which cluster deserves the budget) and ship decision (whether the evidence justifies the change) are the two places where human taste has irreplaceable leverage. The loop can build and measure autonomously; it cannot decide which problem matters or whether the evidence is sufficient.
+
+---
+
 ## Authoring a New Loop
 
 Follow the five-field contract. Good loops have:

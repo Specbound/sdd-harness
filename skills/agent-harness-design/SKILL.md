@@ -33,6 +33,24 @@ Each component is an independent point of intervention. A gap in one cannot be f
 
 For each component, ask: **is this explicitly designed, or implicitly handled (left to the model's discretion)?**
 
+### Improvement Layer Decision (start here when diagnosing a failure)
+
+Before assuming a failure requires weight-level intervention (model upgrade, fine-tuning), explicitly route through the two layers that are always within your control:
+
+| Layer | What it covers | Leverage |
+|---|---|---|
+| **Harness layer** | Prompts, tools, instructions, skill routing, orchestration logic | Fixes apply to every instance simultaneously — one change benefits all users |
+| **Context layer** | Per-user memory, per-org preferences, personalized state | Fixes apply to one user/org — compounding per individual interaction |
+
+**Decision rule:** Work harness-layer first. A harness fix that addresses the root failure mode is free for all instances — it compounds across the entire user base from the next deploy. A context-layer fix helps only the users for whom specific state is available. Model-layer fixes (weight updates, fine-tuning) are usually unavailable with closed frontier models and should be considered last.
+
+**The non-obvious reframe:** Most teams experiencing agent underperformance default to "the model isn't smart enough." In the vast majority of cases, the actual failure is harness-layer (a prompt gap, a missing skill, a routing error) or context-layer (stale or absent personalization). The model's capability is rarely the binding constraint.
+
+Apply this routing at the start of any diagnostic session before opening a component audit:
+1. Is the failure consistent across all users/orgs? → harness layer
+2. Is the failure isolated to specific users or inputs? → context layer (check memory, personalization state)
+3. Is the failure present even with perfect harness and context? → escalate to model-layer consideration
+
 ### ℛ — Reasoning Substrate
 
 The foundation model. Usually fixed, but affects what other components must compensate for.
@@ -63,6 +81,18 @@ Trust axes for memory quality:
 | Durability | Stability despite environment changes |
 | Verifiability | Testability against live environment |
 | Retrievability | Access cost and recall quality |
+
+**Typed memory relationships.** Flat memory entries lose relationship context — a feedback entry might reference a project that no longer exists, or a user entry might reference a pattern that was superseded. Add one design question to the audit:
+
+> *Are cross-references between memory entries typed and bidirectional?*
+
+In the harness's auto-memory system (`~/.claude/projects/*/memory/`), this means:
+- Use `[[slug]]` links with an inline relationship label: `[[feedback-testing]] (contradicts)`, `[[project-auth-rewrite]] (triggered by)` — not bare `[[slug]]` with no context
+- When entry A links to entry B, entry B should link back to A with the inverse relationship
+- Valid cross-type relationships: `feedback → project` (what triggered this rule), `project → user` (whose preference drives this), `reference → project` (what system this pointer belongs to). Avoid `user → feedback` (redundant — feedback files are already user-scoped) or `reference → reference` (circular; flatten instead)
+- The `memory-discipline-hook.sh` transfer test applies to links too: only link if the cross-reference would help a *different future task*, not just to be complete
+
+This requires no new infrastructure — the `[[name]]` convention is already in the system. The addition is the discipline: typed labels + bidirectionality + the same transfer test the hook already enforces for content.
 
 ### 𝒞 — Context Constructor
 
@@ -269,6 +299,52 @@ Harness rot = components that existed for a good reason that no longer applies. 
 Monthly: ablation test one component.
 Quarterly: full fresh-session test + component audit across all five subsystems.
 
+## Phase 5: Harness Bottleneck Checklist
+
+Seven structural failure modes that become sharper (not easier) as the harness runs more reliably. From Lilian Weng's agent harness survey (2026-07-04). Run this checklist when diagnosing unexplained quality plateaus or when a well-functioning harness starts producing diminishing returns.
+
+| # | Bottleneck | Symptom | Diagnostic question |
+|---|---|---|---|
+| 1 | **Weak/fuzzy evaluators** | The judge says things are good; quality is not actually improving | Can the eval fail on a plausibly wrong output? If not, the evaluator is measuring presence, not quality |
+| 2 | **Memory lifecycle management** | Artifacts (logs, diffs, summaries) grow beyond context windows; agent can't load its own history | Is there an explicit eviction or summarization policy? Are long-horizon artifacts chunked? |
+| 3 | **Incentive misalignment** | Negative results are not logged; the loop only records wins | Does the loop persist failure cases? Are failed experiments part of the recipe? |
+| 4 | **Diversity collapse** | Loop iterations converge on the same type of fix; novel solutions stop appearing | Are successive iterations seeded with distinct starting points, or does each start from the last successful state? |
+| 5 | **Reward hacking** | Metrics improve but downstream quality does not | Is there a held-out eval set that the loop cannot optimize against? |
+| 6 | **Short-term optimization bias** | Loop makes incremental gains but misses large restructuring wins | Is there a periodic "full rewrite" budget, or only local refinement? |
+| 7 | **Inappropriate human oversight points** | Human is asked to approve every micro-decision (too many gates) or only at the very end (too few) | Map where the human lock is acquired. Does each gate require genuine judgment, or could it be automated? |
+
+**When to run:** quarterly harness audit, after a loop runs 10+ iterations without improvement, when harness feels "stuck" despite technically correct execution.
+
+**Relationship to process metrics:** Each bottleneck maps to a measurable signal. Bottleneck 1 → evaluator calibration test; Bottleneck 2 → `[loop-debt]` tag; Bottleneck 4 → diversity score on outputs; Bottleneck 5 → holdout eval vs. training eval gap.
+
+---
+
+## Meta Context Engineering (MCE)
+
+A meta-level pattern where a dedicated agent optimizes *how context is managed*, not just what context contains. From Lilian Weng (2026) and AlphaEvolve-style harness optimization research.
+
+**The reframe:** Most harness optimization improves task performance directly (better prompts, better tools, better memory). MCE adds a layer above: an agent that evolves the *context management strategy itself*.
+
+**Three MCE shapes:**
+
+**1. Agentic crossover over prior skills**
+The meta-agent reads the history of which skills fired and how they performed, then proposes mutations to the skill routing or skill content. Each generation: select survivors (high-performing skills), mutate (adjust triggers, add cases, merge similar skills), evaluate on a benchmark task set, retain improvements.
+
+**2. Context flow strategy evolution**
+Instead of manually tuning L1/L2/L3 tier placement, a meta-agent runs ablations and reclassifies skills between tiers based on measured task-distribution hit rates. Output: updated tier assignments. Human reviews the proposed reclassifications, not each individual invocation.
+
+**3. Harness self-repair loop**
+The `evolve-agent` already does behavioral audit (Step D of daily maintenance). MCE extends it: after identifying a failure pattern, the evolve-agent proposes a structural change to the harness (not just a content fix) and submits it for human review. The change itself goes through the normal skill-extraction proposal flow.
+
+**When to activate MCE:**
+- The harness has been stable for >1 month and gains are incremental
+- Multiple bottlenecks from the Phase 5 checklist are present simultaneously
+- Skill routing errors are recurring (same wrong skill fires repeatedly despite fixes)
+
+**MCE is not:** running the loop faster or adding more agents. It is changing the *rules the loop follows*. This requires human-in-the-loop review — MCE proposals are inputs to decisions, not autonomous rewrites.
+
+---
+
 ## Integration
 
 Related skills:
@@ -283,3 +359,4 @@ Related skills:
 **Sources:**
 - arXiv:2605.26112 — "From Model Scaling to System Scaling: Scaling the Harness in Agentic AI", Shangding Gu (2026)
 - walkinglabs.github.io/learn-harness-engineering — Operational diagnostics and ablation methodology
+- lilianweng.github.io/posts/2026-07-04-harness/ — Seven bottleneck checklist; Meta Context Engineering pattern; plan→execute→observe→improve loop framing

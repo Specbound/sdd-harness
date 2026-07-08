@@ -236,3 +236,29 @@ See also: [git/README.md](../git/README.md) — companion repo https://github.co
 - Command: `/claudemd-review` (`commands/global/claudemd-review.md`) — **fills a dangling reference**: `session-start-hook.sh` fires `/claudemd-review` bi-weekly per repo but no command implemented it. Audits the current repo's `CLAUDE.md`/`AGENTS.md` against a lean-context rubric (200-line size budget, "inferable from the manifest" filter, generic-filler test, `@AGENTS.md` import/dedup, stale model-assumption + over-constraining checks), rates each file clean/minor/needs-update, writes `.claude/memory/claudemd-review-report.md`, and stamps `.claude/memory/.last-claudemd-review`. Propose-only by default; `--apply` for low-risk fixes. Distinct from the harness-wide `harness-health-runner` CLAUDE.md pass (all repos → `docs/claudemd-review-report.md`).
 - Rejected: disable auto-memory (load-bearing — `skill-augment-agent` reads `type: feedback` auto-memories as its highest-trust signal); archive-before-delete (glacier already does this); memory/CLAUDE.md size-budget hook (housekeeping caps memory nightly; the CLAUDE.md size check folded into the command's rubric); standalone memory-bucketing skill (write-side = the proposed-but-declined learn-eval routing; prune-side = housekeeping); "anything done twice → skill" (skill-extraction + skill-creator already embody it); push-vs-pull external memory tools gbrain/supermemory/mem0/Letta (infrastructure choices, not a harness capability).
 - Also proposed but user-declined this run: skills-over-memory routing (a `[seed-target:]` verdict in `learn-eval-agent` to divert skill-tied lessons to `skill-augment` instead of `patterns.md`).
+
+---
+
+## "Continual Learning for Agents" — Replit / pirroh@repl.it
+**Added:** 2026-07-08 | **Source:** Pasted text (Replit Engineering)
+
+**What it's about:** Three-layer improvement model for agents that can't touch model weights (model / harness / context). Introduces ViBench (benchmark built from production PRDs + natural-language test plans), Telescope (trace clustering system), and a self-improvement loop (trace clusters → hypothesis → candidate PR → measurement → ship/drop). Identifies three human taste gates — hypothesis selection, eval curation, launch approval — as irreplaceable.
+
+**What we added:**
+- Skill augmentation: `loop-patterns` — new Loop 11 "Harness-Improvement Loop" with two mandatory human gates (hypothesis selection and ship decision). Closes the gap where `/kiro:macro-eval-sweep` produces a ranked report that has no defined consumer.
+- Skill augmentation: `evaluation/macro` — new Phase 0 "Construct the Population from Traces" (mine production PRDs, pair with natural-language test plans, maintain as living document). Previous skill assumed the benchmark already existed.
+- Skill augmentation: `evaluation/macro` — new "Human Handoff — Hypothesis Selection Gate" section after Phase 5. Surfaces top 3 cluster candidates in a structured format and waits for human selection before proceeding to the Harness-Improvement Loop.
+- Skill augmentation: `agent-harness-design` — new "Improvement Layer Decision" subsection in Phase 1. Routes diagnosis through harness-layer → context-layer → model-layer in that priority order before assuming weight-level fixes are needed.
+- Skill augmentation: `evaluation/micro` — eval-curation note added to Rubric Design section. Makes explicit that rubric dimension/weight choices are product decisions requiring product-owner sign-off, not engineering checkboxes.
+
+---
+
+## "What The New 100x Agentic Engineer Looks Like In The Era Of Fable & GPT 5.6" — @systematicls
+**Added:** 2026-07-08 | **Source:** Pasted text (@systematicls on X)
+
+**What it's about:** Argues that agent capability is no longer the bottleneck — human preference-articulation is. Introduces a 2×2 framework (declarative vs. imperative × strategic vs. tactical) for expressing preferences to agents. The core claim: agents default to lowest-common-denominator solutions when preferences are unstated; the 100x engineer knows how to constrain the solution space through explicit preference expression and Socratic dialogue.
+
+**What we added:**
+- Command: `/kiro:pref-elicit` (`commands/kiro/pref-elicit.md`) — pre-spec Socratic elicitation command. Runs a structured 5-question protocol to surface declarative/imperative and strategic/tactical preferences before spec-init. Writes `prefs.md` to the spec directory. Wired as mandatory Step 1.5a in `spec-quick` Interactive Mode; recommended pre-check in `spec-init` standalone usage.
+- Skill augmentation: `prompt-engineering` — new "Declarative vs. Imperative Preferences" subsection with the 2×2 matrix and routing rules. Maps onto the existing "degrees of freedom" section.
+- Skill augmentation: `instruction-architecture` — new "Preference Origin: Strategic vs Tactical Routing" subsection. Maps preference origin onto the existing MUST/SHOULD/CONTEXT tier structure. Tactical preferences in the entry file = primary source of instruction bloat.
