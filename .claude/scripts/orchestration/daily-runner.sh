@@ -46,7 +46,7 @@ if ! mkdir "$LOCK_DIR" 2>/dev/null; then
   log "another runner active, skipping"
   exit 0
 fi
-trap 'rm -rf "$LOCK_DIR"' EXIT
+trap 'rm -rf "$LOCK_DIR"' EXIT INT TERM
 
 # --- Date check (cheap short-circuit) ---
 # Extract YYYY-MM-DD prefix from ISO timestamp — portable, no GNU date needed.

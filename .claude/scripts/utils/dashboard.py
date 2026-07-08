@@ -554,6 +554,18 @@ def _scheduled_task_registry():
             "scope":             "per-repo",
             "what_it_does":      "Static security scan of recent git changes; flags OWASP patterns, secrets, injection sinks",
         },
+        {
+            "key":               "startup-payload",
+            "name":              "Startup Payload Audit",
+            "runner_log_token":  "startup-payload",
+            "state_file":        HARNESS_DIR / ".claude" / "memory" / ".last-startup-payload-audit",
+            "artifact_glob":     str(HARNESS_DIR / ".claude" / "reports" / "context" / "startup-payload.json"),
+            "artifact_label":    ".claude/reports/context/startup-payload.json",
+            "schedule_human":    "Daily (deterministic, no LLM)",
+            "interval_seconds":  86400,
+            "scope":             "per-repo",
+            "what_it_does":      "Measures fixed per-session token tax (CLAUDE.md + @imports + rules + auto-MEMORY.md); flags over-budget, stale files, ghost refs",
+        },
     ]
 
 
@@ -2666,13 +2678,98 @@ def render_prompt_quality():
 </div>"""
 
 
+def _startup_payload_card(repo_path):
+    """Render the startup-payload audit card (fixed per-session token tax).
+
+    Reads .claude/reports/context/startup-payload.json produced by the
+    startup-payload-audit routine. Returns "" if no audit has run yet.
+    """
+    try:
+        f = Path(repo_path) / ".claude" / "reports" / "context" / "startup-payload.json"
+        if not f.is_file():
+            return ""
+        data = json.loads(f.read_text())
+    except Exception:
+        return ""
+
+    total   = data.get("total_tokens", 0)
+    budget  = data.get("budget", 0)
+    over    = data.get("over_budget", False)
+    fcount  = data.get("file_count", 0)
+    stale   = data.get("stale_count", 0)
+    ghosts  = data.get("ghosts", []) or []
+    files   = data.get("files", []) or []
+    gen     = data.get("generated", "")
+
+    status_color = "#f38ba8" if over else "#a6e3a1"
+    status_text  = f"over budget ({budget:,})" if over else f"within budget ({budget:,})"
+    status_badge = badge(status_text, "missed" if over else "ok")
+
+    # Top files by token weight
+    rows = ""
+    for fe in files[:5]:
+        stale_tag = (' <span style="color:#f9e2af;font-size:9px">stale</span>'
+                     if fe.get("stale") else "")
+        rows += (
+            f'<tr style="border-bottom:1px solid var(--surface1)">'
+            f'<td style="padding:4px 10px;font-size:11px;color:var(--subtext1);font-family:monospace">{h(fe.get("path",""))}{stale_tag}</td>'
+            f'<td style="padding:4px 10px;font-size:11px;color:var(--subtext0);text-align:right">{fe.get("tokens",0):,} tok</td>'
+            f'<td style="padding:4px 10px;font-size:10px;color:var(--overlay0);text-align:right">{fe.get("age_days",0)}d</td>'
+            f'</tr>'
+        )
+    files_table = (
+        '<table style="width:100%;border-collapse:collapse;margin-top:8px">'
+        '<thead><tr style="background:var(--base)">'
+        '<th style="padding:4px 10px;text-align:left;font-size:9px;color:var(--overlay0)">FILE</th>'
+        '<th style="padding:4px 10px;text-align:right;font-size:9px;color:var(--overlay0)">TOKENS</th>'
+        '<th style="padding:4px 10px;text-align:right;font-size:9px;color:var(--overlay0)">AGE</th>'
+        f'</tr></thead><tbody>{rows}</tbody></table>'
+    ) if rows else ""
+
+    ghost_line = ""
+    if ghosts:
+        ghost_line = (
+            f'<div style="margin-top:8px;font-size:11px;color:#f38ba8">'
+            f'⚠ {len(ghosts)} ghost reference(s) — referenced but missing: '
+            f'<span style="font-family:monospace">{h(", ".join(ghosts[:4]))}</span></div>'
+        )
+
+    return f"""<div style="background:var(--surface0);border-radius:8px;padding:14px 16px;margin-bottom:20px">
+  <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+    <span style="font-size:14px">📦</span>
+    <span style="font-size:13px;font-weight:700;color:var(--text)">Startup Payload</span>
+    {status_badge}
+    <span style="font-size:10px;color:var(--overlay0);margin-left:auto">audited {rel_time(gen)}</span>
+  </div>
+  <div style="font-size:11px;color:var(--subtext0);margin-bottom:10px;line-height:1.5">
+    Fixed per-session token tax — CLAUDE.md + @imports + .claude/rules + auto-loaded MEMORY.md.
+    RTK/lean-ctx/Headroom don't cover this; reduce it by structuring what auto-loads
+    (<code style="font-size:10px">read on demand, not upfront</code>).
+  </div>
+  <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px">
+    <div class="stat-card"><div class="stat-val" style="color:{status_color}">{total:,}</div>
+      <div class="stat-lbl">tokens at startup</div></div>
+    <div class="stat-card"><div class="stat-val" style="color:var(--subtext1)">{fcount}</div>
+      <div class="stat-lbl">files loaded</div></div>
+    <div class="stat-card"><div class="stat-val" style="color:{'#f9e2af' if stale else 'var(--subtext1)'}">{stale}</div>
+      <div class="stat-lbl">stale files</div></div>
+    <div class="stat-card"><div class="stat-val" style="color:{'#f38ba8' if ghosts else 'var(--subtext1)'}">{len(ghosts)}</div>
+      <div class="stat-lbl">ghost refs</div></div>
+  </div>
+  {files_table}
+  {ghost_line}
+</div>"""
+
+
 def render_context_health(rd):
+    startup_html = _startup_payload_card(rd["path"])
     sessions = rd.get("session_history", [])
     if not sessions:
-        return empty_state(
-            "No session history yet. Sessions are logged at stop time once "
-            "the stop hook has run at least once."
-        )
+        return f"""<div class="section-inner">
+  <h2 class="section-title">Context Health</h2>
+  {startup_html}
+  {empty_state("No session history yet. Sessions are logged at stop time once the stop hook has run at least once.")}
+</div>"""
 
     cutoff_7d  = NOW - timedelta(days=7)
     cutoff_30d = NOW - timedelta(days=30)
@@ -2759,6 +2856,7 @@ def render_context_health(rd):
     return f"""<div class="section-inner">
   <h2 class="section-title">Context Health</h2>
   {section_desc("Tracks session frequency as a proxy for context load. High session counts often indicate heavy contexts that benefit from <code>/compact</code> or subagent delegation.", icon="🧵", color="var(--teal)")}
+  {startup_html}
   {summary}{status_line}{chart}{tips}
 </div>"""
 

@@ -119,6 +119,18 @@ run_one() {
     local sr_exit=$?
     echo "$ts $repo security-report exit=$sr_exit duration=$(($(date +%s) - sr_start))s" >> "$LOG_FILE"
   fi
+
+  # Startup-payload audit — deterministic (no LLM). Measures the fixed per-session
+  # token tax (CLAUDE.md + @imports + .claude/rules + auto-loaded MEMORY.md) that
+  # RTK/lean-ctx/Headroom don't cover, and writes a JSON the dashboard's Context Health
+  # tab reads. Self-paces to daily via its own state-file guard, so calling it daily is
+  # cheap. Applies to every repo. Opt out with SDD_SKIP_STARTUP_AUDIT=1.
+  if [ "${SDD_SKIP_STARTUP_AUDIT:-0}" != "1" ] && [ -f "$repo/.claude/scripts/routines/startup-payload-audit.sh" ]; then
+    local sp_start=$(date +%s)
+    (cd "$repo" && bash .claude/scripts/routines/startup-payload-audit.sh) > /dev/null 2>&1
+    local sp_exit=$?
+    echo "$ts $repo startup-payload exit=$sp_exit duration=$(($(date +%s) - sp_start))s" >> "$LOG_FILE"
+  fi
 }
 
 if [ -n "$SINGLE_REPO" ]; then
