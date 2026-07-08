@@ -166,6 +166,26 @@ Higher staleness penalty for items that reference volatile state (code, APIs, co
 ```
 This enables failure analysis ("the wrong context was included because…") and makes refresh decisions auditable.
 
+## Two Independent Token Axes: Startup vs Runtime
+
+Token cost splits into two independent levers that need different tools. Optimizing one
+does nothing for the other.
+
+| Axis | What it is | Reduced by | Measured by |
+|---|---|---|---|
+| **Runtime payload** | Variable per-turn cost: shell output, file reads, API context, tool observations | RTK (shell), lean-ctx (file reads), Headroom (API context), the techniques above | `rtk gain`, Headroom stats, `ctx_compress` |
+| **Startup payload** | Fixed per-session tax paid *before you do anything*: layered `CLAUDE.md` + `@imports` + `.claude/rules/*` + auto-loaded `MEMORY.md` | Structuring what auto-loads; moving comprehensiveness to read-on-demand; pruning stale/ghost sections | `startup-payload-audit.sh` → dashboard **Context Health** tab |
+
+**The inversion principle (from claude-token-optimizer):** *comprehensiveness → archive
+(read on demand); essentiality → startup payload.* Anything the agent needs only sometimes
+should be a read-on-demand pointer, not auto-loaded prose. This is exactly the harness's own
+"read on demand, not upfront" rule — the `startup-payload-audit` routine verifies the rule is
+actually being followed by measuring the fixed payload, flagging over-budget growth, stale
+files, and ghost references (referenced-but-missing paths).
+
+You cannot compress your way out of a bloated startup payload — RTK and lean-ctx never see it.
+Fix it by *structuring what loads*, then let the audit guard regressions.
+
 ## Guidelines
 
 1. Measure before optimizing—know your current state

@@ -385,3 +385,44 @@ GitHub repositories that were passed to `/skill-extraction` and turned into harn
 - Skill augmentation: `loop-patterns` — new **Loop Guardrails** section. (a) **Dual-condition exit**: don't stop on the heuristic check alone; require an explicit one-line confirmation that the green output truly means the goal is met (guards stopping-too-early on flaky/partial passes). (b) **Circuit breakers** checked every pass, independent of the max cap: abort on 2 consecutive no-progress passes or 2 consecutive identical-error passes, then stop and report. This is the one gap — `loop-patterns` previously had only a one-line "use a cap to prevent runaway" note (`SKILL.md:234`), with no same-error/no-progress detection and a single-condition exit, which is exactly Ralph's thesis.
 
 **Rejected:** `ralph_loop.sh`/`ralph_monitor.sh`/tmux orchestration (harness drives loops via `ScheduleWakeup`/`/loop` + `daily-orchestrator.sh`, not external bash spinning the CLI — would fork the loop model); `ralph-stats` metrics + token budgeting (dashboard + `Workflow` budget already cover); desktop notifications (`PushNotification`); git backup/rollback (atomic per-task commits already); Docker/E2B sandbox (infra decision, not a harness behavior); multi-provider abstraction (harness is Claude-only by design — anti-goal); log rotation + `PROMPT.md`/`fix_plan.md`/`AGENT.md` file conventions (harness uses `specs/`/`steering/`/`CLAUDE.md`).
+
+---
+
+## github.com/usestrix/strix
+**URL:** https://github.com/usestrix/strix | **Added:** 2026-07-02
+**Source / Author:** usestrix — autonomous AI pentesting platform
+
+**What it's about:** An open-source autonomous pentesting platform that runs a graph of agents (recon → exploit → post-exploit) against live targets, validating findings with working PoCs. Its most reusable asset is not the code but its `strix/skills/` library: ~40 deep per-vulnerability-class knowledge packages (IDOR, SSRF, SSTI, GraphQL, race conditions) with attack-surface maps, bypass matrices, chaining logic, and false-positive catalogs. The default-skip gate rejected the whole platform — the harness has no live-exploitation sandbox — but the tool-agnostic *triage-reasoning* subset filled a real gap.
+
+**What we added** (one augmentation — the platform and its agent orchestration were already covered):
+- Skill augmentation: `ai-security-workflow` — new `references/vuln-class-heuristics.md` distilling per-class whitebox review heuristics (non-obvious cases: batch endpoints validating only `items[0]`, second-order injection, resolver-boundary GraphQL authz) plus a three-gate **false-positive discipline** (reachability → binding → prove-the-negative) and per-class FP catalog. Wired as two pointer lines into Phase 2 (Vuln Scan → "what to look for") and Phase 3 (Triage → the validation gate). Attacks the harness's weakest security link — triage noise — where the SKILL.md previously listed only class *names*.
+
+**Rejected:** the full 40-file offensive library (~90% live-exploitation tradecraft presuming a running target + sandbox the harness lacks); Graph-of-Agents orchestration (covered by `multi-agent-patterns` + `secure-agent-design`); dynamic skill-injection (native Claude Code progressive disclosure + `skill-creator`/`skill-curator`); scan modes (overlap `model-tiers`/`progressive-complexity-ladder`); `source_aware_sast` (hard-requires semgrep/ast-grep/trivy — out of scope); headless CI mode (already have `security-report-runner.sh` + `pr-report`); nmap/nuclei/ffuf tooling playbooks (offensive CLI reference, out of scope).
+
+---
+
+## github.com/nadimtuhin/claude-token-optimizer
+**URL:** https://github.com/nadimtuhin/claude-token-optimizer | **Added:** 2026-07-02
+**Source / Author:** nadimtuhin
+
+**What it's about:** A CLI (`cto`) that reframes token cost as a *documentation-structuring* problem — it minimizes the auto-loaded session-startup payload, then audits/compresses it deterministically with CI-friendly checks. Its optimization axis is **orthogonal** to existing harness tooling: RTK and lean-ctx attack *runtime* cost (command output, file reads) and Headroom attacks *API-context* cost, while `cto` attacks *startup* cost (what loads before you do anything). The default-skip gate rejected everything except that one uncovered axis.
+
+**What we added** (one routine + one skill augmentation + one dashboard card):
+- Routine: `scripts/routines/startup-payload-audit.sh` — deterministic (no LLM) daily audit measuring the fixed per-session token tax (`CLAUDE.md` + `@imports` + `.claude/rules/*` + auto-loaded `MEMORY.md`), flagging over-budget growth, stale files, and ghost references. Writes `.claude/reports/context/startup-payload.json`. Wired into `daily-orchestrator.sh` `run_one()` with `SDD_SKIP_STARTUP_AUDIT=1` opt-out + state-file cadence guard; registered in `_scheduled_task_registry()`; chmod-listed in install.sh + update.sh.
+- Skill augmentation: `context-optimization` — new "Two Independent Token Axes: Startup vs Runtime" section naming the startup lever (which RTK/lean-ctx never see) and the inversion principle (*comprehensiveness → archive; essentiality → startup payload*).
+- Dashboard widget: `_startup_payload_card()` in `scripts/utils/dashboard.py` — a Startup Payload card in the **Budget & Efficiency → Context Health** tab (tokens, budget status, stale/ghost counts, top files).
+
+**Rejected:** `docs/learnings/` keyword-inject hook (covered by lean-ctx `ctx_knowledge wakeup` + MEMORY/hot-memory); framework `COMMON_MISTAKES.md` (covered by `ERRORS.md` + `tool-failure-memory`); `cto compress/prune` (overlaps `ctx_compress` — on-disk-doc part folds into the audit output); pre-tool read/bash blocking guards (RTK/lean-ctx already *reduce* > *block*); `cto watch` live dashboard (duplicates `rtk gain`); literal `.claudeignore` generation (harness auto-loads via `@import`/auto-memory — the audit *verifies* the principle instead).
+
+---
+
+## github.com/typedef-ai/fenic
+**URL:** https://github.com/typedef-ai/fenic | **Added:** 2026-07-02
+**Source / Author:** typedef-ai
+
+**What it's about:** A PySpark-inspired DataFrame library that treats LLM inference as a first-class, typed, lazily-evaluated query operator (`semantic.extract/classify/predicate/reduce/join`, `sim_join`, `with_cluster_labels`), giving batch LLM work automatic caching, per-query cost accounting, and row-level lineage. The non-obvious insight — lazy eval is what unlocks the caching/cost/lineage layer — is covered by no existing harness skill (rag-architect = retrieval, structured-web-dataset = sourcing, csv-data-summarizer = post-hoc analysis, document-parsing = ingestion).
+
+**What we added** (one pattern skill — the library itself is on-demand via `get-api-docs`):
+- Skill: `semantic-data-pipeline` — a lean, library-agnostic **decision** skill: when batch LLM transformation over many rows needs reproducibility, model it as a lazily-evaluated query with a caching/cost/lineage layer, not an ad-hoc loop. Teaches the four-operator taxonomy (extract/classify/predicate/reduce) and the explore→pipeline→governed-tool graduation path, with fenic as the reference implementation. Explicit "Do NOT Activate" boundaries route sourcing → `structured-web-dataset`, retrieval → `rag-architect`, ingestion → `document-parsing`, analysis → `csv-data-summarizer` to prevent wrong-skill firing.
+
+**Rejected:** a fenic-as-a-tool API tutorial skill (the "here's a library that exists" anti-pattern — `get-api-docs` handles docs on demand); `fenic check` linter as a harness pattern (harness authors no library agents call; ruff/serena/pytest already gate its own code); `fenic skill install` (duplicates `skill-creator`/`skill-curator`); operator taxonomy into `rag-architect` (adds vocabulary not decision value; bloats a mature skill); all hook/routine/dashboard/script/command angles (on-demand design decision, nothing to automate).

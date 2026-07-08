@@ -76,6 +76,10 @@ description: 5-phase interactive security workflow for finding and fixing real v
    - **SSRF/RFI:** User-controlled URLs fed to HTTP clients or file loaders
    - **Logic flaws:** Race conditions, TOCTOU, integer overflow in business logic
 
+   For the "what to look for" per class (including non-obvious cases like batch endpoints
+   validating only the first array element, second-order injection, resolver-boundary
+   GraphQL authz), see [references/vuln-class-heuristics.md](references/vuln-class-heuristics.md).
+
 3. Write `VULN-FINDINGS.json`:
    ```json
    {
@@ -115,6 +119,10 @@ description: 5-phase interactive security workflow for finding and fixing real v
    - Check: is the vulnerable path actually reachable from an attacker-controlled entry point?
    - Check: are there any mitigations in place (WAF rule, upstream sanitization, auth guard)?
    - Classify: `confirmed` / `false-positive` / `needs-more-info`
+   - Apply the three-gate false-positive discipline (reachability → binding → prove-the-negative)
+     and per-class FP catalog in [references/vuln-class-heuristics.md](references/vuln-class-heuristics.md).
+     A finding is not `confirmed` until you can state what the corrected request looks like and
+     that the code path would reject it.
 
 2. Deduplicate: if two findings are the same root cause in different callsites, merge them.
 

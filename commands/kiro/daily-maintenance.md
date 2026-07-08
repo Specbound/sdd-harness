@@ -144,6 +144,7 @@ Focus on:
 1. Skills invoked during today's sessions (grep trace.log and observations for [skill:*] tags)
 2. Judge drains that map to a skill domain (re-explanation → memory skills, gate bypass → verification skills, etc.)
 3. Harness-own skills (superpowers:*, kiro context) referenced in today's observations
+4. learn-eval **Route** candidates — skill-tied lessons deliberately kept out of memory (look for `- ... [learn-eval] Evaluated ... routed` markers in observations, or "Routed to Skills" lines). Push each into its named skill. This is the skills-over-memory handoff.
 
 Rules:
 - Max 3 skills updated

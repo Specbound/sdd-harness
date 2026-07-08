@@ -44,6 +44,22 @@ All tasks are wired into `scripts/daily-orchestrator.sh`. The orchestrator fires
 
 ---
 
+### Startup Payload Audit
+**Runner:** `.claude/scripts/routines/startup-payload-audit.sh`
+**Cadence:** Every day (own state-file guard `.claude/memory/.last-startup-payload-audit`; deterministic — no LLM call)
+**Scope:** Every registered repo
+
+**What it does:**
+- Measures the **fixed per-session token tax** — the layered `CLAUDE.md` + `@imports` + `.claude/rules/*` + auto-loaded `MEMORY.md` that load before you do anything. RTK/lean-ctx/Headroom only reduce *runtime* cost and never see this startup payload.
+- Estimates per-file tokens and age, flags files over the budget (`SDD_STARTUP_PAYLOAD_BUDGET`, default 8000), stale files (`SDD_STARTUP_STALE_DAYS`, default 45), and **ghost references** (`@paths` in CLAUDE.md that don't resolve)
+- Writes `.claude/reports/context/startup-payload.json`
+- Surfaced in the dashboard **Budget & Efficiency → Context Health** tab as a Startup Payload card (tokens, budget status, stale/ghost counts, top files) and as a card on the **Scheduled Tasks** tab
+- Enforces the harness's own "read on demand, not upfront" rule by measuring whether it's actually followed. See the `context-optimization` skill (Startup vs Runtime axis).
+
+**Opt-out:** `SDD_SKIP_STARTUP_AUDIT=1` env var. Force a run with `--force`.
+
+---
+
 ### Macro-Eval Sweep
 **Runner:** `.claude/scripts/macro-eval-runner.sh`
 **Prompt:** `.claude/scripts/macro-eval-prompt.md`
@@ -104,7 +120,7 @@ This is the **review** stage of the tool-failure-memory loop (capture → recall
 **Scope:** Harness repo only (exits 0 in non-harness repos via `docs/scheduled-tasks/` guard)
 
 **What it does:**
-1. **CLAUDE.md review** — reads all repos in `~/.claude/sdd-harness/projects.txt`; audits for stale instructions, model-assumption drift, and over-constraining rules from pre-Claude-4.x habits; rates each repo `clean` / `minor` / `needs-update`; writes `docs/claudemd-review-report.md`
+1. **CLAUDE.md review** — reads all repos in `~/.claude/sdd-harness/projects.txt`; audits for stale instructions, model-assumption drift, and over-constraining rules from pre-Claude-4.x habits; rates each repo `clean` / `minor` / `needs-update`; writes `docs/claudemd-review-report.md`. This is the *harness-wide* pass. Its *per-repo* counterpart is the `/claudemd-review` global command (`commands/global/claudemd-review.md`), which `session-start-hook.sh` fires when a single repo's `.claude/memory/.last-claudemd-review` is >14 days stale; that command audits only the current repo (adding a 200-line size budget, an "inferable from the manifest" filter, and an `@AGENTS.md` import/dedup check) and writes `.claude/memory/claudemd-review-report.md` — do not confuse the two report paths.
 2. **Iterative skill repair** — reads `docs/skill-curation-report.md` for low-quality flags; applies a Review→Repair→Validate loop (up to 3 skills per run, max 3 repair iterations per skill); writes repaired `SKILL.md` files directly; appends a `## Iterative Repair Run — [date]` section to the curation report
 
 **How to use:** `git pull` after the routine runs, then read `docs/claudemd-review-report.md`. Stalled skills in the repair report need manual intervention — invoke the relevant skill locally with domain context the automated run couldn't supply.
@@ -148,4 +164,4 @@ The dashboard's **Scheduled Tasks** tab shows live status for each task: schedul
 
 ---
 
-_Last synced: 2026-06-21_
+_Last synced: 2026-07-02_

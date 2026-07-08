@@ -231,7 +231,7 @@ Reviews recent work, extracts observations, promotes patterns, updates hot-memor
 Run after completing a spec, finishing a debugging session, or at end of a productive session.
 
 ### `/kiro:learn-eval` — Quality-gated pattern evaluation
-Evaluates session patterns with quality scoring (specificity, actionability, evidence). Deduplicates against existing knowledge and produces save/absorb/drop verdicts. Deeper than `/kiro:reflect` — use periodically.
+Evaluates session patterns with quality scoring (specificity, actionability, evidence). Deduplicates against existing knowledge and produces save/absorb/route/drop verdicts (route = skill-tied lesson pushed into its skill instead of memory). Deeper than `/kiro:reflect` — use periodically.
 
 ```
 /kiro:learn-eval              # evaluate current session

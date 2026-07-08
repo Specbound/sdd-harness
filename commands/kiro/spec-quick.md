@@ -37,6 +37,13 @@ In Automatic Mode:
 ## Core Task
 Execute spec phases sequentially. In automatic mode, execute all phases except grill (which requires user interaction) without stopping. In interactive mode, prompt user for approval between phases including the grill session.
 
+**Pre-check (triage gate):** Before spec'ing, if the routing of this work is not already decided,
+apply `Skill("issue-triage-routing")` to the input. `spec-quick` is not the default for every
+task — if triage yields ONE-SHOT (simple, clear, on-roadmap) implement directly instead; if it
+yields DEFER or CLARIFY, honor that first. Only proceed with full spec generation when triage
+yields SPEC. Skip this pre-check if the user explicitly asked to spec, or a spec route is already
+established (e.g. called from `jira-solve` after its pre-gate).
+
 ## Execution Steps
 
 ### Step 1: Parse Arguments and Initialize

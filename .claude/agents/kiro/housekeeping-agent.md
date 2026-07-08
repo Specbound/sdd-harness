@@ -122,6 +122,24 @@ Identify and report:
 - Entities with `last:` date >30 days old
 - Observations referencing files that no longer exist
 
+### Step 6.5: Flag Skill-Tied Entries (skills-over-memory)
+
+Scan `meta/patterns.md` and `hot-memory.md` for entries whose content is tied to
+exactly ONE existing skill (a lesson, fix, or gotcha that only makes sense in the
+context of that skill, and a matching skill exists under `~/.claude/skills/`).
+
+Such entries are misfiled: a single-skill lesson parked in global memory rots and
+never reaches anyone using the skill. Its real home is that skill's SKILL.md.
+
+**Recommend, do not move.** Following archive-first discipline, never auto-relocate:
+- List each skill-tied entry with its target skill and a one-line rationale.
+- Recommend the user route it via `skill-augment-agent` (pushes it into the skill),
+  then delete the memory entry once landed.
+- If uncertain whether an entry is truly single-skill vs. cross-cutting, leave it.
+
+This is the backfill complement to learn-eval's **Route** verdict, which prevents
+new skill-tied lessons from being saved to memory at intake.
+
 ### Step 7: Rebuild Glacier Index
 
 Rewrite `.claude/memory/glacier/index.md`:
@@ -157,6 +175,9 @@ Chat summary only (files updated directly):
 ## Stale Items
 - Action items >2 weeks: [list or "None"]
 - Entities >30 days: [list or "None"]
+
+## Skill-Tied Entries (recommend routing → skill, not memory)
+- [entry → target skill: rationale, or "None"]
 
 ## Glacier Index
 - Total archived files: N

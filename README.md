@@ -131,7 +131,7 @@ sdd-harness/
 │   ├── steering.md               #   Bootstrap/sync project knowledge
 │   ├── steering-custom.md        #   Add domain-specific docs (auth, DB, etc.)
 │   ├── reflect.md                #   Mine session learnings, update memory
-│   ├── learn-eval.md             #   Quality-gated pattern evaluation (save/absorb/drop)
+│   ├── learn-eval.md             #   Quality-gated pattern evaluation (save/absorb/route/drop)
 │   ├── housekeeping.md           #   Prune memory, enforce caps
 │   ├── evolve.md                 #   Audit harness rules, propose improvements
 │   ├── save-session.md           #   Save resumable session snapshot
@@ -350,7 +350,7 @@ Each spec phase ends with a **[Proof](https://github.com/anthropics/proof) colla
 | `/kiro:steering` | Bootstrap/sync project knowledge docs |
 | `/kiro:steering-custom` | Add domain-specific steering (auth, DB, API, etc.) |
 | `/kiro:reflect` | Extract session learnings, update memory |
-| `/kiro:learn-eval` | Quality-gated pattern evaluation with save/absorb/drop verdicts |
+| `/kiro:learn-eval` | Quality-gated pattern evaluation with save/absorb/route/drop verdicts (route = skill-tied lesson pushed into its skill, not memory) |
 | `/kiro:housekeeping` | Prune memory, archive old observations |
 | `/kiro:evolve` | Audit harness rules, detect friction, propose improvements (includes graduation pipeline) |
 | `/kiro:guardrails` | Audit and scaffold linter complexity rules for deterministic enforcement |

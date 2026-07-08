@@ -99,7 +99,7 @@ do_update() {
   done
 
   # --- chmod runtime scripts that need to be executable ---
-  for s in orchestration/daily-runner.sh routines/macro-eval-runner.sh routines/skill-curator-runner.sh routines/harness-health-runner.sh routines/tool-failure-review-runner.sh; do
+  for s in orchestration/daily-runner.sh routines/macro-eval-runner.sh routines/skill-curator-runner.sh routines/harness-health-runner.sh routines/tool-failure-review-runner.sh routines/startup-payload-audit.sh; do
     [ -f "$proj/.claude/scripts/$s" ] && chmod +x "$proj/.claude/scripts/$s"
   done
   [ -f "$proj/.claude/scripts/utils/ollama_model_test.py" ] && chmod +x "$proj/.claude/scripts/utils/ollama_model_test.py"

@@ -11,6 +11,9 @@ argument-hint: <ISSUE-ID> [--dry-run]
 - **Jira client**: `.claude/scripts/jira_client.py` — run via `uv run python .claude/scripts/jira_client.py <cmd> <args>`
 - **Credentials**: `~/.env.jira` must exist with JIRA_URL, JIRA_USERNAME, JIRA_API_TOKEN
 - **Routing logic**:
+  - **Pre-gate (all types):** first apply `Skill("issue-triage-routing")` to the issue — if it
+    routes to DEFER (off-roadmap) or CLARIFY (ambiguity blocks a spec), honor that before the
+    type-based routing below. Only proceed to type-routing once triage yields SPEC or ONE-SHOT.
   - Bug / Defect → systematic debugging workflow
   - Story / Feature / Epic → `/kiro:spec-quick` seeded from Jira context
   - Task / Sub-task / Improvement / Chore → direct implementation plan

@@ -76,6 +76,12 @@ For each candidate:
 - Merge new evidence into the existing entry
 - Strengthen the pattern description if the new evidence adds nuance
 
+**Route** (score >= 6, but the pattern's evidence is tied to exactly ONE existing skill):
+- Do NOT write it to `patterns.md` — a skill-specific lesson misfiled in global memory rots and helps nobody using the skill.
+- Record it as a routed candidate: skill name + the lesson phrased as an anti-pattern or learned pattern (`In {skill}: {what to do / avoid} — Evidence: {evidence}`).
+- The daily-maintenance skill-augment step (Step 6) consumes routed candidates and pushes them into that skill's SKILL.md. If running standalone (not via daily-maintenance), report routed candidates so the user can invoke `skill-augment-agent`.
+- Route test — ALL must hold: (1) the lesson only makes sense in the context of that one skill, (2) a matching skill exists in `~/.claude/skills/`, (3) it would change that skill's behavior. If the lesson spans multiple skills or is truly cross-cutting, use **Save** instead.
+
 **Drop** (score < 6 OR exact duplicate):
 - Discard with reason: "Too generic", "Duplicate of pattern #{N}", "No actionable guidance", etc.
 
@@ -83,10 +89,11 @@ For each candidate:
 
 If scope is `sprint`, append a marker to observations.md:
 ```
-- {YYYY-MM-DD} [learn-eval] Evaluated {N} candidates: {saved} saved, {absorbed} absorbed, {dropped} dropped
+- {YYYY-MM-DD} [learn-eval] Evaluated {N} candidates: {saved} saved, {absorbed} absorbed, {routed} routed, {dropped} dropped
 ```
 
 ## Important Constraints
+- **Skills over memory**: Before Save, always run the Route test. A lesson about one skill belongs IN that skill, not in global memory — Save is only for genuinely cross-cutting patterns.
 - **Conservative saves**: When in doubt, drop. patterns.md should stay under 70 lines.
 - **Evidence required**: Never save a pattern without specific evidence.
 - **No invention**: Only extract patterns that actually occurred — do not synthesize or generalize beyond evidence.
@@ -95,7 +102,8 @@ If scope is `sprint`, append a marker to observations.md:
 ## Output Description
 
 Return an evaluation report. Include:
-1. **Summary**: "{N} candidates evaluated: {saved} saved, {absorbed} absorbed, {dropped} dropped"
-2. **Verdicts Table**: Each candidate with score, verdict, and reason
+1. **Summary**: "{N} candidates evaluated: {saved} saved, {absorbed} absorbed, {routed} routed-to-skill, {dropped} dropped"
+2. **Verdicts Table**: Each candidate with score, verdict, and reason (Route rows name the target skill)
 3. **Changes Made**: Files modified (patterns.md entries added/updated)
-4. **Trace**: `learn-eval-agent | sonnet | pass | scope:{scope} candidates:{N}`
+4. **Routed to Skills**: For each Route verdict, `{skill} ← {lesson}` so skill-augment (or the user) can push it in
+5. **Trace**: `learn-eval-agent | sonnet | pass | scope:{scope} candidates:{N}`

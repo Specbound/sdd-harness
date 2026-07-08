@@ -527,7 +527,7 @@ install_project() {
 
   # --- chmod runtime scripts that need to be executable ---
   local s
-  for s in orchestration/daily-runner.sh routines/macro-eval-runner.sh routines/skill-curator-runner.sh routines/harness-health-runner.sh routines/tool-failure-review-runner.sh; do
+  for s in orchestration/daily-runner.sh routines/macro-eval-runner.sh routines/skill-curator-runner.sh routines/harness-health-runner.sh routines/tool-failure-review-runner.sh routines/startup-payload-audit.sh; do
     [ -f "$PROJECT_DIR/.claude/scripts/$s" ] && chmod +x "$PROJECT_DIR/.claude/scripts/$s"
   done
   [ -f "$PROJECT_DIR/.claude/scripts/utils/ollama_model_test.py" ] && chmod +x "$PROJECT_DIR/.claude/scripts/utils/ollama_model_test.py"

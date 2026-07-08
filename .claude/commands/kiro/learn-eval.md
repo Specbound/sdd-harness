@@ -30,7 +30,8 @@ Evaluate patterns from the specified scope against existing knowledge in:
 - .claude/memory/meta/patterns.md
 - .claude/memory/observations.md
 
-For each pattern found, produce a verdict: Save, Absorb, or Drop.
+For each pattern found, produce a verdict: Save, Absorb, Route, or Drop.
+Route = lesson is tied to exactly one existing skill → push it into that skill, not memory.
 Apply quality gates: specificity, actionability, evidence.
 """
 )
@@ -44,6 +45,7 @@ Show the evaluation report with verdicts.
 
 - Patterns marked **Save** have been written to `meta/patterns.md`
 - Patterns marked **Absorb** have been merged into existing entries
+- Patterns marked **Route** are skill-specific — push each into its target skill's SKILL.md (via `skill-augment-agent`, or automatically on the next `/kiro:daily-maintenance` run). Skills-over-memory: a single-skill lesson helps everyone using that skill; parked in memory it silently rots.
 - Patterns marked **Drop** were discarded (reasons provided)
 
 **Relationship to /kiro:reflect**: Use `/kiro:reflect` for quick, frequent capture during active work. Use `/kiro:learn-eval` for deeper periodic evaluation (end of sprint, after major feature, or before archival).

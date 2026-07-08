@@ -327,3 +327,15 @@ Online articles, blog posts, and documentation pages that were passed to `/skill
 - Routine wiring: `scripts/orchestration/daily-runner.sh` posts each repo's daily-maintenance summary to channels, gated on `~/.env.channels` existence (no-op otherwise; `SDD_SKIP_CHANNEL_NOTIFY=1` opts out)
 - Docs: `docs/integrations/channels/README.md` — setup + per-platform webhook walkthrough
 - Rejected: inbound channels / bot listeners (harness is a local CLI, not a deployed service)
+
+---
+
+## Top 30 Prompt Techniques That Actually Work in 2026
+**URL:** https://agent-cookbook.com/tutorial/top-30-prompt-techniques-that-actually-work-in-2026 | **Added:** 2026-07-02 | **Source:** agent-cookbook.com
+
+**What it's about:** A listicle enumerating 30 general Claude prompting techniques (explicitness, XML tags, few-shot, extended thinking, self-eval, agent-mode, plus 9 task-specific templates). 29 of 30 are already encoded in the harness's `prompt-engineering` + `prompt-quality-assess` skills and the agent-design skill family. The default-skip gate rejected all but one.
+
+**What we added** (one augmentation — everything else was already covered):
+- Skill augmentation: `prompt-engineering` — new "XML Tag Delimiting" subsection after Instruction Hierarchy. Teaches wrapping prompt regions in explicit XML tags (`<instructions>`, `<context>`, `<document>`) so the model never confuses instructions with data — Anthropic's most-emphasized structuring primitive, materially relevant on a 1M-context model that concatenates large context blocks, and a first-line prompt-injection defense for untrusted input. The one item literally absent from the existing skill (which taught only a markdown-header Instruction Hierarchy).
+
+**Rejected (29/30, already covered):** few-shot / extended-thinking / context-first / self-eval loop / 1M-context / iterate → `prompt-engineering` sections; be-explicit / output-format / define-"done" / negative-constraints → `prompt-quality-assess` dimensions; agent-mode / multi-persona debate / prompt-chaining / reverse-brainstorming → `agent-execution-control` + `multi-agent-patterns`; the 9 task-specific templates → instances of the existing "Template Systems" pattern (encoding them = bloat). Also rejected the two other links from this batch outright — **DeepSeek dSpark** (GPU inference-serving speedup, a layer the harness never touches) and **Ornith-1.0** (self-scaffolding RL is training-only, baked into weights; the harness trains no models) — zero integrations each.
