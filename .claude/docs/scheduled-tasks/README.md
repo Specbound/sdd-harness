@@ -42,6 +42,22 @@ All tasks are wired into `scripts/daily-orchestrator.sh`. The orchestrator fires
 
 ---
 
+### Startup Payload Audit
+**Runner:** `.claude/scripts/routines/startup-payload-audit.sh`
+**Cadence:** Every day (own state-file guard `.claude/memory/.last-startup-payload-audit`; deterministic — no LLM call)
+**Scope:** Every registered repo
+
+**What it does:**
+- Measures the **fixed per-session token tax** — the layered `CLAUDE.md` + `@imports` + `.claude/rules/*` + auto-loaded `MEMORY.md` that load before you do anything. RTK/lean-ctx/Headroom only reduce *runtime* cost and never see this startup payload.
+- Estimates per-file tokens and age, flags files over the budget (`SDD_STARTUP_PAYLOAD_BUDGET`, default 8000), stale files (`SDD_STARTUP_STALE_DAYS`, default 45), and **ghost references** (`@paths` in CLAUDE.md that don't resolve)
+- Writes `.claude/reports/context/startup-payload.json`
+- Surfaced in the dashboard **Budget & Efficiency → Context Health** tab as a Startup Payload card (tokens, budget status, stale/ghost counts, top files) and as a card on the **Scheduled Tasks** tab
+- Enforces the harness's own "read on demand, not upfront" rule by measuring whether it's actually followed. See the `context-optimization` skill (Startup vs Runtime axis).
+
+**Opt-out:** `SDD_SKIP_STARTUP_AUDIT=1` env var. Force a run with `--force`.
+
+---
+
 ### Macro-Eval Sweep
 **Runner:** `.claude/scripts/macro-eval-runner.sh`
 **Prompt:** `.claude/scripts/macro-eval-prompt.md`
@@ -146,4 +162,4 @@ The dashboard's **Scheduled Tasks** tab shows live status for each task: schedul
 
 ---
 
-_Last synced: 2026-06-11_
+_Last synced: 2026-07-08_

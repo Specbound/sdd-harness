@@ -22,6 +22,7 @@ Utility scripts used by the harness. All Python scripts use stdlib only (no virt
 | `skill-curator-runner.sh` | Runs `/kiro:skill-extract` to curate and augment skills from session learnings. |
 | `tool-failure-review-runner.sh` | Promotes recurring tool failures from `.claude/memory/tool-failures.jsonl` into `ERRORS.md` + memory. |
 | `security-report-runner.sh` | Daily security scan: runs the security-report prompt headlessly, writes report to `.claude/reports/security/`. Runs at most once per day (`SECURITY_REPORT_GAP_DAYS`). Opt out with `SDD_SKIP_SECURITY_REPORT=1`. |
+| `routines/startup-payload-audit.sh` | Deterministic (no LLM) daily audit of the fixed per-session startup token tax (`CLAUDE.md` + `@imports` + `.claude/rules/*` + auto-loaded `MEMORY.md`). Writes `.claude/reports/context/startup-payload.json`, read by the dashboard's Context Health tab. Self-paces to daily via its own state-file guard. Wired into `daily-orchestrator.sh` `run_one()`. Opt out with `SDD_SKIP_STARTUP_AUDIT=1`. |
 
 ## Session Intelligence
 
@@ -63,4 +64,4 @@ Utility scripts used by the harness. All Python scripts use stdlib only (no virt
 | `security-report-prompt.md` | Prompt for the security report runner. |
 | `skill-curator-prompt.md` | Prompt for skill curation runs. |
 
-_Last synced: 2026-06-21
+_Last synced: 2026-07-08
