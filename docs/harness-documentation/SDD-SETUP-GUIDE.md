@@ -528,7 +528,7 @@ Conventions are defined in `.claude/kiro/settings/rules/memory-conventions.md`:
 | `/kiro:validate-adversarial {feature}` | Three-pass adversarial review with +1/-2 scoring |
 | `/kiro:converge [feature]` | Spec ↔ code reconciliation — detects bidirectional drift (spec-ahead / code-ahead / contradiction); reuses `validate-impl-agent` |
 | `/kiro:spec-status {feature}` | Show current phase, approvals, and open tasks |
-| `/kiro:sync-docs` | Sync docs with ALL code changes (uncommitted + staged + committed) |
+| `/kiro:sync-docs` | Sync docs with ALL code changes (uncommitted + staged + committed). Filters out `.md` files and `.claude/` paths — `.claude/` is regenerated output (rebuilt by `install.sh` / `update.sh`) and gitignored; changes to the harness **source** tree (`agents/`, `commands/`, `hooks/`, `kiro/`, `scripts/`, `rules/`, `templates/`, `skills/`, `CLAUDE.md`) are the harness updater's job |
 | `/kiro:reflect` | Review session, extract observations, update memory (subagent) |
 | `/kiro:learn-eval [scope]` | Quality-gate session/sprint/feature patterns before saving to memory — scores specificity/actionability/evidence (1-3 each, pass ≥6); verdicts Save/Absorb/Route/Drop (subagent). Use for deeper periodic evaluation vs. `/kiro:reflect`'s quick frequent capture |
 | `/kiro:housekeeping` | Prune memory, archive old observations to glacier (subagent) |
@@ -619,7 +619,7 @@ Conventions are defined in `.claude/kiro/settings/rules/memory-conventions.md`:
 | PostToolUse (lean-ctx nudge) | Every Read of a file ≥16 KB (~4,000 tokens) | Suggests the optimal `ctx_read` mode for the file type (`signatures` for code, `reference` for prose, `aggressive` for unknown); silent for small files and data formats (`.json/.yaml/.toml/.lock`). Implemented in `.claude/hooks/lean-ctx-nudge-hook.sh`. |
 | post-commit (doc sync) | Every `git commit` with non-`.md` source changes | Doc-sync: updates all `.md` files referencing changed code via `claude --dangerously-skip-permissions --print` (background) |
 | post-commit (harness updater) | Every `git commit` touching harness source — `agents/`, `commands/`, `hooks/`, `kiro/`, `scripts/`, `rules/`, `templates/`, `skills/`, or `CLAUDE.md` | Updates `docs/harness-documentation/SDD-SETUP-GUIDE.md` via `claude --dangerously-skip-permissions --print` (background). Path-to-section routing is spelled out in the hook prompt (`rules/` → context engineering, `templates/settings*.template` → hooks/configuration, etc.) |
-| post-commit (auto-sync `.md`) | Every `git commit`, after hooks 1–2 finish | Waits on the doc-sync / harness-updater background PIDs, then `git add -- '*.md'`, commits `docs: auto-sync (<date>)` scoped to `*.md`, and pushes. Never stages or pushes non-`.md` files; a failed push leaves the commit in place and prints a warning. Script: `hooks/git/post-commit`. |
+| post-commit (auto-sync `.md`) | Every `git commit`, after hooks 1–2 finish | Waits on the doc-sync / harness-updater background PIDs, then `git add -- '*.md'`, commits `docs: auto-sync (<date>)` scoped to `*.md`, and pushes. Never stages or pushes non-`.md` files; a failed push leaves the commit in place and prints a warning. Runs at **every** `SDD_PROFILE` level, `minimal` included — git hooks are infrastructure, not enforcement (see Kiro Settings → Hook profiles). Script: `hooks/git/post-commit`. |
 | Stop (address-check) | Every Claude session end | Checks the last assistant turn for the "Husband" address rule from `CLAUDE.md`. If missing, injects a correction banner (exit 2). No-ops silently if transcript is unreadable. Script: `hooks/claude/address-check-hook.sh`. |
 | PostToolUse (setup-buffer) | Every Bash command (atomic, ≤3 lines) | Detects setup-pattern commands (package installs, `docker compose`/`build`, DB create/migrate, `.env` sourcing/export, `git clone`, `make install`/`setup`/`init`) and appends them to `.claude/memory/.setup-session-buffer.log`; the Stop hook later folds the buffer into `.claude/memory/setup-knowledge.md`. Source: `hooks/claude/setup-buffer-hook.sh` → installed to `.claude/hooks/setup-buffer-hook.sh`; registered on `PostToolUse Bash` in both settings templates. |
 | PostToolUse (skill-permissions-gate) | Every Write/Edit to `*/skills/*/SKILL.md` | Soft gate (never blocks): reminds Claude to run `agent-permissions-design` before marking a new/edited skill complete — checks tool access, irreversible-action gates, scope boundaries, and external-service access. Source: `hooks/claude/skill-permissions-gate.sh` → installed to `.claude/hooks/skill-permissions-gate.sh`; registered on `PostToolUse Write|Edit` in both settings templates. Fires only for paths matching `*/skills/*/SKILL.md`, so other `.md` writes are untouched. |
@@ -653,6 +653,39 @@ Editing rule: change `rules/*.md` in the harness source tree, then run `update.s
 
 ---
 
+## Kiro Settings — Rules & Templates (`kiro/settings/`)
+
+Harness-internal rules and document templates live at `kiro/settings/` in the source tree and are synced to `.claude/kiro/settings/` by `install.sh` / `update.sh` (see Step 4 path remap). Unlike `rules/`, these are **not** loaded every session — commands and agents reference them on demand, so they cost no startup tokens.
+
+| Path | Purpose |
+|---|---|
+| `kiro/settings/rules/*.md` | Behavioral rules referenced by commands/agents on demand — spec phases, task generation, agent output format, alignment scoring, steering principles, test backlinks, frontend anti-patterns, memory conventions, hook profiles |
+| `kiro/settings/templates/steering/` | Steering document templates used by `/kiro:steering` |
+| `kiro/settings/templates/steering-custom/` | Templates for `/kiro:steering-custom` domain docs |
+| `kiro/settings/templates/memory/` | Memory bootstrap templates copied into `.claude/memory/` (Step 12) |
+| `kiro/settings/templates/skill-extraction-plan.md` | Plan scaffold used by `/kiro:skill-extract` |
+
+### Hook profiles (`kiro/settings/rules/hook-profiles.md`)
+
+Graduated automation levels selected with the `SDD_PROFILE` environment variable:
+
+| Profile | Session hooks (`stop-hook.sh`) | Git hooks | Use for |
+|---|---|---|---|
+| `minimal` | Skipped entirely | Run normally | Rapid prototyping, exploratory work, small fixes |
+| `standard` (default when unset/empty) | All checks run | Run normally | Normal development |
+| `strict` | All checks run | Run normally | Production-bound code; also run `/kiro:verify quick` manually before committing |
+
+```bash
+export SDD_PROFILE=minimal          # persistent
+SDD_PROFILE=strict git commit -m "release prep"   # per-invocation
+```
+
+Hook scripts guard at the top with `SDD_PROFILE="${SDD_PROFILE:-standard}"` and `exit 0` when it is `minimal`.
+
+**Git hooks ignore the profile** — they are infrastructure, not enforcement. That includes the post-commit third stage: after the doc-sync and harness-updater background agents finish, it stages, commits, and **pushes** only `*.md` files at *every* profile level, `minimal` included. So a `minimal` session still touches the network and the remote on commit.
+
+---
+
 ## Skills (`skills/`)
 
 Skills live in the harness source tree at `skills/<name>/SKILL.md` (64 skills currently). `install_globals()` in `install.sh` syncs each one into `~/.claude/skills/<name>/`, so skills are **machine-global**, not per-project — one install serves every repo.
@@ -660,7 +693,7 @@ Skills live in the harness source tree at `skills/<name>/SKILL.md` (64 skills cu
 - Adding a skill: create `skills/<name>/SKILL.md` with kebab-case `name:` matching the directory and a `description:` of ≥25 chars (enforced by the `skill-validate` PreToolUse hook), then run `install.sh` / `update.sh`.
 - Every write to a `*/skills/*/SKILL.md` also trips the **skill-permissions-gate** PostToolUse hook — a soft reminder to run `agent-permissions-design` (tool access, irreversible-action gates, scope boundary, external access) before calling the skill done.
 - Usage is logged to `logs/skill-usage.jsonl` by the `skill-usage-tracker` hook and reviewed by the weekly skill-curator routine.
-- `skills/csv-data-summarizer` — analyzes a CSV end to end without asking questions: pandas stats, missing-data audit, and only the charts the data supports. Requires `python>=3.8`, `pandas`, `matplotlib`, `seaborn`.
+- `skills/csv-data-summarizer` — analyzes a CSV end to end without asking questions: pandas stats, missing-data audit, and only the charts the data supports (time-series only with a date column, correlation heatmap only with ≥2 numeric columns, frequency counts for categoricals), closing with 2–4 dataset-grounded insights. Ships a bundled `analyze.py` (`summarize_csv(file_path)`, saves charts as PNGs) run as `python ~/.claude/skills/csv-data-summarizer/analyze.py <file.csv>`, with `resources/sample.csv` as the test fixture; if pandas/matplotlib/seaborn are missing, the skill writes the equivalent inline. Requires `python>=3.8`, `pandas`, `matplotlib`, `seaborn`. Tracked as a git submodule — commit inside `skills/csv-data-summarizer/` first, then bump the pointer in the parent repo.
 
 ---
 
