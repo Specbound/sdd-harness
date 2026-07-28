@@ -56,12 +56,15 @@ A powerful Claude Skill that automatically analyzes CSV files and generates comp
 ```
 csv-data-summarizer-claude-skill/
 ├── SKILL.md              # Claude Skill definition
+├── README.md             # This file
 ├── analyze.py            # Comprehensive analysis engine
-├── requirements.txt      # Python dependencies
+├── requirements.txt      # Python dependencies (pandas, matplotlib, seaborn)
+├── .gitignore            # Ignores generated *.png charts; un-ignores the skill zip
+├── csv-data-summarizer.zip  # Packaged bundle for upload to Claude.ai
 ├── examples/
-│   └── showcase_financial_pl_data.csv  # Demo P&L financial dataset (15 months, 25 metrics)
+│   └── showcase_financial_pl_data.csv  # Demo P&L financial dataset (45 rows = 15 months × 3 product lines, 25 metrics)
 └── resources/
-    ├── sample.csv        # Example dataset
+    ├── sample.csv        # Example dataset (21 rows of sales data)
     └── README.md         # Usage documentation
 ```
 
@@ -94,8 +97,8 @@ pip install -r requirements.txt
 
 ## 📊 Sample Dataset Highlights
 
-The included demo CSV contains **15 months of P&L data** with:
-- 3 product lines (SaaS, Enterprise, Services)
+The included demo CSV (`examples/showcase_financial_pl_data.csv`, 45 data rows) contains **15 months of P&L data** with:
+- 3 product lines (SaaS, Enterprise, Services) — one row per month per product line
 - 25 financial metrics including revenue, expenses, margins, CAC, LTV
 - Quarterly trends showing business growth
 - Perfect for showcasing time-series analysis, correlations, and financial insights
@@ -119,6 +122,12 @@ The included demo CSV contains **15 months of P&L data** with:
 - Correlation heatmaps
 - Distribution histograms
 - Categorical bar charts
+
+**Chart output:** `analyze.py` saves fixed-name PNGs (`correlation_heatmap.png`, `time_series_analysis.png`, `distributions.png`, `categorical_distributions.png`) at 150 dpi into the **current working directory**, not next to the input CSV. The bundled `.gitignore` ignores `*.png`, so generated charts are never committed.
+
+**CLI:** `python analyze.py <file.csv>`; with no argument it falls back to `resources/sample.csv`.
+
+**Column handling:** columns whose name contains `id` are excluded from categorical analysis; time-series analysis runs only when a column name contains `date` or `time`.
 
 ## 📝 Example Output
 

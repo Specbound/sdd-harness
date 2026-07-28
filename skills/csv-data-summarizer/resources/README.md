@@ -24,14 +24,16 @@
 
 ## Sample Data
 
-The `sample.csv` file contains example sales data with the following columns:
+The `sample.csv` file contains 21 rows of example sales data with the following columns:
 
 - **date**: Transaction date
 - **product**: Product name (Widget A, B, or C)
 - **quantity**: Number of items sold
 - **revenue**: Total revenue from the transaction
-- **customer_id**: Unique customer identifier
+- **customer_id**: Unique customer identifier — skipped by the categorical analysis, which excludes any column whose name contains `id`
 - **region**: Geographic region (North, South, East, West)
+
+A larger demo input lives at `../examples/showcase_financial_pl_data.csv` (45 rows of P&L data, 25 financial metrics).
 
 ## Usage Examples
 
@@ -55,12 +57,18 @@ What are the revenue trends in this dataset?
 You can test the skill locally before uploading to Claude:
 
 ```bash
-# Install dependencies
+# Install dependencies (pandas>=2.0.0, matplotlib>=3.7.0, seaborn>=0.12.0)
 pip install -r ../requirements.txt
 
 # Run the analysis
 python ../analyze.py sample.csv
+
+# With no argument, analyze.py falls back to resources/sample.csv
+# (relative to the directory you run it from)
+cd .. && python analyze.py
 ```
+
+Charts are written as PNGs into whatever directory you run the command from, not into `resources/`. The skill's `.gitignore` ignores `*.png`, so they stay untracked.
 
 ## Expected Output
 

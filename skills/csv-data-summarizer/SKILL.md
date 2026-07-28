@@ -28,7 +28,9 @@ When the user provides a CSV, run the full analysis immediately and present comp
 python ~/.claude/skills/csv-data-summarizer/analyze.py <file.csv>
 ```
 
-Use it when pandas/matplotlib/seaborn are installed; otherwise write the equivalent inline. Test fixture: `resources/sample.csv`.
+Use it when pandas/matplotlib/seaborn are installed (`requirements.txt` pins the minimums); otherwise write the equivalent inline. Fixtures: `resources/sample.csv` (21 rows, sales) and `examples/showcase_financial_pl_data.csv` (45 rows, P&L).
+
+Script-level limits worth knowing: PNGs land in the **current working directory** under fixed names (`correlation_heatmap.png`, `time_series_analysis.png`, `distributions.png`, `categorical_distributions.png`); date detection is name-based only (`date`/`time` in the column name), so parse date-like columns yourself when the name doesn't say so; columns containing `id` are skipped in categorical analysis.
 
 ## Constraints
 
