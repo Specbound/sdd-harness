@@ -2,7 +2,7 @@
 
 > This file is managed by the SDD harness (`sdd-harness/docs/`).
 > It is the single source of truth — do not edit copies in individual projects.
-> _Last synced: 2026-06-17
+> _Last synced: 2026-07-28
 
 A complete, self-contained guide to setting up the Spec-Driven Development (SDD)
 harness used in this project. Follow these steps to replicate the setup in any
@@ -501,13 +501,13 @@ Conventions are defined in `.claude/kiro/settings/rules/memory-conventions.md`:
 | `/kiro:steering` | Bootstrap/refresh project memory from codebase |
 | `/kiro:steering-custom` | Add domain-specific steering (auth, database, API, etc.) |
 | `/kiro:idea-refine "rough idea"` | Refine vague ideas into clear, spec-ready briefs |
-| `/kiro:spec-init "description"` | Initialize new feature workspace in `specs/` |
+| `/kiro:spec-init "description"` | Initialize new feature workspace in `specs/`. When run standalone (not via `spec-quick`), first runs `/kiro:pref-elicit {$ARGUMENTS}` unless `prefs.md` already exists — surfaces declarative vs. imperative preferences before the spec assumes defaults |
 | `/kiro:spec-requirements {feature}` | Generate EARS-format requirements (subagent) |
 | `/kiro:spec-design {feature}` | Generate research notes + technical design (subagent) |
 | `/kiro:spec-grill {feature}` | Domain grilling session — align terminology, crystallise decisions, update docs and ADRs inline (interactive) |
 | `/kiro:spec-tasks {feature} [--sequential]` | Generate P-wave parallel task list (subagent); `--sequential` disables parallel `(P)` markers |
 | `/kiro:spec-impl {feature}` | Implement from approved spec via TDD (subagent) |
-| `/kiro:spec-quick "description"` | Fast path: requirements→design→grill→tasks in one command (grill skipped with `--auto`) |
+| `/kiro:spec-quick "description"` | Fast path: requirements→design→grill→tasks in one command (grill skipped with `--auto`). Pre-check applies `issue-triage-routing` — routes to ONE-SHOT (implement directly, no spec) / DEFER / CLARIFY before spec'ing; proceeds to full spec generation only on SPEC. In Interactive Mode, Step 1.5 now runs 1.5a Preference Elicitation (`/kiro:pref-elicit {description}`, mandatory, writes `prefs.md` used by phases 2–5) before 1.5b Idea Refinement |
 | `/kiro:debug "bug description"` | Systematic 6-step bug triage (reproduce→fix→guard) |
 | `/kiro:simplify <file-or-feature>` | Behavior-preserving code simplification |
 | `/kiro:ship [feature]` | Launch readiness: verification + rollout planning |
@@ -519,7 +519,9 @@ Conventions are defined in `.claude/kiro/settings/rules/memory-conventions.md`:
 | `/kiro:spec-status {feature}` | Show current phase, approvals, and open tasks |
 | `/kiro:sync-docs` | Sync docs with ALL code changes (uncommitted + staged + committed) |
 | `/kiro:reflect` | Review session, extract observations, update memory (subagent) |
+| `/kiro:learn-eval [scope]` | Quality-gate session/sprint/feature patterns before saving to memory — scores specificity/actionability/evidence (1-3 each, pass ≥6); verdicts Save/Absorb/Route/Drop (subagent). Use for deeper periodic evaluation vs. `/kiro:reflect`'s quick frequent capture |
 | `/kiro:housekeeping` | Prune memory, archive old observations to glacier (subagent) |
+| `/kiro:daily-maintenance` | Nightly orchestrator — wires Judge → Reflect → Housekeeping → Trust Score → Skill Augment into one pipeline; idempotent per calendar day (guards on today's `[judge]` observation), surfaces unresolved `[memory-gap]`s as `[routine-alert]`. Never edits code/specs — memory and skills only |
 | `/kiro:evolve` | Audit harness rules effectiveness, propose improvements (subagent) |
 | `/kiro:harness-fix` | Encode a behavioral prevention rule from a specific mistake |
 | `/kiro:harness-validate` | Check structural integrity of harness installation |
@@ -528,7 +530,7 @@ Conventions are defined in `.claude/kiro/settings/rules/memory-conventions.md`:
 | `/kiro:guardrails` | Audit/scaffold linter complexity rules for deterministic enforcement |
 | `/kiro:ci-scaffold` | Generate CI configuration mirroring the verify pipeline |
 | `/kiro:autoresearch-init` | Interactive ML project setup — generates program.md, train.py, prepare.py |
-| `/kiro:autoresearch [N]` | Run autonomous ML experiment loop (N iterations or continuous) |
+| `/kiro:autoresearch [N]` | Run autonomous ML experiment loop (N iterations or continuous). If `recipe.md` exists in the project root, it's passed to the agent alongside `program.md` as a versioned record of signal-filtering policy and staged-autonomy level (see AutoResearch section below) |
 | `/kiro:macro-eval-sweep [days-back] [name-filter]` | Population-scale failure pattern sweep over Raindrop Workshop traces; clusters recurring failures, ranks by impact, writes dated report, posts Workshop annotations |
 
 ---
@@ -544,6 +546,7 @@ Conventions are defined in `.claude/kiro/settings/rules/memory-conventions.md`:
 | `@agents-spec-refactor` | After each impl task (auto, spawned by spec-impl agent) | Post-task self-review: reuse, quality, efficiency, 3-tier security checks + test re-run |
 | `@agents-idea-refine` | `/kiro:idea-refine` | Structured ideation: problem framing → divergent/convergent thinking → spec-ready brief |
 | `@agents-debug` | `/kiro:debug` or via jira-solve BUG routing | 6-step systematic debugging: reproduce → localize → reduce → fix → guard → verify |
+| `@agents-jira-solve` (`jira-solve-agent`) | `/kiro:jira-solve` Step 3 | Analyzes a Jira issue JSON into a structured solve report: problem statement, acceptance criteria, and relevant codebase files found via Glob/Grep |
 | `@agents-simplify` | `/kiro:simplify` or via spec-refactor complexity findings | Behavior-preserving simplification with Chesterton's Fence principle |
 | `@agents-ship` | `/kiro:ship` | Staged rollout planning with decision thresholds and rollback procedures |
 | `@agents-validate-gap` | `/kiro:validate-gap` | Requirements vs. code gap analysis |
@@ -556,13 +559,15 @@ Conventions are defined in `.claude/kiro/settings/rules/memory-conventions.md`:
 | `@agents-doc-sync` | git post-commit hook or `/kiro:sync-docs` | Code→doc drift prevention for committed changes |
 | `@agents-harness-updater` | git post-commit hook (when `.claude/` files committed) | Harness→guide sync |
 | `@agents-reflect` | `/kiro:reflect` | Session mining → observations, patterns, hot-memory |
-| `@agents-housekeeping` | `/kiro:housekeeping` | Memory archival, pruning, format validation |
+| `@agents-learn-eval` | `/kiro:learn-eval` | Scores candidate patterns on specificity/actionability/evidence (1-3 each, threshold ≥6 to pass), then deduplicates against `meta/patterns.md`. Verdicts: **Save** (score≥6, no duplicate — new entry in patterns.md), **Absorb** (score≥6, similar entry exists — merge evidence in), **Route** (score≥6 but tied to exactly one existing skill — skip memory, hand to `skill-augment-agent` instead), **Drop** (score<6 or exact duplicate) |
+| `@agents-housekeeping` | `/kiro:housekeeping` | Memory archival (observations >50 entries → glacier, keep 25 recent; completed action items >10 → keep 5), pruning (hot-memory <50 lines, patterns <70 lines), format validation (L0 headers, entry formats), stale-item flagging (action items >14d, entities >30d), glacier index rebuild. Reviews `[auto-learn, YYYY-MM-DD]`-tagged hot-memory entries left by the micro-reflect stop hook: keep if <7d old, promote to `meta/patterns.md` if 7d+ with reinforcing evidence, else remove (no archive — ephemeral by design). Also flags patterns/hot-memory entries tied to exactly one skill and recommends routing them into that skill via `skill-augment-agent` — never auto-moves, archive-first discipline |
 | `@agents-evolve` | `/kiro:evolve` | Rule audit, friction analysis, trace log analysis, improvement proposals, linter graduation |
 | `@agents-guardrails` | `/kiro:guardrails` | Linter complexity rule auditing and scaffolding |
 | `@agents-ci-scaffold` | `/kiro:ci-scaffold` | CI configuration generation (GitHub Actions, GitLab CI, Azure Pipelines) |
 | `@agents-harness-validate` | `/kiro:harness-validate` | Structural integrity check, component index generation |
 | `@agents-autoresearch-init` | `/kiro:autoresearch-init` | Interactive interview → file generation |
 | `@agents-autoresearch` | `/kiro:autoresearch` | Autonomous ML experiment loop |
+| `@agents-skill-augment` | `/kiro:daily-maintenance` (nightly) | Encodes session learnings into SKILL.md files; max 3 skills/run, append-only, ≤150 chars/addition. Evidence-gated on observations, judge drains, or `type: feedback` memories — human-feedback auto-qualifies and is drafted before machine signals. Dreaming step writes synthetic worked examples to `resources/examples/` |
 
 ---
 
@@ -587,9 +592,11 @@ Conventions are defined in `.claude/kiro/settings/rules/memory-conventions.md`:
 | PreToolUse (tool-failure recall) | Every Bash/MCP tool call | Soft advisory (never blocks): if this command shape has failed ≥2× and is still open, injects the failure count, last error, and any recorded remedy so Claude reconsiders before repeating it. Once-per-session-per-signature dedupe + 45-day recency gate. Script: `.claude/hooks/tool-failure-recall.sh`. |
 | daily-orchestrator (tool-failure review) | Once per day per repo via the daily orchestrator (self-paces to ~2×/week via `MIN_GAP_DAYS=3`; no-ops unless a promotable ledger entry exists) | Runs `.claude/scripts/tool-failure-review-runner.sh`, which invokes `/kiro:tool-failure-review` headlessly: diagnoses recurring failures (`count ≥ 3`, open, unpromoted) and promotes the understood, reusable ones into memory files + `ERRORS.md`, then marks them resolved on the ledger. Review (promotion) half of the tool-failure-memory loop. Opt out with `SDD_SKIP_TOOL_FAILURE_REVIEW=1`. |
 | daily-orchestrator (security report) | Once per day per repo via the daily orchestrator (self-paces to daily via `MIN_GAP_DAYS=1`; applies to every repo) | Runs `.claude/scripts/routines/security-report-runner.sh`: static security scan of recent git changes using the `ai-security-workflow` skill — checks for OWASP patterns, secrets, injection sinks. Writes `.claude/reports/security/<date>-security-report.md`. Visible in the dashboard Scheduled Tasks section. Opt out with `SDD_SKIP_SECURITY_REPORT=1`. |
-| OS Scheduler + SessionStart (daily maintenance) | Nightly at 18:00 local; SessionStart catch-up if >24h stale | Runs per-repo `daily-runner.sh` → `/kiro:daily-maintenance` — Judge → Reflect → Housekeeping → Session Quality → Keep Rate → Trust Score → Augment Skills → Adversarial Check. The orchestrator skips `daily-runner.sh` if it already ran today (dedup via state-file date check), so the SessionStart catch-up never double-fires. Auto-registered by `install.sh` / `update.sh`: Windows Task Scheduler on WSL (`setup-global-orchestrator.sh`), cron on Linux (`setup-linux-orchestrator.sh`), launchd on macOS (`setup-mac-orchestrator.sh`). Opt out: `SDD_SKIP_ROUTINE=1` at install time; `schtasks.exe /Delete /TN "SDD Daily Orchestrator"` (Windows); `crontab -l | grep -vF sdd-daily-orchestrator | crontab -` (Linux); `launchctl unload ~/Library/LaunchAgents/com.sdd.daily-orchestrator.plist` (macOS); `rm .claude/scripts/orchestration/daily-runner.sh` per-repo. See `SDD-USAGE.md` → "Daily Maintenance". |
+| daily-orchestrator (startup payload audit) | Once per day per repo via the daily orchestrator (deterministic, no LLM; self-paces to daily via its own state-file guard) | Runs `.claude/scripts/routines/startup-payload-audit.sh`: audits the fixed per-session startup token tax (`CLAUDE.md` + `@imports` + `.claude/rules/*` + auto-loaded `MEMORY.md`). Writes `.claude/reports/context/startup-payload.json`, read by the dashboard's Context Health tab. Wired into `daily-orchestrator.sh` `run_one()`. Opt out with `SDD_SKIP_STARTUP_AUDIT=1`. |
+| OS Scheduler + SessionStart (daily maintenance) | Nightly at 18:00 local; SessionStart catch-up if >24h stale | Runs per-repo `daily-runner.sh` → `/kiro:daily-maintenance` — Judge → Reflect → Housekeeping → Session Quality → Keep Rate → Trust Score → Augment Skills → Adversarial Check. The orchestrator skips `daily-runner.sh` if it already ran today (dedup via state-file date check), so the SessionStart catch-up never double-fires. Auto-registered by `install.sh` / `update.sh`: Windows Task Scheduler on WSL (`setup-global-orchestrator.sh`), cron on Linux (`setup-linux-orchestrator.sh`), launchd on macOS (`setup-mac-orchestrator.sh`). Opt out: `SDD_SKIP_ROUTINE=1` at install time; `schtasks.exe /Delete /TN "SDD Daily Orchestrator"` (Windows); `crontab -l | grep -vF sdd-daily-orchestrator | crontab -` (Linux); `launchctl unload ~/Library/LaunchAgents/com.sdd.daily-orchestrator.plist` (macOS); `rm .claude/scripts/orchestration/daily-runner.sh` per-repo. `daily-runner.sh` recovers from stale locks (removes a lock dir older than 2h, left by a SIGKILL'd run) and uses a single `EXIT` trap to release the lock (bash fires `EXIT` on `INT`/`TERM` too, so one trap covers all exit paths). If `~/.env.channels` exists, it posts a 20-line tail summary of the run to chat channels via `.claude/scripts/integrations/channels/notify.py` (opt out with `SDD_SKIP_CHANNEL_NOTIFY=1`; no-ops silently when the env file or notifier is absent). See `SDD-USAGE.md` → "Daily Maintenance". |
 | UserPromptSubmit (frontend-security-nudge) | Every user prompt (keyword-gated) | Fires when prompt contains build intent (`build a`, `create a`, `implement a`, `scaffold`, etc.) AND a frontend/UI keyword (React, Vue, Svelte, CSS, component, form, modal, etc.). Injects a reminder to invoke `secure-agent-design` before writing the first file. When the nudge fires, also appends a `[frontend-security-nudge]` observation to `observations.md`. Exits <5ms on non-matching prompts — zero overhead for non-frontend work. Script: `hooks/claude/frontend-security-nudge.sh`. |
 | PreToolUse (prompt-quality-check) | Every `Agent` tool call | Scores the agent prompt against 6 PQ dimensions (context provision, request specificity, scope management, information timing, correction quality, overall) using fast Python heuristics — no LLM required. Outputs a scored report to Claude's context and appends a JSON entry to `~/.code-insights/pq-log.jsonl`. Scores < 3.5 surface improvement tips per dimension. Scores ≥ 4.0 confirm the prompt is ready. Script: `hooks/claude/prompt-quality-check.sh`. Dashboard: Session Quality → Prompt Quality (✨) sub-tab. |
+| PostToolUse (skill-usage-tracker) | Every `Skill` tool invocation | Appends one `{"ts","skill"}` line to `logs/skill-usage.jsonl` — the evidence layer for skill deprecation (replaces guessing from file mtime). Consumed by the dashboard **Skill Changes → Skill Usage** panel (total/30d invocations, hot skills, cold-skill count where cold = no invocation in 30d) and the weekly skill-curator routine's Phase 1.5 Usage Evidence audit. No-ops if the log dir is unavailable. Script: `.claude/hooks/skill-usage-tracker.sh`. |
 | PreToolUse (raindrop-best-practices) | Every `mcp__raindrop__` tool call | Injects five active-observability patterns before any Raindrop Workshop MCP call: batch facets (multiple dimensions → one LLM call), facet-first summarization before clustering, 128K token cap on input, no-LLM nearest-summary classification, and long-tail sampling with HDBSCAN. Reduces naïve trace analysis cost by ~80–90%. Script: `hooks/claude/raindrop-best-practices.sh`. |
 | PreToolUse (rtk) | Every Bash tool call by any agent | `rtk hook claude` rewrites matching commands to `rtk <cmd>`, compressing output before it reaches the LLM (60–90%+ token reduction). Emits `permissionDecision: "allow"` so rewrites are silent. Passes through commands without filters unchanged. Global — fires in all sessions and projects. |
 | PreToolUse (GitNexus) | Every file Read/Edit by any agent | Enriches file operations with 360° symbol graph context (callers, dependencies, process participation); no-ops gracefully when GitNexus is not installed |
@@ -602,6 +609,8 @@ Conventions are defined in `.claude/kiro/settings/rules/memory-conventions.md`:
 | post-commit (doc sync) | Every `git commit` with non-`.md` source changes | Doc-sync: updates all `.md` files referencing changed code via `claude --dangerously-skip-permissions --print` (background) |
 | post-commit (harness updater) | Every `git commit` with `.claude/` changes (excl. memory) | Updates `SDD-SETUP-GUIDE.md` via `claude --dangerously-skip-permissions --print` (background) |
 | Stop (address-check) | Every Claude session end | Checks the last assistant turn for the "Husband" address rule from `CLAUDE.md`. If missing, injects a correction banner (exit 2). No-ops silently if transcript is unreadable. Script: `hooks/claude/address-check-hook.sh`. |
+| PostToolUse (setup-buffer) | Every Bash command (atomic, ≤3 lines) | Detects setup-pattern commands (package installs, `docker compose`/`build`, DB create/migrate, `.env` sourcing/export, `git clone`, `make install`/`setup`/`init`) and appends them to `.claude/memory/.setup-session-buffer.log`; the Stop hook later folds the buffer into `.claude/memory/setup-knowledge.md`. Script: `.claude/hooks/setup-buffer-hook.sh`. |
+| PostToolUse (skill-permissions-gate) | Every Write/Edit to `*/skills/*/SKILL.md` | Soft gate (never blocks): reminds Claude to run `agent-permissions-design` before marking a new/edited skill complete — checks tool access, irreversible-action gates, scope boundaries, and external-service access. Script: `.claude/hooks/skill-permissions-gate.sh`. |
 
 ---
 
@@ -635,6 +644,17 @@ The harness includes an optional hook pair that automatically posts a Jira comme
    - Finds the most recently modified `.md` in `docs/` mentioning the ticket
    - Assembles a Jira wiki-markup comment (branch, commits, approach, files changed)
    - Posts it via `jira_client.py` and deletes the state file (single-fire)
+
+### Issue routing
+
+Before doing any work, `/kiro:jira-solve` applies a pre-gate: `Skill("issue-triage-routing")` runs against the fetched issue first. If it routes to **DEFER** (off-roadmap) or **CLARIFY** (ambiguity blocks a spec), that verdict is honored immediately — type-based routing below only runs once triage yields **SPEC** or **ONE-SHOT**.
+
+Once past the pre-gate, routing is by issue type:
+- Bug / Defect → systematic debugging workflow (`@agents-debug`)
+- Story / Feature / Epic → `/kiro:spec-quick` seeded from Jira context
+- Task / Sub-task / Improvement / Chore → direct implementation plan
+
+Issue analysis itself is delegated to the `jira-solve-agent` subagent (see Subagents section), which converts the issue JSON into a structured problem statement and searches the repo for relevant files.
 
 ### Scripts
 
@@ -758,6 +778,17 @@ uv run prepare.py
 ```
 
 No settings.json changes needed — these are manual-only commands with no hooks.
+
+### Agent Recipe (Optional)
+
+If `recipe.md` exists in the project root, `/kiro:autoresearch` passes it to the agent as additional context alongside `program.md`. It's a versioned artifact tracking the evolution of the research loop itself — not just current state but *why* decisions were made:
+
+- **What we've tried** — dated log of experiments, results, and whether the change was kept or reverted
+- **Signal filtering policy** — which result signals to act on vs. treat as noise, preventing "slop generation" (chasing metrics that don't represent real improvement)
+- **Staged autonomy level** — 1 = human approves every change, 2 = human reviews batches, 3 = agent fully autonomous with daily review, plus the criteria for advancing a stage
+- **What we've learned** — non-obvious findings from prior iterations
+
+On first run, create a skeleton `recipe.md` with the initial signal-filtering policy and autonomy stage; the agent updates it after each batch of experiments. The inner loop (`/kiro:autoresearch` itself) optimizes `train.py`; the outer loop (`recipe.md` evolution) optimizes how the inner loop operates. (Source: Gavrilescu (2025) via Latent Space — "Autoresearch: The Feedback Loop Behind Self-Improving Agents".)
 
 ### CLAUDE.md additions
 
@@ -1130,6 +1161,40 @@ See `docs/context-management/rtk/README.md` for full filter coverage, configurat
 
 ---
 
+## Headroom (Automatic — Prompt/Context Compression Proxy)
+
+The harness includes a global integration with [headroom-ai](https://github.com/headroom-ai/headroom) — a process-level proxy that compresses prompts/messages before they reach the Claude API (60–95% savings). It is complementary to RTK, not a replacement: RTK compresses Bash *command output* on the way into context; Headroom compresses the *prompt/message stream itself* at the proxy layer. Both can run at once.
+
+### What it does
+
+`scripts/setup/headroom-setup.sh` is idempotent and safe to re-run; it is called automatically by `install.sh` and `update.sh`. On each run it:
+
+1. Installs `headroom-ai` globally — tries `uv tool install` (Python 3.12 first, for prebuilt wheels of the Rust/maturin extension), then `pipx`, then `pip install --user`, first one that works.
+2. Installs `headroom-ai` into each registered repo's detected virtualenv (uv + `pyproject.toml`, or a discovered `.venv`/`venv`), for Python API use.
+3. Installs Headroom as a persistent background service — a launchd LaunchAgent on macOS, a systemd user service on Linux — via `headroom install apply --preset persistent-service --memory`. This keeps the proxy warm across sessions (cold start ~10s → ~1s) and auto-starts on login. Skipped on unsupported OSes or if a service already reports healthy.
+4. Wires Claude Code to route through the proxy durably (`headroom init --global --memory claude`, all shells + GUI) — but **only after** confirming the proxy is healthy via `curl http://127.0.0.1:${HEADROOM_PORT:-8787}/readyz`, so `ANTHROPIC_BASE_URL` is never pointed at a dead proxy.
+5. Removes any legacy `alias claude='headroom wrap claude'` line from `~/.bashrc` / `~/.zshrc` left by older installs — that approach was bash-only (never loaded under macOS's default zsh) and conflicted with the persistent service over the same port.
+
+A companion script, `scripts/sync-memories-to-headroom.py`, bidirectionally syncs harness markdown memories with Headroom's SQLite DB at session start when Headroom is installed.
+
+### Verifying it works
+
+```bash
+headroom verify                                          # end-to-end proxy health check
+curl -fsS http://127.0.0.1:8787/readyz                    # proxy readiness probe
+headroom install status                                  # persistent service status
+```
+
+Savings and install status are visible in the harness dashboard's Headroom panel (`python3 scripts/utils/dashboard.py`), which reads `~/.headroom/proxy_savings.json`.
+
+### CLAUDE.md additions
+
+No CLAUDE.md changes needed — Headroom is fully automatic and global, wired the same way as RTK.
+
+See `.claude/scripts/README.md` (Utilities section) for the canonical script description.
+
+---
+
 ## Context Hub (Automatic API Documentation)
 
 The harness includes [Context Hub](https://github.com/andrewyng/context-hub) as an MCP server. It provides a curated registry of LLM-optimized documentation for third-party libraries and APIs (OpenAI, Stripe, Anthropic, etc.) so agents use accurate, up-to-date API signatures instead of hallucinating from training data.
@@ -1181,7 +1246,8 @@ Each harness subsystem has a detailed reference doc:
 | Impeccable | `docs/design/impeccable/impeccable.md` | 27 anti-pattern rules, skill usage, hook setup, transfer instructions |
 | Proof Collaborative Review | `~/.claude/sdd-harness/skills/proof-collaborative-review/SKILL.md` | Spec phase-gate review sessions — Proof SDK setup, server lifecycle, API reference |
 | Raindrop Workshop | `docs/raindrop/README.md` | AI-agent tracing — instrumented repos, eval loop, dashboard tab, troubleshooting |
-| Scheduled Tasks | `docs/scheduled-tasks/README.md` | All scheduled routines (daily maintenance, macro-eval, skill-curator, harness health, drift review); OS scheduler setup; dashboard **Scheduled Tasks** tab |
+| Headroom | `.claude/scripts/README.md` (Utilities) | Prompt/context compression proxy — install (global + per-repo venv), persistent service (launchd/systemd), durable Claude Code routing, `sync-memories-to-headroom.py` |
+| Scheduled Tasks | `docs/scheduled-tasks/README.md` | All scheduled routines (daily maintenance, macro-eval, skill-curator, harness health, drift review); OS scheduler setup; dashboard **Scheduled Tasks** tab. The weekly skill-curator runs a Usage Evidence audit (Phase 1.5) over `logs/skill-usage.jsonl`, reporting deprecate candidates (no use in 30d) and archive candidates (90d); `pinned: true` skills are never flagged. |
 | Hooks Reference | `docs/hooks/README.md` | Complete hook documentation — event types, purpose, wiring reference for all active hooks |
 | Local LLM Eval | `docs/local-llm-eval/README.md` | Offline prompt evaluation with Ollama via OMT — multi-model comparison, variance testing |
 | Structured Web Dataset | `docs/structured-web-dataset/README.md` | Building tabular datasets from NL descriptions — web research mode and synthetic mode |
@@ -1216,4 +1282,4 @@ claude --dangerously-skip-permissions --print "..." 2>/dev/null &
 
 The Stop hook should only contain **passive checks** (e.g., nudging housekeeping when observations exceed a threshold). See `.claude/hooks/stop-hook.sh` for the reference implementation.
 
-_Last synced: 2026-06-17
+_Last synced: 2026-07-28_

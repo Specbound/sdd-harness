@@ -1,20 +1,10 @@
 # Local machine state — never commit
 projects.txt
 VERSION
-.claude/settings.json
-.claude/docs/superpowers/
 
 # Channel webhook credentials — belt-and-suspenders (real file lives in ~/)
 *.env.channels
 channels.env
-
-# Per-user memory — stays local, never shared
-.claude/memory/**
-!.claude/memory/daily/
-!.claude/memory/glacier/
-!.claude/memory/meta/
-!.claude/memory/.gitkeep
-!.claude/memory/**/.gitkeep
 
 # Runtime artifacts
 logs/
@@ -27,13 +17,17 @@ __pycache__/
 
 # Tool-generated files — runtime state, not source
 headroom_memory.db
-LEAN-CTX.md
+/LEAN-CTX.md
 .superpowers/
 docs/workflow/superpowers/
 .last-drift-review
 .headroom/
 
-# SDD harness — local-only, never committed
+# ── Installed harness output — NEVER commit ──────────────────────────────────
+# Single source of truth is the TOP-LEVEL source tree (agents/ commands/ hooks/
+# kiro/ scripts/ docs/ rules/ skills/ templates/). install.sh / update.sh rebuild
+# .claude/ from it on every machine, so .claude/ is regenerable output, not
+# source. Per-machine settings.json + memory content also live here and stay
+# local. Already-tracked .claude/memory/**/.gitkeep persist as clone scaffolding.
 .claude/
 specs/
-CLAUDE.md

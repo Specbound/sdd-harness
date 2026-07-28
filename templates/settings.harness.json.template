@@ -74,6 +74,10 @@
           {
             "type": "command",
             "command": "bash {{HARNESS_DIR}}/.claude/hooks/hook-added-notify.sh"
+          },
+          {
+            "type": "command",
+            "command": "bash {{HARNESS_DIR}}/.claude/hooks/skill-permissions-gate.sh"
           }
         ]
       },
@@ -92,6 +96,10 @@
           {
             "type": "command",
             "command": "bash {{HARNESS_DIR}}/.claude/hooks/revert-detect-hook.sh"
+          },
+          {
+            "type": "command",
+            "command": "bash {{HARNESS_DIR}}/.claude/hooks/setup-buffer-hook.sh"
           }
         ]
       },

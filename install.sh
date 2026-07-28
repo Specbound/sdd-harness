@@ -551,6 +551,7 @@ install_project() {
   sync_dir "$HARNESS_DIR/kiro"          "$PROJECT_DIR/.claude"
   sync_dir "$HARNESS_DIR/scripts"       "$PROJECT_DIR/.claude"
   sync_dir "$HARNESS_DIR/docs"          "$PROJECT_DIR/.claude"
+  sync_dir "$HARNESS_DIR/rules"         "$PROJECT_DIR/.claude"
 
   # glacier/ is empty in the harness src; create it explicitly after kiro sync
   mkdir -p "$PROJECT_DIR/.claude/kiro/settings/templates/memory/meta/glacier"

@@ -43,28 +43,49 @@ or architectural decisions not yet captured in steering, update the relevant ste
 Skip .md files inside .venv/ and .git/. Never write to source code files."
 
   claude --dangerously-skip-permissions --print "$DOC_SYNC_PROMPT" 2>/dev/null &
+  DOC_SYNC_PID=$!
   echo "  post-commit: source changes detected — doc sync running in background..."
 fi
 
 # ── Hook 2: Harness updater (SDD-SETUP-GUIDE sync) ──────────────────────────
-HARNESS_CHANGED=$(echo "$CHANGED" | grep '\.claude/' | grep -v '\.claude/memory/')
+HARNESS_CHANGED=$(echo "$CHANGED" | grep -E '^(agents|commands|hooks|kiro|scripts|rules|templates|skills)/|^CLAUDE\.md$')
 if [ -n "$HARNESS_CHANGED" ]; then
   HARNESS_PROMPT="The following Claude Code harness files were modified in the last git commit:
 $HARNESS_CHANGED
 
-Your task: update .claude/docs/SDD-SETUP-GUIDE.md to reflect these changes.
-- New or modified command file (.claude/commands/) → update the slash commands section
-- New or modified agent file (.claude/agents/) → update the subagents section
+Your task: update docs/harness-documentation/SDD-SETUP-GUIDE.md to reflect these changes.
+- New or modified command file (commands/) → update the slash commands section
+- New or modified agent file (agents/) → update the subagents section
 - CLAUDE.md changed → update the project constitution section
-- New steering file (.claude/steering/) → update the steering section
-- New or modified skill (.claude/skills/) → update or add a skills section
-- Modified hook (.claude/hooks/) → update the automated hooks section
-- New or modified kiro settings (.claude/kiro/) → update the rules/templates section
-- Modified settings.json → update the hooks/configuration section
+- New or modified skill (skills/) → update or add a skills section
+- Modified hook (hooks/) → update the automated hooks section
+- New or modified kiro settings (kiro/) → update the rules/templates section
+- Modified context rules (rules/) → update the context-engineering section
+- Modified settings template (templates/settings*.template) → update the hooks/configuration section
 Do not remove existing documented steps unless directly replaced by the changes.
 Do not overwrite sections unrelated to the detected changes.
 Replace any existing '_Last synced' line with: _Last synced: $TODAY_"
 
   claude --dangerously-skip-permissions --print "$HARNESS_PROMPT" 2>/dev/null &
+  HARNESS_PID=$!
   echo "  post-commit: harness changes detected — SDD-SETUP-GUIDE sync running in background..."
+fi
+
+# ── Hook 3: Auto-commit + push .md changes only ───────────────────────────
+# Waits for the doc-sync / harness-updater background jobs above, then
+# stages, commits, and pushes ONLY .md files they touched. Never stages
+# or pushes non-.md changes, even if some happen to be sitting in the tree.
+[ -n "$DOC_SYNC_PID" ] && wait "$DOC_SYNC_PID" 2>/dev/null
+[ -n "$HARNESS_PID" ] && wait "$HARNESS_PID" 2>/dev/null
+
+cd "$REPO_ROOT" || exit 0
+MD_STATUS=$(git status --porcelain -- '*.md')
+if [ -n "$MD_STATUS" ]; then
+  git add -- '*.md'
+  git commit -m "docs: auto-sync ($TODAY)" -- '*.md' >/dev/null 2>&1
+  if git push >/dev/null 2>&1; then
+    echo "  post-commit: .md changes auto-committed and pushed"
+  else
+    echo "  post-commit: .md changes auto-committed, but push failed (check remote/auth)"
+  fi
 fi

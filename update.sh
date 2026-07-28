@@ -85,6 +85,7 @@ do_update() {
   sync_dir "$HARNESS_DIR/kiro"          "$proj/.claude"
   sync_dir "$HARNESS_DIR/scripts"       "$proj/.claude"
   sync_dir "$HARNESS_DIR/docs"          "$proj/.claude"
+  sync_dir "$HARNESS_DIR/rules"         "$proj/.claude"
   mkdir -p "$proj/.claude/memory/sessions"
 
   # --- Sync ALL hooks from canonical source ($HARNESS_DIR/hooks/claude/) ---
