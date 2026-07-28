@@ -82,6 +82,16 @@ if [ -n "$NON_MD" ] || [ -n "$HARNESS_CHANGED" ]; then
   command -v timeout  >/dev/null 2>&1 && TIMEOUT_BIN="timeout 900"
   [ -z "$TIMEOUT_BIN" ] && command -v gtimeout >/dev/null 2>&1 && TIMEOUT_BIN="gtimeout 900"
   {
+    # Serialize concurrent runs (rapid commits each spawn one). mkdir is atomic;
+    # if another run holds the lock, skip — prevents git-index races that drop
+    # commits and stops agent pile-up. Steal a lock left stale for >30 min.
+    LOCKDIR="$REPO_ROOT/.git/post-commit-docsync.lock"
+    [ -d "$LOCKDIR" ] && [ -n "$(find "$LOCKDIR" -maxdepth 0 -mmin +30 2>/dev/null)" ] && rmdir "$LOCKDIR" 2>/dev/null
+    if ! mkdir "$LOCKDIR" 2>/dev/null; then
+      echo "=== skipped $(date): another doc-sync run is active ==="
+      exit 0
+    fi
+    trap 'rmdir "$LOCKDIR" 2>/dev/null' EXIT
     echo "=== doc-sync run $(date) ==="
     [ -n "$NON_MD" ]          && { $TIMEOUT_BIN claude --dangerously-skip-permissions --print "$DOC_SYNC_PROMPT" || true; }
     [ -n "$HARNESS_CHANGED" ] && { $TIMEOUT_BIN claude --dangerously-skip-permissions --print "$HARNESS_PROMPT" || true; }
