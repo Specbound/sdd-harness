@@ -470,6 +470,8 @@ The post-condition can be lightweight: a schema check, an assertion, a test, or 
 
 **Routing as a first-class audit trail.** Log routing decisions as events: which agent was selected, why, what the post-condition result was. This makes routing failures diagnosable after the fact, not just during live debugging.
 
+**Roster size and router robustness.** Curated subagent_type rosters show diminishing returns past ~10 behaviorally-distinct agents — more specialization stops helping. Prompted/rule-based routers stay robust when a task is rephrased; learned (similarity/KNN-style) routers gain raw accuracy from specialization but turn fragile under rephrasing. Cap the roster near 10; prefer rule-based routing when robustness to rephrasing matters more than peak accuracy (arXiv:2607.09197).
+
 ### Framework Considerations
 
 Different frameworks implement these patterns with different philosophies. LangGraph uses graph-based state machines with explicit nodes and edges. AutoGen uses conversational/event-driven patterns with GroupChat. CrewAI uses role-based process flows with hierarchical crew structures.
@@ -479,6 +481,8 @@ Different frameworks implement these patterns with different philosophies. LangG
 Building a multi-agent app directly on the Anthropic SDK (no framework)? The plumbing reduces to a shared message **Hub** (per-agent inbox + `asyncio.Event`, event-driven not polled), two agent tools (`send_message` / `wait_for_message` as the *only* inter-agent channel), and a `spawn → status → collect → kill` lifecycle. Key trick: deliver peer messages by **appending them to the last tool result** so agents read mail inline in their tool-use loop — zero polling.
 
 Full skeleton (Hub class, append-delivery, lifecycle, mitigations): see [references/async-sdk-orchestration.md](references/async-sdk-orchestration.md).
+
+**Spawn-time resource caps (nested coordinators).** When a coordinator spawns nested sub-coordinators — not just flat worker agents — assign explicit caps (max iterations, depth, children, cost, time) at spawn time, not only at the top level. Acts as a circuit breaker against runaway recursive delegation (fractal, github.com/plasma-ai/fractal).
 
 ## Practical Guidance
 

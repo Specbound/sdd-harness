@@ -535,3 +535,62 @@ Two additional resources (OpenWiki — git, PACE — papers) are logged in their
 
 **What we added:**
 - Skill augmentation: `skills/agent-harness-design/SKILL.md` (Memory component) — "proactive vs. reactive memory" axis + "deterministic vs. agentic connector" taxonomy.
+
+## Agent Skills — Best Practices (Anthropic official docs)
+**URL:** https://platform.claude.com/docs/en/agents-and-tools/agent-skills/best-practices | **Added:** 2026-07-28 | **Source:** Anthropic / Claude platform docs
+
+**What it's about:** Official Anthropic authoring guide for SKILL.md files: naming/description rules, "one level deep" reference discipline, progressive disclosure, eval-driven development (build scenarios + a no-skill baseline before writing docs), per-model-tier testing, and script-writing anti-patterns.
+
+**What we added:**
+- Skill enhancement: `skill-creator` — added gerund-form naming check, third-person description mandate, one-level-deep reference rule, >100-line-needs-TOC rule, eval-driven development (≥3 scenarios + baseline), per-model-tier testing, "solve don't defer" script-constant justification, and MCP fully-qualified tool naming.
+- Skill enhancement: `skill-extraction` — reconciled Phase 5b SkillOS Quality Gate table against the same checklist (added as sub-bullets under existing Content quality / Compression dimensions, no new row added).
+
+---
+
+## Graph Engineering vs Loop Engineering
+**URL:** https://www.aibuilderclub.com/blog/graph-engineering-vs-loop-engineering | **Added:** 2026-07-28 | **Source:** AI Builder Club
+
+**What it's about:** Argues a loop is just one node in a graph, and promoting a loop to a multi-node graph only pays off under specific conditions — otherwise it's a relabeled loop with added maintenance cost. Provides a 4-question gut-check to score whether a design is a genuine paradigm shift.
+
+**What we added:**
+- Skill enhancement: `loop-patterns` — new "When a loop should become a graph, not just relabeled" subsection with the 4-question gut-check and scoring rubric (0-1 yes = keep it a loop; 2-3 = genuine composition; 4 = paradigm shift).
+
+---
+
+## AI-Native Code Review
+**URL:** https://agentfield.ai/blog/ai-native-code-review | **Added:** 2026-07-28 | **Source:** AgentField
+
+**What it's about:** Argues traditional PR review bundles jobs that fracture once AI writes code autonomously, and proposes "risk telescope" framing — per-dimension tunable thresholds instead of a single pass/fail verdict — plus an adversarial false-positive-suppression pass before surfacing findings.
+
+**What we added:**
+- Agent enhancement: `agents/kiro/guardrails-agent.md` — new "Refinements: Risk Telescope + Adversarial Suppression" section composing with the existing PR Auto-Approve Gate (deny-list decides which dimensions need human review; risk telescope tunes how sensitive each dimension's auto-flagging is; adversarial pass filters findings before they reach the human or the showstopper check).
+
+---
+
+## Designing APIs for Agents
+**URL:** https://www.freestyle.sh/blog/opinion/designing-apis-for-agents | **Added:** 2026-07-28 | **Source:** Freestyle
+
+**What it's about:** Argues agent-facing API design inverts human-API conventions — agents read full docs in one pass, so explicit-over-defaults, strict/precise error messages, unambiguous field naming, and thin "facts not utilities" interfaces serve agents better than convenience abstractions.
+
+**What we added:**
+- Skill enhancement: `tool-design` — new "Agent-Facing API Design Checklist" section with the four principles (explicit-over-defaults, strict errors over lenient coercion, unambiguous field naming, facts-not-utilities).
+
+---
+
+## 3 Techniques to Reduce Token Consumption in Claude Code / Codex
+**URL:** https://tech.autoscout24.com/blog/posts/3-techniques-to-reduce-token-consumption-claude-code-codex/ | **Added:** 2026-07-28 | **Source:** AutoScout24 Tech Blog
+
+**What it's about:** Argues token waste mostly comes from "information movement" (noisy output, blind file search, over-powered models) rather than reasoning. Covers output-trimming, structural/code-graph search over brute-force Grep, and task-based model routing.
+
+**What we added:**
+- Skill enhancement: `rtk-token-reduction` — new "Structural index before Grep/Glob" section (prefer AST-aware tools as the first navigation step on unfamiliar code) and "Subagent token caps" section (cap subagent reply length/model/tool allowlist for bounded subtasks; track cache-hit ratio and cost-per-task).
+
+---
+
+## Thariq (Anthropic / Claude Code team) — agentic workflow talk
+**URL:** https://www.youtube.com/watch?v=IHbsfvbfAto | **Added:** 2026-07-28 | **Source:** YouTube (summary derived from search snippets, not a verified transcript)
+
+**What it's about:** Describes a `/goal`-style mechanism to keep long agent runs on a persistent objective, a plan-before-build "remove unknowns" pass, and an 80% system-prompt-length cut by the Claude Code team.
+
+**What we added:**
+- Skill enhancement: `agent-harness-design` — one sentence cross-referencing the `/goal`-style persistent-objective pattern next to the existing Agent-Run Contract, explicitly flagged as a low-confidence/unverified source since the summary was search-derived rather than primary-source verified.

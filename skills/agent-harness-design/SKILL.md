@@ -177,6 +177,8 @@ Design questions:
 
 Failure mode: no circuit breaker — a bad plan executes to completion before failure is detected.
 
+**Unify execution state and business state.** Track step/task status in the same representation as the business object it acts on, rather than a todo list and a separate "state" object both claiming to say the same thing — the two drift the moment one is updated and the other isn't. (12-factor-agents, Factor 5)
+
 Related skill: `agent-execution-control` covers Plan-Execute-Verify and gatekeeper patterns in depth.
 
 ### 𝒢 — Verification and Governance
@@ -200,6 +202,8 @@ Before granting any agent autonomy, write its contract:
 - **Evidence requirements** — the proof of success it must produce
 - **Escalation path** — who/what it calls when stuck
 - **Budget** — tokens, attempts, parallelism ceiling
+
+*(Low-confidence, unverified source — search-derived, not primary-source checked.)* A `/goal`-style mechanism that keeps the objective persistently re-injected across a long run (not just defined once at grant time) is a lightweight complement worth cross-referencing if drift on long runs becomes a problem.
 
 **Three questions before granting high autonomy:**
 1. How fast will problems surface?

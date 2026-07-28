@@ -304,6 +304,17 @@ The compiler fills everything else — axis scales inferred from the quantitativ
 
 ---
 
+## Agent-Facing API Design Checklist
+
+Source: "Designing APIs for Agents" (freestyle.sh). Agent-facing API/tool design inverts human-API conventions: agents read full docs in one pass and pay no readability cost for verbosity, so conventions that reduce typing for humans just add ambiguity for agents. Four principles:
+
+1. **Explicit over defaults** — require explicit parameters rather than hidden "sensible defaults." A human API hides complexity behind defaults to reduce typing; an agent has no typing cost, so hidden defaults just create ambiguity about what actually happened.
+2. **Strict, precise error messages over lenient coercion** — don't silently coerce malformed input to something reasonable; return a precise error. For an agent, an error is a clarifying signal it can act on, not friction to smooth over.
+3. **Unambiguous, specific field naming** — prefer specific names (`displayName`, `slug`, `externalId`) over generic ones (`name`, `id`) to reduce the chance an agent hallucinates or confuses which field means what.
+4. **"Facts not utilities"** — expose primitive/raw capability surfaces (e.g. a raw `exec()`-style primitive) rather than convenience-wrapped SDK utilities. Let the agent compose its own higher-level wrapper from primitives rather than being constrained by someone else's abstraction choices.
+
+---
+
 ## Practical Guidance
 
 ### Anti-Patterns to Avoid
@@ -418,7 +429,7 @@ External resources:
 ## Skill Metadata
 
 **Created**: 2025-12-20
-**Last Updated**: 2026-07-08
+**Last Updated**: 2026-07-28
 **Author**: Agent Skills for Context Engineering Contributors
-**Version**: 1.3.0
-**Sources added**: Anthropic Engineering Advanced Tool Use (advanced tool use patterns); Microsoft Developer Blog (CLI-to-agent bridging); Microsoft Flint (intent-vs-compiler principle — emit intent, derive config)
+**Version**: 1.4.0
+**Sources added**: Anthropic Engineering Advanced Tool Use (advanced tool use patterns); Microsoft Developer Blog (CLI-to-agent bridging); Microsoft Flint (intent-vs-compiler principle — emit intent, derive config); freestyle.sh "Designing APIs for Agents" (agent-facing API design checklist)

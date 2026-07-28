@@ -200,6 +200,13 @@ Run in order; short-circuit to "do not stamp" on the first failure:
 
 Only when 1–4 all pass with positive confirmation: stamp (auto-approve/auto-merge). Emit a one-line rationale naming which checks passed.
 
+### Refinements: Risk Telescope + Adversarial Suppression
+
+Source: "AI-Native Code Review" (agentfield.ai). Two refinements to the pipeline above, not a replacement:
+
+- **Risk telescope (how to score findings)**: instead of one binary verdict, score findings along independent dimensions (security, correctness, naming-consistency, performance, architecture-fit), each with its own tunable confidence bar — security needs a high bar, naming-consistency can be low. The step-2 deny-list still decides *which* dimensions force human review at all; risk telescope tunes *how sensitive* each dimension's own auto-flagging is.
+- **Adversarial suppression (pre-surfacing filter)**: before surfacing a finding, run a second adversarial pass arguing it's a false positive. Only findings surviving that challenge reach the human or the step-4 showstopper check. Discovering risk is hard; suppressing noise is cheap — do the cheap part first.
+
 ## Important Constraints
 
 - **Scaffold is additive**: Never remove existing linter rules, only add missing ones

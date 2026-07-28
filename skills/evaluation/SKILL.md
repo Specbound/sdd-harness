@@ -46,6 +46,10 @@ You need per-run grading, rubric design, or a quality gate.
       → load evaluation/micro
 ```
 
+## Periodic Checks
+
+- **Perturbation-robustness test (routers/dispatchers).** For any task router or skill dispatcher, periodically rephrase or paraphrase a sample task and confirm it still routes to the same agent/skill as the original phrasing. A routing flip under rephrasing is a fragility signal worth investigating — especially if the router is learned/similarity-based rather than prompted/rule-based, since learned routers trade robustness for raw accuracy (arXiv:2607.09197).
+
 ## Reference Material
 
 - `resources/benchmark-construction.md` — building a trustworthy benchmark from real PRs, execution-based grading, git-history sealing, trajectory evaluation, and A/B anti-reward-hacking containment. Load when constructing a new benchmark or auditing one for reward hacking.

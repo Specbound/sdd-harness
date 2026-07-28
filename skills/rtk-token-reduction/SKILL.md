@@ -47,3 +47,11 @@ rtk --ultra-compact pytest tests/
 ```bash
 rtk hook check <cmd>   # shows how the hook would rewrite the command
 ```
+
+## Structural index before Grep/Glob
+
+For an unfamiliar area of the codebase, prefer a structural/AST-aware index (Serena, Glean, Claude Context, Repomix) as the first navigation step — one-shot map vs. brute-force Grep/Glob (like flipping through a phone book blind). Fall back to Grep/Glob for exact-string search once you already know roughly where to look. (Source: tech.autoscout24.com/blog/posts/3-techniques-to-reduce-token-consumption-claude-code-codex/)
+
+## Subagent token caps
+
+For a bounded, well-scoped subtask, cap the subagent's reply length, right-size the model (e.g. `haiku` for narrow tasks), and restrict its tool allowlist — don't let it run on full default budget. Track cache-hit ratio and cost-per-task, not intuition, to confirm a technique is actually saving tokens.

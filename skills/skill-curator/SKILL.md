@@ -9,6 +9,8 @@ source: local
 
 Apply the weekly skill-curation report's recommendations locally, with human approval before touching anything. Also runs a description-budget audit as the interactive complement to the automated weekly sweep.
 
+Framing note: per the taxonomy in *Self-Improvements in Modern Agentic Systems* (arXiv 2607.13104), this skill's own weekly audit routine is a scaffold-level self-improvement loop — the update target is the skill files themselves, and the change signal is usage/health metrics (Usage Evidence, description budget) plus human feedback (the Phase 4 approval gate below).
+
 ## Use this skill when
 
 - The weekly skill-curator local runner has written `docs/skill-curation-report.md`
@@ -68,6 +70,7 @@ Present all findings in one view before proposing any actions:
 
 1. **From weekly report:** duplicate pairs, quality scores below threshold, and the **Usage Evidence** section — deprecate candidates (no invocation in 30d) and archive candidates (90d), backed by real `logs/skill-usage.jsonl` fire data rather than file mtime
 2. **From Phase 2:** descriptions over the 150-char threshold
+3. **Module-count audit:** for each skill, count distinct modules/components/reference-files bundled into its SKILL.md; flag any skill over 3 as a split candidate (SkillsBench, arXiv 2602.12670 — focused skills bundling ≤3 modules consistently outperform larger bundles in task pass-rate)
 
 For each finding, determine the action type:
 
@@ -75,6 +78,7 @@ For each finding, determine the action type:
 |--------|------|
 | **Merge** | Two skills have overlapping scope; keep the better one, fold unique content in |
 | **Compress description** | Description > 150 chars; propose shorter text inline |
+| **Split** | Skill bundles more than 3 distinct modules/components/reference-files (per Module-count audit) |
 | **Delete** | Low quality score + cold (no invocation in 30d per Usage Evidence) + no unique content |
 | **No action** | Flagged but justified; note reason explicitly. Never flag a `pinned: true` skill |
 

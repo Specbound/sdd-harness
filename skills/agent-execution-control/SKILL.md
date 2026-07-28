@@ -63,6 +63,8 @@ def plan_execute_verify(plan, executor, verifier, max_retries=3):
 
 **Forced execution beats cross-checking (empirical):** When agents explain a hypothesis *without running code*, they were wrong ~50% of the time — even across multiple independent cross-checking rounds. Forcing the agent to actually execute code to confirm the hypothesis removed most of those errors. Rule: prefer forced execution/verification over independent analyses that merely cross-check each other; doing both is best. In the loop above, this means the `verify` step must *run* the check, not reason about whether it would pass.
 
+**Stateless reducer framing (12-factor-agents, Factor 12):** Model each turn of the loop as a pure function `(state, event) → new_state` over explicit state (the plan object, the last verification outcome) rather than leaning on implicit conversational memory to carry forward what happened — this is what makes replay, resumption, and audit deterministic.
+
 ### 2. Action-Validation Gatekeeper
 
 The harness filters agent-requested actions before execution. Implements safety and environment constraints programmatically, not through model self-restraint.

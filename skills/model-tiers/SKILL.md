@@ -131,6 +131,8 @@ Use this table when writing agent code that selects models, designing multi-agen
 
 When uncertain, start with sonnet. Upgrade to opus only after observing consistent quality failure on a class of inputs — not preemptively. Downgrade to haiku for any task where sonnet is overkill (most single-step classification work).
 
+Before escalating to a higher tier, also check whether a better-curated skill would close the gap instead: SkillsBench (arXiv 2602.12670) found smaller model + curated skill ≥ larger model, no skill. Skill curation and model escalation are two competing levers — try tightening the skill first; it's usually cheaper than bumping the tier.
+
 ## Effort Level — An Orthogonal Dial
 
 In Claude Code, reasoning **effort** is a separate lever from model choice. Levels: `low`, `medium`, `high`, `xhigh`, `max` (set via `/effort`, `CLAUDE_CODE_EFFORT_LEVEL`, or `effortLevel` in settings; this harness runs `high`). It governs how much the active model thinks per turn — independent of which tier you picked.

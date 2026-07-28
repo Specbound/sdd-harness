@@ -96,6 +96,8 @@ source: local
 - Concrete steps, not descriptions of what steps would look like
 - Keep SKILL.md under 2,000 words (ideal) / 5,000 words (maximum)
 - Move anything longer (examples, templates, reference tables) into `resources/`
+- Reference files stay **one level deep**: SKILL.md may link to a file in `resources/`, but that file must not link to further nested reference files — a reference chain invites partial `head -100` reads that miss content
+- Any reference file over 100 lines gets a table of contents near the top
 
 ### Phase 4: Validation
 
@@ -105,14 +107,16 @@ After generating the file, run these checks:
 - Frontmatter present and valid YAML
 - `name`, `description`, `risk` fields populated
 - `name:` is kebab-case and matches the directory name under `~/.claude/skills/`
+- `name:` uses gerund form (e.g. `processing-pdfs`, not `pdf-tools`)
 - Description ≥ 25 characters and does not start with a vague phrase (`a skill that`, `this skill`, `skill for`, `use this skill`, `provides`)
 - Description ≤ 200 characters
 - At least one named workflow phase
 
 **Content checks:**
 - No second-person ("you should", "you can") — use imperative
+- Description is third-person ("Processes X", "Validates Y") — never first-person ("I can help with...") or second-person ("You can use this to...")
 - No vague trigger ("use when helpful") — triggers must be specific
-- No dead tool references (verify any `Skill(...)` calls exist in the available skill list)
+- No dead tool references (verify any `Skill(...)` calls exist in the available skill list); MCP tool references use fully-qualified naming (`ServerName:tool_name`) to avoid ambiguous lookups
 
 **Note:** When writing to `~/.claude/skills/<name>/SKILL.md`, the `skill-validate-hook.sh` PreToolUse hook will run automatically. Fix any errors it reports before the write proceeds — a hard block (exit 2) means the frontmatter must be corrected first.
 
@@ -134,6 +138,12 @@ Fix any failures before installation:
 - Fails compression → move appendices to `resources/` and replace with a pointer
 
 **Compression heuristic:** Skill content should be ≤ 30% of the context needed to do the task manually. A skill longer than that without proportional value is net-negative.
+
+**Eval-driven development:** Before finalizing the skill's docs, define at least 3 evaluation scenarios and run a no-skill baseline; iterate the instructions against that baseline rather than shipping the first draft untested.
+
+**Per-tier testing:** Verify the skill works across Haiku/Sonnet/Opus, with tier-appropriate pass criteria — passing on one tier alone does not clear this gate.
+
+**Script constants:** Any bundled script must justify every constant, timeout, or magic number inline ("solve, don't defer") rather than leaving it unexplained.
 
 ### Phase 4c: Identity Alignment Check
 
@@ -200,4 +210,5 @@ Next steps:
 - **Concrete over general.** "Read `~/.claude/settings.json`" beats "read the settings file."
 - **Compression matters.** A bloated skill degrades context faster than it helps. Keep it tight.
 - **One skill, one job.** If the skill is doing two unrelated things, split it.
+- **Module cap (≤3).** A skill package should bundle at most 3 modules/components (scripts, templates, reference docs); beyond that, split it — focused skills with ≤3 modules outperform larger bundles (SkillsBench, arXiv 2602.12670).
 - **Check for existing skills first.** Before creating, scan `~/.claude/skills/` — extending beats duplicating.

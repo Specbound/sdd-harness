@@ -469,3 +469,41 @@ GitHub repositories that were passed to `/skill-extraction` and turned into harn
 - Agent augmentation: `agents/kiro/reflect-agent.md` — "Cross-Run Learning Loop" (append-only `learnings.jsonl` of `{situation, insight, applies_when}` intended to feed a future planning step). NOTE: currently write-only — the read-back side is aspirational until a planning command is wired to consume it.
 
 **Rejected:** wholesale adoption of the security pipeline (domain-specific; the harness already has `ai-security-workflow` + `security-review`); the meta-agent supervisor (covered by `multi-agent-patterns`).
+
+## github.com/cursor/plugins — show-me-your-work SKILL.md
+**URL:** https://github.com/cursor/plugins/blob/3fe2823ce17c1656c222d4b7c59d3f82fbf20143/pstack/skills/show-me-your-work/SKILL.md | **Added:** 2026-07-28
+
+**What it's about:** A small, fully-formed Claude Code skill for long-running/autonomous work: an append-only TSV decision log (timestamp, phase, decision, rationale, evidence-pointer, result), a "one line or it's not crisp yet" brevity rule, an evidence-as-pointer requirement (commit SHA/file path/test result, never prose), and a cross-model review gate before declaring work complete that flags weak evidence in an "Attention" section.
+
+**What we added:**
+- Skill enhancement: `verification-skill-authoring` — added as a concrete optional template operationalizing the existing independence-budgeting concept (the decision log is the artifact, the cross-model review is the independence check).
+
+---
+
+## github.com/dinosn/raptor-loop-hunt
+**URL:** https://github.com/dinosn/raptor-loop-hunt | **Added:** 2026-07-28
+
+**What it's about:** An autonomous security-vulnerability-hunting Claude Code skill running a generate→judge→verify loop across multiple code altitudes, with a persistent state machine tracking every finding's lifecycle and evidence.
+
+**What we added:**
+- Skill enhancement: `loop-patterns` — new "Cross-run state" guardrail generalizing the disposition-ledger (candidate→verified/rejected state machine with evidence receipts, prevents re-litigating resolved findings) and monotonic-knowledge-base (persistent dedup across repeat runs) patterns beyond the security-audit domain.
+
+---
+
+## github.com/plasma-ai/fractal
+**URL:** https://github.com/plasma-ai/fractal | **Added:** 2026-07-28
+
+**What it's about:** A framework for hierarchical/recursive agent trees — parent nodes spawn child nodes for separable subtasks, each isolated in its own git worktree, with hard resource caps (iterations, depth, children, cost, time) enforced per node at spawn time.
+
+**What we added:**
+- Skill enhancement: `multi-agent-patterns` — new "Spawn-time resource caps" note: when a coordinator spawns nested sub-coordinators (not just flat workers), assign explicit max-iterations/depth/children/cost/time caps at spawn time as a circuit breaker against runaway recursion.
+
+---
+
+## github.com/humanlayer/12-factor-agents
+**URL:** https://github.com/humanlayer/12-factor-agents | **Added:** 2026-07-28
+
+**What it's about:** Influential guide applying "12-factor app" discipline to LLM agents — production agents as mostly deterministic software with strategic LLM call-outs, not autonomous loops.
+
+**What we added:**
+- Verification pass against `agent-harness-design` + `agent-execution-control` (most factors already landed via the 2026-07-14 triage). Two genuine gaps found and closed: Factor 5 "unify execution/business state" (added to `agent-harness-design`'s Orchestration Loop section) and Factor 12 "stateless reducer" — `(state, event) → new_state` framing (added to `agent-execution-control`'s Plan-Execute-Verify Loop section). Factor 9 "compact errors into context window" was already covered by Execution Trace Grounding — no edit needed.

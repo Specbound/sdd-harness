@@ -85,3 +85,48 @@ Scientific papers (primarily arXiv) that informed skills or methodology in this 
 **What we added:** Nothing — SKIP.
 
 **Rejected (all candidates):** PACE answers "which model do I run on expensive benchmarks?" — a question the harness never asks. It requires a calibration corpus of 14+ models scored on 19+ benchmarks, a multi-week offline ML effort the harness has no infrastructure for. The `evaluation/funnel` skill already covers the conceptual equivalent (early-stage filtering before expensive runs) at product-team scale. The capability profiles from PACE (per-benchmark ability requirements) would add noise to `model-tiers`, which routes by task type rather than benchmark rank. No skill, hook, routine, or command candidate survived the critic gate.
+
+## SkillsBench: Benchmarking How Well Agent Skills Work Across Diverse Tasks
+**arXiv:** https://arxiv.org/abs/2602.12670 | **Year:** 2026 | **Authors:** Xiangyi Li, Yimin Liu, Wenbo Chen, et al.
+**Added:** 2026-07-28
+
+**What it's about:** Benchmark of 87 tasks across 8 domains with curated Agent Skills + deterministic verifiers. Curated skills raise average pass rate from 33.9% to 50.5%. Critically: "Focused Skills with at most three modules outperform larger or exhaustive bundles," and smaller models with good skills can match larger models without them.
+
+**What we added:**
+- Skill enhancement: `skill-creator` — explicit ≤3-module authoring constraint added to Key Principles.
+- Skill enhancement: `skill-curator` — new module-count audit + "Split" action-type row, flagging skills bundling >3 modules as split candidates.
+- Skill enhancement: `model-tiers` — routing note that skill-curation and model-escalation are competing levers; check whether a better-curated skill closes the gap before escalating tiers.
+
+---
+
+## When is Routing Meaningful? Diversity and Robustness in Language Model Societies
+**arXiv:** https://arxiv.org/abs/2607.09197 | **Year:** 2026 | **Authors:** Fantine Huot, Michael Kaisers, Mirella Lapata
+**Added:** 2026-07-28
+
+**What it's about:** Argues multi-agent/multi-model routing needs evaluation beyond task accuracy — behavioral diversity and routing stability under perturbation. Finds diminishing returns past ~10 curated agents, and that prompted/rule-based routers stay stable under paraphrase where learned (KNN-style) routers become fragile despite higher raw accuracy.
+
+**What we added:**
+- Skill enhancement: `multi-agent-patterns` — new "Roster size and router robustness" note capping curated subagent_type rosters near ~10 behaviorally-distinct agents, and preferring prompted/rule-based routing over learned routing when robustness matters.
+- Skill enhancement: `evaluation` — new "Periodic Checks" section with a perturbation-robustness test for task routers (rephrase a task, confirm routing stays consistent).
+
+---
+
+## Self-Improvements in Modern Agentic Systems: A Survey
+**arXiv:** https://arxiv.org/abs/2607.13104 | **Year:** 2026 | **Authors:** Zhe Ren, Yimeng Chen, Dandan Guo, et al.
+**Added:** 2026-07-28
+
+**What it's about:** Frames a "modern agent" as a foundation model + operational scaffold, and self-improvement as a self-induced update operator. Classifies prior work by "update target" (what changes — scaffold vs. weights) and "change signal" (what triggers the change — reward, failure trace, verifier output, human feedback).
+
+**What we added:**
+- Skill enhancement: `skill-curator` — framing note naming its own weekly audit routine as a scaffold-level self-improvement loop in this taxonomy (update target = skill files, change signal = usage/health metrics + human feedback).
+
+---
+
+## Generative Skill Composition for LLM Agents
+**arXiv:** https://arxiv.org/abs/2606.32025 | **Year:** 2026 | **Authors:** Xinyu Zhao, Zhen Tan, Vaishnav Tadiparthi, et al.
+**Added:** 2026-07-28
+
+**What it's about:** Reframes skill selection as joint "structured skill composition" (subset + count + order decided together in one pass) rather than sequential top-k retrieval. Shows +18–23pp pass-rate gains on production coding agents.
+
+**What we added:**
+- Skill enhancement: `skill-extraction` — new principle in Step 3a: for compound tasks needing multiple skills, decide the full ordered skill plan in one reasoning pass rather than invoking skills reactively one-by-one. (The constrained-decoding mechanism itself isn't portable to a prompting-only harness; only the joint-selection principle was ported.)

@@ -87,6 +87,8 @@ Map the resource's capabilities to integration types, then ruthlessly filter the
 
 A single resource can map to multiple integration types. Before creating anything new, check whether the capability belongs in an existing artifact.
 
+**Plan skill sequencing up front for compound tasks.** When a task will clearly need multiple skills, decide the full ordered skill plan — which skills, how many, and in what order — in a single reasoning pass, rather than invoking skills reactively one at a time and re-deciding after each. Deciding subset, count, and order together outperforms incremental retrieval (Generative Skill Composition, arXiv 2606.32025); the paper's constrained-decoding mechanism doesn't port to a prompting-only harness, but the principle — commit to the plan before executing it — does.
+
 #### Step 3b: Hook Candidate Assessment (Mandatory)
 
 Before finalizing the integration map, evaluate each capability against the four hook signals:
@@ -246,8 +248,8 @@ Before marking any new skill complete, score it against four quality dimensions:
 |---|---|
 | **Task relevance** | Does this skill address a real, repeated task in this user's context — not hypothetical? |
 | **Operational validity** | Are all steps executable using Claude Code's actual tools? No dead references? |
-| **Content quality** | Clear frontmatter, named workflow phases, actionable steps — not just narration? |
-| **Compression** | SKILL.md ≤5,000 words, description ≤200 chars, verbose content in `resources/`? |
+| **Content quality** | Clear frontmatter, named workflow phases, actionable steps — not just narration?<br>• Name in gerund form (e.g. `processing-pdfs`, not `pdf-tools`)<br>• Description in third person ("Processes X"/"Does Y") — never first/second person<br>• Reference files stay one level deep — no reference file links to another reference file<br>• Eval-driven: ≥3 evaluation scenarios + a no-skill baseline established before the docs were finalized |
+| **Compression** | SKILL.md ≤5,000 words, description ≤200 chars, verbose content in `resources/`?<br>• Any reference file over 100 lines has a table of contents |
 
 If any dimension fails, fix before proceeding:
 - Fails task relevance → reconsider whether this is worth extracting at all

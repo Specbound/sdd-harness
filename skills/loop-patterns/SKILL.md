@@ -76,6 +76,15 @@ Stop early if: same error 2 passes in a row, OR no measurable progress for 2 pas
 
 When the loop's goal is about reproducibility, onboarding, or setup — anything a stale local environment could mask — run each verifying pass from a **disposable, dependency-free state** (fresh temp dir, clean clone, new session), not your already-warmed workspace. A check that only passes because your machine is pre-configured is a false green. Fix the artifact (docs, scripts, config), never the throwaway environment.
 
+### Cross-run state (guards redundant rework across repeat runs)
+
+When a loop runs repeatedly over the same target (a codebase, a dataset, a review queue), two techniques stop it from re-litigating or re-reporting what a prior pass already resolved:
+
+- **Disposition ledger** — a state machine tracking every finding/candidate through its lifecycle (e.g. candidate → verified / rejected), each transition backed by an evidence receipt. Without it, the loop can silently reopen something it already resolved.
+- **Monotonic knowledge base** — a persistent dedup store carried across repeat runs of the same loop, so re-running doesn't rediscover and re-report the same already-known issue.
+
+Both are general-purpose techniques for any loop that revisits the same target across runs — not just security-audit loops.
+
 ---
 
 ## Named Loop Library
@@ -367,6 +376,17 @@ Replace check commands with project equivalents:
 A purpose-built one-off loop only has to be correct for *your* workflow — it can be short and hard-coded. Heavyweight generic orchestrators are often too rigid for the actual task. When you do need structure, the useful shape is a "higher-order workspace": the agent decides a task list → fans each item out to sub-agents → runs a reduce step over the outputs — i.e. a DAG with concurrency limits, not a fixed pipeline.
 
 Also: loops degrade in productivity without a human periodically nudging them. No fully autonomous loop yet replaces the operator — budget for the human check-ins, don't design them out.
+
+### When a loop should become a graph, not just relabeled
+
+A loop is one node in a graph. Promoting a design from loop to multi-node graph only pays off in specific conditions — otherwise it's a relabeled loop with added maintenance cost (state schemas, routing bugs, merge failures). Before adding graph structure, run this gut-check:
+
+1. Does this need genuinely parallel, specialized contexts (not just sequential steps)?
+2. Is there real fan-out/fan-in (multiple paths that must merge), not just linear branching?
+3. Would the routing logic benefit from being an explicit, auditable diagram rather than implicit in-loop conditionals?
+4. Do different paths through the system have DIFFERENT success criteria (not just the same criteria checked at different points)?
+
+**Score:** 0-1 yes = relabeled loop, keep it a loop. 2-3 = genuine composition, a graph may be justified. 4 = likely a real paradigm shift, graph is justified. Default bias: most tasks are still one well-scoped loop — only promote when the gut-check clears 2+.
 
 ---
 
