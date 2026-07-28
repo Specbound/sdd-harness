@@ -24,7 +24,7 @@ GitHub repositories that were passed to `/skill-extraction` and turned into harn
 
 **What we added:**
 - Integration: PreToolUse hook (`hooks/claude/pre-tool-use-gitnexus.sh`) — automatically enriches every file read/edit with 360-degree symbol context (callers, deps, blast radius). Zero agent configuration needed.
-- Integration: Post-commit hook auto-reindex — `hooks/git/post-commit` re-indexes the repo after every commit so the knowledge graph stays fresh.
+- Integration: Post-commit hook auto-reindex — `hooks/git/post-commit` re-indexes the repo after every commit so the knowledge graph stays fresh. Its own `docs: auto-sync` commits are exempt: a self-commit guard at the top of the hook exits before the reindex stage.
 - Integration wired into: `verify-agent` (Stage 0 risk detection), `spec-impl` (blast radius scan before TDD), `debug-agent` (Step 2 call chain tracing), `skill-extract-agent` (Leiden community cluster seeding)
 - Command: `/kiro:gitnexus-explore` — launches GitNexus Web UI (localhost:4747) for visual repo exploration
 - Docs: `docs/gitnexus/README.md`
