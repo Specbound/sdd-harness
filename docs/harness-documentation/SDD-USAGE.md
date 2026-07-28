@@ -405,7 +405,7 @@ Both types are written at most once per calendar day. The auto-scoring table in 
 
 When drain signals are found, `scripts/session/micro_reflect.py` can be called to extract a durable, generalizable fact from each drain and append it to `hot-memory.md` under an `## Auto-learned` section, tagged `[auto-learn, YYYY-MM-DD]`. These are probationary entries — the housekeeping agent promotes them to `meta/patterns.md` after 7 days if reinforced, or removes them if not.
 
-### Full reference: [`docs/trust-battery/`](trust-battery/)
+### Full reference: [`docs/trust-battery/`](../evaluation/trust-battery/)
 
 Complete documentation of the trust-battery loop — origin, architecture diagram, rubric details, troubleshooting, and explicit non-goals. Start here if you are modifying any of the battery components.
 

@@ -4,42 +4,85 @@
 - Repos checked: 6
 - Inaccessible: 0
 - Clean: 1
-- Minor issues: 0
-- Needs update: 5
+- Minor issues: 2
+- Needs update: 1
+
+## Since Last Review (2026-06-22)
+- **Still open (5 weeks):** stale `.claude/docs/SDD-USAGE.md` path in `sdd-harness` and `aiq-zora-ai-engine` — neither was fixed.
+- **Still open:** `Keep context under 40%` rule in `aiq-purina-salesorderintelligence-poc`.
+- **Improved:** `aiq-zora-agent-skill-foundation` promoted from `minor` to `clean` — no new issues found this cycle.
+- **Closed:** `aiq-zora-ai-engine` thinness noted again below; no structural additions since last run.
 
 ## Findings
 
-### sdd-harness — needs-update
-- `.claude/rules/lean-ctx.md` documents a `ctx_read`/`ctx_search`/`ctx_shell`/`ctx_edit`/`ctx_overview`/`ctx_compose`/`ctx_semantic_search`/`ctx_compress`/`ctx_knowledge`/`ctx_impact`/`ctx_callgraph`/`ctx_session` API (21 references) as if these were directly callable tools, and mandates "NEVER use native Read/Grep/Shell when ctx_* equivalents are available." Verified: no MCP server or tool registration exposes any `ctx_*` function — the only real artifact is the `lean-ctx` CLI binary (`/opt/homebrew/bin/lean-ctx`, v3.9.10), invoked via `Bash("lean-ctx ...")`, and a `PostToolUse(Read)` nudge hook that prints `ctx_read(...)`-style suggestions as a hint, not a working call. As written, the rule is unfollowable — there is no `ctx_read` to call. Fix: either rewrite the rule to shell out through `lean-ctx <subcommand>` via Bash, or drop the "NEVER use native..." mandate to a soft preference.
-- Root `CLAUDE.md`'s "Serena (Python code intelligence — mandatory, not optional)" section requires `mcp__serena__get_diagnostics_for_file` and `mcp__serena__find_referencing_symbols` before any Python edit/rename. Verified: no `serena` binary anywhere on `PATH`, and no MCP server registration for Serena exists in `.claude/settings*.json`. Same failure mode as lean-ctx — a hard "mandatory" instruction pointing at nothing.
-- Everything else (plan-before-code, atomic commits, spec review gate, `ruff`/`pytest` quality gates) still matches how this repo is actually used — no drift there.
+### sdd-harness — minor
 
-### daa-llm-evaluation — needs-update
-- Root `CLAUDE.md` and `.claude/CLAUDE.md` have diverged into two ~200-line near-duplicates that now **contradict each other** on remote infrastructure:
-  - Root: *"Models run on GB10 (hostname: `gx10-c326`) via Tailscale VPN... Models located in `/models` on GB10."*
-  - `.claude/CLAUDE.md`: *"Fine-tuning runs on the A100 80GB (SSH alias: `kolagt-u`, IP `10.111.111.4`, user `dlesser@flytrucks.com`)... Models located in `~/models/hf-direct`..."*
-  - Different host, different IP/SSH alias, different model path. Whichever copy gets read first will send Claude to the wrong machine.
-  - Root also has a "Knowledge System" section (the `knowledge/` note vault) that `.claude/CLAUDE.md` lacks entirely, and the two files' `rag_metrics` descriptions differ by one field ("override precision" present in `.claude/CLAUDE.md`, absent from root).
-  - This is the same fork-and-drift pattern flagged in the 2026-07-16 review and it has not been resolved — recommend collapsing to one canonical file (delete the other, or reduce it to a one-line pointer) rather than hand-syncing two copies going forward.
+**Stale path (open since 2026-06-22):** Context Resources references `.claude/docs/SDD-USAGE.md` — this path does not exist. Correct path: `.claude/docs/harness-documentation/SDD-USAGE.md` (verified present).
 
-### caresync-vercel — needs-update
-- Root `CLAUDE.md`'s H1 is still the unfilled harness template placeholder: `# {{PROJECT_NAME}}` — never substituted with `caresync-vercel`.
-- "Quality Gates" section mandates `ruff check` on every `.py` file write and `pytest -x --ignore=tests/integration` after each impl task — this is a Next.js/TypeScript project (`package.json`, `tsconfig.json`, no `pyproject.toml`, no Python present). These gates are dead instructions carried over unmodified from the (Python-oriented) harness template; same finding as the 2026-07-16 review, still unfixed.
-- "Context Resources" table points at `.claude/docs/SDD-USAGE.md`, which does not exist in this repo (verified). `hot-memory.md`, `meta/patterns.md`, and `specs/` do exist, so only this one path is dead.
+**Steering bootstrap pending:** SessionStart fired `[STEERING-BOOTSTRAP-DUE]` — `.claude/steering/` has no steering files yet. Run `/kiro:steering` then `rm .claude/memory/.steering-bootstrap-pending`.
 
-### whisper-pipeline — clean
-- Fully project-specific, detailed, no template placeholders, no dead paths, no pre-4.x hand-holding. GitNexus block matches the indexed repo name. No action needed.
+All other sections accurate: AI-Legible Code rules, Serena integration, quality gates, address convention ("Husband"), post-task and test output conventions.
 
-### video-automation — needs-update
-- Root `CLAUDE.md` has the same unfilled `# {{PROJECT_NAME}}` placeholder and the same dangling `.claude/docs/SDD-USAGE.md` reference (missing, verified) as caresync-vercel — both look seeded from the same harness template with the placeholder swap skipped.
-- `.claude/CLAUDE.md` (the file with the actual project instructions) has a "WORKFLOW RULES" section that is heavy pre-Claude-4.x micromanagement, unchanged since the last review:
-  - "After creating each file, show me its contents so I can review before you continue" / "Do not create multiple files at once without showing me each one" — a stop-and-show gate per file.
-  - "Add docstrings to every class and public method" / "Add type hints to every function signature" — blanket style mandate regardless of triviality.
-  - "Before starting each phase, tell me... After each phase, give me a summary" — a rigid narration ritual that duplicates what current Claude already does contextually.
-  - Not necessarily wrong if the user genuinely wants tight control on this experimental pipeline, but it reads as an artifact of an earlier, more failure-prone model generation. Worth confirming with the user whether it's still wanted here.
+**Proposed fix:**
+```diff
+- - `.claude/docs/SDD-USAGE.md` — read when you need SDD command reference
++ - `.claude/docs/harness-documentation/SDD-USAGE.md` — read when you need SDD command reference
+```
 
-### TTS — needs-update
-- Root `CLAUDE.md` ("pilot_sim") is otherwise a mature, well-maintained, project-specific document, but it has an internal self-contradiction that has persisted since the 2026-07-16 review:
-  - "Read first" table + "Pronunciation lexicon" section state the per-scenario lexicon (`scenarios/<name>/*lexicon*.json`) is the primary mechanism and `data/he_lexicon.json` is "a legacy fallback only."
-  - The closing "When working in this repo" section still instructs: *"Hebrew pronunciation overrides go in `data/he_lexicon.json`, not in code"* and *"Scenarios live as plain unvocalized Hebrew in `scenarios/he/`"* — pointing at the legacy global-fallback path and a `scenarios/he/` directory that doesn't match the actual per-scenario folder layout (`scenarios/<name>/`) documented everywhere else in the same file.
-  - Following the closing section's instructions literally would mean editing the deprecated fallback lexicon instead of the per-scenario one — worth fixing so the last section agrees with the rest of the file.
+---
+
+### aiq-zora-ai-engine — needs-update
+
+**Stale path (open since 2026-06-22):** References `.claude/docs/SDD-USAGE.md` — does not exist. Correct: `.claude/docs/harness-documentation/SDD-USAGE.md`.
+
+**Missing sections (vs. other repos in fleet):**
+- AI-Legible Code rules (blast radius, Rule of Three, vertical slices)
+- Serena integration (`get_diagnostics_for_file`, `find_referencing_symbols`)
+- SDD Workflow command list (`/kiro:spec-init`, `/kiro:reflect`, etc.)
+- Post-Task and Test Output conventions
+
+This is the thinnest CLAUDE.md in the fleet (1.7KB vs 3–6.7KB for others) and has not grown since the last sweep. Recommend syncing from sdd-harness template on next session.
+
+**Proposed fix (minimum):**
+```diff
+- - `.claude/docs/SDD-USAGE.md` — read when you need SDD command reference
++ - `.claude/docs/harness-documentation/SDD-USAGE.md` — read when you need SDD command reference
+```
+
+---
+
+### aiq-purina-salesorderintelligence-poc — minor
+
+**Pre-Claude-4.x context budget rule (open since 2026-06-22):** `"Keep context under 40% before moving from planning to implementation"` is a Claude-3 era workaround. Claude 4.x reasons coherently at high context utilization; the 40% threshold creates unnecessary interrupt friction. Drop the hard number.
+
+**Duplicate memory-read instruction:** `"Read .claude/memory/hot-memory.md and meta/patterns.md at session start"` appears in both the Context Resources section and the Rules section. Remove from Rules.
+
+**Micro-managed memory file sizes:** `"Hot memory stays under 50 lines; patterns under 70 lines"` — the memory discipline hooks handle compaction; Claude does not benefit from explicit line limits in CLAUDE.md.
+
+GitNexus section is accurate and well-maintained. No stale path references.
+
+**Proposed fix:**
+```diff
+- - Keep context under 40% before moving from planning to implementation
++ (remove this line — hooks handle compaction)
+- - Read `.claude/memory/hot-memory.md` and `meta/patterns.md` at session start
+  (already covered by Context Resources above — remove from Rules)
+```
+
+---
+
+### aiq-zora-agent-skill-foundation — clean
+
+No issues found. Uses correct `.claude/docs/harness-documentation/SDD-USAGE.md` path. ERRORS.md documented as gitignored/local. Comprehensive architecture and testing documentation. Promoted from `minor` (last run) to `clean`.
+
+---
+
+## Open Action Items (carry-over)
+
+| Item | Repo | Open Since | Priority |
+|------|------|-----------|----------|
+| Fix stale SDD-USAGE.md path | sdd-harness | 2026-06-22 | Medium |
+| Fix stale SDD-USAGE.md path | aiq-zora-ai-engine | 2026-06-22 | High |
+| Expand thin CLAUDE.md | aiq-zora-ai-engine | 2026-06-22 | Medium |
+| Remove 40% context rule | aiq-purina-salesorderintelligence-poc | 2026-06-22 | Low |
+| Run /kiro:steering | sdd-harness | 2026-07-26 | High |

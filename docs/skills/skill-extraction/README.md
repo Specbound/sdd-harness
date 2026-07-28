@@ -5,10 +5,10 @@ Extract reusable knowledge and automation from code repositories and convert the
 Based on the methodology from [Automating Skill Acquisition through Large-Scale Mining of Open-Source Agentic Repositories](https://arxiv.org/abs/2603.11808).
 
 All resources used in extractions are logged by type:
-- [`docs/papers/`](../papers/README.md) — scientific papers (arXiv)
-- [`docs/git/`](../git/README.md) — GitHub repositories
-- [`docs/articles/`](../articles/README.md) — online articles and blog posts
-- [`docs/x/`](../x/README.md) — pasted text
+- [`docs/papers/`](../../sources/papers/README.md) — scientific papers (arXiv)
+- [`docs/git/`](../../sources/git/README.md) — GitHub repositories
+- [`docs/articles/`](../../sources/articles/README.md) — online articles and blog posts
+- [`docs/x/`](../../sources/x/README.md) — pasted text
 
 ---
 

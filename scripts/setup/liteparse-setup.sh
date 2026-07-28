@@ -40,26 +40,50 @@ if [ -n "$VPY" ] && "$VPY" -c 'import liteparse' >/dev/null 2>&1; then
   exit 0
 fi
 
-# --- Pick a wheel-friendly interpreter >=3.10 to build the venv ---
-# Prefer explicit 3.13/3.12/3.11/3.10 over bare `python3` (which may be Apple's
-# 3.9 or a too-new release lacking compiled wheels). Require >=3.10 explicitly.
-PYBIN=""
-for cand in python3.13 python3.12 python3.11 python3.10 python3; do
-  command -v "$cand" >/dev/null 2>&1 || continue
-  if "$cand" -c 'import sys; raise SystemExit(0 if sys.version_info[:2] >= (3,10) else 1)' 2>/dev/null; then
-    PYBIN="$cand"; break
-  fi
-done
-
-if [ -z "$PYBIN" ]; then
-  echo "  liteparse skipped — no Python >=3.10 found (install python3.11+ to enable document-parsing)."
-  exit 0
+# --- Health check: if venv exists but Python is broken (uv standalone with missing stdlib),
+#     remove it so we rebuild with a working interpreter.
+if [ -n "$VPY" ] && ! "$VPY" -c 'import sys' >/dev/null 2>&1; then
+  echo "  .venv-tools has a broken Python (likely a uv standalone) — removing and rebuilding."
+  rm -rf "$VENV_DIR"
+  VPY=""
 fi
 
 # --- Create the venv if missing ---
+# Strategy: uv-managed Pythons (e.g. ~/.local/bin/python3.12) have their stdlib
+# rooted at a standalone prefix that doesn't exist at runtime outside uv, so
+# `python -m venv` fails with "ModuleNotFoundError: No module named 'encodings'".
+# Fix: try `uv venv` first (uv resolves a working interpreter), then system
+# paths (/usr/bin/python3.*), then bare names as a last resort.
 if [ -z "$VPY" ]; then
-  if ! "$PYBIN" -m venv "$VENV_DIR" 2>/dev/null; then
-    echo "  liteparse skipped — could not create venv with $PYBIN ($("$PYBIN" --version 2>&1))."
+  VENV_CREATED=0
+
+  # 1. uv venv --seed — picks a properly-linked interpreter automatically and
+  #    seeds pip so `python -m pip` works inside the venv without ensurepip.
+  if command -v uv >/dev/null 2>&1; then
+    if uv venv --python '>=3.10' --seed "$VENV_DIR" >/dev/null 2>&1; then
+      VENV_CREATED=1
+    fi
+  fi
+
+  # 2. System Python paths — skip uv-shim paths under ~/.local/bin
+  if [ "$VENV_CREATED" -eq 0 ]; then
+    for cand in /usr/bin/python3.13 /usr/bin/python3.12 /usr/bin/python3.11 /usr/bin/python3.10 /usr/bin/python3 python3.13 python3.12 python3.11 python3.10 python3; do
+      command -v "$cand" >/dev/null 2>&1 || continue
+      # Skip uv-managed standalones — they embed a broken base_prefix at venv time
+      case "$("$cand" -c 'import sys; print(sys.base_prefix)' 2>/dev/null)" in
+        /home/*/.local/share/uv/*|/root/.local/share/uv/*) continue ;;
+      esac
+      if "$cand" -c 'import sys; raise SystemExit(0 if sys.version_info[:2] >= (3,10) else 1)' 2>/dev/null; then
+        if "$cand" -m venv "$VENV_DIR" 2>/dev/null; then
+          VENV_CREATED=1
+          break
+        fi
+      fi
+    done
+  fi
+
+  if [ "$VENV_CREATED" -eq 0 ]; then
+    echo "  liteparse skipped — could not create venv (no working Python >=3.10; try: uv python install 3.12)."
     exit 1
   fi
   VPY="$(venv_py)"

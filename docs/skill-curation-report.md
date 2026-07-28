@@ -1,38 +1,37 @@
-# Skill Curation Report — 2026-07-16
+# Skill Curation Report — 2026-07-26
 
 ## Summary
-- Skills audited: 72
-- Low-quality flags (≤6/12): 0 (see methodology note)
-- Duplicate pairs: 4 (+ 2 adjacent families flagged for review)
-- Description flags (>150 chars): 67 (of which 🔴 >200: 55)
-- Cold skills (no use in 30d): — | Archive candidates (90d): — (no usage data)
-- Memory governance: ok
+
+- Skills audited: 1004
+- Low-quality flags (score ≤ 6/12): 121
+- Duplicate groups detected: 29 (primarily Azure SDK language variants)
+- Semantic duplicate pairs (genuine scope overlap): 4 pairs
+- Description flags (>150 chars): 573 ⚠️ | (>200 chars): 69 🔴
+- No description at all: 220
+- Cold skills (no use in 30d): N/A | Archive candidates (90d): N/A
+- Memory governance: **ok**
+
+---
 
 ## Usage Evidence
 
-No usage data yet — `logs/skill-usage.jsonl` does not exist. The `skill-usage-tracker.sh`
-PostToolUse hook is either freshly installed or not yet registered in `settings.json`.
-Deprecation/archive candidate lists cannot be computed this cycle. Deprecation decisions
-must wait until real invocation evidence accumulates.
+No usage data yet — `logs/skill-usage.jsonl` does not exist. The skill-usage-tracker PostToolUse hook may not be installed or has not fired yet. Deprecation/archive candidates cannot be determined mechanically from evidence; quality-score signals are the only guide this sweep.
 
 ### Deprecate Candidates (no invocation in 30d)
-None — no evidence layer available.
+_No data — see above._
 
 ### Archive Candidates (no invocation in 90d)
-None — no evidence layer available.
+_No data — see above._
 
-> **Action for the harness owner:** confirm `skill-usage-tracker.sh` is wired as a
-> PostToolUse hook in `.claude/settings.json`. Until it fires, every weekly sweep will
-> report "no usage data" and cold-skill pruning stays blind.
+---
 
 ## Description Budget
 
-Total: 72 skills | 18,602 chars | ~4,650 tokens | avg 258 chars/skill
+**Total: 1004 skills | 136,505 chars | ~34,127 tokens**
 
-This is resident system-reminder pressure — ~4.6k tokens of skill descriptions load on
-every session. 55 of 72 descriptions (76%) exceed the 200-char 🔴 threshold. The budget
-is the single largest mechanical win available; the human `/skill-curator` should
-prioritize compressing the top of this table.
+This is the aggregate token cost of all description fields if they were all loaded simultaneously (e.g., in a system-reminder). In practice only a subset loads, but the 220 no-description skills are invisible to the routing model and the 69 over-200-char skills add measurable pressure when they do load.
+
+### Over 200 Chars 🔴 (69 skills — top 30 by length)
 
 | Skill | Chars | Status |
 |-------|-------|--------|
@@ -48,153 +47,136 @@ prioritize compressing the top of this table.
 | progressive-complexity-ladder | 376 | 🔴 |
 | paperclip | 362 | 🔴 |
 | context-degradation | 349 | 🔴 |
-| adapt-to-repo | 338 | 🔴 |
-| feature-list-primitive | 334 | 🔴 |
-| setup-agent-replay | 332 | 🔴 |
-| instruction-architecture | 325 | 🔴 |
-| session-clean-state | 313 | 🔴 |
-| local-llm-eval | 311 | 🔴 |
+| evaluation/macro | 342 | 🔴 |
+| adapt-to-repo | 336 | 🔴 |
+| feature-list-primitive | 333 | 🔴 |
+| instruction-architecture | 322 | 🔴 |
+| rtk-token-reduction | 318 | 🔴 |
+| session-clean-state | 314 | 🔴 |
+| git-pushing | 313 | 🔴 |
 | frontend-slides | 311 | 🔴 |
-| agent-harness-design | 306 | 🔴 |
-| cag-implementation | 297 | 🔴 |
-| pr-report | 296 | 🔴 |
-| karpathy-guidelines | 294 | 🔴 |
-| context-optimization | 284 | 🔴 |
-| cma-outcomes | 280 | 🔴 |
-| grill-with-docs | 278 | 🔴 |
-| frontend-performance | 276 | 🔴 |
-| secure-agent-design | 275 | 🔴 |
-| git-safe-pull | 273 | 🔴 |
-| ai-native-org-patterns | 256 | 🔴 |
-| tool-design | 254 | 🔴 |
-| evaluation | 250 | 🔴 |
-| tool-failure-memory | 244 | 🔴 |
-| rag-implementation | 241 | 🔴 |
-| rtk-token-reduction | 238 | 🔴 |
-| active-observability | 234 | 🔴 |
-| better-call | 233 | 🔴 |
-| gitnexus-pr-review | 231 | 🔴 |
-| gitnexus-exploring | 231 | 🔴 |
-| gitnexus-cli | 231 | 🔴 |
-| gitnexus-guide | 230 | 🔴 |
-| agent-identity | 230 | 🔴 |
-| skill-creator | 219 | 🔴 |
-| frontend-code-quality | 218 | 🔴 |
-| prompt-engineering | 217 | 🔴 |
-| skill-extraction | 215 | 🔴 |
-| loop-patterns | 215 | 🔴 |
-| csv-data-summarizer | 213 | 🔴 |
-| paperclip-create-agent | 212 | 🔴 |
-| gitnexus-refactoring | 212 | 🔴 |
-| release | 210 | 🔴 |
-| gitnexus-impact-analysis | 208 | 🔴 |
-| ai-security-workflow | 206 | 🔴 |
-| issue-triage-routing | 203 | 🔴 |
-| ktx-data-context | 201 | 🔴 |
-| storm-research | 197 | ⚠️ |
-| proof-collaborative-review | 195 | ⚠️ |
-| document-parsing | 193 | ⚠️ |
-| hook-design | 185 | ⚠️ |
-| model-tiers | 184 | ⚠️ |
-| verification-skill-authoring | 181 | ⚠️ |
-| gitnexus-debugging | 178 | ⚠️ |
-| rag-architect | 168 | ⚠️ |
-| ui-skills | 166 | ⚠️ |
-| git-pushing | 160 | ⚠️ |
-| prompt-quality-assess | 158 | ⚠️ |
-| release-changelog | 154 | ⚠️ |
-| skill-curator | 129 | ok |
-| refactoring-safely | 109 | ok |
-| test-driven-development | 79 | ok |
-| instrument-agent | 74 | ok |
-| questions | 55 | ok |
+| local-llm-eval | 309 | 🔴 |
+| impeccable-audit | 309 | 🔴 |
+| agent-harness-design | 304 | 🔴 |
+| code-reviewer | 303 | 🔴 |
+| multi-agent-brainstorming | 296 | 🔴 |
+| cag-implementation | 295 | 🔴 |
+| session-quality | 291 | 🔴 |
+| llm-inference-async-batching | 288 | 🔴 |
+| website-spec | 288 | 🔴 |
+| vibe-check | 286 | 🔴 |
+| gitnexus | 285 | 🔴 |
+| architect-review | 285 | 🔴 |
+| _(39 more in 201–284 char range)_ | … | 🔴 |
+
+### Between 150–200 Chars ⚠️
+504 additional skills in this range (not enumerated — see `/skill-curator` for interactive trimming).
+
+---
 
 ## Quality Findings
 
-### Methodology note
-This weekly sweep scored the four SkillOS dimensions at **frontmatter depth** —
-trigger clarity, description budget, and file-size compression proxy — without a full
-read of all 72 skill bodies (that read is the compression realism of an automated
-weekly pass and belongs to the human-invoked `/skill-curator`). On the trigger-clarity
-heuristic **no skill scored ≤6/12**: every description carries a clear "use when"
-trigger with load-bearing nouns. The actionable signal this cycle is the duplicate
-pairs and the description budget, not individual low scorers.
+### Scoring Rubric
+Each dimension is 0–3; total /12. Scores ≤ 6 flagged.
 
-### Low-Quality Candidates
-None flagged at ≤6/12. Watch items for the human deep-read pass (thin body or
-narrowest scope — not yet failures): `questions` (5 lines, utility stub),
-`instrument-agent` (74-char description, verify trigger discrimination vs
-`setup-agent-replay`).
+- **Task relevance (TR)**: trigger clarity — does the model know when to invoke?
+- **Operational validity (OV)**: concrete, structured, executable instructions
+- **Content quality (CQ)**: no empty description, substantive body
+- **Compression ratio (CR)**: description compact relative to body; body large enough to justify overhead
 
-### Duplicate Pairs
-- **adapt-to-repo ↔ skill-extraction** — strongest overlap. Both ingest an external
-  link / article / post / idea and decide what (if anything) to apply to the repo, and
-  both explicitly "filter redundancies." Routing between them is ambiguous; a model
-  seeing a shared link could invoke either. Candidate for merge or a sharp boundary
-  ("adapt = plan for *this* repo" vs "extract = install harness artifacts").
-- **rag-architect ↔ rag-implementation** — design-a-RAG-pipeline vs build-a-RAG-system.
-  The design/build split is real but the triggers overlap heavily ("design RAG
-  pipelines" vs "implementing knowledge-grounded AI"). Review for merge into one skill
-  with a design→build progression.
-- **context-optimization ↔ context-degradation** — both own the "context" trigger
-  surface. optimize-tokens/KV-cache vs diagnose-lost-in-middle/poisoning. Adjacent
-  enough to co-fire; confirm the trigger nouns are disjoint.
-- **prompt-engineering ↔ prompt-quality-assess** — quality-assess is a narrow
-  pre-flight rubric that sits inside prompt-engineering's broad scope. Keep both only
-  if the pre-flight gate is genuinely invoked on its own; otherwise fold into
-  prompt-engineering.
+### Low-Quality Candidates (score ≤ 6/12) — 121 total
 
-### Adjacent Families (flagged for review, not dup pairs)
-- **gitnexus-*** (7 skills: cli, debugging, exploring, guide, impact-analysis,
-  pr-review, refactoring) — intentional task-split but 7 near-identical descriptions
-  consume ~1,500 chars of budget. Consider whether `gitnexus-guide` can route to the
-  others, letting the six task skills drop their descriptions to a one-liner.
-- **agent-design cluster** (agent-harness-design / multi-agent-patterns /
-  agent-execution-control) — three large agentic-design skills with overlapping
-  activation ("designing an agentic system"). Boundaries are documented in the bodies;
-  verify they don't co-fire on generic "design an agent" prompts.
+Top actionable flags (sorted by score, lowest first):
+
+| Skill | Score | Notes |
+|-------|-------|-------|
+| hig-patterns | 5/12 | No description; likely passive reference doc, not agent skill |
+| typescript-pro | 5/12 | No description |
+| javascript-pro | 5/12 | No description |
+| hig-components-controls | 5/12 | No description |
+| hig-foundations | 5/12 | No description |
+| copywriting | 5/12 | No description |
+| hig-components-search | 5/12 | No description |
+| questions | 5/12 | Minimal 55-char description; unclear routing trigger |
+| hig-components-layout | 5/12 | No description |
+| hig-technologies | 5/12 | No description |
+| hig-platforms | 5/12 | No description |
+| context-manager | 6/12 | Description is malformed YAML (multi-line string breaks frontmatter parsing) |
+| database-optimizer | 6/12 | No description |
+| team-composition-analysis | 6/12 | No description |
+| test-automator | 6/12 | No description |
+| hig-components-dialogs | 6/12 | No description |
+| database-admin | 6/12 | No description |
+| docs-architect | 6/12 | No description |
+| dx-optimizer | 6/12 | No description |
+| startup-business-analyst-business-case | 6/12 | No description |
+| hig-inputs | 6/12 | No description |
+| ml-engineer | 6/12 | No description |
+| ui-visual-validator | 6/12 | No description |
+| frontend-developer | 6/12 | No description |
+| network-engineer | 6/12 | No description |
+| cloud-architect | 6/12 | No description |
+| bash-pro | 6/12 | No description |
+| blockchain-developer | 6/12 | No description |
+| fastapi-pro | 6/12 | No description |
+| _(91 more at score 6)_ | 6/12 | Mostly no-description skills |
+
+**Structural finding**: 220 of 1004 skills have no `description:` field. These are invisible to skill-routing models — they can only be invoked if explicitly named. Most are Azure SDK variants or generic `*-pro` skills from the community library. This is the single largest quality gap.
+
+**Note on `typescript-pro` and `javascript-pro`**: These were scored 5/12 as "No description" — the curation tool could not parse their multi-line YAML flow scalar descriptions. The actual YAML was malformed (multi-line continuation in a double-quoted flow scalar), causing frontmatter parsers to drop the field. Fixed in the repair run below.
+
+### Duplicate Pairs (genuine semantic overlap)
+
+These are skills with substantially overlapping scope that could be merged or differentiated more clearly:
+
+| Pair | Overlapping Scope |
+|------|------------------|
+| `context-manager` ↔ `context-optimization` ↔ `context-fundamentals` | All three cover context window management strategy; unclear when to prefer each |
+| `agent-memory-discipline` ↔ `agent-memory-consolidation` ↔ `agent-memory-systems` ↔ `agent-memory-mcp` | Four agent memory skills — discipline=policy, consolidation=housekeeping, systems=architecture, mcp=tooling; differentiated but borderline overlap |
+| `agent-orchestration-improve-agent` ↔ `agent-orchestration-multi-agent-optimize` | Both target agent performance optimization; single-agent vs. system-wide is the only differentiator |
+| `raindrop-agent-replay` ↔ `raindrop-eval-loop` | Both activate on Raindrop Workshop traces; replay=setup/infra, eval-loop=CI loop |
+
+**Azure SDK groups (language variants — NOT true duplicates)**:
+29 groups of 2–5 skills are language variants of the same Azure service (e.g., `azure-cosmos-py/ts/java/rust`). These are correctly separate; no action needed. They inflate the count by ~120 skills.
+
+---
 
 ## Memory Governance Health
 
 | Check | Status | Notes |
 |-------|--------|-------|
-| stop-hook writes observations | ok | 3 `observations` refs in stop-hook.sh; observations.md appended today |
-| session-start catch-up logic | ok | `.last-routine-run` catch-up trigger present (3 refs) |
-| memory-conventions.md intact | ok | `kiro/settings/rules/memory-conventions.md` present, 121 lines |
-| observations.md recency | ok | last entry: 2026-07-16 (today) |
-| hot-memory.md recency | ok | last modified: 2026-07-16 (today) |
+| stop-hook writes observations | ok | `stop-hook.sh` (124 lines) references `observations.md` in 3 places; nudge logic for >50 entries intact |
+| session-start catch-up logic | ok | `session-start-hook.sh` (149 lines) has catch-up block at line 33–37, reads `.claude/memory/.last-routine-run` |
+| memory-conventions.md intact | ok | 121 lines, non-empty, header and sections present |
+| observations.md recency | ok | Last entry: 2026-07-26 (today) |
+| hot-memory.md recency | ok | Last modified: 2026-07-26 09:52 IDT |
 
-Minor note: `stop-hook.sh` contains no literal `memory-conventions` string — the rule
-reference lives outside the hook (routine/settings layer). Observation-writing itself is
-verified working (fresh entries today), so governance is **ok**, not warn.
+All five governance checks pass. The idle-window pattern continues (HEAD static at b03a740 since 2026-07-06; routine entries are catch-up artifacts from the daily-runner, not user sessions).
 
-## Iterative Repair Run — 2026-07-16
+---
 
-No repairs performed. The Low-Quality Candidates list (see § above) reads
-**"None flagged at ≤6/12"** — this cycle's sweep scored at frontmatter depth and
-found no skill below the repair threshold, so the Review→Repair→Validate loop had
-no input. The four "watch items" noted for the human deep-read pass are triager
-boundary/merge concerns, not low-quality bodies, and are out of scope for automated
-repair.
+## Recommended Actions (for human-invoked `/skill-curator`)
 
-| Skill | Before | After | Status |
-|-------|--------|-------|--------|
-| — | — | — | no candidates below ≤6/12 threshold |
+1. **Priority — add descriptions**: 220 no-description skills are routing-invisible. The HIG family (8 files: `hig-patterns`, `hig-foundations`, `hig-inputs`, `hig-platforms`, `hig-technologies`, `hig-components-*`) are the clearest removal candidates — they are passive reference docs, not agent skills.
+2. **Fix malformed YAML**: `context-manager` has a multi-line `description:` that breaks frontmatter parsing — fix or replace before next sweep.
+3. **Compress top offenders**: 69 skills exceed 200-char descriptions. Top candidate: `prompt-master` (444 chars → target ≤100 using imperative verb form).
+4. **Differentiate context trio**: `context-manager`, `context-optimization`, `context-fundamentals` need distinct trigger keywords so the router can pick the right one.
+5. **Install usage tracker**: Deploy `skill-usage-tracker.sh` PostToolUse hook to write `logs/skill-usage.jsonl` — without it, evidence-based deprecation is impossible.
 
-Next repair run has input only if a future curation sweep does a full-body deep-read
-and scores a skill ≤6/12.
+---
 
 ## Iterative Repair Run — 2026-07-26
 
-Re-checked the Low-Quality Candidates list before running the Review→Repair→Validate
-loop: still **"None flagged at ≤6/12"** — no curation sweep between 2026-07-16 and
-today re-scored any skill's full body, so there is no new input for Phase 2. Skipped
-repair entirely rather than repairing against the stale frontmatter-depth scores from
-the last full sweep.
+Repaired the 3 lowest-scoring actionable skills (5/12). HIG skills at 5/12 skipped — curation report recommends removal, not repair (passive reference docs, not agent skills).
 
-| Skill | Before | After | Status |
-|-------|--------|-------|--------|
-| — | — | — | no candidates below ≤6/12 threshold |
+**Scoring rubric**: TR (trigger relevance) + OV (operational validity) + CQ (content quality) + CR (compression ratio), each 0–3.
 
-Next repair run has input only once a curation sweep does a full-body deep-read and
-scores a skill ≤6/12.
+| Skill | Before | After | Delta | Status | Fix applied |
+|-------|--------|-------|-------|--------|-------------|
+| typescript-pro | 5/12 | 8/12 | +3 | repaired | Malformed multi-line YAML → single-line description (156 chars); body unchanged |
+| javascript-pro | 5/12 | 8/12 | +3 | repaired | Malformed multi-line YAML → single-line description (152 chars); body unchanged |
+| questions | 5/12 | 8/12 | +3 | repaired | Added "When to use" trigger condition; description clarified with explicit invoke signal |
+
+**Root cause for ts-pro / js-pro**: Both used a YAML double-quoted flow scalar split across lines with indented continuation. YAML spec allows this but many frontmatter parsers treat the newline as a literal character, producing garbage or dropping the field entirely. Fixed by collapsing to single-line quoted strings.
+
+**Next sweep priority**: `context-manager` (6/12, malformed YAML — same root cause); then batch-add descriptions to the 220 no-description skills, starting with the 8 HIG files (recommend archiving them rather than repairing).
