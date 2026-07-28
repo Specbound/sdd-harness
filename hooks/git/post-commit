@@ -5,6 +5,14 @@ TODAY=$(date +%Y-%m-%d)
 CHANGED=$(git diff HEAD~1 --name-only 2>/dev/null)
 if [ -z "$CHANGED" ]; then exit 0; fi
 
+# ── Recursion guard: never react to this hook's OWN auto-sync commits ─────────
+# Hook 3 below commits doc updates as "docs: auto-sync (…)". Watched dirs include
+# skills/ and hooks/, so such a commit would otherwise re-fire the agents and
+# loop. Bail immediately when the just-made commit is one of ours.
+case "$(git log -1 --format=%s 2>/dev/null)" in
+  "docs: auto-sync"*) exit 0 ;;
+esac
+
 # ── Hook 0: GitNexus auto-reindex (keep knowledge graph fresh) ───────────────
 # Runs only when GitNexus is installed and the repo is indexed.
 # Incremental reindex is fast (<5s for most repos), so it runs on every commit.
@@ -23,7 +31,7 @@ if [ -n "$NON_MD" ]; then
 $NON_MD
 
 Your task: find ALL .md files in the repo that document behavior affected by these changes.
-Use: find $REPO_ROOT -name '*.md' -not -path '*/.venv/*' -not -path '*/.git/*' -not -path '*/__pycache__/*'
+Use: find $REPO_ROOT -name '*.md' -not -path '*/.venv/*' -not -path '*/.git/*' -not -path '*/__pycache__/*' -not -path '*/.claude/*'
 
 Determine relevance using these rules (apply in order, stop at first match):
 - Filename match: stem of changed file appears in the .md filename
@@ -37,10 +45,7 @@ For EACH relevant .md file:
 - Do not restructure or reformat unrelated sections
 - Replace any existing '_Last synced' line with: _Last synced: $TODAY_
 
-Also check .claude/steering/*.md — if code changes introduce new patterns, conventions,
-or architectural decisions not yet captured in steering, update the relevant steering file.
-
-Skip .md files inside .venv/ and .git/. Never write to source code files."
+Skip .md files inside .venv/, .git/, and .claude/. Never write to source code files."
 
 fi
 
@@ -70,7 +75,7 @@ fi
 # and the terminal is freed (no hang, no Ctrl-C). stdin ← /dev/null and all
 # output → a log keep it off the tty; `timeout` (if present) bounds each agent
 # so a stuck `claude` can never block. The .md-only commit it makes re-triggers
-# this hook, but that run sees only .md changes → both guards fail → it exits.
+# this hook, but the self-commit guard at the top ("docs: auto-sync") exits it.
 if [ -n "$NON_MD" ] || [ -n "$HARNESS_CHANGED" ]; then
   LOG="$REPO_ROOT/.git/post-commit-docsync.log"
   TIMEOUT_BIN=""
