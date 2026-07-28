@@ -386,6 +386,7 @@ The post-commit hook runs three stages:
 - **Debugging** — tail `.git/post-commit-docsync.log`; each run is delimited by `=== doc-sync run <date> ===` and `=== done <date> ===`.
 - The GitNexus incremental reindex (when `.gitnexus/` exists) is likewise backgrounded with stdin from `/dev/null` and stdout/stderr discarded, so it cannot print into or block the terminal.
 - The `--dangerously-skip-permissions` flag is required: the background agents run non-interactively (no terminal to answer permission prompts), so without it the doc sync would stall on the first `Edit`/`Write` and never apply changes.
+- **Executable bit** — the source file `hooks/git/post-commit` is *not* required to be executable in the harness tree (it is currently mode `100644`). `install.sh` and `update.sh` copy it to `.git/hooks/post-commit` and then run `chmod +x` on the copy, so the installed hook is always executable regardless of the source mode. If you install the hook by hand, `chmod +x .git/hooks/post-commit` yourself.
 
 The script is idempotent — safe to run multiple times.
 
@@ -531,7 +532,7 @@ Conventions are defined in `.claude/kiro/settings/rules/memory-conventions.md`:
 | `/kiro:validate-adversarial {feature}` | Three-pass adversarial review with +1/-2 scoring |
 | `/kiro:converge [feature]` | Spec ↔ code reconciliation — detects bidirectional drift (spec-ahead / code-ahead / contradiction); reuses `validate-impl-agent` |
 | `/kiro:spec-status {feature}` | Show current phase, approvals, and open tasks |
-| `/kiro:sync-docs` | Sync docs with ALL code changes (uncommitted + staged + committed). Filters out `.md` files and `.claude/` paths — `.claude/` is regenerated output (rebuilt by `install.sh` / `update.sh`) and gitignored; changes to the harness **source** tree (`agents/`, `commands/`, `hooks/`, `kiro/`, `scripts/`, `rules/`, `templates/`, `skills/`, `CLAUDE.md`) are the harness updater's job |
+| `/kiro:sync-docs` | Sync docs with ALL code changes (uncommitted + staged + committed). Filters out `.md` files and `.claude/` paths — `.claude/` is regenerated output (rebuilt by `install.sh` / `update.sh`) and gitignored; changes to the harness **source** tree (`agents/`, `commands/`, `hooks/`, `kiro/`, `scripts/`, `rules/`, `templates/`, `skills/`, `CLAUDE.md`) are the harness updater's job. This is the *manual* trigger — the stop-hook runs it at session end, and the post-commit git hook is the safety net: it runs doc sync, then the harness updater, then auto-commits and pushes **only** the `.md` files they touched, all inside one detached background job (each agent bounded by `timeout 900`), so `git commit` returns immediately and output lands in `.git/post-commit-docsync.log` |
 | `/kiro:reflect` | Review session, extract observations, update memory (subagent) |
 | `/kiro:learn-eval [scope]` | Quality-gate session/sprint/feature patterns before saving to memory — scores specificity/actionability/evidence (1-3 each, pass ≥6); verdicts Save/Absorb/Route/Drop (subagent). Use for deeper periodic evaluation vs. `/kiro:reflect`'s quick frequent capture |
 | `/kiro:housekeeping` | Prune memory, archive old observations to glacier (subagent) |
@@ -696,7 +697,7 @@ Skills live in the harness source tree at `skills/<name>/SKILL.md` (64 skills cu
 - Adding a skill: create `skills/<name>/SKILL.md` with kebab-case `name:` matching the directory and a `description:` of ≥25 chars (enforced by the `skill-validate` PreToolUse hook), then run `install.sh` / `update.sh`.
 - Every write to a `*/skills/*/SKILL.md` also trips the **skill-permissions-gate** PostToolUse hook — a soft reminder to run `agent-permissions-design` (tool access, irreversible-action gates, scope boundary, external access) before calling the skill done.
 - Usage is logged to `logs/skill-usage.jsonl` by the `skill-usage-tracker` hook and reviewed by the weekly skill-curator routine.
-- `skills/csv-data-summarizer` — analyzes a CSV end to end without asking questions: pandas stats, missing-data audit, and only the charts the data supports (time-series only with a date column, correlation heatmap only with ≥2 numeric columns, frequency counts for categoricals), closing with 2–4 dataset-grounded insights. Ships a bundled `analyze.py` (`summarize_csv(file_path)`, saves charts as PNGs) run as `python ~/.claude/skills/csv-data-summarizer/analyze.py <file.csv>`, with `resources/sample.csv` as the test fixture; if pandas/matplotlib/seaborn are missing, the skill writes the equivalent inline. Requires `python>=3.8`, `pandas`, `matplotlib`, `seaborn`. Tracked as a git submodule — commit inside `skills/csv-data-summarizer/` first, then bump the pointer in the parent repo.
+- `skills/csv-data-summarizer` — analyzes a CSV end to end without asking questions: pandas stats, missing-data audit, and only the charts the data supports (time-series only with a date column, correlation heatmap only with ≥2 numeric columns, frequency counts for categoricals), closing with 2–4 dataset-grounded insights. Ships a bundled `analyze.py` (`summarize_csv(file_path)`, saves charts as PNGs) run as `python ~/.claude/skills/csv-data-summarizer/analyze.py <file.csv>`, with `resources/sample.csv` as the test fixture and `examples/showcase_financial_pl_data.csv` as a larger demo input; if pandas/matplotlib/seaborn are missing, the skill writes the equivalent inline. Requires `python>=3.8`, `pandas`, `matplotlib`, `seaborn`. Tracked as **ordinary files in this repo** (no longer a git submodule — there is no `.gitmodules` entry): edit under `skills/csv-data-summarizer/` and commit in the parent repo like any other skill, then run `install.sh` / `update.sh` to sync it to `~/.claude/skills/`. The skill's `.gitignore` un-ignores `csv-data-summarizer.zip` so the packaged bundle is committed alongside the source.
   - **Reference shape for skill authoring**: `SKILL.md` was cut from ~149 lines to ~36 by deleting the shouty-prohibition block (`⚠️ CRITICAL BEHAVIOR REQUIREMENT`, the DO/NEVER-SAY/FORBIDDEN lists, worked example output, per-industry adaptation table) and stating the rule once positively — "run the full analysis immediately and present complete results in one response; do not ask what they want, list options, or offer choices" — followed by a 4-step **Procedure**, a **Bundled script** section, and two hard **Constraints** (report missing values rather than silently dropping; include every numeric column in the summary). Behavior is unchanged; the token cost is not. Prefer this shape for new skills.
   - The `name`/`description` frontmatter carries the trigger conditions (`Use when the user shares or references a CSV wanting a summary, analysis, or insights`) so routing no longer depends on a prose "When to Use This Skill" section. The `metadata.version` key was dropped — git is the version record — and `metadata.dependencies` is now unpinned (`python>=3.8, pandas, matplotlib, seaborn`); the pinned minimums (`pandas>=2.0.0`, `matplotlib>=3.7.0`, `seaborn>=0.12.0`) live in the skill's `requirements.txt`, which is the single source of truth for versions.
 
@@ -1342,9 +1343,12 @@ Each harness subsystem has a detailed reference doc:
 # WRONG — Stop hook (fires every message)
 # claude --print "..." &   ← never do this here
 
-# RIGHT — post-commit hook (fires once per git commit)
+# RIGHT — post-commit hook (fires once per git commit), fully detached
 # .git/hooks/post-commit
-claude --dangerously-skip-permissions --print "..." 2>/dev/null &
+{
+  timeout 900 claude --dangerously-skip-permissions --print "..." || true
+} </dev/null >>"$REPO_ROOT/.git/post-commit-docsync.log" 2>&1 &
+disown 2>/dev/null || true
 ```
 
 **Rules to remember**:
@@ -1352,6 +1356,8 @@ claude --dangerously-skip-permissions --print "..." 2>/dev/null &
 - Never use `git diff HEAD~1` as a condition in Stop (always has output)
 - Never watch `.claude/memory/` for mtime changes in Stop (written every session)
 - Background doc agents belong in git hooks (commit-scoped) or manual slash commands
+- Detach the git-hook job (`</dev/null`, output appended to a log, `disown`) so `git commit` returns immediately instead of waiting on the agent, and bound each `claude` call with `timeout 900` / `gtimeout 900` so a stuck agent cannot hold the terminal
+- If the hook commits `.md` files itself, keep the guards narrow enough that the resulting `.md`-only commit fails them — otherwise the hook re-fires forever
 
 The Stop hook should only contain **passive checks** (e.g., nudging housekeeping when observations exceed a threshold). See `.claude/hooks/stop-hook.sh` for the reference implementation.
 
