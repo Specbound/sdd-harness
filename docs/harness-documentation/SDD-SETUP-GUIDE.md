@@ -688,7 +688,9 @@ SDD_PROFILE=strict git commit -m "release prep"   # per-invocation
 
 Hook scripts guard at the top with `SDD_PROFILE="${SDD_PROFILE:-standard}"` and `exit 0` when it is `minimal`.
 
-**Git hooks ignore the profile** — they are infrastructure, not enforcement. That includes the post-commit third stage: the detached runner executes the doc-sync and harness-updater agents, then stages, commits, and **pushes** only `*.md` files at *every* profile level, `minimal` included. So a `minimal` session still touches the network and the remote on commit — asynchronously, after `git commit` has already returned, with the outcome recorded in `.git/post-commit-docsync.log` rather than the terminal.
+**Git hooks ignore the profile** — they are infrastructure, not enforcement. The one unconditional exit is the self-commit guard: a commit whose subject starts with `docs: auto-sync` (the hook's own) skips every stage at every profile level. Otherwise the post-commit third stage runs everywhere: the detached runner executes the doc-sync and harness-updater agents, then stages, commits, and **pushes** only `*.md` files at *every* profile level, `minimal` included. So a `minimal` session still touches the network and the remote on commit — asynchronously, after `git commit` has already returned, with the outcome recorded in `.git/post-commit-docsync.log` rather than the terminal.
+
+That stage is also **serialized at every profile level** on `.git/post-commit-docsync.lock` (atomic `mkdir`). If a previous run still holds the lock, the new run logs `=== skipped <date>: another doc-sync run is active ===` and exits without running the agents, so rapid successive commits never spawn parallel agents that race on the git index. A lock older than 30 minutes is stolen; a normal exit removes it via an `EXIT` trap. Consequence for `minimal`: a fast commit burst may leave later commits' doc sync to the run already in flight or the next commit — not to a per-commit run.
 
 ---
 

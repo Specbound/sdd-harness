@@ -48,7 +48,7 @@ fi
 
 Git hooks (post-commit) run at all profile levels — they are infrastructure, not enforcement. Only session hooks (stop-hook.sh) respect the minimal profile skip. The one unconditional exit is the self-commit guard: commits whose subject starts with `docs: auto-sync` (the hook's own doc-sync commits) skip every stage at every profile level.
 
-Note: `post-commit` has a third stage that runs at every profile level — one fully-detached background job runs the doc-sync agent, then the harness-updater agent, then stages, commits, and **pushes** only `*.md` files. `git commit` returns immediately (output goes to `.git/post-commit-docsync.log`), but the job still touches the network and the remote at all profiles, including `minimal`.
+Note: `post-commit` has a third stage that runs at every profile level — one fully-detached background job runs the doc-sync agent, then the harness-updater agent, then stages, commits, and **pushes** only `*.md` files. `git commit` returns immediately (output goes to `.git/post-commit-docsync.log`), but the job still touches the network and the remote at all profiles, including `minimal`. That stage is serialized on `.git/post-commit-docsync.lock` (atomic `mkdir`) at every profile level: if a previous run still holds the lock, the new run logs `=== skipped <date>: another doc-sync run is active ===` and exits without running the agents, so rapid successive commits never spawn parallel agents that race on the git index. A lock older than 30 minutes is stolen; a normal exit removes it via an `EXIT` trap.
 
 ## Defaults
 
