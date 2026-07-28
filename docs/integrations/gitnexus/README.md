@@ -11,7 +11,7 @@ The integration adds six automatic capabilities and one manual command:
 **Automatic (wired into existing workflows — no extra commands needed):**
 
 1. **PreToolUse context enrichment** — Every file read/edit is automatically enriched with GitNexus 360-degree symbol context (callers, dependencies, process participation). Agents see the blast radius of every file they touch.
-2. **Auto-reindex on commit** — The post-commit hook re-indexes the repo after every commit so the knowledge graph stays fresh.
+2. **Auto-reindex on commit** — The post-commit hook re-indexes the repo after every commit so the knowledge graph stays fresh. Exception: the hook's own `docs: auto-sync` commits are skipped by its self-commit guard, which bails before the reindex stage.
 3. **Impact detection in verify pipeline** — `verify-agent` Stage 0 runs `detect_changes` automatically, flagging HIGH risk semantic regressions before build/test/lint.
 4. **Blast radius in spec-impl** — Before TDD implementation, `spec-impl` scans all files it will modify for downstream dependents, writing tests that cover affected code.
 5. **Call chain tracing in debug** — `debug-agent` Step 2 (Localize) queries GitNexus for the full call chain instead of manually grepping for callers.
@@ -119,7 +119,7 @@ All enhancements activate automatically when `.gitnexus/` exists. No commands ne
 
 | Component | Enhancement | Trigger |
 |---|---|---|
-| `post-commit` hook | Re-indexes repo (`gitnexus analyze --skip-embeddings`) in the background, fully detached (stdin `/dev/null`, stdout/stderr discarded) so it never prints into or blocks the terminal | Every `git commit` |
+| `post-commit` hook | Re-indexes repo (`gitnexus analyze --skip-embeddings`) in the background, fully detached (stdin `/dev/null`, stdout/stderr discarded) so it never prints into or blocks the terminal | Every `git commit`, except the hook's own `docs: auto-sync` commits (self-commit guard exits first) |
 | `PreToolUse` hook | Queries GitNexus for file context, injects into agent conversation | Every file read/edit |
 
 ## Use Cases
