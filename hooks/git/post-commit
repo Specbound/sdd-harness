@@ -10,7 +10,7 @@ if [ -z "$CHANGED" ]; then exit 0; fi
 # Incremental reindex is fast (<5s for most repos), so it runs on every commit.
 if [ -d "$REPO_ROOT/.gitnexus" ]; then
   if command -v gitnexus >/dev/null 2>&1 || npx gitnexus --version >/dev/null 2>&1; then
-    (cd "$REPO_ROOT" && npx gitnexus analyze --skip-embeddings 2>/dev/null) &
+    (cd "$REPO_ROOT" && npx gitnexus analyze --skip-embeddings >/dev/null 2>&1 </dev/null) &
     echo "  post-commit: GitNexus reindex running in background..."
   fi
 fi
@@ -42,9 +42,6 @@ or architectural decisions not yet captured in steering, update the relevant ste
 
 Skip .md files inside .venv/ and .git/. Never write to source code files."
 
-  claude --dangerously-skip-permissions --print "$DOC_SYNC_PROMPT" 2>/dev/null &
-  DOC_SYNC_PID=$!
-  echo "  post-commit: source changes detected — doc sync running in background..."
 fi
 
 # ── Hook 2: Harness updater (SDD-SETUP-GUIDE sync) ──────────────────────────
@@ -66,26 +63,34 @@ Do not remove existing documented steps unless directly replaced by the changes.
 Do not overwrite sections unrelated to the detected changes.
 Replace any existing '_Last synced' line with: _Last synced: $TODAY_"
 
-  claude --dangerously-skip-permissions --print "$HARNESS_PROMPT" 2>/dev/null &
-  HARNESS_PID=$!
-  echo "  post-commit: harness changes detected — SDD-SETUP-GUIDE sync running in background..."
 fi
 
-# ── Hook 3: Auto-commit + push .md changes only ───────────────────────────
-# Waits for the doc-sync / harness-updater background jobs above, then
-# stages, commits, and pushes ONLY .md files they touched. Never stages
-# or pushes non-.md changes, even if some happen to be sitting in the tree.
-[ -n "$DOC_SYNC_PID" ] && wait "$DOC_SYNC_PID" 2>/dev/null
-[ -n "$HARNESS_PID" ] && wait "$HARNESS_PID" 2>/dev/null
-
-cd "$REPO_ROOT" || exit 0
-MD_STATUS=$(git status --porcelain -- '*.md')
-if [ -n "$MD_STATUS" ]; then
-  git add -- '*.md'
-  git commit -m "docs: auto-sync ($TODAY)" -- '*.md' >/dev/null 2>&1
-  if git push >/dev/null 2>&1; then
-    echo "  post-commit: .md changes auto-committed and pushed"
-  else
-    echo "  post-commit: .md changes auto-committed, but push failed (check remote/auth)"
-  fi
+# ── Hook 3: Detached runner — sync docs, then auto-commit + push .md only ────
+# Runs as ONE fully-detached background job so `git commit` returns immediately
+# and the terminal is freed (no hang, no Ctrl-C). stdin ← /dev/null and all
+# output → a log keep it off the tty; `timeout` (if present) bounds each agent
+# so a stuck `claude` can never block. The .md-only commit it makes re-triggers
+# this hook, but that run sees only .md changes → both guards fail → it exits.
+if [ -n "$NON_MD" ] || [ -n "$HARNESS_CHANGED" ]; then
+  LOG="$REPO_ROOT/.git/post-commit-docsync.log"
+  TIMEOUT_BIN=""
+  command -v timeout  >/dev/null 2>&1 && TIMEOUT_BIN="timeout 900"
+  [ -z "$TIMEOUT_BIN" ] && command -v gtimeout >/dev/null 2>&1 && TIMEOUT_BIN="gtimeout 900"
+  {
+    echo "=== doc-sync run $(date) ==="
+    [ -n "$NON_MD" ]          && { $TIMEOUT_BIN claude --dangerously-skip-permissions --print "$DOC_SYNC_PROMPT" || true; }
+    [ -n "$HARNESS_CHANGED" ] && { $TIMEOUT_BIN claude --dangerously-skip-permissions --print "$HARNESS_PROMPT" || true; }
+    cd "$REPO_ROOT" || exit 0
+    if [ -n "$(git status --porcelain -- '*.md')" ]; then
+      git add -- '*.md'
+      git commit -m "docs: auto-sync ($TODAY)" -- '*.md' \
+        && { git push && echo "  .md auto-committed and pushed" \
+             || echo "  .md committed but push failed (check remote/auth)"; }
+    else
+      echo "  no .md changes to commit"
+    fi
+    echo "=== done $(date) ==="
+  } </dev/null >>"$LOG" 2>&1 &
+  disown 2>/dev/null || true
+  echo "  post-commit: doc-sync + auto-push running in background (log: .git/post-commit-docsync.log)"
 fi

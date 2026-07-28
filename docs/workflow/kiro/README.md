@@ -57,7 +57,7 @@ Key agents beyond the spec pipeline:
 - **simplify-agent** — Behavior-preserving simplification with Chesterton's Fence. Runs tests before AND after. Documents intentional complexity.
 - **ship-agent** — Generates staged rollout plans with decision thresholds, rollback procedures, and feature flag recommendations.
 - **doc-sync** — Triggered by post-commit hook or `/kiro:sync-docs`. Diffs recent commits against `.md` files, updates stale docs, and detects stale doc-to-code references (reverse validation).
-- **harness-updater** — Triggered by post-commit hook when `.claude/` files change. Updates `SDD-SETUP-GUIDE.md`.
+- **harness-updater** — Triggered by the post-commit hook when harness **source** files change (`agents/`, `commands/`, `hooks/`, `kiro/`, `scripts/`, `rules/`, `templates/`, `skills/`, `CLAUDE.md`); `.claude/` is generated output and never a trigger. Runs after doc-sync inside the hook's single detached background job. Updates `SDD-SETUP-GUIDE.md`.
 - **reflect-agent** — Mines `git log` for observations, promotes patterns (3+ distinct observations, falsifiable), updates hot-memory; Step 6 runs a five-dimension session clean-state check (build/tests/progress/artifacts/startup path) and adds corrective action items for any unmet dimension.
 - **housekeeping-agent** — Archives observations to glacier, enforces memory caps.
 - **evolve-agent** — Measures memory health metrics, analyzes agent trace logs, detects friction patterns, proposes rule changes and linter rule graduations; Step 1d audits instruction architecture (entry file bloat, SNR, middle-placement, topic docs); Step 1e checks session clean-state discipline; output includes "Harness Architecture Health" scorecard.
@@ -137,4 +137,4 @@ Starting-point files for specs, steering docs, and memory files. Used by `spec-i
 
 Installed via `npx cc-sdd@latest --claude-agent --lang en`, then path-remapped with `scripts/remap-ccsdd-paths.sh`. See `SDD-SETUP-GUIDE.md` Steps 3–4 for details.
 
-_Last synced: 2026-06-09_
+_Last synced: 2026-07-28_

@@ -258,7 +258,7 @@ sdd-harness/
 │   │   ├── caveman-statusline.sh #     Statusline command: emits [CAVEMAN] / [CAVEMAN:ULTRA] badge
 │   │   └── lean-ctx-rewrite.sh  #     PreToolUse(Bash): rewrites common shell commands to lean-ctx equivalents
 │   └── git/                      # Git lifecycle hooks (copied to .git/hooks/ on install/update)
-│       └── post-commit           #     On commit: doc sync + harness update detection, then auto-commit/push the .md files those agents touched
+│       └── post-commit           #     On commit: detects doc-sync/harness-update work, then runs it in ONE detached job (log: .git/post-commit-docsync.log) that auto-commits/pushes only the .md files touched
 │
 ├── templates/                    # Project-level templates
 │   ├── CLAUDE.md.template        #   Project constitution (context paths, rules, quality gates)
@@ -773,10 +773,12 @@ This is a global hook — it applies to every session and every project automati
 
 ### Git Post-Commit Hook (`hooks/git/post-commit`)
 
-Runs after every commit. Triggers two background processes, then a synchronous docs push:
+Runs after every commit. Detects what needs syncing, then hands all of it to **one fully-detached background job** so `git commit` returns immediately:
 1. **Doc Sync** — If non-`.md` files changed, finds and updates affected documentation
 2. **Harness Updater** — If harness source files changed (`agents/`, `commands/`, `hooks/`, `kiro/`, `scripts/`, `rules/`, `templates/`, `skills/`, or `CLAUDE.md`), updates `docs/harness-documentation/SDD-SETUP-GUIDE.md`
-3. **Docs auto-push** — Waits for both background agents, then stages, commits (`docs: auto-sync (<date>)`), and pushes **only `.md` files**. Non-`.md` changes sitting in the tree are never staged or pushed. A failed push is reported, not retried.
+3. **Detached runner + docs auto-push** — If either check above fired, a single background job (stdin from `/dev/null`, output appended to `.git/post-commit-docsync.log`, `disown`ed) runs the doc-sync agent, then the harness updater, then stages, commits (`docs: auto-sync (<date>)`), and pushes **only `.md` files**. Non-`.md` changes sitting in the tree are never staged or pushed. A failed push is reported in the log, not retried.
+
+Each `claude` invocation inside the job is bounded by `timeout 900` (`gtimeout` fallback where only coreutils provides it), and a failing agent is swallowed so the commit-and-push stage always runs. Nothing prints to the terminal — watch progress with `tail -f .git/post-commit-docsync.log`, where each run is delimited by `=== doc-sync run <date> ===` / `=== done <date> ===`. The `.md`-only auto-sync commit re-fires the hook, but that run sees only `.md` changes, so both checks fail and it exits — no loop. The GitNexus reindex stage is likewise detached with its output discarded.
 
 The trigger for step 2 keys off the top-level source tree, not `.claude/` — `.claude/` is regenerated output rebuilt by `install.sh`/`update.sh` and is fully gitignored.
 

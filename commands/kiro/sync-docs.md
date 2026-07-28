@@ -58,6 +58,6 @@ Show Subagent summary to user:
 
 - This command catches ALL changes: uncommitted, staged, and recently committed
 - The stop-hook runs this automatically at session end — this command is for manual trigger
-- The post-commit git hook is a safety net that also triggers doc sync on commit; after doc sync and the harness updater finish, that hook auto-commits and pushes **only** the `.md` files they touched
+- The post-commit git hook is a safety net that also triggers doc sync on commit; it runs doc sync, then the harness updater, then auto-commits and pushes **only** the `.md` files they touched — all inside one detached background job, so `git commit` returns immediately and output lands in `.git/post-commit-docsync.log` (each agent bounded by `timeout 900`)
 - Excludes .claude/ paths — regenerated output, gitignored (harness updater handles SDD-SETUP-GUIDE separately, keyed off the top-level source tree)
 - Excludes .md-only changes to avoid infinite loops

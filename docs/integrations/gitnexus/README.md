@@ -119,7 +119,7 @@ All enhancements activate automatically when `.gitnexus/` exists. No commands ne
 
 | Component | Enhancement | Trigger |
 |---|---|---|
-| `post-commit` hook | Re-indexes repo (`gitnexus analyze --skip-embeddings`) | Every `git commit` |
+| `post-commit` hook | Re-indexes repo (`gitnexus analyze --skip-embeddings`) in the background, fully detached (stdin `/dev/null`, stdout/stderr discarded) so it never prints into or blocks the terminal | Every `git commit` |
 | `PreToolUse` hook | Queries GitNexus for file context, injects into agent conversation | Every file read/edit |
 
 ## Use Cases
