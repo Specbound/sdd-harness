@@ -1,102 +1,200 @@
-# Skill Curation Report — 2026-06-28
+# Skill Curation Report — 2026-07-16
 
 ## Summary
-- Skills audited: 980
-- Low-quality flags: 3 stubs + 218 malformed-frontmatter (operational-validity)
-- Duplicate pairs: 10 (true exact-description matches)
-- Description flags (>150 chars): 577 (71 over 200, 506 in 150–200)
-- Cold skills (no use in 30d): n/a — no usage data | Archive candidates (90d): n/a
-- Memory governance: **ok**
-
-> **Scope note.** `~/.claude/skills/` holds **980** skills — a bulk marketplace install, not a hand-curated set. Per-skill 4-dimension deep reads across 980 files is neither tractable nor useful in a weekly sweep, so the quality audit below is **mechanical**: frontmatter validity, stub detection, exact-duplicate descriptions, and the description budget. Subjective scoring is reserved for the human-invoked `/skill-curator`, which can target the harness's own ~40 skills.
+- Skills audited: 72
+- Low-quality flags (≤6/12): 0 (see methodology note)
+- Duplicate pairs: 4 (+ 2 adjacent families flagged for review)
+- Description flags (>150 chars): 67 (of which 🔴 >200: 55)
+- Cold skills (no use in 30d): — | Archive candidates (90d): — (no usage data)
+- Memory governance: ok
 
 ## Usage Evidence
-**No usage data yet** — `logs/skill-usage.jsonl` does not exist. The `skill-usage-tracker.sh` PostToolUse hook appears not to be installed/firing yet. Until it produces data, cold/archive deprecation cannot be evidence-based; deprecation is suspended.
+
+No usage data yet — `logs/skill-usage.jsonl` does not exist. The `skill-usage-tracker.sh`
+PostToolUse hook is either freshly installed or not yet registered in `settings.json`.
+Deprecation/archive candidate lists cannot be computed this cycle. Deprecation decisions
+must wait until real invocation evidence accumulates.
 
 ### Deprecate Candidates (no invocation in 30d)
-None determinable — no usage log.
+None — no evidence layer available.
 
 ### Archive Candidates (no invocation in 90d)
-None determinable — no usage log.
+None — no evidence layer available.
+
+> **Action for the harness owner:** confirm `skill-usage-tracker.sh` is wired as a
+> PostToolUse hook in `.claude/settings.json`. Until it fires, every weekly sweep will
+> report "no usage data" and cold-skill pruning stays blind.
 
 ## Description Budget
 
-Total: 980 skills | 142,330 chars | ~35,583 tokens
+Total: 72 skills | 18,602 chars | ~4,650 tokens | avg 258 chars/skill
 
-> Block-scalar parsing caveat: the 218 malformed-frontmatter skills (see Quality Findings) undercount slightly because only their first description line is measurable. The real total is somewhat higher than 35.6k tokens.
+This is resident system-reminder pressure — ~4.6k tokens of skill descriptions load on
+every session. 55 of 72 descriptions (76%) exceed the 200-char 🔴 threshold. The budget
+is the single largest mechanical win available; the human `/skill-curator` should
+prioritize compressing the top of this table.
 
-| Bucket | Count | Status |
-|--------|-------|--------|
-| > 200 chars | 71 | 🔴 measurable system-reminder pressure |
-| 150–200 chars | 506 | ⚠️ consider compression |
-| ≤ 150 chars | 403 | ok |
-
-### Longest descriptions (top 15 — compression targets)
 | Skill | Chars | Status |
 |-------|-------|--------|
-| prompt-master | 444 | 🔴 |
-| multi-agent-patterns | 435 | 🔴 |
+| para-memory-files | 556 | 🔴 |
+| rl-agent-training | 514 | 🔴 |
+| semantic-data-pipeline | 475 | 🔴 |
+| multi-agent-patterns | 437 | 🔴 |
 | agent-execution-control | 431 | 🔴 |
-| performance-engineer | 416 | 🔴 |
-| get-api-docs | 411 | 🔴 |
+| get-api-docs | 413 | 🔴 |
+| create-agent-adapter | 390 | 🔴 |
+| structured-web-dataset | 380 | 🔴 |
 | llm-fine-tuning | 379 | 🔴 |
-| structured-web-dataset | 378 | 🔴 |
 | progressive-complexity-ladder | 376 | 🔴 |
-| agent-permissions-design | 356 | 🔴 |
-| agentic-rl-tito | 355 | 🔴 |
+| paperclip | 362 | 🔴 |
 | context-degradation | 349 | 🔴 |
-| adapt-to-repo | 336 | 🔴 |
-| feature-list-primitive | 332 | 🔴 |
+| adapt-to-repo | 338 | 🔴 |
+| feature-list-primitive | 334 | 🔴 |
 | setup-agent-replay | 332 | 🔴 |
-| instruction-architecture | 321 | 🔴 |
+| instruction-architecture | 325 | 🔴 |
+| session-clean-state | 313 | 🔴 |
+| local-llm-eval | 311 | 🔴 |
+| frontend-slides | 311 | 🔴 |
+| agent-harness-design | 306 | 🔴 |
+| cag-implementation | 297 | 🔴 |
+| pr-report | 296 | 🔴 |
+| karpathy-guidelines | 294 | 🔴 |
+| context-optimization | 284 | 🔴 |
+| cma-outcomes | 280 | 🔴 |
+| grill-with-docs | 278 | 🔴 |
+| frontend-performance | 276 | 🔴 |
+| secure-agent-design | 275 | 🔴 |
+| git-safe-pull | 273 | 🔴 |
+| ai-native-org-patterns | 256 | 🔴 |
+| tool-design | 254 | 🔴 |
+| evaluation | 250 | 🔴 |
+| tool-failure-memory | 244 | 🔴 |
+| rag-implementation | 241 | 🔴 |
+| rtk-token-reduction | 238 | 🔴 |
+| active-observability | 234 | 🔴 |
+| better-call | 233 | 🔴 |
+| gitnexus-pr-review | 231 | 🔴 |
+| gitnexus-exploring | 231 | 🔴 |
+| gitnexus-cli | 231 | 🔴 |
+| gitnexus-guide | 230 | 🔴 |
+| agent-identity | 230 | 🔴 |
+| skill-creator | 219 | 🔴 |
+| frontend-code-quality | 218 | 🔴 |
+| prompt-engineering | 217 | 🔴 |
+| skill-extraction | 215 | 🔴 |
+| loop-patterns | 215 | 🔴 |
+| csv-data-summarizer | 213 | 🔴 |
+| paperclip-create-agent | 212 | 🔴 |
+| gitnexus-refactoring | 212 | 🔴 |
+| release | 210 | 🔴 |
+| gitnexus-impact-analysis | 208 | 🔴 |
+| ai-security-workflow | 206 | 🔴 |
+| issue-triage-routing | 203 | 🔴 |
+| ktx-data-context | 201 | 🔴 |
+| storm-research | 197 | ⚠️ |
+| proof-collaborative-review | 195 | ⚠️ |
+| document-parsing | 193 | ⚠️ |
+| hook-design | 185 | ⚠️ |
+| model-tiers | 184 | ⚠️ |
+| verification-skill-authoring | 181 | ⚠️ |
+| gitnexus-debugging | 178 | ⚠️ |
+| rag-architect | 168 | ⚠️ |
+| ui-skills | 166 | ⚠️ |
+| git-pushing | 160 | ⚠️ |
+| prompt-quality-assess | 158 | ⚠️ |
+| release-changelog | 154 | ⚠️ |
+| skill-curator | 129 | ok |
+| refactoring-safely | 109 | ok |
+| test-driven-development | 79 | ok |
+| instrument-agent | 74 | ok |
+| questions | 55 | ok |
 
 ## Quality Findings
 
-### Low-Quality Candidates
-**Stubs (<200 char body — replace less context than they consume):**
-- `cc-skill-continuous-learning` — 159-char body — near-empty, also a duplicate-description (see below)
-- `cc-skill-strategic-compact` — 157-char body — near-empty, also a duplicate-description
-- `questions` — 170-char body — minimal content
+### Methodology note
+This weekly sweep scored the four SkillOS dimensions at **frontmatter depth** —
+trigger clarity, description budget, and file-size compression proxy — without a full
+read of all 72 skill bodies (that read is the compression realism of an automated
+weekly pass and belongs to the human-invoked `/skill-curator`). On the trigger-clarity
+heuristic **no skill scored ≤6/12**: every description carries a clear "use when"
+trigger with load-bearing nouns. The actionable signal this cycle is the duplicate
+pairs and the description budget, not individual low scorers.
 
-**Malformed YAML frontmatter (218 skills — operational-validity risk):**
-22% of installed skills have a multi-line `description:` written as a closed quoted string followed by un-quoted continuation lines (213 `ParserError`, 5 `ScannerError`). Example (`ai-engineer`):
-```yaml
-description: "Build production-ready LLM applications, advanced RAG systems, and"
-  intelligent agents. Implements vector search, ...
-```
-The Claude Code loader tolerates this, but any strict-YAML tooling (and accurate budget accounting) breaks on it. These are community-source bulk imports. Not urgent, but a portability/hygiene liability — a one-time `>-` block-scalar rewrite would fix all 218.
+### Low-Quality Candidates
+None flagged at ≤6/12. Watch items for the human deep-read pass (thin body or
+narrowest scope — not yet failures): `questions` (5 lines, utility stub),
+`instrument-agent` (74-char description, verify trigger discrimination vs
+`setup-agent-replay`).
 
 ### Duplicate Pairs
-True exact-description matches (the `azure-*`/`hig-*` mega-groups reported by naive parsing were false positives from block-scalar indicators, not real duplicates):
+- **adapt-to-repo ↔ skill-extraction** — strongest overlap. Both ingest an external
+  link / article / post / idea and decide what (if anything) to apply to the repo, and
+  both explicitly "filter redundancies." Routing between them is ambiguous; a model
+  seeing a shared link could invoke either. Candidate for merge or a sharp boundary
+  ("adapt = plan for *this* repo" vs "extract = install harness artifacts").
+- **rag-architect ↔ rag-implementation** — design-a-RAG-pipeline vs build-a-RAG-system.
+  The design/build split is real but the triggers overlap heavily ("design RAG
+  pipelines" vs "implementing knowledge-grounded AI"). Review for merge into one skill
+  with a design→build progression.
+- **context-optimization ↔ context-degradation** — both own the "context" trigger
+  surface. optimize-tokens/KV-cache vs diagnose-lost-in-middle/poisoning. Adjacent
+  enough to co-fire; confirm the trigger nouns are disjoint.
+- **prompt-engineering ↔ prompt-quality-assess** — quality-assess is a narrow
+  pre-flight rubric that sits inside prompt-engineering's broad scope. Keep both only
+  if the pre-flight gate is genuinely invoked on its own; otherwise fold into
+  prompt-engineering.
 
-| Pair | Overlapping scope |
-|------|-------------------|
-| `code-documentation-doc-generate` ↔ `documentation-generation-doc-generate` | Identical doc-generation expert prompt |
-| `code-refactoring-refactor-clean` ↔ `codebase-cleanup-refactor-clean` | Identical clean-code refactoring prompt |
-| `code-refactoring-tech-debt` ↔ `codebase-cleanup-tech-debt` | Identical tech-debt expert prompt |
-| `code-review-ai-ai-review` ↔ `performance-testing-review-ai-review` | Identical AI code-review prompt |
-| `codebase-cleanup-deps-audit` ↔ `dependency-management-deps-audit` | Identical dependency-security prompt |
-| `error-debugging-error-analysis` ↔ `error-diagnostics-error-analysis` | Identical error-analysis prompt |
-| `mcp-builder-ms` ↔ `mcp-builder` | Both: high-quality MCP server build guide |
-| `brand-guidelines-anthropic` ↔ `brand-guidelines-community` | Both: Anthropic brand colors/typography |
-| `internal-comms-anthropic` ↔ `internal-comms-community` | Both: internal-comms writing resources |
-| `cc-skill-continuous-learning` ↔ `cc-skill-strategic-compact` | Both: generic "development skill from everything-claude-code" stub |
-
-Each pair collapses to one with no capability loss. Resolution belongs to human-invoked `/skill-curator`.
+### Adjacent Families (flagged for review, not dup pairs)
+- **gitnexus-*** (7 skills: cli, debugging, exploring, guide, impact-analysis,
+  pr-review, refactoring) — intentional task-split but 7 near-identical descriptions
+  consume ~1,500 chars of budget. Consider whether `gitnexus-guide` can route to the
+  others, letting the six task skills drop their descriptions to a one-liner.
+- **agent-design cluster** (agent-harness-design / multi-agent-patterns /
+  agent-execution-control) — three large agentic-design skills with overlapping
+  activation ("designing an agentic system"). Boundaries are documented in the bodies;
+  verify they don't co-fire on generic "design an agent" prompts.
 
 ## Memory Governance Health
 
 | Check | Status | Notes |
 |-------|--------|-------|
-| stop-hook writes observations | ok | References `.claude/memory/observations.md`, counts entries, nudges `/kiro:housekeeping` at >50. Hook manages the file (reflect/housekeeping agents write entries — by design). No `memory-conventions` string in stop-hook, but rule file is intact (next row). |
-| session-start catch-up logic | ok | Daily-maintenance catch-up present; reads `STATE_FILE=.claude/memory/.last-routine-run`, fires if >24h stale. |
-| memory-conventions.md intact | ok | `kiro/settings/rules/memory-conventions.md` present, 121 lines — not emptied/truncated. |
-| observations.md recency | ok | Last entry: 2026-06-28 (today); mtime 2026-06-28 08:56. |
-| hot-memory.md recency | ok | Last modified: 2026-06-28 08:55 (today). |
+| stop-hook writes observations | ok | 3 `observations` refs in stop-hook.sh; observations.md appended today |
+| session-start catch-up logic | ok | `.last-routine-run` catch-up trigger present (3 refs) |
+| memory-conventions.md intact | ok | `kiro/settings/rules/memory-conventions.md` present, 121 lines |
+| observations.md recency | ok | last entry: 2026-07-16 (today) |
+| hot-memory.md recency | ok | last modified: 2026-07-16 (today) |
 
-## Recommended Actions (for human-invoked `/skill-curator`)
-1. **Install/verify** `skill-usage-tracker.sh` PostToolUse hook — without it, no deprecation evidence accrues and every weekly sweep stays blind on cold-skill detection.
-2. **Dedupe** the 10 exact pairs → keep one each.
-3. **Delete or fill** the 3 stubs (`cc-skill-continuous-learning`, `cc-skill-strategic-compact`, `questions`).
-4. **Batch-fix** the 218 malformed-YAML frontmatters with a `>-` block-scalar rewrite script.
-5. **Compress** the 71 descriptions over 200 chars (start with the top-15 table) — recovers system-reminder budget on every session.
+Minor note: `stop-hook.sh` contains no literal `memory-conventions` string — the rule
+reference lives outside the hook (routine/settings layer). Observation-writing itself is
+verified working (fresh entries today), so governance is **ok**, not warn.
+
+## Iterative Repair Run — 2026-07-16
+
+No repairs performed. The Low-Quality Candidates list (see § above) reads
+**"None flagged at ≤6/12"** — this cycle's sweep scored at frontmatter depth and
+found no skill below the repair threshold, so the Review→Repair→Validate loop had
+no input. The four "watch items" noted for the human deep-read pass are triager
+boundary/merge concerns, not low-quality bodies, and are out of scope for automated
+repair.
+
+| Skill | Before | After | Status |
+|-------|--------|-------|--------|
+| — | — | — | no candidates below ≤6/12 threshold |
+
+Next repair run has input only if a future curation sweep does a full-body deep-read
+and scores a skill ≤6/12.
+
+## Iterative Repair Run — 2026-07-26
+
+Re-checked the Low-Quality Candidates list before running the Review→Repair→Validate
+loop: still **"None flagged at ≤6/12"** — no curation sweep between 2026-07-16 and
+today re-scored any skill's full body, so there is no new input for Phase 2. Skipped
+repair entirely rather than repairing against the stale frontmatter-depth scores from
+the last full sweep.
+
+| Skill | Before | After | Status |
+|-------|--------|-------|--------|
+| — | — | — | no candidates below ≤6/12 threshold |
+
+Next repair run has input only once a curation sweep does a full-body deep-read and
+scores a skill ≤6/12.

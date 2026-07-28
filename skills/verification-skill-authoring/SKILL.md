@@ -126,6 +126,19 @@ After installation, suggest where to invoke the skill automatically:
 - **In the project's `kiro:ship`**: reference the verify skill in Step 1
 - **In CLAUDE.md** (optional): add a "Quality Gates" line: `<domain>-verify: after each <domain> change`
 
+## Autonomous-QA Methodology (Closing the Verification Loop)
+
+When the verify skill drives an *autonomous* QA loop (not just a mid-work self-check), encode these named principles. Source: Kieran Klaassen, "Closing the Verification Loop."
+
+- **Flows-before-Matrix ("The Email Rule")**: the breakage lives *between* the pages. Map every user-visible change as an explicit FLOW — entry → action → branch → side effect → end state — BEFORE deriving any test scenario. Testing pages instead of journeys is the most common way automated QA lies to you.
+- **Dual judges**: run two independent judges per flow.
+  - *Functional judge* — does it work? Forms validate, links route, data round-trips, error output is clean.
+  - *Experiential judge* — re-read the run through the captured product personas, hunting "paper cuts": friction too small to fail a functional test but real enough to degrade the experience.
+- **Fix-Loop Governor**: judge the size of the fix *before* touching code; escalate what is not yours to decide. Auto-fix ONLY when all hold: clear bug + obvious fix + few files + no schema/architecture/product trade-off. Everything else → **Blocked** state.
+- **Regression test per fix**: every fix ships a regression test designed to *fail before and pass after*. One logical fix per commit. Re-run the failing scenario, then re-test adjacent journeys.
+- **Independence-budgeting**: a finding is only as trustworthy as the independence of whoever confirmed it. The orchestrator's own self-review is capped at *low* confidence (it shares the model's blind spots); confidence rises only with agreement from independent reviewers.
+- **Exit gate**: a green matrix with a red suite is not ready. The full automated suite must pass, and the loop never closes silently on an open question — unresolved items become a **Blocked** row or a filed issue.
+
 ## Domain Defaults (Starting Points)
 
 Use these if the user has no process written down yet:

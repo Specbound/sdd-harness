@@ -46,6 +46,10 @@ You need per-run grading, rubric design, or a quality gate.
       → load evaluation/micro
 ```
 
+## Reference Material
+
+- `resources/benchmark-construction.md` — building a trustworthy benchmark from real PRs, execution-based grading, git-history sealing, trajectory evaluation, and A/B anti-reward-hacking containment. Load when constructing a new benchmark or auditing one for reward hacking.
+
 ## Related Skills (Outside This Family)
 
 - `[[cma-outcomes]]` — automated grade-and-revise loops via the Claude Managed Agents API; use alongside `micro` when you want the grader to loop automatically

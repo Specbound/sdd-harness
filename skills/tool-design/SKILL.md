@@ -278,6 +278,32 @@ These three changes cover 90% of CLI-to-agent friction without a rewrite.
 
 ---
 
+## Intent-vs-Compiler: Emit Intent, Derive Config
+
+When a tool requires verbose, low-level configuration, do not make the model hand-write it. Have the LLM emit a terse, high-level **intent** plus **semantic types**, and let deterministic code (the "compiler") derive the fragile low-level parameters — scales, formatting, layout, ranges, defaults, styling, config. The model declares *what it means*; the compiler decides *how to realize it*.
+
+Source: Microsoft Flint (chart-generation), 2025. The principle generalizes to any tool where the model currently hand-writes fragile verbose specs.
+
+**Why it wins on both axes:**
+- **Token cost:** intent is a fraction of the size of a full spec — the compiler expands it deterministically at zero context cost.
+- **Error surface:** the fragile parts (numeric scales, nested layout objects, enum-heavy styling) are exactly what models get wrong. Moving them into deterministic code removes an entire class of malformed-output failures — the model can only get the *intent* wrong, not the syntax.
+
+**Two-layer pattern (charts as the worked example):**
+
+1. **Data layer — semantic types + field metadata.** The model annotates each field with its semantic type (temporal / quantitative / categorical / ordinal) and lightweight metadata (unit, cardinality, whether it's a measure or dimension). It does *not* pick axis ranges, tick formats, or color scales.
+2. **Intent layer — map fields to roles/channels.** The model states the intent as a mapping: `date → x`, `revenue → y`, `region → color`. That is the whole model-authored payload.
+
+The compiler fills everything else — axis scales inferred from the quantitative field's range, tick/number formatting inferred from the unit, a categorical palette sized to `region`'s cardinality, legend placement, and layout. None of that touches the model.
+
+**Generalizing beyond charts.** Apply this wherever a tool's schema is verbose and mechanically derivable:
+- **Query/report tools:** model emits `{metric, dimension, filter-intent}`; compiler builds the SQL, pagination, and formatting.
+- **UI/layout tools:** model emits component roles; compiler resolves spacing, breakpoints, and theming.
+- **Infra/config tools:** model emits the high-level goal ("public HTTPS endpoint for service X"); compiler derives ports, security groups, and boilerplate.
+
+**Decision rule:** if a parameter is (a) mechanically derivable from the data or a semantic type, and (b) a frequent source of malformed model output, it belongs in the compiler, not the tool schema. Expose only the irreducible intent. This is the consolidation principle applied to *parameters* rather than tools: the fewer fragile fields the model must author, the fewer ways it can fail.
+
+---
+
 ## Practical Guidance
 
 ### Anti-Patterns to Avoid
@@ -394,5 +420,5 @@ External resources:
 **Created**: 2025-12-20
 **Last Updated**: 2026-07-08
 **Author**: Agent Skills for Context Engineering Contributors
-**Version**: 1.2.0
-**Sources added**: Anthropic Engineering Advanced Tool Use (advanced tool use patterns); Microsoft Developer Blog (CLI-to-agent bridging)
+**Version**: 1.3.0
+**Sources added**: Anthropic Engineering Advanced Tool Use (advanced tool use patterns); Microsoft Developer Blog (CLI-to-agent bridging); Microsoft Flint (intent-vs-compiler principle — emit intent, derive config)

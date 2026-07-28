@@ -7,8 +7,8 @@
 # What this does:
 #   1. Installs headroom-ai globally (uv tool, pipx, or pip --user — first that works)
 #   2. Installs headroom-ai in each registered repo's detected virtualenv (for Python API use)
-#   3. Adds `alias claude='headroom wrap claude --memory'` to ~/.bashrc
-#   4. Installs headroom as a persistent systemd service (eliminates cold-start lag)
+#   3. Wires Claude Code to route through the proxy (durable, all shells + GUI)
+#   4. Installs headroom as a persistent service (launchd on macOS, systemd on Linux)
 #
 # Why: headroom compresses prompts/messages at the process level (60-95% savings).
 # Complementary to RTK (shell output compression) — operates on a different layer.
@@ -59,27 +59,17 @@ if [ "$INSTALLED_GLOBALLY" -eq 0 ]; then
     echo "    uv tool install headroom-ai   OR   pip install --user headroom-ai"
 fi
 
-# ── 2. Add alias to ~/.bashrc ───────────────────────────────────────────────
-# Alias includes --memory (persistent cross-session memory).
-# Do NOT add --memory-storage here — that is a headroom proxy flag, not a wrap flag,
-# and passing it to 'headroom wrap claude' causes it to be forwarded to claude itself,
-# which fails with "unknown option".
-DESIRED_ALIAS="alias claude='headroom wrap claude --memory'"
-if [ -f "$BASHRC" ]; then
-    if grep -qF "$DESIRED_ALIAS" "$BASHRC" 2>/dev/null; then
-        echo "  headroom wrap alias already correct in ~/.bashrc"
-    elif grep -q "headroom wrap" "$BASHRC" 2>/dev/null; then
-        # Exists but outdated (missing --memory or has wrong flags) — update in place
-        # -i.bak then remove: portable across GNU (Linux) and BSD (macOS) sed
-        sed -i.bak "s|alias claude='headroom wrap claude'.*|$DESIRED_ALIAS|" "$BASHRC" && rm -f "$BASHRC.bak"
-        echo "  Updated headroom wrap alias to include --memory in ~/.bashrc"
-    else
-        printf "\n%s\n# --memory: persistent cross-session memory via headroom SQLite\nalias claude='headroom wrap claude --memory'\n" "$MARKER" >> "$BASHRC"
-        echo "  Added alias claude='headroom wrap claude --memory' to ~/.bashrc"
+# ── 2. Retire the legacy wrap alias (routing is now durable — see section 4) ─
+# Older installs added `alias claude='headroom wrap claude'` to ~/.bashrc. That is
+# fragile (bash-only; macOS default shell is zsh, so it never loaded) and it fights
+# the persistent service for the same port. Durable settings.json routing (wired in
+# section 4, only after the proxy is confirmed healthy) replaces it on every shell.
+for RC in "$HOME/.bashrc" "$HOME/.zshrc"; do
+    if [ -f "$RC" ] && grep -q "headroom wrap" "$RC" 2>/dev/null; then
+        sed -i.bak -e "/headroom wrap (added by sdd-harness/d" -e "/alias claude=.*headroom wrap/d" "$RC" && rm -f "$RC.bak"
+        echo "  Removed legacy headroom wrap alias from $(basename "$RC") (durable routing supersedes it)."
     fi
-else
-    echo "  WARNING: ~/.bashrc not found — skipping alias injection"
-fi
+done
 
 # ── 3. Install headroom-ai in each registered repo's virtualenv ─────────────
 install_headroom_in_repo() {
@@ -144,19 +134,36 @@ fi
 if command -v headroom >/dev/null 2>&1; then
     if headroom install status >/dev/null 2>&1; then
         echo "  Headroom persistent service already installed."
-    elif command -v systemctl >/dev/null 2>&1 && systemctl --user status >/dev/null 2>&1; then
-        echo "  Installing headroom persistent service (systemd user service)..."
-        if headroom install apply --memory 2>/dev/null; then
-            echo "  Headroom persistent service installed and started."
-            echo "  Proxy will auto-start on login — claude opens in ~1s."
-        else
-            echo "  WARNING: persistent service install failed — cold starts will be ~10s."
-            echo "    Fix manually: headroom install apply --memory"
-        fi
     else
-        echo "  Skipping persistent service (no supported supervisor found)."
-        echo "    For fast startup, run manually when supervisor is available:"
-        echo "    headroom install apply --memory"
+        # `headroom install apply` auto-detects the supervisor:
+        #   macOS -> launchd LaunchAgent, Linux -> systemd user service.
+        # The first start loads the compression model and can miss the readiness
+        # window, so retry once before giving up.
+        case "$(uname -s)" in
+            Darwin|Linux)
+                echo "  Installing headroom persistent service ($(uname -s))..."
+                if headroom install apply --preset persistent-service --memory \
+                   || { echo "  First start missed readiness (model warm-up) — retrying..."; sleep 3; headroom install apply --preset persistent-service --memory; }; then
+                    echo "  Headroom persistent service installed and started (auto-starts on login)."
+                    # Route Claude Code through the proxy ONLY after it is confirmed
+                    # healthy, so ANTHROPIC_BASE_URL never points at a dead proxy.
+                    if curl -fsS -m 8 "http://127.0.0.1:${HEADROOM_PORT:-8787}/readyz" >/dev/null 2>&1; then
+                        if headroom init --global --memory claude >/dev/null 2>&1; then
+                            echo "  Claude Code routed through headroom (durable, all shells + GUI)."
+                        else
+                            echo "  WARNING: routing not wired. Run manually: headroom init --global --memory claude"
+                        fi
+                    else
+                        echo "  WARNING: proxy not healthy yet — skipped routing to avoid breaking Claude API calls."
+                        echo "    Once healthy, run: headroom init --global --memory claude"
+                    fi
+                else
+                    echo "  WARNING: persistent service install failed after retry — routing NOT wired, cold starts ~10s."
+                    echo "    Fix manually: headroom install apply --preset persistent-service --memory"
+                fi ;;
+            *)
+                echo "  Skipping persistent service (unsupported OS: $(uname -s))." ;;
+        esac
     fi
 else
     echo "  Skipping persistent service (headroom not installed)."

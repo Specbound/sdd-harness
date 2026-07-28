@@ -74,7 +74,7 @@ Mark TodoWrite task 1 complete. If `--dry-run`, stop here and display: `[Dry run
 
 ## Step 3: Analyze Issue and Search Codebase
 
-Delegate to the `kiro/jira-solve-agent` subagent with the full issue JSON and instructions to:
+Delegate to the `jira-solve-agent` subagent with the full issue JSON and instructions to:
 1. Convert the issue into a structured problem statement
 2. Extract keywords from title/description/labels/components
 3. Search the repo for relevant files (Glob + Grep on meaningful terms)

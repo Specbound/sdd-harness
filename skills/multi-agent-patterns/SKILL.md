@@ -255,6 +255,19 @@ Any workflow processing untrusted content — support tickets, bug reports, user
 
 ---
 
+### Contrarian Persona Ensemble
+
+A review pattern for hardening output: convene several *named* review personas plus a set of *contrarian* personas, each assigned a specific loop pathology to counteract, and run them over multiple iterations at a long thinking budget.
+
+Verbatim kickoff (Dan Luu):
+> "use independent agents to review as linus torvalds, kyle kingsbury, marc brooker, tptacek, dan luu, and 4 contrarian personas. have each think for a long time."
+
+Why it works: each persona guards a *named failure mode*. A "Torvalds" persona pushes back on complexity spirals; a "measure-first" persona forces evidence before conclusions; contrarian personas surface objections the primary reasoning suppressed. At **equal token / wall-clock budget**, the persona ensemble produces better output than an undifferentiated review pass.
+
+Distinct from `#### 3. Adversarial Verification`: generic adversarial verification runs one skeptical checker against the worker. Here every reviewer owns a *distinct pathology it is responsible for catching*, so coverage is deliberate rather than emergent.
+
+---
+
 ## Core Concepts
 
 Multi-agent systems address single-agent context limitations through distribution. Three dominant patterns exist: supervisor/orchestrator for centralized control, peer-to-peer/swarm for flexible handoffs, and hierarchical for layered abstraction. The critical design principle is context isolation—sub-agents exist primarily to partition context rather than to simulate organizational roles.
@@ -490,6 +503,15 @@ Mitigation: Define clear objective boundaries for each agent. Implement converge
 Errors in one agent's output propagate to downstream agents that consume that output.
 
 Mitigation: Validate agent outputs before passing to consumers. Implement retry logic with circuit breakers. Use idempotent operations where possible.
+
+### Autonomy Anti-Patterns
+
+Four ways multi-agent autonomy fakes progress instead of producing it (Addy Osmani). Watch for each:
+
+- **Autonomy-as-status** — running agents to look advanced, not because the task needs them. Autonomy is a cost, not a trophy.
+- **Permission laundering** — over-broad access granted through approval fatigue; each prompt looks reasonable, the accumulated grant is not.
+- **Summary substitution** — trusting an agent's summary over the bundled evidence it summarizes. Read the artifact, not the abstract.
+- **Fleet cosplay** — running parallel agents while *you* manually orchestrate their dependencies. That is hand-coordination in an orchestration costume, not real orchestration.
 
 ## Examples
 

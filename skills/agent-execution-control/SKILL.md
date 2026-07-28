@@ -61,6 +61,8 @@ def plan_execute_verify(plan, executor, verifier, max_retries=3):
             plan = replan(plan, step, outcome)
 ```
 
+**Forced execution beats cross-checking (empirical):** When agents explain a hypothesis *without running code*, they were wrong ~50% of the time — even across multiple independent cross-checking rounds. Forcing the agent to actually execute code to confirm the hypothesis removed most of those errors. Rule: prefer forced execution/verification over independent analyses that merely cross-check each other; doing both is best. In the loop above, this means the `verify` step must *run* the check, not reason about whether it would pass.
+
 ### 2. Action-Validation Gatekeeper
 
 The harness filters agent-requested actions before execution. Implements safety and environment constraints programmatically, not through model self-restraint.
@@ -178,6 +180,14 @@ def repair_with_context(failed_step, error_signal, original_intent, attempt_num)
 ```
 
 **Skill-memory caching:** If the system has seen similar failures before, retrieve cached repair patterns before attempting generation. Fast recovery > correct recovery on first principles.
+
+### 6. Machine-Checkable Exit Conditions
+
+A single sentence claiming "task complete" is not enough to exit the loop (LMSYS/SGLang). Loop exit must be gated on explicit, machine-checkable conditions — tests pass, a benchmark table is produced, an evidence artifact is written to disk — not on the agent asserting it is done.
+
+- Define the exit gate as a command or file check the harness runs, not a self-report the model emits.
+- If the exit condition can't be expressed as something a script could verify, it isn't an exit condition yet — sharpen it before starting the loop.
+- Pair with §1: the `verify` step and the exit gate are the same kind of object — a deterministic signal, never model self-assessment.
 
 ## Memory Layers in Multi-Agent Context
 

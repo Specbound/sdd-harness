@@ -47,5 +47,5 @@ exit 0
 # REGISTRATION (add to .claude/settings.json PostToolUse Bash hooks array):
 # {
 #   "type": "command",
-#   "command": "bash /home/dalesser/.claude/sdd-harness/.claude/hooks/setup-buffer-hook.sh"
+#   "command": "bash .claude/hooks/setup-buffer-hook.sh"
 # }

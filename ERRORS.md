@@ -4,6 +4,18 @@ Approaches that took 2+ attempts — what failed, what worked, and why.
 
 ---
 
+## 2026-07-12 — launchd daily-orchestrator never ran (stale plist path + macOS TCC)
+
+**Symptom:** Dashboard Automation tab: Drift Review / Skill-Curator "never" ran; Daily Maintenance last real run ~May 27 (46 days). `launchctl list com.sdd.daily-orchestrator` showed `LastExitStatus = 32512` (exit 127); `orchestrator.stderr.log` was a wall of "No such file or directory".
+
+**Root cause (two layered bugs):**
+1. Plist pointed at `~/.claude/sdd-harness/scripts/daily-orchestrator.sh`, but the script moved to `scripts/orchestration/` during the scripts reorg. `setup-mac-orchestrator.sh` was updated, but never re-run → the installed LaunchAgent kept the dead path. Exit 127 daily since ~May 26.
+2. After regenerating the plist (`setup-mac-orchestrator.sh --force`), launchd still failed with exit 126 "Operation not permitted": **macOS TCC blocks launchd-spawned processes from `~/Documents`**. Verified with a minimal probe (`launchctl submit -- /bin/ls ~/Documents` → EPERM). Since `~/.claude/sdd-harness` is a symlink into `~/Documents/sdd-harness`, the scheduled job has NEVER worked — TCC blocked it from day one; only manual runs and session-start catch-ups ever executed.
+
+**Fix:** (1) `bash scripts/orchestration/setup-mac-orchestrator.sh --force` after any script move. (2) Grant Full Disk Access to `/bin/bash` (System Settings → Privacy & Security → Full Disk Access → + → Cmd+Shift+G → `/bin/bash`), then `launchctl start com.sdd.daily-orchestrator` to verify.
+
+**Lesson:** "43s ago" on the dashboard was a decoy — `daily-runner.sh` stamps `.last-routine-run` at START, and the session-start catch-up had just fired; absence of artifacts (`daily/` had no briefs) was the honest signal. On macOS, any launchd/cron job touching `~/Documents`/`~/Desktop` needs an FDA grant for the interpreter — a symlink from an unprotected path does NOT bypass TCC (it keys on the real path).
+
 ## 2026-06-14 — headroom proxy fails on terminal `claude` launch (missing deps)
 
 **Symptom:** `claude` from terminal shows "Proxy exited with code 1: FastAPI required" or "h2 package not installed".

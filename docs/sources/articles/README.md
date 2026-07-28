@@ -435,3 +435,103 @@ Two additional resources (OpenWiki — git, PACE — papers) are logged in their
 
 **What we added:**
 - Skill augmentation: `skills/tool-design/SKILL.md` — new "CLI-to-Agent Bridging" section with empirical data table, the "don't rewrite" rule, and a minimal intervention checklist (exit codes, quiet mode, optional `--json` flag). Fills the gap between "design a new tool" (existing content) and "make an existing CLI agent-friendly" (previously uncovered).
+
+---
+
+## Agent-Assisted SGLang Development: An Initial Exploration
+**URL:** https://www.lmsys.org/blog/2026-07-02-agent-assisted-sglang-development
+**Added:** 2026-07-28
+**Source / Author:** LMSYS Org (SGLang Team)
+
+**What it's about:** Agents are most effective inside complex systems when constrained by executable, evidence-gated workflows rather than given free rein. Emphasizes evidence-before-code (fixed profiling tables), frozen benchmarks, anti-reward-hacking containment (identical build path/flags for baseline vs candidate), and hard machine-checkable loop exit conditions.
+
+**What we added:**
+- Skill augmentation: `skills/agent-execution-control/SKILL.md` — "Machine-Checkable Exit Conditions" pattern ("a single sentence claiming task complete is not enough to exit").
+- Resource augmentation: `skills/evaluation/resources/benchmark-construction.md` — anti-reward-hacking A/B containment (hold everything identical except the change under test; interleave runs; invalidate a run if the measured path silently changed).
+
+---
+
+## Agentic coding notes from Galapagos Island
+**URL:** https://danluu.com/ai-coding/
+**Added:** 2026-07-28
+**Source / Author:** Dan Luu
+
+**What it's about:** Practitioner-grounded notes on agentic coding failure modes and workarounds. Key empirical finding: agents explaining a hypothesis without running code were wrong ~50% of the time even across independent cross-checks; forcing actual execution removed most errors. Also covers contrarian persona ensembles, fuzzing invariants, and building bespoke loops over heavyweight orchestrators.
+
+**What we added:**
+- Skill augmentation: `skills/agent-execution-control/SKILL.md` — "Forced execution beats cross-checking" empirical rule tied into Plan-Execute-Verify.
+- Skill augmentation: `skills/multi-agent-patterns/SKILL.md` — "Contrarian Persona Ensemble" pattern (each persona guards a named loop pathology; improves output at equal budget).
+- Skill augmentation: `skills/loop-patterns/SKILL.md` — "Fuzz invariants, don't write tests" + "Build bespoke loops, not heavyweight orchestrators" (with the loops-degrade-without-a-human caveat).
+
+---
+
+## Closing the Verification Loop
+**URL:** https://thinkroom.kieranklaassen.com/d/njrS5TJhis
+**Added:** 2026-07-28
+**Source / Author:** Kieran Klaassen (ThinkRoom)
+
+**What it's about:** A seven-phase autonomous-QA skill where a branch proves itself ready: real-browser reality, functional + experiential (persona) judges, a fix-loop governor that escalates decisions it shouldn't make, and proof durable to a commit SHA per scenario. Central thesis: autonomous verification is about being auditable, not confident.
+
+**What we added:**
+- Skill augmentation: `skills/verification-skill-authoring/SKILL.md` — "Autonomous-QA Methodology" section encoding Flows-before-Matrix (The Email Rule), dual judges, the Fix-Loop Governor, regression-test-per-fix (red-before/green-after), independence-budgeting, and the exit gate ("a green matrix with a red suite is not ready").
+
+---
+
+## Stop Being the Code Review Bottleneck
+**URL:** https://newsletter.posthog.com/p/code-review-tips
+**Added:** 2026-07-28
+**Source / Author:** PostHog Newsletter — Jina Yoon
+
+**What it's about:** Delegate review toil to swarms of AI reviewer agents behind fail-closed automation, reserving human attention for genuinely complex decisions. Introduces StampHog, a PR auto-stamper with concrete fail-closed safety gates. Mostly corroborates existing harness rules (reviewer≠author, adversarial swarm, verify-by-observation); the novel artifact is the auto-approve gate checklist.
+
+**What we added:**
+- Agent augmentation: `agents/kiro/guardrails-agent.md` — "PR Auto-Approve Gate (Fail-Closed)" checklist: no conflicts/change-requests → deny-list blast radius (auth/secrets/billing/public APIs) → diff cap (<500 lines AND <20 files) → LLM showstopper pass → SME/CODEOWNERS routing; stamps only when all pass.
+
+---
+
+## Benchmarking Coding Agents on Databricks' Multi-Million Line Codebase
+**URL:** https://www.databricks.com/blog/benchmarking-coding-agents-databricks-multi-million-line-codebase
+**Added:** 2026-07-28
+**Source / Author:** Databricks Blog — Gaba, Mathur, Singh, Wendell, Zaharia
+
+**What it's about:** An internal benchmark built from real merged PRs. Findings: no vendor owns the Pareto frontier, the harness matters as much as the model (>2x cost swing on the same model), and setups should be ranked by cost-per-completed-task rather than per-token price. Uses execution-based grading (no LLM judge) and git-history sealing to prevent agents recovering the solution from commits.
+
+**What we added:**
+- Resource augmentation: `skills/evaluation/resources/benchmark-construction.md` — real-PR→prompt recipe (filter, strip solution, human-review, rewrite tests to allow alternative implementations), execution-based grading, and git-history-sealing anti-cheat.
+- Skill augmentation: `skills/agent-harness-design/SKILL.md` — governing principle blockquote "The harness matters as much as the model" + cost-per-completed-task ranking.
+
+---
+
+## Flint: A Visualization Language for the AI Era
+**URL:** https://www.microsoft.com/en-us/research/blog/flint-a-visualization-language-for-the-ai-era/
+**Added:** 2026-07-28
+**Source / Author:** Microsoft Research — Wang, Sarikaya, Tsukamaki, Galley, Gao
+
+**What it's about:** An intermediate, semantic, human-editable chart language: the LLM emits terse high-level intent + semantic types, and a compiler derives the fragile low-level details (scales, formatting, layout). The transferable principle — emit intent, derive config — applies well beyond charts to any tool where the model currently hand-writes verbose fragile config.
+
+**What we added:**
+- Skill augmentation: `skills/tool-design/SKILL.md` — "Intent-vs-Compiler: Emit Intent, Derive Config" section (two-layer example, token-cost + error-surface payoff, decision rule).
+
+---
+
+## 18 Claude Settings That Change Everything
+**URL:** https://agent-cookbook.com/tutorial/18-claude-settings-that-change-everything-14-are-hidden-3-clicks-deep-4-arent-in
+**Added:** 2026-07-28
+**Source / Author:** Agent Cookbook
+
+**What it's about:** A catalog of Claude/Claude Code/API settings. Reliability is mixed — several claims (inference_geo, residency premiums, a "Dreaming signal") appear fabricated. Only a verified token-economics subset was extracted; the rest was deliberately excluded.
+
+**What we added:**
+- Skill augmentation: `skills/context-optimization/SKILL.md` — "Claude Code Token-Economics Settings" with ONLY two verified items: the MCP server `enabled` flag (~800–6,000 tokens/server, toggle per session) and prompt-caching breakpoint placement (after the stable prefix; TTL economics cross-checked against `claude-api`, with the 1h-TTL break-even discrepancy flagged rather than encoded). No settings.json was modified.
+
+---
+
+## Introducing OpenWiki Brains: General-Purpose Wiki Memory for Agents
+**URL:** https://www.langchain.com/blog/introducing-openwiki-brains-general-purpose-wiki-memory-for-agents
+**Added:** 2026-07-28
+**Source / Author:** LangChain Blog — Brace Sproul
+
+**What it's about:** Argues agent memory should be *proactive* (the agent fetches and maintains its own structured wiki from connected sources on a schedule) rather than *reactive*. Distinguishes deterministic connectors (auto-fetch feeds) from agentic connectors (goal-directed search tools). (Note: distinct from the `langchain-ai/openwiki` CLI repo logged in `git/README.md`, which was SKIP'd — this is the conceptual blog post, mined for framings only.)
+
+**What we added:**
+- Skill augmentation: `skills/agent-harness-design/SKILL.md` (Memory component) — "proactive vs. reactive memory" axis + "deterministic vs. agentic connector" taxonomy.

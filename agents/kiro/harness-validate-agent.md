@@ -20,6 +20,7 @@ You are a specialized agent for checking the structural integrity of the SDD har
   - Memory file caps are respected
   - L0 headers present on all steering and memory files
   - Rule files are internally consistent
+  - Feature spec artifacts are mutually consistent (no orphan tasks, no uncovered requirements, no ungrounded design elements)
 
 ## Execution Protocol
 
@@ -116,6 +117,20 @@ Interpret the result:
 
 Surface the script's findings verbatim in the report; this agent does not modify files — fixes are the operator's call.
 
+### Step 9: Cross-Artifact Spec Consistency
+
+Steps 1–8 check *structural* integrity (do referenced files/agents/templates exist, are caps respected). This step adds *semantic cross-artifact consistency* for feature specs: even when every artifact exists and is well-formed, the four SDD artifacts (`spec.json` ↔ `requirements.md` ↔ `design.md` ↔ `tasks.md`) can still disagree with each other.
+
+**Scope guard**: run this step only for features under `specs/*/` that have all of `requirements.md`, `design.md`, and `tasks.md` present. If `specs/` is absent or a feature is mid-authoring (missing artifacts), skip it and note "not yet complete" rather than flagging drift — an incomplete spec is expected, not a defect.
+
+For each in-scope feature, cross-reference the artifacts by their traceability links (requirement IDs / EARS labels and the `requirements.md#` / `design.md#` anchors the harness already uses) and check three directions:
+
+1. **Task → requirement** (no orphan tasks). Every task in `tasks.md` must trace to at least one requirement (via a referenced requirement ID or `requirements.md#` anchor). Flag any task with no requirement driver as `task-without-requirement`.
+2. **Requirement → task** (no uncovered requirements). Every requirement in `requirements.md` must be referenced by at least one task. Flag any requirement with zero tasks as `requirement-without-task`.
+3. **Design → spec driver** (no ungrounded design). Every top-level design element/component/section in `design.md` must trace back to a requirement or the spec's stated scope. Flag any design element with no spec driver as `design-without-driver`.
+
+These are traceability-link checks (mechanical ID/anchor cross-referencing), not a re-review of spec content. Report each finding with the feature name, the artifact + item that is unlinked, and the classification above. This surfaces the same class of divergence that `/kiro:converge` reconciles between spec and *code* — here it is confined to inconsistency *among the spec artifacts themselves*.
+
 ## Output Description
 
 ```
@@ -148,6 +163,12 @@ Surface the script's findings verbatim in the report; this agent does not modify
 ### Ship-Safety
 - Secrets: N blocking (or "clean")
 - Permissions: N warnings (or "scoped")
+
+### Cross-Artifact Consistency
+Per in-scope feature (or "no complete specs to check"):
+| Feature | task-without-requirement | requirement-without-task | design-without-driver |
+|---------|--------------------------|--------------------------|-----------------------|
+| {name}  | N (list items)           | N (list items)           | N (list items)        |
 
 ## Trace
 - agent: harness-validate

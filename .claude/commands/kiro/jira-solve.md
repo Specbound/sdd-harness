@@ -11,6 +11,9 @@ argument-hint: <ISSUE-ID> [--dry-run]
 - **Jira client**: `.claude/scripts/jira_client.py` — run via `uv run python .claude/scripts/jira_client.py <cmd> <args>`
 - **Credentials**: `~/.env.jira` must exist with JIRA_URL, JIRA_USERNAME, JIRA_API_TOKEN
 - **Routing logic**:
+  - **Pre-gate (all types):** first apply `Skill("issue-triage-routing")` to the issue — if it
+    routes to DEFER (off-roadmap) or CLARIFY (ambiguity blocks a spec), honor that before the
+    type-based routing below. Only proceed to type-routing once triage yields SPEC or ONE-SHOT.
   - Bug / Defect → systematic debugging workflow
   - Story / Feature / Epic → `/kiro:spec-quick` seeded from Jira context
   - Task / Sub-task / Improvement / Chore → direct implementation plan
@@ -71,7 +74,7 @@ Mark TodoWrite task 1 complete. If `--dry-run`, stop here and display: `[Dry run
 
 ## Step 3: Analyze Issue and Search Codebase
 
-Delegate to the `kiro/jira-solve-agent` subagent with the full issue JSON and instructions to:
+Delegate to the `jira-solve-agent` subagent with the full issue JSON and instructions to:
 1. Convert the issue into a structured problem statement
 2. Extract keywords from title/description/labels/components
 3. Search the repo for relevant files (Glob + Grep on meaningful terms)

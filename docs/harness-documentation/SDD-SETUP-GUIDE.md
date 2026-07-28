@@ -515,6 +515,7 @@ Conventions are defined in `.claude/kiro/settings/rules/memory-conventions.md`:
 | `/kiro:validate-design {feature}` | Design quality review (with remediation plan on NO-GO) |
 | `/kiro:validate-impl {feature}` | Implementation vs. spec validation (with remediation) |
 | `/kiro:validate-adversarial {feature}` | Three-pass adversarial review with +1/-2 scoring |
+| `/kiro:converge [feature]` | Spec ↔ code reconciliation — detects bidirectional drift (spec-ahead / code-ahead / contradiction); reuses `validate-impl-agent` |
 | `/kiro:spec-status {feature}` | Show current phase, approvals, and open tasks |
 | `/kiro:sync-docs` | Sync docs with ALL code changes (uncommitted + staged + committed) |
 | `/kiro:reflect` | Review session, extract observations, update memory (subagent) |

@@ -112,6 +112,27 @@ If observations reveal cross-session TODOs:
 - Format: `- [ ] task | due:YYYY-MM-DD | pri:high/medium/low | added:YYYY-MM-DD`
 - Only add items that outlive the current session
 
+### Step 6: Append to the Cross-Run Learning Loop
+
+Prose memory (observations.md, patterns.md) is written but rarely *re-ingested* by a later
+run's planning step — it decays into a log. To make learnings actively feed the next cycle,
+also append durable, machine-readable learnings to `.claude/memory/learnings.jsonl`
+(append-only, one JSON object per line):
+
+```json
+{"date":"YYYY-MM-DD","situation":"what was being done","insight":"what was learned","applies_when":"the trigger condition a future run can match against"}
+```
+
+**Rules**:
+- Append only — never rewrite or reorder existing lines (same discipline as observations).
+- Promote to a learning only what a *future planning step could act on*: `applies_when` must
+  be a concrete, matchable trigger ("editing a skill's frontmatter", "adding an MCP tool"),
+  not a vague theme. If you can't state `applies_when`, it's an observation, not a learning.
+- Max 3 learnings per pass — this is the high-signal distillate of the observations, not a copy.
+- The contract: a future run's PLANNING step reads `learnings.jsonl` back and matches
+  `applies_when` against the current task, so the insight is applied — not merely recorded.
+  This closes the loop that prose-only memory leaves open.
+
 ## Output
 
 Chat summary only (files updated directly):
@@ -135,6 +156,9 @@ Chat summary only (files updated directly):
 
 ## Action Items
 - Added: [list or "None"]
+
+## Learnings
+- Appended to learnings.jsonl: [list applies_when triggers or "None"]
 ```
 
 ## Safety & Fallback

@@ -34,7 +34,7 @@ Delegate to the adversarial validation agent:
 
 ```
 Task(
-  subagent_type="validate-adversarial",
+  subagent_type="validate-adversarial-agent",
   description="Adversarial validation of {feature} {target}",
   prompt="""
 Validate the {target} for feature "{feature}".

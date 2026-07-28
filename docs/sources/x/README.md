@@ -262,3 +262,45 @@ See also: [git/README.md](../git/README.md) — companion repo https://github.co
 - Command: `/kiro:pref-elicit` (`commands/kiro/pref-elicit.md`) — pre-spec Socratic elicitation command. Runs a structured 5-question protocol to surface declarative/imperative and strategic/tactical preferences before spec-init. Writes `prefs.md` to the spec directory. Wired as mandatory Step 1.5a in `spec-quick` Interactive Mode; recommended pre-check in `spec-init` standalone usage.
 - Skill augmentation: `prompt-engineering` — new "Declarative vs. Imperative Preferences" subsection with the 2×2 matrix and routing rules. Maps onto the existing "degrees of freedom" section.
 - Skill augmentation: `instruction-architecture` — new "Preference Origin: Strategic vs Tactical Routing" subsection. Maps preference origin onto the existing MUST/SHOULD/CONTEXT tier structure. Tactical preferences in the entry file = primary source of instruction bloat.
+
+---
+
+## "Agentic Autonomy Levels" — @addyosmani
+**Added:** 2026-07-28 | **Source:** https://x.com/addyosmani/status/2072885435312042327 (Addy Osmani)
+
+**What it's about:** A two-axis model of agentic autonomy (Agency × Orchestration) across six levels/three eras, with a warning that higher autonomy isn't inherently better — match autonomy to task risk, reversibility, and available verification ("calibrated autonomy"). Introduces the per-run "contract" and four autonomy anti-patterns.
+
+**What we added:**
+- Skill augmentation: `skills/agent-harness-design/SKILL.md` (Governance) — "Agent-Run Contract" (goal/scope/tools/stopping/evidence/escalation/budget) + the three questions before granting high autonomy (how fast do problems surface, how cleanly can work be undone, what independently verifies success).
+- Skill augmentation: `skills/multi-agent-patterns/SKILL.md` — "Autonomy Anti-Patterns" (autonomy-as-status, permission laundering, summary substitution, fleet cosplay).
+
+---
+
+## "A Field Guide to Fable: Finding Your Unknowns" — @trq212
+**Added:** 2026-07-28 | **Source:** https://x.com/trq212/status/2073100352921215386 (Thariq Shihipar, Anthropic)
+
+**What it's about:** "The map is not the territory" — the map is your prompts/skills/context, the territory is the real codebase, and the gap is unknowns. Argues output quality is now bottlenecked by the operator's ability to surface their own unknowns before execution, using the four-quadrant frame (known/unknown × known/unknown) and concrete pre-execution discovery moves.
+
+**What we added:**
+- Skill (NEW): `skills/surfacing-unknowns/SKILL.md` — a pre-execution discovery routine with six named techniques (blind-spot pass, design-prototype for tacit taste, architecture interview one-question-at-a-time, reference-as-map, implementation-deviation logging, pre-merge quizzing), a "When NOT to Use" section, and explicit exclusions. Fires before a spec/design/large change; skips well-specified mechanical tasks.
+
+---
+
+## "Own the loop / agent-as-a-judge" — @aparnadhinak
+**Added:** 2026-07-28 | **Source:** https://x.com/aparnadhinak/status/2073079029624943040 (Aparna Dhinakaran, Arize AI)
+
+**What it's about:** Two adjacent Arize themes: (1) evaluate agent *trajectories*, not just final outputs — agents fail in sequences (stuck loops, dropped context, broken tool calls hidden behind a plausible final answer); and (2) tight model-harness coupling that feels magical is also a portability risk, locking you to one vendor's models/prices.
+
+**What we added:**
+- Resource augmentation: `skills/evaluation/resources/benchmark-construction.md` — trajectory evaluation (grade intermediate steps; a valid agent can take different paths to the same goal).
+- Skill augmentation: `skills/agent-harness-design/SKILL.md` (Memory) — one-line "harness↔model coupling is portability risk" framing.
+
+---
+
+## "Model and effort in Claude Code: knowing more vs. trying harder" — @claudedevs
+**Added:** 2026-07-28 | **Source:** https://x.com/claudedevs/status/2074900291062034618 (Claude Code team — Lydia Hallie)
+
+**What it's about:** Two Claude Code dials that both seem to "make the answer better" do different things: the model changes what Claude *knows* (knowledge, reasoning ceiling); effort changes how much *work* it does before checking back (files read, tests run, verification loops). Diagnostic: when Claude is wrong, ask "did it not know enough, or did it not try hard enough?"
+
+**What we added:**
+- Skill augmentation: `skills/model-tiers/SKILL.md` — "Model vs. Effort — Which Dial to Turn" diagnostic (not-knowing → bump the model; not-trying → raise effort; fix context first).

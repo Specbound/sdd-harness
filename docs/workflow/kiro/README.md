@@ -33,6 +33,7 @@ Based on [cc-sdd](https://www.npmjs.com/package/cc-sdd) (`npx cc-sdd@latest`), a
 | `validate-design` | Review | Design quality review (with remediation on NO-GO) |
 | `validate-impl` | Review | Implementation vs. spec validation (with remediation) |
 | `validate-adversarial` | Review | Three-pass adversarial review with +1/-2 scoring |
+| `converge` | Review | Spec ↔ code reconciliation — bidirectional drift (spec-ahead / code-ahead / contradiction); reuses `validate-impl-agent` |
 | `debug` | Debugging | Systematic 6-step bug triage (wired into jira-solve for BUGs) |
 | `simplify` | Maintenance | Behavior-preserving code simplification (wired into spec-refactor) |
 | `ship` | Deployment | Launch readiness: Step 0 `/simplify` (diff cleanup), then verification + production validation + rollout planning |

@@ -128,6 +128,7 @@ sdd-harness/
 │   ├── validate-impl.md          #   Implementation vs. spec validation (with remediation)
 │   ├── validate-adversarial.md   #   Three-pass adversarial review (+1/-2 scoring)
 │   ├── validate-perf.md          #   Performance anti-pattern detection (N+1, unbounded, etc.)
+│   ├── converge.md               #   Spec ↔ code reconciliation (bidirectional drift)
 │   ├── steering.md               #   Bootstrap/sync project knowledge
 │   ├── steering-custom.md        #   Add domain-specific docs (auth, DB, etc.)
 │   ├── reflect.md                #   Mine session learnings, update memory
@@ -347,6 +348,7 @@ Each spec phase ends with a **[Proof](https://github.com/anthropics/proof) colla
 | `/kiro:validate-impl` | Implementation vs. spec validation (with remediation plan) |
 | `/kiro:validate-adversarial` | Three-pass adversarial review with +1/-2 scoring |
 | `/kiro:validate-perf` | Performance anti-pattern detection (N+1 queries, unbounded ops, etc.) |
+| `/kiro:converge` | Spec ↔ code reconciliation — detects bidirectional drift (spec-ahead / code-ahead / contradiction); reuses `validate-impl-agent` |
 | `/kiro:steering` | Bootstrap/sync project knowledge docs |
 | `/kiro:steering-custom` | Add domain-specific steering (auth, DB, API, etc.) |
 | `/kiro:reflect` | Extract session learnings, update memory |
@@ -507,6 +509,7 @@ Based on the methodology from ["Automating Skill Acquisition through Large-Scale
 | `structured-web-dataset` | Custom | Build structured tabular datasets from NL descriptions via parallel research agents (web mode) or constraint-driven generation (synthetic mode); outputs rows/columns, not prose |
 | `verification-skill-authoring` | Custom | Turn manual domain checks into a reusable `<domain>-verify` skill; auto-invoked after skill creation (skill-extraction Phase 5d); encodes review checklists as Claude-executable steps |
 | `ai-native-org-patterns` | Custom | Organizational design patterns for AI-first teams: context engineering, async agent pipelines, skill-based modularity, evaluation loops, and human-in-the-loop governance |
+| `surfacing-unknowns` | Thariq — "Field Guide to Fable" | Pre-execution discovery routine: run before a spec/design/large change to close the map-vs-territory gap — surfaces blind spots and tacit taste before building; skip for well-specified mechanical tasks |
 
 See [docs/skill-extraction/README.md](docs/skill-extraction/README.md) for the full extracted skills index.
 

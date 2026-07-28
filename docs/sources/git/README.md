@@ -439,3 +439,33 @@ GitHub repositories that were passed to `/skill-extraction` and turned into harn
 **What we added:** Nothing — SKIP.
 
 **Rejected (all candidates):** Auto-generated wiki content is equivalent to what `adapt-to-repo` derives on-demand from the live codebase. Appending to CLAUDE.md is the exact anti-pattern `instruction-architecture` guards against (uncontrolled growth). The `steering/`, `memory/`, and `specs/` layers cover curated documentation with provenance. CI/CD PR automation for docs conflicts with CLAUDE.md's "never commit SDD files" rule. External binary dependency with no freshness guarantees adds maintenance cost for zero capability gain.
+
+---
+
+## github.com/github/spec-kit
+**URL:** https://github.com/github/spec-kit
+**Added:** 2026-07-28
+**Source / Author:** GitHub
+
+**What it's about:** GitHub's official spec-driven development toolkit (constitution → spec → plan → tasks → implement, via a `specify` CLI). Heavy conceptual overlap with the local `kiro:` SDD suite (near 1:1 on init/requirements/design/tasks/impl). Only the genuine gaps were mined.
+
+**What we added:**
+- Command: `commands/kiro/converge.md` — from `/speckit.converge`. Reconciles the live codebase against an approved spec, classifying drift as {spec-ahead / code-ahead / contradiction} with a recommended action each. Reuses the existing `validate-impl-agent` in a CONVERGE mode (no new agent). Fills a real gap: kiro validated impl but had no spec↔code reconciliation.
+- Agent augmentation: `agents/kiro/harness-validate-agent.md` — from `/speckit.analyze`. Added a cross-artifact spec-consistency check (spec ↔ requirements ↔ design ↔ tasks traceability: no task without a requirement, no requirement with zero tasks, no design element without a spec driver), with a scope guard to skip mid-authoring specs. Previously `harness-validate` did structural integrity only.
+
+**Rejected:** wholesale adoption of the `specify` CLI + multi-agent integration layer (redundant with the kiro suite); `/speckit.taskstoissues` (complements `jira-solve` but lower priority — deferred).
+
+---
+
+## github.com/google/mantis
+**URL:** https://github.com/google/mantis
+**Added:** 2026-07-28
+**Source / Author:** Google
+
+**What it's about:** A model-agnostic framework letting AI coding agents autonomously find, reproduce, and patch software vulnerabilities via a ~15-stage pipeline of discrete skills that pass state through JSON files, executing generated code in Docker/gVisor sandboxes. Security-domain-specific, but two architectural patterns transcend the domain.
+
+**What we added:**
+- Skill augmentation: `skills/ai-security-workflow/SKILL.md` — "Architectural Patterns" section: JSON-state pipeline (stages pass machine-readable state for resumability + mechanical dedup) and sandboxed-reproduction verification (prove a finding by reproducing it in a sandbox, not by reasoning; false-positive filter before patching).
+- Agent augmentation: `agents/kiro/reflect-agent.md` — "Cross-Run Learning Loop" (append-only `learnings.jsonl` of `{situation, insight, applies_when}` intended to feed a future planning step). NOTE: currently write-only — the read-back side is aspirational until a planning command is wired to consume it.
+
+**Rejected:** wholesale adoption of the security pipeline (domain-specific; the harness already has `ai-security-workflow` + `security-review`); the meta-agent supervisor (covered by `multi-agent-patterns`).

@@ -186,6 +186,20 @@ Enforcement Maturity Report
 
 Read `.claude/memory/meta/graduations.md` and `.claude/memory/trace.log` for L2/L3 assessment.
 
+## PR Auto-Approve Gate (Fail-Closed)
+
+A governance checklist for auto-approving/auto-merging a PR without a human. Pattern: PostHog "StampHog." **Fail-CLOSED** — stamp ONLY when EVERY check below passes. Any check that cannot be positively confirmed → do NOT stamp.
+
+Run in order; short-circuit to "do not stamp" on the first failure:
+
+1. **PR state** — no merge conflicts AND no outstanding change-requests. Can't confirm either → do not stamp.
+2. **Blast radius (deny-list)** — scan diff + changed paths for deny-list keywords: `auth`, `secrets`, `billing`, public APIs. Any hit → block.
+3. **Diff size cap** — `< 500 changed lines` AND `< 20 files`. At or over either → block.
+4. **LLM showstopper check** — one LLM pass for showstoppers (correctness regressions, data loss, security). Any found or check inconclusive → do not stamp.
+5. **Route on block** — any denied/complex PR (failed 1–4) is routed to the relevant SMEs (e.g. via `CODEOWNERS`), never silently stamped.
+
+Only when 1–4 all pass with positive confirmation: stamp (auto-approve/auto-merge). Emit a one-line rationale naming which checks passed.
+
 ## Important Constraints
 
 - **Scaffold is additive**: Never remove existing linter rules, only add missing ones

@@ -188,6 +188,14 @@ Verifies code matches the spec (requirements + design + tasks). On NO-GO, provid
 /kiro:validate-impl revenue-trend-chart
 ```
 
+### `/kiro:converge` — Spec ↔ code reconciliation
+Detects bidirectional drift between an approved spec and the live code — spec items never implemented, features built that no spec item asked for, and design decisions the code contradicts. Where `validate-impl` asks "does the code satisfy the spec?", `converge` asks "have the spec and the code diverged, and in which direction?" Reuses `validate-impl-agent` in a bidirectional reconciliation mode.
+
+```
+/kiro:converge revenue-trend-chart
+/kiro:converge                                # auto-detect active spec
+```
+
 ### `/kiro:validate-adversarial` — High-confidence adversarial review
 Three-pass review: (1) neutral assessment, (2) adversarial refutation, (3) judge synthesis with asymmetric +1/-2 scoring. Use for high-stakes validations.
 

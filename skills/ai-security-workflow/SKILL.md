@@ -18,6 +18,15 @@ description: 5-phase interactive security workflow for finding and fixing real v
 
 ---
 
+## Architectural Patterns
+
+Two transferable patterns (from google/mantis' autonomous vuln pipeline) shape how this workflow's phases pass state and prove findings:
+
+- **JSON-state pipeline.** Each phase reads the prior phase's machine-readable JSON from a workspace and writes its own (`VULN-FINDINGS.json` → `TRIAGE.json` → `PATCHES/`). Because state is JSON rather than prose, the workflow is **resumable** (see "Resume a Paused Workflow" — pick up from whichever artifact exists) and dedup/merge across stages is **mechanical**, not judgment-based (Phase 3 merges findings sharing a root cause by comparing fields, not re-reasoning).
+- **Sandboxed-reproduction verification.** Prove a finding by *reproducing it in a sandbox* (a PoC request, crash repro, or exploit script that actually fires) — not by reasoning that the code "looks exploitable." This mirrors the harness's **verify-by-observation** principle applied to security: a claim isn't confirmed until it's been observed to reproduce. Run a **false-positive filter before patching**: any Phase 3 finding that cannot be reproduced (no working PoC, path not reachable under a real request) is downgraded from `confirmed` and never enters Phase 4. Patching effort goes only to findings that demonstrably fire.
+
+---
+
 ## Phase 1: Threat Model
 
 **Goal:** Understand what's worth attacking before writing a single line of scan config.

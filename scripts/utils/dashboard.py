@@ -3392,10 +3392,45 @@ document.addEventListener('DOMContentLoaded', function() { show('session_health'
 
 # ── HTML Assembly ─────────────────────────────────────────────────────────────
 
-RTK_DB           = Path.home() / ".local" / "share" / "rtk" / "history.db"
-LEAN_CTX_STATS   = Path.home() / ".config" / "lean-ctx" / "stats.json"
-LEAN_CTX_LEDGER  = Path.home() / ".config" / "lean-ctx" / "savings" / "ledger.jsonl"
-CAVEMAN_CONFIG   = Path.home() / ".config" / "caveman" / "config.json"
+def _platform_data_dir(app: str) -> Path:
+    """OS-native per-user *data* dir for `app`, mirroring Rust's `dirs::data_dir`.
+
+    RTK is a Rust binary and writes its SQLite history here, so the path differs
+    by platform:
+        macOS   → ~/Library/Application Support/<app>
+        Windows → %APPDATA%\\<app>          (roaming)
+        Linux   → $XDG_DATA_HOME/<app> or ~/.local/share/<app>
+    """
+    home = Path.home()
+    plat = str(sys.platform)  # via local so static analysers don't narrow to one OS
+    if plat == "darwin":
+        return home / "Library" / "Application Support" / app
+    if plat.startswith("win"):
+        base = os.environ.get("APPDATA")
+        return (Path(base) if base else home / "AppData" / "Roaming") / app
+    base = os.environ.get("XDG_DATA_HOME")
+    return (Path(base) if base else home / ".local" / "share") / app
+
+
+def _platform_config_dir(app: str) -> Path:
+    """OS-native per-user *config* dir for `app`, honouring XDG_CONFIG_HOME.
+
+    macOS/Linux both resolve to ~/.config/<app> by default (XDG-style tools);
+    Windows uses %APPDATA%. lean-ctx / caveman follow this convention.
+    """
+    home = Path.home()
+    plat = str(sys.platform)  # via local so static analysers don't narrow to one OS
+    if plat.startswith("win"):
+        base = os.environ.get("APPDATA")
+        return (Path(base) if base else home / "AppData" / "Roaming") / app
+    base = os.environ.get("XDG_CONFIG_HOME")
+    return (Path(base) if base else home / ".config") / app
+
+
+RTK_DB           = _platform_data_dir("rtk") / "history.db"
+LEAN_CTX_STATS   = _platform_config_dir("lean-ctx") / "stats.json"
+LEAN_CTX_LEDGER  = _platform_config_dir("lean-ctx") / "savings" / "ledger.jsonl"
+CAVEMAN_CONFIG   = _platform_config_dir("caveman") / "config.json"
 # Sonnet 4.6 input price per million tokens (used to estimate RTK $ savings)
 _SONNET_INPUT_PER_M = 3.0
 
@@ -3410,7 +3445,12 @@ def _read_lean_ctx_stats(repo_hash: "str | None" = None) -> dict:
     """Read lean-ctx savings from ledger.jsonl, optionally filtered by repo_hash."""
     empty = {"saved_tokens": 0, "actual_tokens": 0, "baseline_tokens": 0,
              "saved_usd": 0.0, "cep_sessions": 0, "commands": 0, "installed": False}
-    installed = LEAN_CTX_STATS.exists() or LEAN_CTX_LEDGER.exists()
+    import shutil as _sh
+    _cfg = _platform_config_dir("lean-ctx") / "config.toml"
+    # Installed if the tool is present at all — stats/ledger only appear
+    # after the first compressed read, which lags a fresh install.
+    installed = (LEAN_CTX_STATS.exists() or LEAN_CTX_LEDGER.exists()
+                 or _cfg.exists() or _sh.which("lean-ctx") is not None)
     if not installed:
         return empty
 
@@ -3455,15 +3495,30 @@ def _read_lean_ctx_stats(repo_hash: "str | None" = None) -> dict:
 
 
 def _read_caveman_config() -> dict:
-    """Read caveman mode config. Returns mode or None if not configured."""
-    if not CAVEMAN_CONFIG.exists():
-        return {"active": False, "mode": None}
-    try:
-        d    = json.loads(CAVEMAN_CONFIG.read_text())
-        mode = d.get("defaultMode")
-        return {"active": bool(mode), "mode": mode}
-    except Exception:
-        return {"active": False, "mode": None}
+    """Read caveman mode from whichever implementation is installed.
+
+    Two variants ship in the wild:
+      - JuliusBrussee plugin -> ~/.config/caveman/config.json  {"defaultMode": ...}
+      - harness homegrown    -> ~/.claude/.caveman-active       (plain text, e.g. "lite")
+    Check both so the dashboard reports "active" regardless of which is wired.
+    """
+    if CAVEMAN_CONFIG.exists():
+        try:
+            d    = json.loads(CAVEMAN_CONFIG.read_text())
+            mode = d.get("defaultMode")
+            if mode:
+                return {"active": True, "mode": mode}
+        except Exception:
+            pass
+    flag = Path.home() / ".claude" / ".caveman-active"
+    if flag.exists():
+        try:
+            mode = flag.read_text().strip() or None
+            if mode:
+                return {"active": True, "mode": mode}
+        except Exception:
+            pass
+    return {"active": False, "mode": None}
 
 
 def _read_rtk_stats() -> dict:

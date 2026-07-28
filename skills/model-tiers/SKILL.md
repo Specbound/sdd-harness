@@ -136,3 +136,15 @@ When uncertain, start with sonnet. Upgrade to opus only after observing consiste
 In Claude Code, reasoning **effort** is a separate lever from model choice. Levels: `low`, `medium`, `high`, `xhigh`, `max` (set via `/effort`, `CLAUDE_CODE_EFFORT_LEVEL`, or `effortLevel` in settings; this harness runs `high`). It governs how much the active model thinks per turn — independent of which tier you picked.
 
 Use it before reaching for a bigger model: a `sonnet` task that fails on reasoning depth may succeed at `high`/`xhigh` effort without paying opus cost. Conversely, drop effort for cheap utility work. If a level exceeds what the active model supports, Claude Code falls back to the highest supported level. `max` removes the token ceiling on reasoning — pair it with the deep/autonomous tiers, not utility work. Note: this is a Claude Code session lever, not an Anthropic SDK `messages.create` parameter — don't write `effort=` into API calls.
+
+### Model vs. Effort — Which Dial to Turn
+
+The two dials fix different failures:
+- **Model** changes what Claude *knows* — knowledge and reasoning ceiling.
+- **Effort** changes how much *work* it does before checking back — files read, tests run, verification loops.
+
+When Claude gets it wrong, ask: **"did it not know enough, or did it not try hard enough?"**
+- **Not-knowing** — confidently wrong no matter how much context you add → bump the **model** tier.
+- **Not-trying** — skipped a file, didn't run the tests, stopped early → raise the **effort** level.
+
+Fix the context *first* — a clear prompt, the right tools/skills, and a way for Claude to self-verify — **before** touching either dial. A context gap can masquerade as either failure. (source: official ClaudeDevs post)

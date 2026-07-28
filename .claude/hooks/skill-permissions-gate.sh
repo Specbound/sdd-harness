@@ -61,5 +61,5 @@ MSG
 # Add to PostToolUse Write|Edit in ~/.claude/sdd-harness/.claude/settings.json:
 # {
 #   "type": "command",
-#   "command": "bash /home/dalesser/.claude/sdd-harness/.claude/hooks/skill-permissions-gate.sh"
+#   "command": "bash .claude/hooks/skill-permissions-gate.sh"
 # }

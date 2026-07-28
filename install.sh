@@ -28,6 +28,7 @@
 #   --force             With --all: re-sync even already-installed projects
 #   --skip-tools        Skip ALL global tool installs (harness file sync only)
 #   --skip-rtk          Skip RTK (bash output token compression) install
+#   --skip-lean-ctx     Skip lean-ctx (file-read token compression) install
 #   --skip-gitnexus     Skip GitNexus install
 #   --skip-workshop     Skip Raindrop Workshop CLI install
 #   --skip-impeccable   Skip impeccable (frontend QA) install
@@ -57,6 +58,7 @@ ALL=false
 FORCE=false
 SKIP_TOOLS=false
 SKIP_RTK=false
+SKIP_LEANCTX=false
 SKIP_GITNEXUS=false
 SKIP_WORKSHOP=false
 SKIP_IMPECCABLE=false
@@ -75,6 +77,7 @@ for arg in "$@"; do
     --force)             FORCE=true ;;
     --skip-tools)        SKIP_TOOLS=true ;;
     --skip-rtk)          SKIP_RTK=true ;;
+    --skip-lean-ctx)     SKIP_LEANCTX=true ;;
     --skip-gitnexus)     SKIP_GITNEXUS=true ;;
     --skip-workshop)     SKIP_WORKSHOP=true ;;
     --skip-impeccable)   SKIP_IMPECCABLE=true ;;
@@ -330,6 +333,43 @@ install_global_tools() {
       gitbash)
         warn "RTK has no native Windows build — install inside WSL2 if you want it." ;;
       *) warn "Unknown OS — skipping RTK." ;;
+    esac
+  fi
+
+  # lean-ctx (file-read token compression)
+  # Installs the binary so the MCP wiring in patch_global_settings can activate.
+  # Without this, that wiring is a silent no-op (it is gated on `which lean-ctx`).
+  section "lean-ctx (file-read token compression)"
+  if [ "$SKIP_LEANCTX" = true ]; then
+    warn "Skipping lean-ctx  (--skip-lean-ctx)"
+  elif command -v lean-ctx >/dev/null 2>&1; then
+    ok "lean-ctx already installed  ($(lean-ctx --version 2>&1 | head -1))"
+    lean-ctx init --agent claude >/dev/null 2>&1 && ok "lean-ctx Claude wiring refreshed" \
+      || warn "lean-ctx init failed — run: lean-ctx init --agent claude"
+  else
+    case "$SDD_OS" in
+      macos|linux|wsl)
+        if confirm "Install lean-ctx?"; then
+          if command -v brew >/dev/null 2>&1; then
+            brew tap yvgude/lean-ctx 2>/dev/null || true
+            brew trust yvgude/lean-ctx 2>/dev/null || true   # third-party tap trust (brew >= 4.x)
+            brew install lean-ctx 2>/dev/null || curl -fsSL https://leanctx.com/install.sh | sh
+          else
+            curl -fsSL https://leanctx.com/install.sh | sh
+          fi
+          refresh_tool_path
+          if command -v lean-ctx >/dev/null 2>&1; then
+            lean-ctx init --agent claude >/dev/null 2>&1
+            ok "lean-ctx installed and wired to Claude Code"
+          else
+            warn "lean-ctx install did not land — install manually: https://leanctx.com"
+          fi
+        else
+          warn "Skipped lean-ctx"
+        fi ;;
+      gitbash)
+        warn "lean-ctx: on Windows clone the repo and run ./install.ps1 (see leanctx.com)." ;;
+      *) warn "Unknown OS — skipping lean-ctx." ;;
     esac
   fi
 
@@ -698,7 +738,10 @@ if 'statusLine' not in s:
 # ── lean-ctx — MCP server ───────────────────────────────────────────────────
 import subprocess
 has_lean_ctx = subprocess.run(['which', 'lean-ctx'], capture_output=True).returncode == 0
-if has_lean_ctx:
+# `lean-ctx init --agent claude` (run by install_global_tools) is the source of truth
+# for lean-ctx wiring. Only fall back to manual wiring if that did not register the MCP.
+already_wired = 'lean-ctx' in s.get('mcpServers', {})
+if has_lean_ctx and not already_wired:
   mcp = s.setdefault('mcpServers', {})
   if 'lean-ctx' not in mcp:
     mcp['lean-ctx'] = {'command': 'lean-ctx', 'args': ['--mcp'], 'env': {}}

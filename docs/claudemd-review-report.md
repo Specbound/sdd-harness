@@ -1,108 +1,45 @@
-# CLAUDE.md Review Report — 2026-06-22
+# CLAUDE.md Review Report — 2026-07-26
 
 ## Summary
-- Repos checked: 4
+- Repos checked: 6
 - Inaccessible: 0
-- Clean: 0
-- Minor issues: 2
-- Needs update: 2
-
-## Since Last Review (2026-06-08)
-- **Resolved:** `aiq-zora-ai-engine` no longer carries the `Keep context under 40%`
-  rule or the duplicated "read hot-memory at session start" line that the prior
-  run flagged. Engine CLAUDE.md is now a clean 35-line subset.
-- **New this run:** stale `.claude/docs/SDD-USAGE.md` path detected in two repos
-  (the file moved to `.claude/docs/harness-documentation/SDD-USAGE.md`).
-- **Still open:** the blanket `show 2-3 approaches` over-constraint, and the
-  `## Address` ("Husband") section still missing from purina and skill-foundation.
-
-## Cross-Repo Themes
-- **Over-constraining handshake (pre-4.x habit).** Multiple repos carry
-  `Before any significant task, show 2-3 approaches and wait for confirmation`
-  plus `Always plan before coding — use Plan mode`. On Opus 4.x this judgment is
-  reliable; a blanket mandate forces a confirmation round-trip on every
-  non-trivial task. Recommend scoping to *ambiguous or high-blast-radius* work.
-- **Stale SDD-USAGE.md path.** `sdd-harness` and `aiq-zora-ai-engine` point to
-  `.claude/docs/SDD-USAGE.md`, which does not exist; correct path is
-  `.claude/docs/harness-documentation/SDD-USAGE.md`. `skill-foundation` already
-  uses the correct form — adopt it everywhere.
-- **`ERRORS.md` referenced but absent** in 3 repos. Fine as a create-on-demand
-  log, but only `skill-foundation` documents it as gitignored/local. Add that
-  caveat to the others.
+- Clean: 1
+- Minor issues: 0
+- Needs update: 5
 
 ## Findings
 
 ### sdd-harness — needs-update
-- **Stale path:** references `.claude/docs/SDD-USAGE.md` (does not exist).
-  Correct: `.claude/docs/harness-documentation/SDD-USAGE.md`.
-- **Steering not bootstrapped:** `.claude/steering/` is referenced and the dir
-  exists, but the `.steering-bootstrap-pending` sentinel is still present
-  (SessionStart flagged `[STEERING-BOOTSTRAP-DUE]`). The pointer resolves to an
-  effectively empty resource — run `/kiro:steering` then clear the sentinel.
-- **Over-constraining:** `show 2-3 approaches and wait for confirmation before
-  proceeding` — scope to ambiguous/high-impact tasks.
-- Otherwise strong: AI-legible code rules, quality gates, Serena integration,
-  and conventions are accurate and current.
+- `.claude/rules/lean-ctx.md` documents a `ctx_read`/`ctx_search`/`ctx_shell`/`ctx_edit`/`ctx_overview`/`ctx_compose`/`ctx_semantic_search`/`ctx_compress`/`ctx_knowledge`/`ctx_impact`/`ctx_callgraph`/`ctx_session` API (21 references) as if these were directly callable tools, and mandates "NEVER use native Read/Grep/Shell when ctx_* equivalents are available." Verified: no MCP server or tool registration exposes any `ctx_*` function — the only real artifact is the `lean-ctx` CLI binary (`/opt/homebrew/bin/lean-ctx`, v3.9.10), invoked via `Bash("lean-ctx ...")`, and a `PostToolUse(Read)` nudge hook that prints `ctx_read(...)`-style suggestions as a hint, not a working call. As written, the rule is unfollowable — there is no `ctx_read` to call. Fix: either rewrite the rule to shell out through `lean-ctx <subcommand>` via Bash, or drop the "NEVER use native..." mandate to a soft preference.
+- Root `CLAUDE.md`'s "Serena (Python code intelligence — mandatory, not optional)" section requires `mcp__serena__get_diagnostics_for_file` and `mcp__serena__find_referencing_symbols` before any Python edit/rename. Verified: no `serena` binary anywhere on `PATH`, and no MCP server registration for Serena exists in `.claude/settings*.json`. Same failure mode as lean-ctx — a hard "mandatory" instruction pointing at nothing.
+- Everything else (plan-before-code, atomic commits, spec review gate, `ruff`/`pytest` quality gates) still matches how this repo is actually used — no drift there.
 
-### aiq-zora-ai-engine — needs-update
-- **Stale path:** references `.claude/docs/SDD-USAGE.md`; actual file is
-  `.claude/docs/harness-documentation/SDD-USAGE.md`.
-- **`ERRORS.md` missing** (referenced twice) with no create-on-demand caveat.
-- **Over-constraining:** same `plan before coding` + `show 2-3 approaches` pair.
-- Prior-run issues (40% context rule, duplicate memory-read) are now resolved.
+### daa-llm-evaluation — needs-update
+- Root `CLAUDE.md` and `.claude/CLAUDE.md` have diverged into two ~200-line near-duplicates that now **contradict each other** on remote infrastructure:
+  - Root: *"Models run on GB10 (hostname: `gx10-c326`) via Tailscale VPN... Models located in `/models` on GB10."*
+  - `.claude/CLAUDE.md`: *"Fine-tuning runs on the A100 80GB (SSH alias: `kolagt-u`, IP `10.111.111.4`, user `dlesser@flytrucks.com`)... Models located in `~/models/hf-direct`..."*
+  - Different host, different IP/SSH alias, different model path. Whichever copy gets read first will send Claude to the wrong machine.
+  - Root also has a "Knowledge System" section (the `knowledge/` note vault) that `.claude/CLAUDE.md` lacks entirely, and the two files' `rag_metrics` descriptions differ by one field ("override precision" present in `.claude/CLAUDE.md`, absent from root).
+  - This is the same fork-and-drift pattern flagged in the 2026-07-16 review and it has not been resolved — recommend collapsing to one canonical file (delete the other, or reduce it to a one-line pointer) rather than hand-syncing two copies going forward.
 
-### aiq-purina-salesorderintelligence-poc — minor
-- **Pre-4.x threshold:** `Keep context under 40% before moving from planning to
-  implementation` (line 24) is an arbitrary fixed budget that now misleads more
-  than it helps. Drop the hard number or rephrase as "keep planning context lean."
-- **GitNexus MUST/NEVER block (lines 49-91):** very prescriptive
-  (`MUST run impact analysis before editing any symbol`). Auto-generated
-  `gitnexus:start/end` block and intentional tooling — acceptable as-is; flag
-  only if the per-edit mandate causes friction.
-- **Missing `## Address` section** — "Husband" convention not enforced here
-  (consistent with prior-run note).
-- **`ERRORS.md` missing** (referenced) without a local-only caveat.
-- The no-lazy-imports rule is a legitimate, well-justified project rule.
+### caresync-vercel — needs-update
+- Root `CLAUDE.md`'s H1 is still the unfilled harness template placeholder: `# {{PROJECT_NAME}}` — never substituted with `caresync-vercel`.
+- "Quality Gates" section mandates `ruff check` on every `.py` file write and `pytest -x --ignore=tests/integration` after each impl task — this is a Next.js/TypeScript project (`package.json`, `tsconfig.json`, no `pyproject.toml`, no Python present). These gates are dead instructions carried over unmodified from the (Python-oriented) harness template; same finding as the 2026-07-16 review, still unfixed.
+- "Context Resources" table points at `.claude/docs/SDD-USAGE.md`, which does not exist in this repo (verified). `hot-memory.md`, `meta/patterns.md`, and `specs/` do exist, so only this one path is dead.
 
-### aiq-zora-agent-skill-foundation — minor
-- **Correct paths throughout** — uses the proper `harness-documentation/SDD-USAGE.md`
-  path and caveats `ERRORS.md` as gitignored/local. Use as the template for the
-  other repos' fixes.
-- Architecture, testing (100% coverage), and command docs are accurate and
-  detailed — no staleness.
-- **Missing `## Address` section** — "Husband" convention not enforced.
-- **Over-constraining:** shared `plan before coding` + `show 2-3 approaches` pair
-  (lines 112, 117). Scope down.
+### whisper-pipeline — clean
+- Fully project-specific, detailed, no template placeholders, no dead paths, no pre-4.x hand-holding. GitNexus block matches the indexed repo name. No action needed.
 
-## Proposed Changes (proposals only — not auto-applied)
+### video-automation — needs-update
+- Root `CLAUDE.md` has the same unfilled `# {{PROJECT_NAME}}` placeholder and the same dangling `.claude/docs/SDD-USAGE.md` reference (missing, verified) as caresync-vercel — both look seeded from the same harness template with the placeholder swap skipped.
+- `.claude/CLAUDE.md` (the file with the actual project instructions) has a "WORKFLOW RULES" section that is heavy pre-Claude-4.x micromanagement, unchanged since the last review:
+  - "After creating each file, show me its contents so I can review before you continue" / "Do not create multiple files at once without showing me each one" — a stop-and-show gate per file.
+  - "Add docstrings to every class and public method" / "Add type hints to every function signature" — blanket style mandate regardless of triviality.
+  - "Before starting each phase, tell me... After each phase, give me a summary" — a rigid narration ritual that duplicates what current Claude already does contextually.
+  - Not necessarily wrong if the user genuinely wants tight control on this experimental pipeline, but it reads as an artifact of an earlier, more failure-prone model generation. Worth confirming with the user whether it's still wanted here.
 
-### 1. sdd-harness/CLAUDE.md
-```diff
-- - `.claude/docs/SDD-USAGE.md` — read when you need SDD command reference
-+ - `.claude/docs/harness-documentation/SDD-USAGE.md` — read when you need SDD command reference
-```
-
-### 2. aiq-zora-ai-engine/CLAUDE.md
-```diff
-- - `.claude/docs/SDD-USAGE.md` — read when you need SDD command reference
-+ - `.claude/docs/harness-documentation/SDD-USAGE.md` — read when you need SDD command reference
-- - `ERRORS.md` — check before suggesting solutions to problems; log approaches that took 2+ attempts
-+ - `ERRORS.md` — check before suggesting solutions; log 2+-attempt approaches (gitignored — local only, created on demand)
-```
-
-### 3. aiq-purina-salesorderintelligence-poc/CLAUDE.md
-```diff
-- - Keep context under 40% before moving from planning to implementation
-+ - Keep planning context lean; /compact when coherence degrades, not at a fixed %
-```
-
-### 4. Shared over-constraint (sdd-harness + skill-foundation)
-```diff
-- Before any significant task, show 2-3 approaches and wait for confirmation before proceeding
-+ For ambiguous or high-blast-radius tasks, present 2-3 approaches before proceeding
-```
-
-## Stamp
-```bash
-echo "2026-06-22" > /home/dalesser/.claude/sdd-harness/.claude/memory/.last-claudemd-review
-```
+### TTS — needs-update
+- Root `CLAUDE.md` ("pilot_sim") is otherwise a mature, well-maintained, project-specific document, but it has an internal self-contradiction that has persisted since the 2026-07-16 review:
+  - "Read first" table + "Pronunciation lexicon" section state the per-scenario lexicon (`scenarios/<name>/*lexicon*.json`) is the primary mechanism and `data/he_lexicon.json` is "a legacy fallback only."
+  - The closing "When working in this repo" section still instructs: *"Hebrew pronunciation overrides go in `data/he_lexicon.json`, not in code"* and *"Scenarios live as plain unvocalized Hebrew in `scenarios/he/`"* — pointing at the legacy global-fallback path and a `scenarios/he/` directory that doesn't match the actual per-scenario folder layout (`scenarios/<name>/`) documented everywhere else in the same file.
+  - Following the closing section's instructions literally would mean editing the deprecated fallback lexicon instead of the per-scenario one — worth fixing so the last section agrees with the rest of the file.

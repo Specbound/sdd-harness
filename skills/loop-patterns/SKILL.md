@@ -358,6 +358,16 @@ Replace check commands with project equivalents:
 | Custom CI | `gh pr checks` (works for any stack) |
 | Coverage (Python) | `pytest --cov --cov-fail-under=80` |
 
+### Fuzz invariants, don't "write tests"
+
+"Write tests" is too vague — the agent produces shallow happy-path coverage. Instead instruct it to *"look for risky areas of the code and find invariants that might be violated and fuzz them."* This points the loop at the code most likely to break and at properties (not examples), which is where real defects hide.
+
+### Build bespoke loops, not heavyweight orchestrators
+
+A purpose-built one-off loop only has to be correct for *your* workflow — it can be short and hard-coded. Heavyweight generic orchestrators are often too rigid for the actual task. When you do need structure, the useful shape is a "higher-order workspace": the agent decides a task list → fans each item out to sub-agents → runs a reduce step over the outputs — i.e. a DAG with concurrency limits, not a fixed pipeline.
+
+Also: loops degrade in productivity without a human periodically nudging them. No fully autonomous loop yet replaces the operator — budget for the human check-ins, don't design them out.
+
 ---
 
 ## Relation to Other Skills

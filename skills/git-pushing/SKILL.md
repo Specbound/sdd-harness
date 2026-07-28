@@ -1,31 +1,29 @@
 ---
 name: git-pushing
-description: Stage, commit, and push git changes with conventional commit messages. Use when user wants to commit and push changes, mentions pushing to remote, or asks to save and push their work. Also activates when user says "push changes", "commit and push", "push this", "push to github", or similar git workflow requests.
+description: Stage, commit with a conventional message, and push in one step. Use when the user asks to commit and push, push to remote/GitHub, or save and share their work.
 ---
 
 # Git Push Workflow
 
-Stage all changes, create a conventional commit, and push to the remote branch.
-
-## When to Use
-
-Automatically activate when the user:
-- Explicitly asks to push changes ("push this", "commit and push")
-- Mentions saving work to remote ("save to github", "push to remote")
-- Completes a feature and wants to share it
-- Says phrases like "let's push this up" or "commit these changes"
+Stage all changes, create a conventional commit, and push to the remote branch in one step.
 
 ## Workflow
 
-**ALWAYS use the script** - do NOT use manual git commands:
+Run the bundled script (absolute path — works from any CWD):
 
 ```bash
-bash skills/git-pushing/scripts/smart_commit.sh
+bash ~/.claude/skills/git-pushing/scripts/smart_commit.sh
 ```
 
-With custom message:
+With a custom message:
+
 ```bash
-bash skills/git-pushing/scripts/smart_commit.sh "feat: add feature"
+bash ~/.claude/skills/git-pushing/scripts/smart_commit.sh "feat: add feature"
 ```
 
-Script handles: staging, conventional commit message, Claude footer, push with -u flag.
+The script handles staging, conventional commit message generation, the Claude footer, and `push -u` for new branches.
+
+## Constraints
+
+- Repo conventions override this skill: respect project CLAUDE.md rules (e.g. atomic commits per task, files that must never be committed) before staging everything.
+- If the script fails (no remote, detached HEAD, hooks rejecting the commit), fall back to explicit `git add`/`commit`/`push` commands and show the error rather than retrying the script.

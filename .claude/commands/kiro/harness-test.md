@@ -32,7 +32,7 @@ Invoke the steering agent at Haiku tier on the current project:
 
 ```
 Task(
-  subagent_type="steering",
+  subagent_type="steering-agent",
   model="haiku",
   description="Smoke-test: steering generation",
   prompt="""

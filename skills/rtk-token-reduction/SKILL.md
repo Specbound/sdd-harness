@@ -1,100 +1,49 @@
 ---
 name: rtk-token-reduction
-description: "Use when running shell commands that could bloat context: git operations, test runners, build tools, linters, Docker, kubectl, AWS CLI. RTK transparently rewrites Bash commands to compressed equivalents. Activate to decide when to use rtk proxy (exact output), rtk gain (track savings), or how to configure exclusions."
+description: RTK advanced usage NOT covered by the always-loaded ~/.claude/RTK.md — when to bypass with rtk proxy, configuring exclusions, tee mode, and --ultra-compact. Use when compressed output hides needed detail or a command needs an exclusion.
 risk: safe
 source: https://github.com/rtk-ai/rtk
 ---
 
-# RTK Token Reduction
+# RTK — Advanced Usage
 
-RTK (Rust Token Killer) intercepts Bash commands via a Claude Code PreToolUse hook and rewrites them to compressed equivalents — 60-90% fewer tokens on common dev operations. The hook is already active; this skill covers when and how to use RTK deliberately.
+`~/.claude/RTK.md` (always loaded) covers the meta commands (`rtk gain`, `rtk discover`, `rtk proxy`, install checks) and the hook that transparently rewrites Bash calls. This skill covers only what it doesn't: bypass decisions, configuration, and extra compression.
 
-## When this skill activates
+## When to bypass with `rtk proxy <cmd>`
 
-- Running git, pytest, jest, vitest, cargo test, rspec — output would be verbose
-- Building (tsc, eslint, ruff, cargo build, next build) — errors need compression
-- Checking Docker, kubectl, AWS CLI output in context
-- Need exact raw output for piping or debugging (→ use `rtk proxy`)
-- User asks about token savings, `rtk gain`, or how the hook works
+Only when exact raw output is required:
+- Piping to another tool that parses stdout: `rtk proxy git log --format="%H" | head -5`
+- Debugging a hook/script that reads exact output
+- Verbatim before/after output comparison
+- Compression is dropping detail you need right now (one-off; return to compressed defaults after)
 
-## How the hook works
+Never bypass just to avoid RTK — if compression keeps losing needed detail for a command, add an exclusion instead (below).
 
-The `rtk hook claude` PreToolUse Bash hook intercepts every Bash call. If RTK knows the command, it rewrites it to `rtk <cmd>` and emits `"permissionDecision":"allow"` — no prompt, no delay. Unknown commands pass through unchanged.
+## Configuration and exclusions
 
-## Phase 1: Command Rewrites (happens automatically)
-
-RTK rewrites these command families silently:
-
-| Category | Commands | Typical savings |
-|---|---|---|
-| Version control | git status/log/diff/push/commit/add | 80-90% |
-| Test runners | pytest, jest, vitest, cargo test, rspec, go test | 85-90% |
-| Type/lint | tsc, eslint (via npx), mypy, ruff, rubocop, golangci-lint | 70-85% |
-| Build | next build, cargo build, dotnet build | 60-75% |
-| Containers | docker, kubectl | 60-80% |
-| Cloud | aws | 50-70% |
-| Package mgmt | npm, pnpm, pip | 40-60% |
-| Files | ls, find, grep, diff, tree | 40-70% |
-
-## Phase 2: When to use rtk proxy (bypass)
-
-Use `rtk proxy <cmd>` when exact output is required:
-- Piping output to another tool: `rtk proxy git log --format="%H" | head -5`
-- Debugging a hook or script that reads exact stdout
-- Comparing output before/after a change verbatim
-- A command is being compressed in a way that loses needed detail
-
-**Never** use `rtk proxy` just to avoid RTK — it disables filtering and still tracks usage. If you genuinely need full output, `rtk proxy` is the right tool.
-
-## Phase 3: Tracking savings
-
-```bash
-rtk gain               # Summary: total tokens saved, % reduction
-rtk gain --history     # Per-command breakdown (last N runs)
-rtk gain --graph       # ASCII chart of daily savings
-rtk gain -p            # Filter to current project directory
-rtk discover           # Scan Claude Code history for commands that missed RTK
-```
-
-Run `rtk gain` when the user asks "how much have we saved?" or after a heavy session.
-
-## Phase 4: Configuration
-
-Config file: `~/Library/Application Support/rtk/config.toml` (macOS)
+Config: `~/Library/Application Support/rtk/config.toml` (macOS). Show/create with `rtk config`.
 
 ```toml
 [hooks]
-# Commands RTK will NOT rewrite (exact prefix match)
-exclude_commands = ["curl", "playwright"]
+exclude_commands = ["curl", "playwright"]  # exact prefix match, never rewritten
 
 [tee]
-# Save raw outputs: "failures" | "always" | "never"
 enabled = true
-mode = "failures"
+mode = "failures"   # save raw outputs: "failures" | "always" | "never"
 ```
 
-Create or view config: `rtk config`
+Add an exclusion when RTK misidentifies a command or a script needs exact output every time.
 
-Add an exclusion when a command's compressed output is causing problems — e.g., a test framework that RTK misidentifies, or a custom script that parses exact output.
+## Extra compression
 
-## Phase 5: Ultra-compact mode
-
-Append `--ultra-compact` to any `rtk` command for extra compression (ASCII icons, inline format):
+`--ultra-compact` on any rtk command (ASCII icons, inline format) — for very long test suites or near context limits:
 
 ```bash
-rtk --ultra-compact git status
 rtk --ultra-compact pytest tests/
 ```
 
-Use for very long test suites or when context is near limits.
-
-## Quick reference
+## Preview a rewrite
 
 ```bash
-rtk gain               # Check savings
-rtk proxy <cmd>        # Raw output, no filtering
-rtk hook check <cmd>   # Preview how a command would be rewritten
-rtk discover           # Find missed savings in session history
-rtk config             # Show/create config file
-rtk --version          # Confirm version (should be 0.42.0+)
+rtk hook check <cmd>   # shows how the hook would rewrite the command
 ```

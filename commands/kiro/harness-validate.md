@@ -43,6 +43,7 @@ Check the SDD harness installation in this project for structural integrity:
 3. Check memory file caps (hot-memory <50 lines, patterns <70 lines, observations <50 entries)
 4. Verify L0 headers on all steering and memory files
 5. Check rule file consistency
+6. Check cross-artifact spec consistency for completed feature specs (no orphan tasks, no uncovered requirements, no ungrounded design elements)
 
 Report issues by severity and category.
 """

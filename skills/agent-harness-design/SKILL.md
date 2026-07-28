@@ -22,6 +22,8 @@ Where:
 
 Each component is an independent point of intervention. A gap in one cannot be fully compensated by strengthening another.
 
+> **The harness matters as much as the model.** On a fixed model, swapping only the harness produced a >2× cost swing (measured up to 2.4×) at equivalent quality — one setup used ~3× less context per turn than another for the same result. So rank agent setups by **cost-per-completed-task, not per-token price**. (source: Databricks agent-harness benchmark)
+
 ## When to Activate
 
 - Invoked automatically by `skill-extraction` in Phase 3 (harness alignment check)
@@ -93,6 +95,19 @@ In the harness's auto-memory system (`~/.claude/projects/*/memory/`), this means
 - The `memory-discipline-hook.sh` transfer test applies to links too: only link if the cross-reference would help a *different future task*, not just to be complete
 
 This requires no new infrastructure — the `[[name]]` convention is already in the system. The addition is the discipline: typed labels + bidirectionality + the same transfer test the hook already enforces for content.
+
+**Proactive vs. reactive memory.** A second axis beyond freshness: *where memory comes from*.
+- **Reactive** — the agent only remembers what the user explicitly hands it.
+- **Proactive** — the agent fetches and maintains its own structured context from connected sources on a schedule, without being asked.
+
+Proactive memory runs on **connectors**, of two kinds:
+
+| Connector type | Behavior | Examples |
+|---|---|---|
+| **Deterministic** | Auto-fetches a feed on a schedule | Gmail, RSS |
+| **Agentic** | Goal-directed search tool, invoked to satisfy an intent | web search, Notion |
+
+**Harness↔model coupling is portability risk.** The tighter a connector or memory path couples to model-native integrations, the more the workflow breaks when that model gets expensive, goes down, or is pulled. Prefer coupling that can be re-pointed at another model. (source: LangChain OpenWiki; portability framing from Aparna Dhinakaran)
 
 ### 𝒞 — Context Constructor
 
@@ -175,10 +190,31 @@ Design questions:
 
 Failure mode: governance is only outcome-based ("did the task complete?") — process failures go undetected.
 
+#### Agent-Run Contract (define before granting autonomy)
+
+Before granting any agent autonomy, write its contract:
+- **Goal** — an *outcome*, not an activity ("auth tests pass on CI", not "work on auth")
+- **Scope / non-goals** — what it must not touch
+- **Tools / permissions** — the exact affordances granted
+- **Stopping conditions** — when it halts (done, blocked, budget exhausted)
+- **Evidence requirements** — the proof of success it must produce
+- **Escalation path** — who/what it calls when stuck
+- **Budget** — tokens, attempts, parallelism ceiling
+
+**Three questions before granting high autonomy:**
+1. How fast will problems surface?
+2. How cleanly can the work be undone?
+3. What independently verifies success?
+
+If any answer is "slowly / not cleanly / nothing," lower the autonomy or tighten the contract first. (source: Addy Osmani)
+
 ## Anti-Patterns in Governance (𝒢)
 
 ### ❌ Portability Guard That Isn't Portable
 A guard against platform-specific regressions must itself run on all target platforms — bash-4-only features fail on macOS default 3.2. (source: 2026-06-14)
+
+### ❌ Governance Without Enforcement
+Documenting an anti-pattern without enforcement (pre-commit, CI checks, bug tracking) lets known issues compound indefinitely. (source: 2026-07-09)
 
 ## Phase 2: Temporal Scaling Tiers
 

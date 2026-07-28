@@ -1,5 +1,5 @@
 ---
-name: kiro/jira-solve-agent
+name: jira-solve-agent
 description: Analyzes a Jira issue JSON and produces a structured solve report for the jira-solve command. Extracts problem statement, acceptance criteria, and finds relevant codebase files.
 tools: Read, Glob, Grep, Bash
 ---

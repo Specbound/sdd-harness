@@ -208,6 +208,18 @@ files, and ghost references (referenced-but-missing paths).
 You cannot compress your way out of a bloated startup payload — RTK and lean-ctx never see it.
 Fix it by *structuring what loads*, then let the audit guard regressions.
 
+### Claude Code Token-Economics Settings
+
+Two settings-level levers with a directly measurable token payoff. Only verified items are listed here.
+
+**MCP server `enabled` flag — toggle servers per session.** Each configured MCP server loads its full tool-schema block into context on every session: roughly **800–6,000 tokens** per server depending on tool count and description size. This is startup payload — it is paid before you do anything, and RTK/lean-ctx never see it. Keep servers you use rarely *configured but disabled* (`"enabled": false`) and flip them on only for the sessions that need them, rather than loading every server's schemas into every session. This is the MCP-specific case of the inversion principle above: essential → loaded; occasional → available-but-not-auto-loaded.
+
+**Prompt-caching breakpoint placement — after the stable prefix.** Place `cache_control` breakpoints after the **stable prefix** (system prompt / stable context), never after the volatile user message — a breakpoint on content that changes every request guarantees a cache miss and wastes a lookback slot. For prefixes that stay byte-identical across a session, `"ttl": "1h"` keeps the entry alive across idle gaps longer than the default 5-minute TTL. **Economics:** cache reads cost ~10% of base input price; cache **writes** cost ~25% more than base (the default 5-minute TTL) — at that write premium a breakpoint pays for itself at **2+ reads** within its TTL.
+
+> **Cross-check note (claude-api skill).** The "~25% write premium / 2-read break-even" figure above is specifically the **default 5-minute** TTL. The claude-api skill's caching guidance states that `"ttl": "1h"` writes cost **~2× base (≈100% more)**, not 25%, and therefore need **3+ reads** to break even — the 1-hour TTL is for surviving gaps in bursty traffic, not for hitting break-even sooner. Encoded here per that source rather than the flatter "2 reads pays off regardless of TTL" phrasing, which would contradict it. The breakpoint-placement rule and the ~10% read cost match the claude-api skill exactly.
+
+> **Deliberately excluded.** Other "hidden settings" claims from the same source (e.g. an `inference_geo` control and data-residency pricing premiums) were **not verified** and are intentionally omitted. This section is documentation guidance only — it does not prescribe editing any `settings.json`.
+
 ## Anthropic API Prompt Caching
 
 Server-side prefix caching for Anthropic API calls. This is a **third, orthogonal mechanism** to CAG (local KV cache preloading for HuggingFace models) and the KV-cache ordering heuristics above. All three reduce inference cost via caching, but operate at completely different layers.
@@ -328,5 +340,5 @@ External resources:
 **Created**: 2025-12-20
 **Last Updated**: 2026-07-08
 **Author**: Agent Skills for Context Engineering Contributors; enhanced with arXiv:2605.26112
-**Version**: 1.2.0
-**Sources added**: Anthropic API Prompt Caching documentation (server-side prefix caching mechanics, breakpoint rules, invalidation table)
+**Version**: 1.3.0
+**Sources added**: Anthropic API Prompt Caching documentation (server-side prefix caching mechanics, breakpoint rules, invalidation table); Agent Cookbook Claude Code token-economics settings (MCP `enabled` flag + breakpoint placement — only the two verified items; unverified "hidden settings" claims excluded)
