@@ -27,28 +27,19 @@ new Python/uv project.
 Add to `.gitignore`:
 
 ```gitignore
-# Claude Code SDD harness — local only
-CLAUDE.md
+# ── Installed harness output — NEVER commit ──────────────────────────────────
+# .claude/ is regenerable output, not source. install.sh / update.sh rebuild it
+# on every machine from the harness source tree. Per-machine settings.json and
+# memory content also live here and stay local.
+.claude/
 specs/
-# All harness docs now live under .claude/ (covered by .claude/ gitignore rule)
 scripts/setup-git-hooks.sh
 scripts/remap-ccsdd-paths.sh
-.claude/settings.json
-.claude/.last-harness-check
-.claude/hooks/
-.claude/steering/
-.claude/commands/
-.claude/agents/
-.claude/kiro/
-# Per-user memory — stays local, never shared
-.claude/memory/**
-!.claude/memory/daily/
-!.claude/memory/glacier/
-!.claude/memory/meta/
-!.claude/memory/.gitkeep
-!.claude/memory/**/.gitkeep
-!.claude/settings.local.json
 ```
+
+One `.claude/` line replaces the previous per-subdirectory list (`.claude/hooks/`, `.claude/commands/`, `.claude/agents/`, `.claude/kiro/`, `.claude/steering/`, `.claude/settings.json`, `.claude/memory/**` + its `!` re-includes). Already-tracked `.claude/memory/**/.gitkeep` files persist as clone scaffolding — the broad ignore does not untrack them.
+
+**`CLAUDE.md` is no longer ignored** in the harness repo — the project constitution is source and is committed. Per-project installs may still ignore it if the generated constitution is machine-specific.
 
 Commit: `git add .gitignore && git commit -m "chore: add SDD harness gitignore entries"`
 
@@ -231,6 +222,10 @@ Create `.claude/settings.json`:
           {
             "type": "command",
             "command": "/bin/bash /path/to/.claude/hooks/hook-added-notify.sh"
+          },
+          {
+            "type": "command",
+            "command": "/bin/bash /path/to/.claude/hooks/skill-permissions-gate.sh"
           }
         ]
       },
@@ -240,6 +235,19 @@ Create `.claude/settings.json`:
           {
             "type": "command",
             "command": "/bin/bash /path/to/.claude/hooks/lean-ctx-nudge-hook.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/bash /path/to/.claude/hooks/revert-detect-hook.sh"
+          },
+          {
+            "type": "command",
+            "command": "/bin/bash /path/to/.claude/hooks/setup-buffer-hook.sh"
           }
         ]
       }
@@ -321,6 +329,8 @@ Create `.claude/settings.json`:
 
 > Replace `/path/to/` with your repo's absolute path, or let `setup-git-hooks.sh` (Step 8) do it automatically.
 
+> **Canonical source**: this JSON is an illustrative excerpt. The authoritative hook wiring lives in the harness source tree at `templates/settings.json.template` (per-project, relative `.claude/hooks/...` paths) and `templates/settings.harness.json.template` (the harness's own repo, `{{HARNESS_DIR}}`-prefixed paths). `install.sh` / `update.sh` render these templates — edit the templates, not a generated `settings.json`. Both templates register `skill-permissions-gate.sh` on `PostToolUse Write|Edit` and `setup-buffer-hook.sh` on `PostToolUse Bash`.
+
 ---
 
 ## Step 7: Create .claude/hooks/stop-hook.sh
@@ -367,10 +377,11 @@ This script:
 1. Installs `.git/hooks/post-commit` — triggers **both doc sync and harness updater** on every commit
 2. Patches `.claude/settings.json` with the repo's absolute path (replacing `/path/to/`)
 
-The post-commit hook:
-- **Doc sync** — runs if any non-`.md`, non-`.claude/` files changed; invokes `claude --dangerously-skip-permissions --print` in background to update relevant `.md` files and steering docs.
-- **Harness updater** — runs if any `.claude/` files changed (excluding `.claude/memory/` to avoid noise from session writes); invokes `claude --dangerously-skip-permissions --print` in background to update `SDD-SETUP-GUIDE.md`.
-- Both agents run in the background (`&`) so they don't block your terminal.
+The post-commit hook runs three stages:
+- **Hook 1 — Doc sync** — runs if any non-`.md`, non-`.claude/` files changed; invokes `claude --dangerously-skip-permissions --print` in background to update relevant `.md` files and steering docs.
+- **Hook 2 — Harness updater** — runs if the commit touched the harness **source tree**, matched by `^(agents|commands|hooks|kiro|scripts|rules|templates|skills)/` or `^CLAUDE\.md$`. (Previously this matched `.claude/`; `.claude/` is now generated output, rebuilt by `install.sh` / `update.sh`, so it is gitignored and never the trigger.) Invokes `claude --dangerously-skip-permissions --print` in background to update `docs/harness-documentation/SDD-SETUP-GUIDE.md`. The prompt routes each changed path to its section: `commands/` → slash commands, `agents/` → subagents, `CLAUDE.md` → project constitution, `skills/` → skills, `hooks/` → automated hooks, `kiro/` → rules/templates, `rules/` → context engineering, `templates/settings*.template` → hooks/configuration.
+- **Hook 3 — Auto-commit + push `.md`** — waits on the two background PIDs above, then stages, commits (`docs: auto-sync (<date>)`), and pushes **only** `*.md` paths. Non-`.md` changes sitting in the working tree are never staged or pushed. If the push fails (no remote/auth), the commit still lands and the hook prints a warning instead of failing.
+- Hooks 1 and 2 run in the background (`&`) so they don't block your terminal; Hook 3 blocks only until they finish.
 - The `--dangerously-skip-permissions` flag is required: the background agents run non-interactively (no terminal to answer permission prompts), so without it the doc sync would stall on the first `Edit`/`Write` and never apply changes.
 
 The script is idempotent — safe to run multiple times.
@@ -389,7 +400,7 @@ Triggered by: `/kiro:sync-docs` command or the post-commit hook.
 ### harness-updater.md
 Harness documentation maintenance agent. Updates this file (`SDD-SETUP-GUIDE.md`) whenever Claude Code harness files change.
 
-Triggered by: the git post-commit hook when `.claude/` files (excluding `.claude/memory/`) are in the commit.
+Triggered by: the git post-commit hook when harness **source** files are in the commit — `agents/`, `commands/`, `hooks/`, `kiro/`, `scripts/`, `rules/`, `templates/`, `skills/`, or `CLAUDE.md`. Target file is `docs/harness-documentation/SDD-SETUP-GUIDE.md`.
 
 See the full agent definitions in `.claude/agents/kiro/doc-sync.md` and `.claude/agents/kiro/harness-updater.md`.
 
@@ -557,7 +568,7 @@ Conventions are defined in `.claude/kiro/settings/rules/memory-conventions.md`:
 | `@agents-steering` | `/kiro:steering` | Project memory bootstrap |
 | `@agents-steering-custom` | `/kiro:steering-custom` | Domain-specific steering |
 | `@agents-doc-sync` | git post-commit hook or `/kiro:sync-docs` | Code→doc drift prevention for committed changes |
-| `@agents-harness-updater` | git post-commit hook (when `.claude/` files committed) | Harness→guide sync |
+| `@agents-harness-updater` | git post-commit hook (when harness **source** files are committed — `agents/`, `commands/`, `hooks/`, `kiro/`, `scripts/`, `rules/`, `templates/`, `skills/`, `CLAUDE.md`) | Harness→guide sync |
 | `@agents-reflect` | `/kiro:reflect` | Session mining → observations, patterns, hot-memory |
 | `@agents-learn-eval` | `/kiro:learn-eval` | Scores candidate patterns on specificity/actionability/evidence (1-3 each, threshold ≥6 to pass), then deduplicates against `meta/patterns.md`. Verdicts: **Save** (score≥6, no duplicate — new entry in patterns.md), **Absorb** (score≥6, similar entry exists — merge evidence in), **Route** (score≥6 but tied to exactly one existing skill — skip memory, hand to `skill-augment-agent` instead), **Drop** (score<6 or exact duplicate) |
 | `@agents-housekeeping` | `/kiro:housekeeping` | Memory archival (observations >50 entries → glacier, keep 25 recent; completed action items >10 → keep 5), pruning (hot-memory <50 lines, patterns <70 lines), format validation (L0 headers, entry formats), stale-item flagging (action items >14d, entities >30d), glacier index rebuild. Reviews `[auto-learn, YYYY-MM-DD]`-tagged hot-memory entries left by the micro-reflect stop hook: keep if <7d old, promote to `meta/patterns.md` if 7d+ with reinforcing evidence, else remove (no archive — ephemeral by design). Also flags patterns/hot-memory entries tied to exactly one skill and recommends routing them into that skill via `skill-augment-agent` — never auto-moves, archive-first discipline |
@@ -607,10 +618,11 @@ Conventions are defined in `.claude/kiro/settings/rules/memory-conventions.md`:
 | PostToolUse (hook-added-notify) | Every Write/Edit that creates a new `.claude/hooks/claude/*.sh` | Injects a reminder to document the new hook in `docs/hooks/README.md` (and the Wiring Reference table) before the session ends. Stays silent if the hook is already documented. Implemented in `.claude/hooks/hook-added-notify.sh`. |
 | PostToolUse (lean-ctx nudge) | Every Read of a file ≥16 KB (~4,000 tokens) | Suggests the optimal `ctx_read` mode for the file type (`signatures` for code, `reference` for prose, `aggressive` for unknown); silent for small files and data formats (`.json/.yaml/.toml/.lock`). Implemented in `.claude/hooks/lean-ctx-nudge-hook.sh`. |
 | post-commit (doc sync) | Every `git commit` with non-`.md` source changes | Doc-sync: updates all `.md` files referencing changed code via `claude --dangerously-skip-permissions --print` (background) |
-| post-commit (harness updater) | Every `git commit` with `.claude/` changes (excl. memory) | Updates `SDD-SETUP-GUIDE.md` via `claude --dangerously-skip-permissions --print` (background) |
+| post-commit (harness updater) | Every `git commit` touching harness source — `agents/`, `commands/`, `hooks/`, `kiro/`, `scripts/`, `rules/`, `templates/`, `skills/`, or `CLAUDE.md` | Updates `docs/harness-documentation/SDD-SETUP-GUIDE.md` via `claude --dangerously-skip-permissions --print` (background). Path-to-section routing is spelled out in the hook prompt (`rules/` → context engineering, `templates/settings*.template` → hooks/configuration, etc.) |
+| post-commit (auto-sync `.md`) | Every `git commit`, after hooks 1–2 finish | Waits on the doc-sync / harness-updater background PIDs, then `git add -- '*.md'`, commits `docs: auto-sync (<date>)` scoped to `*.md`, and pushes. Never stages or pushes non-`.md` files; a failed push leaves the commit in place and prints a warning. Script: `hooks/git/post-commit`. |
 | Stop (address-check) | Every Claude session end | Checks the last assistant turn for the "Husband" address rule from `CLAUDE.md`. If missing, injects a correction banner (exit 2). No-ops silently if transcript is unreadable. Script: `hooks/claude/address-check-hook.sh`. |
-| PostToolUse (setup-buffer) | Every Bash command (atomic, ≤3 lines) | Detects setup-pattern commands (package installs, `docker compose`/`build`, DB create/migrate, `.env` sourcing/export, `git clone`, `make install`/`setup`/`init`) and appends them to `.claude/memory/.setup-session-buffer.log`; the Stop hook later folds the buffer into `.claude/memory/setup-knowledge.md`. Script: `.claude/hooks/setup-buffer-hook.sh`. |
-| PostToolUse (skill-permissions-gate) | Every Write/Edit to `*/skills/*/SKILL.md` | Soft gate (never blocks): reminds Claude to run `agent-permissions-design` before marking a new/edited skill complete — checks tool access, irreversible-action gates, scope boundaries, and external-service access. Script: `.claude/hooks/skill-permissions-gate.sh`. |
+| PostToolUse (setup-buffer) | Every Bash command (atomic, ≤3 lines) | Detects setup-pattern commands (package installs, `docker compose`/`build`, DB create/migrate, `.env` sourcing/export, `git clone`, `make install`/`setup`/`init`) and appends them to `.claude/memory/.setup-session-buffer.log`; the Stop hook later folds the buffer into `.claude/memory/setup-knowledge.md`. Source: `hooks/claude/setup-buffer-hook.sh` → installed to `.claude/hooks/setup-buffer-hook.sh`; registered on `PostToolUse Bash` in both settings templates. |
+| PostToolUse (skill-permissions-gate) | Every Write/Edit to `*/skills/*/SKILL.md` | Soft gate (never blocks): reminds Claude to run `agent-permissions-design` before marking a new/edited skill complete — checks tool access, irreversible-action gates, scope boundaries, and external-service access. Source: `hooks/claude/skill-permissions-gate.sh` → installed to `.claude/hooks/skill-permissions-gate.sh`; registered on `PostToolUse Write|Edit` in both settings templates. Fires only for paths matching `*/skills/*/SKILL.md`, so other `.md` writes are untouched. |
 
 ---
 
@@ -626,6 +638,29 @@ These hooks live in `~/.claude/hooks/` (not per-project `.claude/hooks/`) and fi
 | **lean-ctx read redirect** | `~/.claude/hooks/lean-ctx-redirect.sh` | No-op placeholder that allows native Read so Edit works | Auto-wired alongside lean-ctx rewrite hook |
 
 > **Note:** `install.sh` copies `hooks/global/*` → `~/.claude/hooks/` and patches `~/.claude/settings.json` automatically. Caveman defaults to `lite`; override by writing `~/.claude/.caveman-active` with `full` or `ultra`. lean-ctx hooks only wire if the `lean-ctx` CLI is installed.
+
+---
+
+## Context Engineering Rules (`rules/`)
+
+Context rules live in the harness source tree at `rules/` and are synced into every project at `.claude/rules/` by `install.sh` and `update.sh` (`sync_dir "$HARNESS_DIR/rules" "$PROJECT_DIR/.claude"`). They are loaded per session, so they count toward the startup token tax audited by `startup-payload-audit.sh` — keep them short.
+
+| Rule file | Installed to | Purpose |
+|---|---|---|
+| `rules/lean-ctx.md` | `.claude/rules/lean-ctx.md` | Context Engineering layer. Mandatory mapping of native tools to `ctx_*` MCP equivalents (`ctx_read` / `ctx_search` / `ctx_shell` / `ctx_edit`), the `ctx_read` mode-selection table (`full`, `signatures`, `diff`, `map`, `lines:N-M`, `auto`), the 6-step orient → locate → read → edit → verify → record workflow, proactive calls (`ctx_overview`, `ctx_compress`, `ctx_knowledge(wakeup)`), the compression-bypass escalation ladder, the pre-edit risk gate (`ctx_impact` + `ctx_callgraph`, plus `mcp__serena__find_referencing_symbols` for Python symbols), and session start/end conventions. Versioned by the `<!-- lean-ctx-rules-v11 -->` marker so `update.sh` can detect drift. |
+
+Editing rule: change `rules/*.md` in the harness source tree, then run `update.sh`. Never edit `.claude/rules/*.md` in a project — it is regenerated output and will be overwritten.
+
+---
+
+## Skills (`skills/`)
+
+Skills live in the harness source tree at `skills/<name>/SKILL.md` (64 skills currently). `install_globals()` in `install.sh` syncs each one into `~/.claude/skills/<name>/`, so skills are **machine-global**, not per-project — one install serves every repo.
+
+- Adding a skill: create `skills/<name>/SKILL.md` with kebab-case `name:` matching the directory and a `description:` of ≥25 chars (enforced by the `skill-validate` PreToolUse hook), then run `install.sh` / `update.sh`.
+- Every write to a `*/skills/*/SKILL.md` also trips the **skill-permissions-gate** PostToolUse hook — a soft reminder to run `agent-permissions-design` (tool access, irreversible-action gates, scope boundary, external access) before calling the skill done.
+- Usage is logged to `logs/skill-usage.jsonl` by the `skill-usage-tracker` hook and reviewed by the weekly skill-curator routine.
+- `skills/csv-data-summarizer` — analyzes a CSV end to end without asking questions: pandas stats, missing-data audit, and only the charts the data supports. Requires `python>=3.8`, `pandas`, `matplotlib`, `seaborn`.
 
 ---
 

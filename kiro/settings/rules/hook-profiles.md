@@ -48,6 +48,8 @@ fi
 
 Git hooks (post-commit) run at all profile levels — they are infrastructure, not enforcement. Only session hooks (stop-hook.sh) respect the minimal profile skip.
 
+Note: `post-commit` has a third stage that runs at every profile level — after the doc-sync and harness-updater background agents finish, it stages, commits, and **pushes** only `*.md` files. It touches the network and the remote at all profiles, including `minimal`.
+
 ## Defaults
 
 If `SDD_PROFILE` is unset or empty, it defaults to `standard` — preserving current behavior. No existing workflows are affected by this addition.

@@ -72,7 +72,7 @@ One harness, many projects. Install once, keep every repo in sync.
 > ```
 
 This will:
-- Create the `.claude/` directory structure with commands, agents, rules, and templates
+- Create the `.claude/` directory structure with commands, agents, hooks, skills, docs, templates, and `.claude/rules/` (context-engineering rules synced from the top-level `rules/` source dir)
 - Initialize memory files from templates
 - Generate `CLAUDE.md` (the project constitution)
 - Register the project in `projects.txt`
@@ -205,6 +205,9 @@ sdd-harness/
 │       ├── steering-custom/      #     Domain templates (auth, DB, API, testing, deployment, security)
 │       └── memory/               #     Memory file templates (hot, observations, action-items, entities, patterns)
 │
+├── rules/                        # Context-engineering rules (synced to .claude/rules/ by install/update)
+│   └── lean-ctx.md               #   lean-ctx tool mapping, read modes, workflow, risk gate
+│
 ├── scripts/                      # Utility scripts (Python, stdlib only)
 │   ├── integrations/jira/        #   Jira REST API integration
 │   │   ├── jira_client.py        #     Jira REST API client (PAT + Basic Auth)
@@ -242,6 +245,8 @@ sdd-harness/
 │   │   ├── prompt-hook.sh        #     On prompt submit: inject hot-memory context
 │   │   ├── action-capture.sh     #     PostToolUse(Bash): prompts memory capture after git-commit, test-failure, deploy, or struggle
 │   │   ├── test-integrity-guard.sh #   PostToolUse(Write/Edit/MultiEdit): soft gate flagging "gradient descent to green" — weakened test assertions, added skips, lowered coverage thresholds
+│   │   ├── setup-buffer-hook.sh  #     PostToolUse(Bash): buffers setup-pattern commands to .claude/memory/.setup-session-buffer.log (flushed by stop-hook)
+│   │   ├── skill-permissions-gate.sh # PostToolUse(Write/Edit): soft gate on */skills/*/SKILL.md — prompts agent-permissions-design review
 │   │   ├── doc-parse-nudge.sh    #     UserPromptSubmit: nudges document-parsing skill on PDF/RAG/OCR prompts
 │   │   ├── pre-tool-use-gitnexus.sh #  On file read/edit: enrich with GitNexus symbol graph context (callers, deps, processes)
 │   │   └── scan-pii.sh           #     PII scanner: scan staged files or a path with OPF (exits 1 on secrets/account numbers)
@@ -253,11 +258,12 @@ sdd-harness/
 │   │   ├── caveman-statusline.sh #     Statusline command: emits [CAVEMAN] / [CAVEMAN:ULTRA] badge
 │   │   └── lean-ctx-rewrite.sh  #     PreToolUse(Bash): rewrites common shell commands to lean-ctx equivalents
 │   └── git/                      # Git lifecycle hooks (copied to .git/hooks/ on install/update)
-│       └── post-commit           #     On commit: doc sync + harness update detection
+│       └── post-commit           #     On commit: doc sync + harness update detection, then auto-commit/push the .md files those agents touched
 │
 ├── templates/                    # Project-level templates
 │   ├── CLAUDE.md.template        #   Project constitution (context paths, rules, quality gates)
-│   └── settings.json.template    #   Claude Code permissions and hooks config
+│   ├── settings.json.template    #   Claude Code permissions and hooks config (per-project installs)
+│   └── settings.harness.json.template # Same config for the harness repo itself ({{HARNESS_DIR}} paths)
 │
 └── docs/                         # Reference documentation
     ├── SDD-USAGE.md              #   Quick command reference with examples
@@ -400,7 +406,7 @@ Each command delegates to one or more autonomous subagents. Agents receive a pro
 - **`guardrails-agent`** — Audits project linter configs for complexity rules, scaffolds missing guardrails per ecosystem (ESLint, ruff, clippy, golangci-lint)
 - **`ci-scaffold-agent`** — Generates CI configurations (GitHub Actions, GitLab CI, Azure Pipelines) mirroring the verify pipeline stages
 - **`doc-sync`** — Triggered by post-commit hook; finds and updates stale `.md` files after code changes; detects stale doc-to-code references; and enforces resource coverage — every added/changed capability (skill, command, agent, hook, rule, script) must be documented in the sources index (`docs/sources/<category>/`), `.claude/docs/**`, `README.md`, and `SDD-USAGE.md`
-- **`harness-updater`** — Triggered when `.claude/` files change; keeps `SDD-SETUP-GUIDE.md` current
+- **`harness-updater`** — Triggered when harness source files change (`agents/`, `commands/`, `hooks/`, `kiro/`, `scripts/`, `rules/`, `templates/`, `skills/`, `CLAUDE.md`); keeps `docs/harness-documentation/SDD-SETUP-GUIDE.md` current
 - **`harness-validate-agent`** — Checks structural integrity: command→agent references, template existence, memory caps, L0 headers, generates component index; Step 8 audits instruction architecture (entry file line count, constraint count, topic doc adoption, middle-placement check); Step 9 audits feature list primitive compliance (triple structure, WIP=1, pass-state gating)
 - **`gitnexus-setup-agent`** — Installs GitNexus, indexes the repo, configures MCP server and editor integration
 - **`jira-solve-agent`** — Analyzes ticket type and routes to the appropriate workflow
@@ -767,9 +773,12 @@ This is a global hook — it applies to every session and every project automati
 
 ### Git Post-Commit Hook (`hooks/git/post-commit`)
 
-Runs after every commit. Triggers two background processes:
+Runs after every commit. Triggers two background processes, then a synchronous docs push:
 1. **Doc Sync** — If non-`.md` files changed, finds and updates affected documentation
-2. **Harness Updater** — If `.claude/` files changed, updates `SDD-SETUP-GUIDE.md`
+2. **Harness Updater** — If harness source files changed (`agents/`, `commands/`, `hooks/`, `kiro/`, `scripts/`, `rules/`, `templates/`, `skills/`, or `CLAUDE.md`), updates `docs/harness-documentation/SDD-SETUP-GUIDE.md`
+3. **Docs auto-push** — Waits for both background agents, then stages, commits (`docs: auto-sync (<date>)`), and pushes **only `.md` files**. Non-`.md` changes sitting in the tree are never staged or pushed. A failed push is reported, not retried.
+
+The trigger for step 2 keys off the top-level source tree, not `.claude/` — `.claude/` is regenerated output rebuilt by `install.sh`/`update.sh` and is fully gitignored.
 
 ---
 
@@ -943,4 +952,4 @@ The Model Cost section reads session data from `~/.claude/projects/*/`. Pricing 
 
 Private repository. Contact the maintainer for access.
 
-_Last synced: 2026-06-21_
+_Last synced: 2026-07-28_

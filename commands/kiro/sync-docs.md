@@ -15,7 +15,7 @@ git diff --cached --name-only # staged
 git diff HEAD~1 --name-only   # last commit
 ```
 
-Combine, deduplicate, and filter out `.md` files and `.claude/` paths (those are handled by the harness updater).
+Combine, deduplicate, and filter out `.md` files and `.claude/` paths. `.claude/` is regenerated output (rebuilt by `install.sh` / `update.sh`) and is gitignored; changes to the harness **source** tree (`agents/`, `commands/`, `hooks/`, `kiro/`, `scripts/`, `rules/`, `templates/`, `skills/`, `CLAUDE.md`) are handled by the harness updater.
 
 If no source files changed, report "No source changes detected — docs are current."
 
@@ -58,6 +58,6 @@ Show Subagent summary to user:
 
 - This command catches ALL changes: uncommitted, staged, and recently committed
 - The stop-hook runs this automatically at session end — this command is for manual trigger
-- The post-commit git hook is a safety net that also triggers doc sync on commit
-- Excludes .claude/ paths (harness updater handles SDD-SETUP-GUIDE separately)
+- The post-commit git hook is a safety net that also triggers doc sync on commit; after doc sync and the harness updater finish, that hook auto-commits and pushes **only** the `.md` files they touched
+- Excludes .claude/ paths — regenerated output, gitignored (harness updater handles SDD-SETUP-GUIDE separately, keyed off the top-level source tree)
 - Excludes .md-only changes to avoid infinite loops
