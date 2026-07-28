@@ -315,7 +315,7 @@ GitHub repositories that were passed to `/skill-extraction` and turned into harn
 **What we added:**
 - Skill: `document-parsing` — 6-phase workflow (install → format selection → CLI patterns → Python API → RAG handoff → cloud escalation decision). Fires before any RAG pipeline or document processing task; bridges raw documents into `rag-implementation`.
 - Hook: `doc-parse-nudge.sh` (UserPromptSubmit, global) — detects action verbs combined with document/RAG keywords and injects a reminder to invoke `document-parsing` before building. Registered in both `~/.claude/settings.json` and `templates/settings.harness.json.template`.
-- Wired: `install.sh` `install_globals()` and `update.sh` tail both include inline `pip install liteparse` (idempotent) — no separate setup script, propagates on next install/update run.
+- Wired: `install.sh` and `update.sh` both call `scripts/setup/liteparse-setup.sh` — owns liteparse in `.venv-tools`; tries `uv venv --python '>=3.10' --seed` first (resolves a working interpreter automatically), falls back to system `/usr/bin/python3.*` (skipping uv-managed standalones whose stdlib is unreachable outside uv), and health-checks for broken uv-standalone venvs on each run — removing and rebuilding rather than failing silently. Exits 1 with hint (`uv python install 3.12`) if no working interpreter found.
 - Docs: `docs/skills/document-parsing/README.md` — supported formats table, activation instructions, related skills.
 
 ---
