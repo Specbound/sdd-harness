@@ -216,7 +216,10 @@ A guard against platform-specific regressions must itself run on all target plat
 ### ❌ Governance Without Enforcement
 Documenting an anti-pattern without enforcement (pre-commit, CI checks, bug tracking) lets known issues compound indefinitely. (source: 2026-07-09)
 
+### ❌ Dual-Copy Files Desync Source and Mirror on Every Edit Pass
+Files mirrored across source tree and `.claude/` (e.g., `scripts/headroom-setup.sh` + `.claude/scripts/headroom-setup.sh`) desync when edits hit one copy but not the other. Without automatic sync, the same debt recreates immediately post-commit. (source: 2026-07-28 observation)
 ## Phase 2: Temporal Scaling Tiers
+
 
 Every intervention operates at one of three timescales. Mismatching a solution to the wrong tier is a common source of fragility.
 

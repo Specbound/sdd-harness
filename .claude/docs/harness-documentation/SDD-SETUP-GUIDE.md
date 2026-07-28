@@ -2,7 +2,7 @@
 
 > This file is managed by the SDD harness (`sdd-harness/docs/`).
 > It is the single source of truth — do not edit copies in individual projects.
-> _Last synced: 2026-07-08
+> _Last synced: 2026-07-28
 
 A complete, self-contained guide to setting up the Spec-Driven Development (SDD)
 harness used in this project. Follow these steps to replicate the setup in any
@@ -501,13 +501,13 @@ Conventions are defined in `.claude/kiro/settings/rules/memory-conventions.md`:
 | `/kiro:steering` | Bootstrap/refresh project memory from codebase |
 | `/kiro:steering-custom` | Add domain-specific steering (auth, database, API, etc.) |
 | `/kiro:idea-refine "rough idea"` | Refine vague ideas into clear, spec-ready briefs |
-| `/kiro:spec-init "description"` | Initialize new feature workspace in `specs/` |
+| `/kiro:spec-init "description"` | Initialize new feature workspace in `specs/`. When run standalone (not via `spec-quick`), first runs `/kiro:pref-elicit {$ARGUMENTS}` unless `prefs.md` already exists — surfaces declarative vs. imperative preferences before the spec assumes defaults |
 | `/kiro:spec-requirements {feature}` | Generate EARS-format requirements (subagent) |
 | `/kiro:spec-design {feature}` | Generate research notes + technical design (subagent) |
 | `/kiro:spec-grill {feature}` | Domain grilling session — align terminology, crystallise decisions, update docs and ADRs inline (interactive) |
 | `/kiro:spec-tasks {feature} [--sequential]` | Generate P-wave parallel task list (subagent); `--sequential` disables parallel `(P)` markers |
 | `/kiro:spec-impl {feature}` | Implement from approved spec via TDD (subagent) |
-| `/kiro:spec-quick "description"` | Fast path: requirements→design→grill→tasks in one command (grill skipped with `--auto`) |
+| `/kiro:spec-quick "description"` | Fast path: requirements→design→grill→tasks in one command (grill skipped with `--auto`). Pre-check applies `issue-triage-routing` — routes to ONE-SHOT (implement directly, no spec) / DEFER / CLARIFY before spec'ing; proceeds to full spec generation only on SPEC. In Interactive Mode, Step 1.5 now runs 1.5a Preference Elicitation (`/kiro:pref-elicit {description}`, mandatory, writes `prefs.md` used by phases 2–5) before 1.5b Idea Refinement |
 | `/kiro:debug "bug description"` | Systematic 6-step bug triage (reproduce→fix→guard) |
 | `/kiro:simplify <file-or-feature>` | Behavior-preserving code simplification |
 | `/kiro:ship [feature]` | Launch readiness: verification + rollout planning |
@@ -530,7 +530,7 @@ Conventions are defined in `.claude/kiro/settings/rules/memory-conventions.md`:
 | `/kiro:guardrails` | Audit/scaffold linter complexity rules for deterministic enforcement |
 | `/kiro:ci-scaffold` | Generate CI configuration mirroring the verify pipeline |
 | `/kiro:autoresearch-init` | Interactive ML project setup — generates program.md, train.py, prepare.py |
-| `/kiro:autoresearch [N]` | Run autonomous ML experiment loop (N iterations or continuous) |
+| `/kiro:autoresearch [N]` | Run autonomous ML experiment loop (N iterations or continuous). If `recipe.md` exists in the project root, it's passed to the agent alongside `program.md` as a versioned record of signal-filtering policy and staged-autonomy level (see AutoResearch section below) |
 | `/kiro:macro-eval-sweep [days-back] [name-filter]` | Population-scale failure pattern sweep over Raindrop Workshop traces; clusters recurring failures, ranks by impact, writes dated report, posts Workshop annotations |
 
 ---
@@ -546,6 +546,7 @@ Conventions are defined in `.claude/kiro/settings/rules/memory-conventions.md`:
 | `@agents-spec-refactor` | After each impl task (auto, spawned by spec-impl agent) | Post-task self-review: reuse, quality, efficiency, 3-tier security checks + test re-run |
 | `@agents-idea-refine` | `/kiro:idea-refine` | Structured ideation: problem framing → divergent/convergent thinking → spec-ready brief |
 | `@agents-debug` | `/kiro:debug` or via jira-solve BUG routing | 6-step systematic debugging: reproduce → localize → reduce → fix → guard → verify |
+| `@agents-jira-solve` (`jira-solve-agent`) | `/kiro:jira-solve` Step 3 | Analyzes a Jira issue JSON into a structured solve report: problem statement, acceptance criteria, and relevant codebase files found via Glob/Grep |
 | `@agents-simplify` | `/kiro:simplify` or via spec-refactor complexity findings | Behavior-preserving simplification with Chesterton's Fence principle |
 | `@agents-ship` | `/kiro:ship` | Staged rollout planning with decision thresholds and rollback procedures |
 | `@agents-validate-gap` | `/kiro:validate-gap` | Requirements vs. code gap analysis |
@@ -608,6 +609,8 @@ Conventions are defined in `.claude/kiro/settings/rules/memory-conventions.md`:
 | post-commit (doc sync) | Every `git commit` with non-`.md` source changes | Doc-sync: updates all `.md` files referencing changed code via `claude --dangerously-skip-permissions --print` (background) |
 | post-commit (harness updater) | Every `git commit` with `.claude/` changes (excl. memory) | Updates `SDD-SETUP-GUIDE.md` via `claude --dangerously-skip-permissions --print` (background) |
 | Stop (address-check) | Every Claude session end | Checks the last assistant turn for the "Husband" address rule from `CLAUDE.md`. If missing, injects a correction banner (exit 2). No-ops silently if transcript is unreadable. Script: `hooks/claude/address-check-hook.sh`. |
+| PostToolUse (setup-buffer) | Every Bash command (atomic, ≤3 lines) | Detects setup-pattern commands (package installs, `docker compose`/`build`, DB create/migrate, `.env` sourcing/export, `git clone`, `make install`/`setup`/`init`) and appends them to `.claude/memory/.setup-session-buffer.log`; the Stop hook later folds the buffer into `.claude/memory/setup-knowledge.md`. Script: `.claude/hooks/setup-buffer-hook.sh`. |
+| PostToolUse (skill-permissions-gate) | Every Write/Edit to `*/skills/*/SKILL.md` | Soft gate (never blocks): reminds Claude to run `agent-permissions-design` before marking a new/edited skill complete — checks tool access, irreversible-action gates, scope boundaries, and external-service access. Script: `.claude/hooks/skill-permissions-gate.sh`. |
 
 ---
 
@@ -641,6 +644,17 @@ The harness includes an optional hook pair that automatically posts a Jira comme
    - Finds the most recently modified `.md` in `docs/` mentioning the ticket
    - Assembles a Jira wiki-markup comment (branch, commits, approach, files changed)
    - Posts it via `jira_client.py` and deletes the state file (single-fire)
+
+### Issue routing
+
+Before doing any work, `/kiro:jira-solve` applies a pre-gate: `Skill("issue-triage-routing")` runs against the fetched issue first. If it routes to **DEFER** (off-roadmap) or **CLARIFY** (ambiguity blocks a spec), that verdict is honored immediately — type-based routing below only runs once triage yields **SPEC** or **ONE-SHOT**.
+
+Once past the pre-gate, routing is by issue type:
+- Bug / Defect → systematic debugging workflow (`@agents-debug`)
+- Story / Feature / Epic → `/kiro:spec-quick` seeded from Jira context
+- Task / Sub-task / Improvement / Chore → direct implementation plan
+
+Issue analysis itself is delegated to the `jira-solve-agent` subagent (see Subagents section), which converts the issue JSON into a structured problem statement and searches the repo for relevant files.
 
 ### Scripts
 
@@ -764,6 +778,17 @@ uv run prepare.py
 ```
 
 No settings.json changes needed — these are manual-only commands with no hooks.
+
+### Agent Recipe (Optional)
+
+If `recipe.md` exists in the project root, `/kiro:autoresearch` passes it to the agent as additional context alongside `program.md`. It's a versioned artifact tracking the evolution of the research loop itself — not just current state but *why* decisions were made:
+
+- **What we've tried** — dated log of experiments, results, and whether the change was kept or reverted
+- **Signal filtering policy** — which result signals to act on vs. treat as noise, preventing "slop generation" (chasing metrics that don't represent real improvement)
+- **Staged autonomy level** — 1 = human approves every change, 2 = human reviews batches, 3 = agent fully autonomous with daily review, plus the criteria for advancing a stage
+- **What we've learned** — non-obvious findings from prior iterations
+
+On first run, create a skeleton `recipe.md` with the initial signal-filtering policy and autonomy stage; the agent updates it after each batch of experiments. The inner loop (`/kiro:autoresearch` itself) optimizes `train.py`; the outer loop (`recipe.md` evolution) optimizes how the inner loop operates. (Source: Gavrilescu (2025) via Latent Space — "Autoresearch: The Feedback Loop Behind Self-Improving Agents".)
 
 ### CLAUDE.md additions
 
@@ -1222,4 +1247,4 @@ claude --dangerously-skip-permissions --print "..." 2>/dev/null &
 
 The Stop hook should only contain **passive checks** (e.g., nudging housekeeping when observations exceed a threshold). See `.claude/hooks/stop-hook.sh` for the reference implementation.
 
-_Last synced: 2026-07-08_
+_Last synced: 2026-07-28_
