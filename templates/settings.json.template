@@ -143,6 +143,15 @@
             "command": "bash .claude/hooks/tool-failure-recall.sh"
           }
         ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/git-destructive-guard-hook.sh"
+          }
+        ]
       }
     ],
     "PostToolUse": [

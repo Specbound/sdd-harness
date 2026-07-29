@@ -22,6 +22,7 @@ Utility scripts used by the harness. All Python scripts use stdlib only (no virt
 | `skill-curator-runner.sh` | Runs `/kiro:skill-extract` to curate and augment skills from session learnings. |
 | `tool-failure-review-runner.sh` | Promotes recurring tool failures from `.claude/memory/tool-failures.jsonl` into `ERRORS.md` + memory. |
 | `security-report-runner.sh` | Daily security scan: runs the security-report prompt headlessly, writes report to `.claude/reports/security/`. Runs at most once per day (`SECURITY_REPORT_GAP_DAYS`). Opt out with `SDD_SKIP_SECURITY_REPORT=1`. |
+| `routines/code-review-learning-runner.sh` | Self-improving code-review learning sweep: compares pr-babysit's logged reviews (`.claude/memory/pr-reviews/pr-<n>.md`) against real human review activity on merged PRs, promotes low-risk findings (conventions, dismissed-flag patterns) straight into memory, and reports higher-risk methodology changes to `docs/code-review-learning-report.md` for human approval. No-ops unless there's a merged+logged PR not yet processed; self-paces to weekly (`CODE_REVIEW_LEARNING_GAP_DAYS`, default 7) once there is. Applies to any repo. Wired into `daily-orchestrator.sh` `run_one()`. Opt out with `SDD_SKIP_CODE_REVIEW_LEARNING=1`. |
 | `routines/startup-payload-audit.sh` | Deterministic (no LLM) daily audit of the fixed per-session startup token tax (`CLAUDE.md` + `@imports` + `.claude/rules/*` + auto-loaded `MEMORY.md`). Writes `.claude/reports/context/startup-payload.json`, read by the dashboard's Context Health tab. Self-paces to daily via its own state-file guard. Wired into `daily-orchestrator.sh` `run_one()`. Opt out with `SDD_SKIP_STARTUP_AUDIT=1`. |
 
 ## Session Intelligence
@@ -70,5 +71,6 @@ Utility scripts used by the harness. All Python scripts use stdlib only (no virt
 | `macro-eval-prompt.md` | Prompt for macro evaluation sweeps. |
 | `security-report-prompt.md` | Prompt for the security report runner. |
 | `skill-curator-prompt.md` | Prompt for skill curation runs. |
+| `code-review-learning-prompt.md` | Prompt for the self-improving code-review learning sweep. |
 
 _Last synced: 2026-07-29
