@@ -32,6 +32,7 @@ Hook output is injected into Claude's context as system messages — Claude read
 - `[SDD-MAINTENANCE-DUE]` — injected reminder to run `/kiro:daily-maintenance` (no local runner case)
 - `[CLAUDEMD-REVIEW-DUE]` — injected reminder to run `/claudemd-review` (>2 weeks stale); the command is the per-repo global command `commands/global/claudemd-review.md`, which audits the current repo's `CLAUDE.md`/`AGENTS.md`, writes `.claude/memory/claudemd-review-report.md`, and stamps `.claude/memory/.last-claudemd-review`
 - `[STEERING-BOOTSTRAP-DUE]` — injected prompt to run `/kiro:steering` (fresh install, no steering files)
+- `[SESSION-HANDOFF-AVAILABLE]` — if `.claude/memory/handoff/latest.md` exists and is <24h old, injects a reminder to silently read it before responding to the user's first message. The file is written by `scripts/session/write_handoff.py`, fired from `compaction-discipline-hook.sh` (PreCompact) and `gbrain-agent-spawn.sh` (PreToolUse Agent) — this hook only surfaces it, it never writes it.
 
 **Respects:** `SDD_PROFILE=minimal` env var — skips entirely in minimal profile.
 
@@ -76,6 +77,17 @@ Hook output is injected into Claude's context as system messages — Claude read
 **Why it's needed:** Security considerations (XSS, injection, input sanitization, prompt injection in agent-fed forms) are easiest to address before the first file is written. A question-only prompt like "how does React work?" does not trigger the nudge — only prompts with build intent.
 
 **Output:** `╔══ Security Nudge ══╗` banner with the instruction to invoke `Skill("secure-agent-design")`. When the nudge fires, also appends a `[frontend-security-nudge]` observation to `.claude/memory/observations.md` (if present). Silent on non-matching prompts.
+
+---
+
+### `pr-mention-nudge.sh`
+**Event:** `UserPromptSubmit` — **Matcher:** _(all prompts, keyword-gated)_
+
+**Purpose:** Detects when the user's prompt mentions opening/creating/merging a PR (`\bpr\b`, `pull request`, `open a pr`, `create a pr`, `merge this`) and, if inside a git work tree, calls the shared `scripts/pr/detect_base_and_create.sh` to auto-detect the branch's true base and open a draft PR if one doesn't already exist.
+
+**Why it's needed:** This is one of two trigger points (the other is `pr-auto-create-hook.sh` after a successful `git push`) for the PR-babysitting automation — catching the case where the user asks for a PR before pushing, or in a session where the push already happened earlier.
+
+**Output:** `[PR-AUTO-CREATED] PR #N opened against <base> (auto-detected base)` on success, or `[PR-AUTO-CREATED] PR #N already open...` if one exists. Silent (exit 0) on non-matching prompts, outside a git tree, or if `gh` is not installed.
 
 ---
 
@@ -207,6 +219,19 @@ Hook output is injected into Claude's context as system messages — Claude read
 
 ---
 
+### `pr-auto-create-hook.sh`
+**Event:** `PostToolUse` — **Matcher:** `Bash`
+
+**Purpose:** After a Bash command matching `git push` (and not a `--force`/`-f` push) succeeds, calls the shared `scripts/pr/detect_base_and_create.sh` to open a draft PR. Parses `tool_input.command` + `tool_response` from stdin via inline Python; bails silently if the push wasn't a plain non-force push, or if the response contains a failure signature (`rejected`, `failed to push`, `non-fast-forward`, `error:`, `could not read`, `permission denied`).
+
+**Why it's needed:** Pairs with `pr-mention-nudge.sh` as the second trigger point for PR-babysitting automation — catches the common case of pushing a branch and expecting a PR to exist, without requiring the user to ask. Made possible by the `templates/settings.json.template` permission change that narrowed the deny rule from blanket `Bash(git push*)` to only force-push variants, so this hook can now observe successful ordinary pushes.
+
+**Output:** `[PR-AUTO-CREATED] PR #N opened against <base> (auto-detected base)` on success, or `[PR-AUTO-CREATED] PR #N already open...` if one exists. Silent (exit 0) on force pushes, failed pushes, outside a git tree, or if `gh` is not installed.
+
+**Location:** ships in `hooks/claude/`, copied to each project's `.claude/hooks/`; wired via `PostToolUse` matcher `Bash` in `templates/settings.json.template`, alongside `revert-detect-hook.sh` / `setup-buffer-hook.sh`.
+
+---
+
 ### `tool-failure-capture.sh`
 **Event:** `PostToolUseFailure` — **Matcher:** `Bash|mcp__.*`
 
@@ -234,16 +259,17 @@ Hook output is injected into Claude's context as system messages — Claude read
 ### `gbrain-agent-spawn.sh`
 **Event:** `PreToolUse` — **Matcher:** `Agent`
 
-**Purpose:** Injects model-tier selection and background-routing guidance before every subagent spawn. Part of the GBrain patterns suite.
+**Purpose:** Injects model-tier selection and background-routing guidance before every subagent spawn. Part of the GBrain patterns suite. Also writes a deterministic session-handoff snapshot (`scripts/session/write_handoff.py --trigger agent-spawn`) of the *main* session's state to `.claude/memory/handoff/latest.md` before printing the rules banner — hooks can't inject content into the Agent tool's own prompt param, so this is the honest mechanism: snapshot to disk, then nudge the caller (via the banner's "Session handoff" note) to pull relevant parts into the subagent's prompt.
 
 **Rules enforced:**
 - **Model tiers:** Haiku for classification/validation, Sonnet for generation/synthesis (default), Opus only for high-stakes deep reasoning. Subagents should default to Sonnet — latency compounds in loops and Opus rarely adds value there.
 - **Background routing:** Inline unless a pain signal fires (gateway restart, dropped state, >3 parallel agents, >5 min expected runtime, user frustration).
 - **Memory-first brief:** Run `mcp__plugin_claude-mem_mcp-search__search` before writing the agent prompt, to avoid re-discovering known context.
+- **Session handoff:** A fresh snapshot of the main session's state was just written to `.claude/memory/handoff/latest.md` — for a background, long-running, or parallel agent, pull the relevant parts into its prompt instead of re-deriving them.
 
 **Why it's needed:** Without guidance, the default is to pick whatever model feels right (often Opus) and always run inline. Both choices compound token cost and latency across multi-agent sessions without a commensurate quality benefit.
 
-**Output:** GBrain protocol banner injected before the Agent tool executes.
+**Output / side effect:** GBrain protocol banner injected before the Agent tool executes. Silently writes/overwrites `.claude/memory/handoff/latest.md` (best-effort — failures are swallowed with `|| true`).
 
 ---
 
@@ -296,7 +322,7 @@ Hook output is injected into Claude's context as system messages — Claude read
 ### `compaction-discipline-hook.sh`
 **Event:** `PreCompact` — **Matcher:** _(all compactions)_
 
-**Purpose:** Injects boundary-timing, state-preservation, and domain-aware compression principles before every context compaction.
+**Purpose:** Injects boundary-timing, state-preservation, and domain-aware compression principles before every context compaction. After printing the rules banner, also fires a deterministic (non-LLM) session-handoff snapshot (`scripts/session/write_handoff.py --trigger precompact`) to `.claude/memory/handoff/latest.md`, so working state survives even if the in-context summary drifts.
 
 **Rules enforced:**
 - **Timing:** Compact at workflow boundaries (end of phase, task completion) — not arbitrary message counts.
@@ -307,7 +333,7 @@ Hook output is injected into Claude's context as system messages — Claude read
 
 **Why it's needed:** Default compaction regenerates the summary from scratch on each pass. Research on consolidation loop failure modes ([faulty-memory](https://dylanzsz.github.io/faulty-memory/)) shows that full regeneration causes LLM sampling drift — each pass shifts content toward the model's prior, away from ground truth. Anchored iterative summarization (merge, not regenerate) is the mitigation. Domain-specific strategy selection is grounded in [Redis context pruning research](https://redis.io/blog/context-pruning-llm-tokens/) showing chunk-level pruning outperforms token-level for code (preserves syntactic validity), while sentence-level is better for prose.
 
-**Output:** Compaction discipline banner injected before compaction executes.
+**Output / side effect:** Compaction discipline banner injected before compaction executes. Silently writes/overwrites `.claude/memory/handoff/latest.md` (best-effort — failures are swallowed with `|| true`).
 
 ---
 
@@ -461,6 +487,7 @@ Stop           → stop-hook.sh
 Stop           (all)                                        → address-check-hook.sh
 UserPromptSubmit (all, keyword-gated)                       → frontend-security-nudge.sh
 UserPromptSubmit (all, keyword-gated)                       → doc-parse-nudge.sh
+UserPromptSubmit (all, keyword-gated)                       → pr-mention-nudge.sh
 PreToolUse     Bash                                          → rtk hook claude  [global, ~/.claude/settings.json — token compression]
 PreToolUse     Write|Edit                                    → memory-discipline-hook.sh
 PreToolUse     Write|Edit                                    → protected-path-hook.sh
@@ -477,6 +504,7 @@ PostToolUse    Skill                                         → skill-usage-tra
 PostToolUse    Bash                                          → action-capture.sh
 PostToolUse    Bash                                          → revert-detect-hook.sh
 PostToolUse    Bash                                          → setup-buffer-hook.sh
+PostToolUse    Bash                                          → pr-auto-create-hook.sh
 PostToolUse    Read                                          → lean-ctx-nudge-hook.sh
 PreToolUse     Bash|mcp__.*                                  → tool-failure-recall.sh
 PostToolUseFailure Bash|mcp__.*                              → tool-failure-capture.sh
@@ -494,5 +522,5 @@ The `tool-failure-*` pair plus the `tool-failure-review` routine form the **tool
 3. Document it in this file (the `hook-added-notify.sh` hook will remind you if you forget).
 4. Update the Wiring Reference table above.
 
-_Last synced: 2026-07-28
+_Last synced: 2026-07-29
 

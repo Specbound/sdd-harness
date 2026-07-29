@@ -703,7 +703,7 @@ Install once with Homebrew (`brew install rtk && rtk init -g`) and the global ho
 
 ### Session Start Hook (`hooks/claude/session-start-hook.sh`)
 
-Runs when a Claude Code session starts (SessionStart). Two modes: (1) if no local `daily-runner.sh` is installed — checks if today's `[judge]` sentinel is absent from `observations.md` and asks Claude to run `/kiro:daily-maintenance`; (2) if `daily-runner.sh` is installed and stale (>24h or never ran) — fires it in the background via `nohup` silently, without consuming session context. Also checks if the per-repo CLAUDE.md review is >2 weeks stale (`.claude/memory/.last-claudemd-review`) and asks Claude to run `/claudemd-review` if so. Additionally runs a background headroom memory sync (`scripts/utils/sync-memories-to-headroom.py`) when headroom is installed — bidirectional: harness memories to headroom SQLite and new headroom extractions to MEMORY.md.
+Runs when a Claude Code session starts (SessionStart). Two modes: (1) if no local `daily-runner.sh` is installed — checks if today's `[judge]` sentinel is absent from `observations.md` and asks Claude to run `/kiro:daily-maintenance`; (2) if `daily-runner.sh` is installed and stale (>24h or never ran) — fires it in the background via `nohup` silently, without consuming session context. Also checks if the per-repo CLAUDE.md review is >2 weeks stale (`.claude/memory/.last-claudemd-review`) and asks Claude to run `/claudemd-review` if so. Also surfaces a fresh (<24h) session-handoff snapshot at `.claude/memory/handoff/latest.md` — written by `scripts/session/write_handoff.py` from `compaction-discipline-hook.sh` and `gbrain-agent-spawn.sh` — with a reminder to read it before responding. Additionally runs a background headroom memory sync (`scripts/utils/sync-memories-to-headroom.py`) when headroom is installed — bidirectional: harness memories to headroom SQLite and new headroom extractions to MEMORY.md.
 
 ### Context Priming Hook (`hooks/claude/prompt-hook.sh`)
 
@@ -954,4 +954,4 @@ The Model Cost section reads session data from `~/.claude/projects/*/`. Pricing 
 
 Private repository. Contact the maintainer for access.
 
-_Last synced: 2026-07-28_
+_Last synced: 2026-07-29_

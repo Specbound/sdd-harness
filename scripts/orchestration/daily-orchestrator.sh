@@ -109,6 +109,18 @@ run_one() {
     echo "$ts $repo tool-failure-review exit=$tf_exit duration=$(($(date +%s) - tf_start))s" >> "$LOG_FILE"
   fi
 
+  # Code-review learning sweep — compares pr-babysit's logged reviews against real
+  # human review activity on merged PRs, promotes low-risk findings into memory, and
+  # reports higher-risk methodology changes for human approval. Cheaply no-ops unless
+  # there's a merged+logged PR not yet processed; self-paces to weekly (MIN_GAP_DAYS=7)
+  # once there is. Applies to any repo. Opt out with SDD_SKIP_CODE_REVIEW_LEARNING=1.
+  if [ "${SDD_SKIP_CODE_REVIEW_LEARNING:-0}" != "1" ] && [ -f "$repo/.claude/scripts/routines/code-review-learning-runner.sh" ]; then
+    local crl_start=$(date +%s)
+    (cd "$repo" && bash .claude/scripts/routines/code-review-learning-runner.sh) > /dev/null 2>&1
+    local crl_exit=$?
+    echo "$ts $repo code-review-learning exit=$crl_exit duration=$(($(date +%s) - crl_start))s" >> "$LOG_FILE"
+  fi
+
   # Security report — daily static security scan of recent git changes. Writes a
   # safety report to .claude/reports/security/<date>-security-report.md. Self-paces
   # to daily (MIN_GAP_DAYS=1). Applies to every repo.

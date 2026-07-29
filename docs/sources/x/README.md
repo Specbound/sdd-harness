@@ -304,3 +304,20 @@ See also: [git/README.md](../git/README.md) — companion repo https://github.co
 
 **What we added:**
 - Skill augmentation: `skills/model-tiers/SKILL.md` — "Model vs. Effort — Which Dial to Turn" diagnostic (not-knowing → bump the model; not-trying → raise effort; fix context first).
+
+---
+
+## Husband's scope redirect — automate session-handoff, PR-babysit, self-improving review before touching the GitHub-repo listicle (Pasted text)
+**Added:** 2026-07-29 | **Source:** direct instruction, not a URL
+
+**What it's about:** While reviewing a skill-extraction proposal for a list of 10 external GitHub repos, Husband redirected scope with a 4-point directive: (1) session handoff between agents/compaction must be fully automatic, never manually invoked — build it as a hook; (2) PR babysitting must auto-open a PR against the real base branch (any base, not just main/dev) on push or on PR mention, then run automatically; (3) automatic PR creation now gives a real feedback signal, so build the previously-shelved self-improving code review as a hook/scheduled routine that adjusts memory or methodology; (4) only after 1-3 are built and tested, fan out 10 sub-agents with `skill-extraction` over the original 10-repo listicle.
+
+**What we added:**
+- New: `scripts/session/write_handoff.py` — parses the live JSONL transcript into a structured markdown handoff brief.
+- Hook augmentation: `hooks/claude/compaction-discipline-hook.sh` and `hooks/claude/gbrain-agent-spawn.sh` — both now write a fresh handoff snapshot (`--trigger precompact` / `--trigger agent-spawn`) before their existing soft-nudge text.
+- Hook augmentation: `hooks/claude/session-start-hook.sh` — surfaces a `[SESSION-HANDOFF-AVAILABLE]` sentinel when a <24h-old handoff snapshot exists, closing the write→read loop with no manual step.
+- New: `scripts/pr/detect_base_and_create.sh` — auto-detects the real fork-point base branch (most-recent merge-base wins, no hardcoded branch list) and idempotently opens a draft PR via `gh`.
+- New hooks: `hooks/claude/pr-auto-create-hook.sh` (`PostToolUse:Bash`, fires on a successful plain `git push`) and `hooks/claude/pr-mention-nudge.sh` (`UserPromptSubmit`, fires when a PR is mentioned in conversation).
+- Config change: `templates/settings.json.template` — allow plain `git push`, deny only `--force`/`-f`, so the push-triggered hook can actually observe a successful push.
+- New: `scripts/routines/code-review-learning-prompt.md` + `scripts/routines/code-review-learning-runner.sh` — weekly-paced sweep comparing pr-babysit's logged reviews against real human PR review activity; writes low-risk findings straight to `.claude/memory/`, reports higher-risk methodology changes for human approval in `docs/code-review-learning-report.md`. Wired into `scripts/orchestration/daily-orchestrator.sh`.
+- Deferred: item 4 (the 10-repo listicle fan-out) — not started; will get its own `docs/sources/git/README.md` entries per repo once run.
