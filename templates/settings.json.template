@@ -19,7 +19,8 @@
     ],
     "deny": [
       "Bash(rm -rf*)",
-      "Bash(git push*)",
+      "Bash(git push --force*)",
+      "Bash(git push -f*)",
       "Edit(.env*)",
       "Edit(secrets/*)",
       "Read(secrets/*)"
@@ -48,6 +49,10 @@
           {
             "type": "command",
             "command": "bash .claude/hooks/frontend-security-nudge.sh"
+          },
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/pr-mention-nudge.sh"
           }
         ]
       }
@@ -181,6 +186,10 @@
           {
             "type": "command",
             "command": "bash .claude/hooks/setup-buffer-hook.sh"
+          },
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/pr-auto-create-hook.sh"
           }
         ]
       },
