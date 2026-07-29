@@ -94,6 +94,23 @@ This is the **review** stage of the tool-failure-memory loop (capture → recall
 
 ---
 
+### Code-Review Learning Sweep
+**Runner:** `.claude/scripts/routines/code-review-learning-runner.sh`
+**Prompt:** `.claude/scripts/routines/code-review-learning-prompt.md`
+**Cadence:** Weekly (`CODE_REVIEW_LEARNING_GAP_DAYS`, default 7; force with `CODE_REVIEW_LEARNING_FORCE=1`)
+**Scope:** Every registered repo (no-ops unless there's a merged PR with a pr-babysit review log not yet processed)
+
+**What it does:**
+- Discovers merged PRs with a logged `.claude/memory/pr-reviews/pr-<n>.md` (written by pr-babysit before merge) not yet processed, via `gh pr view --json state`
+- For each: diffs the logged review against real human review activity (`gh api .../comments`, `.../reviews`) to find **missed** flags, **false positives**, or **convention gaps**
+- **Low-risk** findings (team conventions, dismissed-flag patterns) are written directly into `.claude/memory/` as `project`/`feedback` facts
+- **Higher-risk** findings (changes to the `code-reviewer` skill's methodology) are never auto-applied — only reported to `docs/code-review-learning-report.md` for human approval
+- Race-safe via `mkdir` lock; marks processed PRs in `.claude/memory/.code-review-learning-processed` only on a successful run
+
+**Opt-out:** `SDD_SKIP_CODE_REVIEW_LEARNING=1` env var.
+
+---
+
 ### Weekly Skill-Curator Sweep
 **Runner:** `.claude/scripts/skill-curator-runner.sh`
 **Prompt:** `.claude/scripts/skill-curator-prompt.md`
@@ -164,4 +181,4 @@ The dashboard's **Scheduled Tasks** tab shows live status for each task: schedul
 
 ---
 
-_Last synced: 2026-07-08_
+_Last synced: 2026-07-29_

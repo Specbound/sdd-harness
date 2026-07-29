@@ -57,3 +57,6 @@ METHOD — use anchored iterative summarization:
   Rationale: full regeneration compounds LLM sampling drift — each pass moves content
   toward the model's prior, not ground truth (faulty memory / consolidation loop pattern).
 RULES
+
+# Deterministic handoff snapshot — never rely on the in-context summary alone.
+python3 .claude/scripts/session/write_handoff.py --trigger precompact 2>/dev/null || true

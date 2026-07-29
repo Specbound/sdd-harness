@@ -95,6 +95,18 @@ if [ -f "$STEERING_SENTINEL" ] && ! ls .claude/steering/*.md >/dev/null 2>&1; th
   echo "After steering completes, delete the sentinel: rm $STEERING_SENTINEL"
 fi
 
+# --- Session handoff auto-surface ---
+# write_handoff.py fires on PreCompact/PreToolUse(Agent) and writes here.
+# Surface it automatically if fresh (<24h) so the human never has to ask for it.
+HANDOFF_FILE=".claude/memory/handoff/latest.md"
+if [ -f "$HANDOFF_FILE" ]; then
+  age_secs=$(( $(date +%s) - $(date -r "$HANDOFF_FILE" +%s 2>/dev/null || echo 0) ))
+  if [ "$age_secs" -lt 86400 ]; then
+    echo "[SESSION-HANDOFF-AVAILABLE] A handoff snapshot from the prior session/compaction/subagent-spawn exists."
+    echo "Silently read $HANDOFF_FILE before responding to the user's first message."
+  fi
+fi
+
 # --- Prompt Quality Baseline ---
 # Shows rolling average across last 14 agent spawns so Claude knows its weak dimensions.
 PQ_LOG="$HOME/.code-insights/pq-log.jsonl"
