@@ -4,6 +4,22 @@ Approaches that took 2+ attempts — what failed, what worked, and why.
 
 ---
 
+## 2026-07-28 — post-commit hook self-triggered a 9-commit "docs: auto-sync" recursion loop
+
+**Symptom:** `hooks/git/post-commit` spammed 9 near-identical `docs: auto-sync (...)` commits in ~90 minutes with no human action between them.
+
+**Root cause (two layered bugs, found in two separate fix commits 6 minutes apart):**
+1. `HARNESS_CHANGED` detection matched `.md` files under `skills/` and `hooks/`. The hook's own doc-sync step commits its `.md` edits as `docs: auto-sync (...)`, which itself touches `.md` files under those watched dirs — so each auto-sync commit re-fired the same doc-sync agent, forever. No guard existed to recognize "the commit that just landed was one of ours."
+2. Once the recursion guard (below) went in, a second bug surfaced: two commits landing in quick succession each spawned their own detached doc-sync run, and the two runs raced on the git index, dropping commits.
+
+**Fix:**
+1. (fc50068) Added a self-commit recursion guard at the top of `hooks/git/post-commit`: bail immediately (`exit 0`) when `git log -1 --format=%s` is `docs: auto-sync*`. Also excluded `.claude/` from the doc-sync `find` so it stops editing the untracked install mirror.
+2. (1b0e617) Added an atomic `mkdir`-based lock around the commit/push section (portable — no `flock` on macOS) so a second concurrent run skips instead of racing; a lock left stale >30 min is stolen.
+
+**Lesson:** Any git hook that both *watches* a set of paths and *writes back into those same paths* needs an explicit self-commit recursion guard from day one — "only .md changed" is not a sufficient stop condition if the hook's own output is .md. Test hooks like this by committing twice in rapid succession, not just once, to catch concurrent-run races.
+
+**Process note:** This incident met the project's own "2+ attempts" ERRORS.md logging rule (two separate fix commits) but was not logged until this reflect pass, one day later. See the `git-hook-self-trigger-guard` pattern promoted in `.claude/memory/meta/patterns.md` for the reusable rule; `[memory-gap]` entry in `.claude/memory/observations.md` for the logging-lag itself.
+
 ## 2026-07-12 — launchd daily-orchestrator never ran (stale plist path + macOS TCC)
 
 **Symptom:** Dashboard Automation tab: Drift Review / Skill-Curator "never" ran; Daily Maintenance last real run ~May 27 (46 days). `launchctl list com.sdd.daily-orchestrator` showed `LastExitStatus = 32512` (exit 127); `orchestrator.stderr.log` was a wall of "No such file or directory".

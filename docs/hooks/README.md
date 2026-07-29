@@ -436,6 +436,25 @@ Hook output is injected into Claude's context as system messages — Claude read
 
 ---
 
+### `git-destructive-guard-hook.sh`
+**Event:** `PreToolUse` — **Matcher:** `Bash`
+
+**Purpose:** Hard-blocks destructive git/gh operations, independent of the declarative allow/deny list in `settings.json`. Inspects the literal Bash command text and exits 2 (hard block — the tool call is prevented, not just warned) on any match.
+
+**Patterns blocked:**
+- Any force-push variant: `--force`, `--force-with-lease`, `--force-if-includes`, `-f`
+- Remote branch deletion via push: `--delete`, `--mirror`, or `git push origin :branch` (empty refspec)
+- Local force branch delete: `git branch -D` / `--delete --force`
+- Repo deletion: `gh repo delete`
+
+**Why it is needed:** The declarative deny-list in `settings.json` was proven unreliable in a real session — a destructive `git push --force` executed successfully despite a matching deny entry with no competing allow rule. The existing `protected-path-hook.sh` is a soft nudge only (always exits 0, never blocks). GitHub server-side branch protection/rulesets were checked and are unavailable on private repos without a Pro/Team upgrade (403 on both endpoints), so this hook is the enforced mitigation instead — the one place in the harness that actually refuses to run a destructive command rather than just warning about it.
+
+**Output:** `BLOCKED: destructive git/gh operation refused` banner to stderr naming the matched pattern and the offending command, plus a note to ask the user to run it manually if genuinely needed. Exit 2 — the tool call never executes.
+
+**Location:** ships in `hooks/claude/git-destructive-guard-hook.sh`, wired via `PreToolUse` matcher `Bash` in `templates/settings.json.template`.
+
+---
+
 ### `skill-validate-hook.sh`
 **Event:** `PreToolUse` — **Matcher:** `Write|Edit`
 
@@ -491,6 +510,7 @@ UserPromptSubmit (all, keyword-gated)                       → pr-mention-nudge
 PreToolUse     Bash                                          → rtk hook claude  [global, ~/.claude/settings.json — token compression]
 PreToolUse     Write|Edit                                    → memory-discipline-hook.sh
 PreToolUse     Write|Edit                                    → protected-path-hook.sh
+PreToolUse     Bash                                          → git-destructive-guard-hook.sh  [hard block, exit 2]
 PreToolUse     Write|Edit                                    → skill-validate-hook.sh
 PreToolUse     Agent                                         → gbrain-agent-spawn.sh
 PreToolUse     mcp__raindrop__                               → raindrop-best-practices.sh
@@ -522,5 +542,5 @@ The `tool-failure-*` pair plus the `tool-failure-review` routine form the **tool
 3. Document it in this file (the `hook-added-notify.sh` hook will remind you if you forget).
 4. Update the Wiring Reference table above.
 
-_Last synced: 2026-07-29
+_Last synced: 2026-07-29_
 
