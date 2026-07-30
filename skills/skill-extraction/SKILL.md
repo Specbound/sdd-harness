@@ -141,8 +141,9 @@ Before including any candidate in the proposal, apply the harness critic test. F
 3. **Maintenance cost justified?** Will the harness be measurably better with this? Or is this a "nice to have" that adds noise? → If uncertain, skip.
 4. **Better as augmentation?** Could this be a single added section in an existing artifact rather than its own file? → Augment, don't create.
 5. **Automation answer honest?** If the verdict is "not automatable", is that genuinely true — or just harder to wire? → Be honest.
+6. **Domain-saturation check?** Does this target a domain where models already perform well (generic software-engineering patterns, boilerplate), or a domain where models are demonstrably weak (compliance-heavy, high-stakes-precision, niche-domain reasoning)? → Model-weak domains earn far larger accuracy lift per skill invested (SkillsBench, arXiv 2602.12670: 4.5pt lift in software-eng vs 51.9pt in healthcare — yet 38% of public skills still target the crowded, low-yield software-eng trade). A candidate that only adds another generic software-eng skill should clear a higher bar than one targeting an underserved domain; note this trade-off explicitly in the proposal rather than defaulting to "more software-eng tooling."
 
-**Only candidates that survive all five checks (or earn passage via a `better-call` verdict) reach the proposal.** A proposal with 1–2 high-value items is better than one with 7 mediocre ones.
+**Only candidates that survive all six checks (or earn passage via a `better-call` verdict) reach the proposal.** A proposal with 1–2 high-value items is better than one with 7 mediocre ones.
 
 #### Step 3f: Translate `better-call` Verdict into Proposal Path
 
@@ -248,7 +249,7 @@ Before marking any new skill complete, score it against four quality dimensions:
 |---|---|
 | **Task relevance** | Does this skill address a real, repeated task in this user's context — not hypothetical? |
 | **Operational validity** | Are all steps executable using Claude Code's actual tools? No dead references? |
-| **Content quality** | Clear frontmatter, named workflow phases, actionable steps — not just narration?<br>• Name in gerund form (e.g. `processing-pdfs`, not `pdf-tools`)<br>• Description in third person ("Processes X"/"Does Y") — never first/second person<br>• Reference files stay one level deep — no reference file links to another reference file<br>• Eval-driven: ≥3 evaluation scenarios + a no-skill baseline established before the docs were finalized |
+| **Content quality** | Clear frontmatter, named workflow phases, actionable steps — not just narration?<br>• Name in gerund form (e.g. `processing-pdfs`, not `pdf-tools`)<br>• Description in third person ("Processes X"/"Does Y") — never first/second person<br>• Reference files stay one level deep — no reference file links to another reference file<br>• Eval-driven: `Skill("skill-eval-gate")` invoked and passed — ≥3 scenarios, no-skill baseline, measured pass-rate lift, not self-assessed confidence |
 | **Compression** | SKILL.md ≤5,000 words, description ≤200 chars, verbose content in `resources/`?<br>• Any reference file over 100 lines has a table of contents |
 
 If any dimension fails, fix before proceeding:
@@ -283,6 +284,21 @@ Examples that warrant a companion verify skill:
 If YES → invoke `Skill("verification-skill-authoring")` to create a companion `<domain>-verify` skill before proceeding to Phase 6.
 
 If NO (pure logic, already covered by CI, or the skill itself IS a verification skill) → skip and proceed.
+
+### Phase 5e: Documentation Sweep (Mandatory — before Phase 6)
+
+Every artifact touched in Phase 5 has a doc that describes it somewhere else in the harness. Updating the artifact but not its doc leaves the harness lying to itself. Before moving to Phase 6, check each row below that applies to what you touched — not just "did I create the file", but "does every doc that describes this file still match it":
+
+| If Phase 5 touched... | Also check/update |
+|---|---|
+| Any hook (`hooks/*.sh` or `.claude/hooks/*.sh`) | `docs/hooks/README.md` — its per-hook section (Purpose numbered list, Output/side-effect bullets, event/matcher line). A hook that gained a new check needs a new numbered item, not just a bumped file. |
+| Any script (`scripts/**`) | `scripts/README.md` — its table row (what it does, who invokes it, with what trigger/args) |
+| A new or changed cron/routine cadence | The routine's own command doc (`commands/kiro/*.md`) + `scripts/daily-orchestrator.sh` wiring comment, if present |
+| `templates/settings.json.template` | Confirm the registration was already there or add it — do not silently duplicate |
+| Any skill (new or augmented) | The skill's own SKILL.md frontmatter/description if behavior changed |
+| Anything with a scheduled trigger (`CronCreate`/`ScheduleWakeup`/RemoteTrigger) | Whatever doc lists the harness's scheduled jobs, so the schedule stays discoverable without grepping cron state |
+
+**Do not treat this as optional or "if I remember."** A doc describing stale behavior is worse than no doc — it actively misleads the next session (human or Claude) that trusts it. If a check in the table doesn't apply, say so explicitly rather than skipping silently (e.g. "no hook touched, table rows 1/3/6 N/A").
 
 ### Phase 6: Log to the Sources Index (DO THIS BEFORE SHOWING THE SUMMARY)
 

@@ -1,6 +1,6 @@
 # Agent Tracing — Invocation Log for Observability
 
-Commands that invoke sub-agents should append a trace entry to the memory trace log. This data feeds the evolve agent for evidence-based harness improvements.
+Every `Agent` tool call gets a trace entry, written automatically by `agent-trace-hook.sh` (PostToolUse, matcher `Agent`) — this is now the deterministic default; commands may still append their own richer entry (with `alignment`/`structural` fields the hook doesn't populate) if they can score the outcome. This data feeds the evolve agent for evidence-based harness improvements.
 
 ## Trace File
 
@@ -37,7 +37,7 @@ The last two fields are optional for backward compatibility — older entries wi
 
 - Append only — the trace log is a sequential record
 - One entry per agent invocation (not per sub-step within an agent)
-- The orchestrating command (not the agent itself) writes the trace entry
+- `agent-trace-hook.sh` writes one automatically for every agent spawn (5 fields, no `alignment`/`structural`); an orchestrating command may additionally append a richer entry when it can score the outcome — the agent itself never writes its own entry
 - If the trace file exceeds 200 lines, the housekeeping agent archives older entries to `glacier/`
 
 ## How Evolve Uses This

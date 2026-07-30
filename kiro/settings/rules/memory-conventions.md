@@ -29,6 +29,12 @@ Rules governing `.claude/memory/` — the persistent cross-session memory system
 
 **Sections**: Active (open items), Completed (done items, archived by housekeeping).
 
+### Learnings (append-only JSONL)
+```json
+{"date": "YYYY-MM-DD", "situation": "[tag] excerpt of the triggering observation", "insight": "excerpt", "applies_when": "condition describing when this learning is relevant"}
+```
+One JSON object per line. Populated by `reflect-agent` Step 6 (curated) or, as a deterministic fallback when reflect-agent didn't run that day, by `stop-hook.sh`'s learnings promoter (ranks that day's `observations.md` entries by tag priority and appends the top one). At most one entry per calendar day from either source — the hook checks for an existing `"date": "YYYY-MM-DD"` line first and skips if reflect-agent already wrote one.
+
 ### Entities (compact registry)
 ```
 ### Entity Name
@@ -60,6 +66,7 @@ Each fact lives in ONE canonical file. Other files reference via file paths; all
 | File | Edit Mode |
 |------|-----------|
 | `observations.md` | Append-only |
+| `learnings.jsonl` | Append-only, ≤1 entry/day |
 | `action-items.md` | Add/complete/archive |
 | `entities.md` | Add/update/strikethrough |
 | `hot-memory.md` | Freely rewritten |
@@ -88,6 +95,7 @@ At session start, always read L2 of `hot-memory.md` and `meta/patterns.md` (they
 | `meta/patterns.md` | 70 lines | Condense during housekeeping |
 | `observations.md` | 50 entries | Archive oldest to `glacier/` during housekeeping |
 | `action-items.md` completed | 10 items | Archive to `glacier/` during housekeeping |
+| `learnings.jsonl` | 100 lines | Archive oldest to `glacier/` during housekeeping |
 
 ### Daily Brief Format (`daily/YYYY-MM-DD-brief.md`)
 Structured morning context assembled from `action-items.md`, `hot-memory.md`, and `entities.md`.

@@ -4,6 +4,7 @@ description: Review today's session learnings and augment SKILL.md files with ne
 tools: Read, Write, Edit, Glob, Grep, Bash
 model: haiku
 color: green
+memory: project
 ---
 
 # Skill Augment Agent

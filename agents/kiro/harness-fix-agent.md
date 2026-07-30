@@ -4,6 +4,7 @@ description: Analyzes an agent behavioral mistake and encodes a targeted prevent
 tools: Read, Edit, Glob, Grep
 model: inherit
 color: orange
+memory: project
 ---
 
 # harness-fix Agent

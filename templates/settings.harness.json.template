@@ -161,6 +161,15 @@
             "command": "bash {{HARNESS_DIR}}/.claude/hooks/gbrain-external-search.sh"
           }
         ]
+      },
+      {
+        "matcher": "Read|Bash|WebFetch|WebSearch",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash {{HARNESS_DIR}}/.claude/hooks/agent-behavior-guard.sh"
+          }
+        ]
       }
     ],
     "UserPromptSubmit": [

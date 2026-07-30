@@ -594,3 +594,38 @@ Two additional resources (OpenWiki — git, PACE — papers) are logged in their
 
 **What we added:**
 - Skill enhancement: `agent-harness-design` — one sentence cross-referencing the `/goal`-style persistent-objective pattern next to the existing Agent-Run Contract, explicitly flagged as a low-confidence/unverified source since the summary was search-derived rather than primary-source verified.
+
+---
+
+## Own the Outer Loop
+**URL:** https://addyo.substack.com/p/own-the-outer-loop | **Added:** 2026-07-30 | **Source:** Addy Osmani (Substack)
+
+**What it's about:** As agents write more code, the human's job shifts to owning the "outer loop" — accountability for shipping decisions, not code authorship. Introduces a "ladder of agency" (flag → investigate → execute → diagnose → propose → recommend → resolve) for graduated autonomy on out-of-scope discoveries, and reframes the governing question from "can we build this" to "should this exist, can we answer for it." Third Osmani piece extracted here — see "Agentic Code Review" (2026-06-17) and "Agentic Autonomy Levels" (2026-07-28, `docs/sources/x/README.md`), both of which already absorbed most of this article's accountability/contract/evidence framing.
+
+**What we added:**
+- Skill enhancement: `agent-permissions-design` — new "Ladder of Agency (Handling Out-of-Scope Discoveries)" section, mapping the 7-rung escalation model onto the skill's existing Scope Inheritance principle and Step 4 action-classification table.
+- Command enhancement: `commands/kiro/pref-elicit.md` — new Step 1.5 "Confirm This Is Worth Building" existence check before the 5-question Socratic session, plus a "Why This Exists" section in the generated `prefs.md` output. Advisory, not a gate.
+- Rejected: accountability contract (already distributed across `pr-babysit` Authority Boundary, Post-Task Convention, `action-capture.sh`); brownfield practices — worktrees/scoped-changes/time-boxing (covered by `using-git-worktrees`, `agent-permissions-design` scope inheritance, `agent-harness-design` stopping conditions); "operationalize your taste" (already the operating model of `impeccable-audit`/`clarity-gate`); distinct human roles reorg (org-design advice, not agent-actionable); decision-evidence logging for long-horizon tasks (covered by `action-capture.sh` + Agent-Run Contract evidence requirements); survey/study statistics (context only).
+
+---
+
+## Interviewing Engineers in the AI Era: Lessons from a Year of Rebuilding
+**URL:** https://www.coinbase.com/blog/interviewing-engineers-in-the-ai-era-lessons-from-a-year-of-rebuilding | **Added:** 2026-07-30 | **Source:** Coinbase Engineering Blog
+
+**What it's about:** Coinbase rebuilt its engineering interview loop for the AI-coding era around a 3-dimension "AI Fluency Rubric" (Usage / Application / Understanding Limits) and a strict "we don't add rounds" discipline — new signal must replace or merge with existing signal, never stack. The concrete evidence: two interview rounds meant to test different things showed 84% outcome correlation, meaning most of the second round's signal was already captured by the first; the fix was merging rounds, not adding a third to compensate.
+
+**What we added:**
+- Skill enhancement: `multi-agent-patterns` — new "Redundant Signal Check" subsection (after Contrarian Persona Ensemble) applying the 84%-correlation finding to review/verify pipelines: before stacking a new pass, check whether it's empirically redundant with an existing one; merge if so, only add a pass that catches a genuinely distinct failure mode.
+- Rejected: AI Fluency Rubric and the rest of the interview-loop redesign (HR/hiring process, out of scope for a coding-agent harness).
+
+---
+
+## Eval Gates for Prompts
+**URL:** https://luke.geek.nz/azure/eval-gates-for-prompts/ | **Added:** 2026-07-30 | **Source:** luke.geek.nz
+
+**What it's about:** Argues prompt edits deserve the same CI gate as code deploys — fail closed if no eval exists, evaluate only the latest version, require actionable failure messages, and warn that a slow/opaque gate invites silent bypass paths. Frames a 4-stage maturity model (no process → manual review → automated eval gate → continuous evaluation of live traffic feeding regressions back into the test set), illustrated via Microsoft Foundry's prompt-agent versioning and the `microsoft/ai-agent-evals` GitHub Action.
+
+**What we added:**
+- Skill enhancement: `skill-curator` — new "Phase 3.5: Continuous Eval-Gate Drift Check" (stage 4 of the article's maturity model): samples Raindrop traces for skills with a logged `skill-eval-gate` PASS, clusters via `active-observability` to surface failure patterns the original scenario set missed, and proposes new scenarios as an "Add eval scenario" curation action. Rides the existing weekly cron — no new schedule.
+- Skill enhancement: `skill-eval-gate` — new Safety bullets: overrides of a FAIL/INCONCLUSIVE verdict must be logged durably to `docs/skill-curation-report.md` history (not just the turn's chat summary), per the article's silent-bypass-becomes-default warning; and an explicit note that scenario sets go stale and should be revisited via the new drift check, not treated as one-time checkpoints.
+- Rejected: statistical-significance/confidence-interval scoring (article's CI action runs over hundreds of live samples; harness gate runs n=3-5 authored scenarios — stat testing at that N is theater); prompt versioning + N→N+1 promotion routing (already solved by git + `update.sh`); separate status-check vs promotion-authority roles (no analog — skill-extraction Phase 5b is already the single promotion gate); standalone new hook/script (trigger is time-based drift, not a tool event — folded into the existing weekly routine instead).

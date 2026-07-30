@@ -56,6 +56,8 @@ Hooks provide **deterministic enforcement** at known lifecycle points. Prompts p
 
 Use soft gates when the action is sometimes legitimate. Use hard blocks only for actions that should never happen under any circumstance.
 
+> **Enforcement scope:** `settings.json` `deny` rules are unreliable — even Claude's own tool calls can bypass them (proven by fa1ce38: a `git push --force` executed successfully despite a matching deny entry). Use a PreToolUse hard-block hook (exit 2) as the actual enforced mitigation. GitHub branch protection provides an independent remote-layer guard. (fa1ce38, 2026-07-30)
+
 ## Harness Hook Conventions
 
 - Hook source files live in `~/.claude/sdd-harness/hooks/` and get installed to `<project>/.claude/hooks/`
@@ -128,6 +130,30 @@ touch "$LOCK"
 Use this when a hook runs an external process (linter, test runner) that may itself trigger tool calls back into Claude.
 
 **Smell test:** If your hook writes a file or runs a command that writes a file, add the env-var sentinel. If it uses a blank matcher, switch to a specific one.
+
+**4. Commit-message sentinel + atomic mkdir lock (for native git hooks that commit into watched paths)**
+
+Patterns 1–3 assume a hook running inside a single Claude process. Native git hooks (post-commit, post-merge) are spawned fresh per commit — they inherit no env, so the env-var sentinel (pattern 1) is reset each invocation. The racy `touch` lock (pattern 3) can be stolen between `[ -f ]` and `touch`. Use both of these instead:
+
+```bash
+# Step 1 — bail if the just-landed commit is our own work (commit-message sentinel)
+case "$(git log -1 --format=%s 2>/dev/null)" in
+  "docs: auto-sync"*) exit 0 ;;   # replace with your hook's commit prefix
+esac
+
+# Step 2 — atomic lock so concurrent runs don't race the git index
+LOCKDIR="$REPO_ROOT/.git/my-hook.lock"
+# Steal locks stale for >30 min (handles crashed runs)
+[ -d "$LOCKDIR" ] && [ -n "$(find "$LOCKDIR" -maxdepth 0 -mmin +30 2>/dev/null)" ] && rmdir "$LOCKDIR" 2>/dev/null
+if ! mkdir "$LOCKDIR" 2>/dev/null; then
+  exit 0  # another run is active; skip silently
+fi
+trap 'rmdir "$LOCKDIR" 2>/dev/null' EXIT
+```
+
+`mkdir` is POSIX-atomic; `touch` is not. Use `mkdir` for all new hook locks. When retrofitting pattern 3 hooks, upgrade `touch "$LOCK"` → `mkdir "$LOCK"` and add stale-lock theft.
+
+**Worked example:** sdd-harness `post-commit` auto-sync hook (fc50068, 1b0e617, 2026-07-28). HARNESS_CHANGED matched `.md` under `skills/` and `hooks/`, so the hook's own `docs: auto-sync` commits re-fired the agents — 9 loop commits in ~40 minutes. The commit-message sentinel + mkdir lock stopped the loop.
 
 ## Session Profile Switching
 

@@ -385,8 +385,10 @@ A loop is one node in a graph. Promoting a design from loop to multi-node graph 
 2. Is there real fan-out/fan-in (multiple paths that must merge), not just linear branching?
 3. Would the routing logic benefit from being an explicit, auditable diagram rather than implicit in-loop conditionals?
 4. Do different paths through the system have DIFFERENT success criteria (not just the same criteria checked at different points)?
+5. Does this run on a repeating cadence (weekly review, nightly job), not a one-off?
+6. If it breaks, do you need to see the exact step it broke on — rather than re-running the whole loop to find out?
 
-**Score:** 0-1 yes = relabeled loop, keep it a loop. 2-3 = genuine composition, a graph may be justified. 4 = likely a real paradigm shift, graph is justified. Default bias: most tasks are still one well-scoped loop — only promote when the gut-check clears 2+.
+**Score:** 0-1 yes = relabeled loop, keep it a loop. 2-4 = genuine composition, a graph may be justified. 5-6 = likely a real paradigm shift, graph is justified. Default bias: most tasks are still one well-scoped loop — only promote when the gut-check clears 2+. When it does, promote to the `Workflow` tool's `pipeline`/`parallel`/`phase` primitives rather than hand-rolling state machine logic inside the loop.
 
 ---
 

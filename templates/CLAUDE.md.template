@@ -11,7 +11,7 @@
 
 ## Rules
 - Always plan before coding — use Plan mode for back-and-forth
-- Every feature needs an approved spec in `specs/` before implementation
+- Every feature needs an approved spec in `specs/` before implementation — prefer an executable spec (failing test suite) or reference implementation over plain markdown when the feature has clear correctness criteria; markdown stays the default for open-ended/UX work
 - Atomic commits per task (one task = one commit, code only)
 - Never skip the human review gate between spec phases
 - Never commit SDD files — harness is local only

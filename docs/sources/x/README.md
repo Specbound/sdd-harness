@@ -286,6 +286,19 @@ See also: [git/README.md](../git/README.md) — companion repo https://github.co
 
 ---
 
+## How to Write a Good Skill — SkillsBench + SkillComposer Findings (Pasted text)
+**Added:** 2026-07-30
+**Source / Author:** Pasted text — citing SkillsBench (arXiv:2602.12670) and SkillComposer (arXiv:2606.06079 skill evolution, arXiv:2606.32025 generative composition)
+
+Five measured findings on skill authoring: (1) models cannot reliably self-author skills — self-generated skills scored 1.3pts *below* no-skill baseline; (2) focused 2-3 file skills beat exhaustive ones — comprehensive skills scored below no-skill baseline too; (3) loading whole skill libraries hurts accuracy AND cost — a 196-skill dump scored 16pts worse at +23% tokens vs a selected subset; (4) skill portability is format-only, not behavioral — gains ranged 4.1–25.7pts by harness, Codex CLI often ignored skills outright; (5) skills should target model-weak domains, not crowded ones — 4.5pt lift in software-eng vs 51.9pt in healthcare, yet 38% of public skills still target the low-yield software-eng trade. Core methodology: A/B test with-vs-without the skill using automated pass/fail scoring, gate any skill change on measured pass-rate improvement rather than authorial confidence.
+
+- New skill: `skills/skill-eval-gate/SKILL.md` — operationalizes finding (1) as a mandatory gate: define ≥3 scenarios, run no-skill baseline vs with-skill treatment, score deterministically, verdict PASS/FAIL/INCONCLUSIVE blocks finalization. Invoked from `skill-creator` Phase 4b and `skill-extraction` Phase 5b.
+- Augmentation: `skill-extraction` Step 3e Value Critic Gate — added 6th check "domain-saturation" operationalizing finding (5): candidates targeting crowded software-eng patterns now face a higher bar than candidates targeting model-weak domains; note the trade-off explicitly in the proposal instead of defaulting to more software-eng tooling.
+- Findings (2) and (3) reinforce existing harness conventions already in place (module cap ≤3 in `skill-creator` Key Principles, selective skill loading over full-library dumps) — no new artifact needed, cited inline as evidence for those existing rules.
+- Rejected: standalone skill-portability tooling for finding (4) — the harness only targets Claude Code, cross-harness portability is out of scope.
+
+---
+
 ## "Own the loop / agent-as-a-judge" — @aparnadhinak
 **Added:** 2026-07-28 | **Source:** https://x.com/aparnadhinak/status/2073079029624943040 (Aparna Dhinakaran, Arize AI)
 
@@ -321,3 +334,105 @@ See also: [git/README.md](../git/README.md) — companion repo https://github.co
 - Config change: `templates/settings.json.template` — allow plain `git push`, deny only `--force`/`-f`, so the push-triggered hook can actually observe a successful push.
 - New: `scripts/routines/code-review-learning-prompt.md` + `scripts/routines/code-review-learning-runner.sh` — weekly-paced sweep comparing pr-babysit's logged reviews against real human PR review activity; writes low-risk findings straight to `.claude/memory/`, reports higher-risk methodology changes for human approval in `docs/code-review-learning-report.md`. Wired into `scripts/orchestration/daily-orchestrator.sh`.
 - Deferred: item 4 (the 10-repo listicle fan-out) — not started; will get its own `docs/sources/git/README.md` entries per repo once run.
+
+---
+
+## "Compound Engineering v3.20" update (Pasted text)
+**Added:** 2026-07-30 | **Source:** direct paste, not a URL
+
+**What it's about:** A ~July 22, 2026 update on compound-engineering practice — background CI/review babysitting on auto-created PRs (`ce-babysit-pr`), decision-cost-sized PR descriptions instead of diff-sized ones, cross-model judge panels, and a predict-then-reveal teaching mode for closing comprehension debt on agent-written diffs. Audit found most headline items (session handoff, self-improving code review, PR auto-creation) were already built two days earlier (see 2026-07-29 entry above); model-routing and judge-panel proposals were rejected as already covered by the `Agent` tool's `model` param and the `Workflow` tool's judge-panel pattern respectively.
+
+**What we added:**
+- New: `skills/pr-babysit/SKILL.md` — Monitor-tool background watch of a PR's CI/reviews after auto-create (replacing `iterate-pr`'s blocking `gh pr checks --watch` loop), plus a branch-currency check (`git merge-base` staleness) and an explicit authority boundary (fix/commit/push/reply pre-authorized; merge/rebase/force-push/CI-approval never authorized). `better-call` verdict: MERGE against incumbent `iterate-pr` — its 9-step CI/feedback triage is referenced/invoked from within `pr-babysit` rather than duplicated.
+- New: `skills/diff-teach/SKILL.md` — two-turn predict-then-reveal drill for diffs/commits/time-windows: show the change, get the user's prediction, end the turn, then name exactly what the prediction missed. `better-call` verdict: MERGE against incumbent `code-documentation-code-explain` — that skill stays the single-turn explainer; `diff-teach` is used only when the user wants to be tested, not told.
+- Hook/script augmentation: `scripts/pr/detect_base_and_create.sh` — redirected its post-create babysitting pointer from `iterate-pr` to `pr-babysit`; added a `PULL_REQUEST_TEMPLATE.md`-aware instruction to rewrite the PR body sized to reviewer decision cost (not diff size) before `gh pr edit --body`.
+- Synced both new skills to `~/.claude/skills/` for immediate use; both passed the SkillOS Quality Gate and the `agent-identity` Mode B check with no fixes needed on first pass.
+- Rejected: cross-model judge-panel skill (`ce-pov`) — hollow wrapper around the `Workflow` tool's existing judge-panel pattern. Cross-model routing skill — hollow wrapper around the `Agent` tool's `model` param. Four other candidates rejected as already covered by existing harness work (see 2026-07-29 entry) or too thin to justify a new artifact.
+
+---
+
+## Context Engineering Rules for Claude 5 Models (Pasted article)
+**Added:** 2026-07-30 | **Source:** Pasted text — Anthropic-style article on system-prompt minimization, rules-over-examples, progressive disclosure, auto-memory, and rich references
+
+**What it's about:** Guidance for context engineering under Claude 5: minimize system-prompt bulk and trust model judgement over enumerated rules; prefer interfaces/examples over long prose; disclose detail progressively rather than front-loading it; let auto-memory replace CLAUDE.md-as-memory-dump; and prefer rich, executable references (tests, reference implementations) over plain markdown specs when correctness criteria are clear.
+
+**What we added** (two augmentations — the harness already implements most of the article's advice: bi-weekly `claudemd-review` (both the harness-source `commands/global/claudemd-review.md` and the untracked, hook-triggered `~/.claude/skills/claudemd-review/SKILL.md`) covers system-prompt minimization and progressive disclosure; weekly `skill-curator` covers example-over-rule pruning; `skill-extraction`'s own SkillOS Quality Gate covers compression; and the harness's auto-memory system already exists and is lean. Only two narrow gaps survived the Value Critic Gate):
+- Audit check: **Conflicting Instructions** — added to both `commands/global/claudemd-review.md` (new rubric row, needs-update if load-bearing / minor if cosmetic) and `~/.claude/skills/claudemd-review/SKILL.md` (new Phase 2 subsection). Flags pairs of lines — within one CLAUDE.md, or across CLAUDE.md/AGENTS.md/skills — that pull in opposite directions on the same decision, forcing the model to arbitrate every time instead of acting directly. Closes a detection gap the existing rubric didn't cover (stale/over-constraining/duplication were covered; direct contradiction was not).
+- Guidance: **Rich references over plain markdown** — one line added to `templates/CLAUDE.md.template`'s spec-gate rule: prefer an executable spec (failing test suite) or reference implementation over plain markdown when the feature has clear correctness criteria; markdown stays the default for open-ended/UX work. Ships to every new/registered project.
+- Noted, not fixed: pre-existing drift where `~/.claude/skills/claudemd-review/SKILL.md` (the live, hook-triggered version) has no harness-source counterpart and won't propagate via `update.sh` — flagged to the user, out of scope for this extraction.
+- Rejected: system-prompt minimization framing (harness CLAUDE.md files are already lean per prior `claudemd-review` runs and the memory-quietly-making-it-dumber extraction); rules→judgement / examples→interfaces (already the SkillOS Quality Gate's content-quality dimension); progressive disclosure (already `skills/<name>/resources/` pattern + `ctx_read` mode selection); auto-memory replacing CLAUDE.md-as-memory (harness already uses auto-memory as primary store, CLAUDE.md is instruction-only, not a memory dump).
+
+---
+
+## Loop vs Graph (marketing edition) — Pasted text
+**Added:** 2026-07-30 | **Source:** Pasted text — marketing-oriented explainer of agent loops vs agent graphs
+
+**What it's about:** Framing for when to structure agent work as a loop vs a graph: a loop is agent-owned path within a fixed goal/bar; a graph is a pre-drawn state machine of steps and routes, worth the setup on recurring jobs with validation gates, fixed routes, and a clear failure point. Illustrated with a 3-session marketing pipeline (research → landing page → content) with a critic loop nested inside one node.
+
+**What we added** (ran `better-call` — `loop-patterns`' existing "when a loop should become a graph" gut-check covered >70% of this already; verdict: AUGMENT INCUMBENT, gap = 1 dimension, complementarity delta):
+- Augmentation: `skills/loop-patterns/SKILL.md` — gut-check extended from 4 questions/0-4 scoring to 6 questions/0-6 scoring. Added two triggers the existing checklist lacked: (5) repeating cadence, not a one-off; (6) need to see the exact step something broke on, not just re-run the whole loop. Also added a pointer that a graph promotion should land on the `Workflow` tool's `pipeline`/`parallel`/`phase` primitives rather than hand-rolled state logic.
+- Rejected: "who decides the path" framing (redundant with incumbent's existing "a loop is one node in a graph" line); n8n analogy and the marketing pipeline example (off-domain for a software-engineering harness).
+
+---
+
+## Self-Improving Code Review Agent — Schema-Controlled review.json + Two-Job Least-Privilege Action (Pasted article)
+**Added:** 2026-07-30 | **Source:** Pasted text — article on a self-improving code review agent (schema-controlled `review-pr` skill, two-job GH Action, `improve-review-pr` outer loop)
+
+**What it's about:** Three-part mechanism for automated PR review: (1) a schema-controlled review skill emitting `review.json` (verdict, structured body, comments array with diff-line-annotation-only placement and 4 severity prefixes), never posting directly; (2) a two-job least-privilege GitHub Action splitting read-only review generation from write-permission publishing, so a prompt-injection payload in PR content can't reach posting credentials; (3) an outer loop that learns from the gap between logged reviews and real human review activity. Husband approved items 1-2 as proposed and redirected item 3: reject the from-scratch-skill framing, compose it from existing skills instead. Also requested dashboard visibility for the new mechanism.
+
+**What we added:**
+- Script: `scripts/pr/log_review.sh` — headless review driver (PR number → `.claude/memory/pr-reviews/pr-<n>.md` + `.review.json`), reusing the `code-review-learning-runner.sh` headless-Claude invocation pattern.
+- Wiring: `scripts/pr/detect_base_and_create.sh` — backgrounded call to `log_review.sh` right after PR auto-creation (`nohup ... &`), replacing the old advisory-only echo pointing at a skill the user had to remember to invoke.
+- Skill augmentation: `code-review-learning-prompt.md` Phase 2 — added a finer 4-way tag (validated/corrected/refined/ambiguous) and a decision tree mapping each tag combination to `no_changes` / `update_review_pr_local` (memory write) / `update_review_pr` (pending human approval) / `both`. This is item 3's outer loop, composed from the harness's *existing* `code-reviewer` skill + `code-review-learning-*` sweep rather than a new skill — satisfying Husband's redirect directly.
+- Skill augmentation: `skills/gitnexus-pr-review/SKILL.md` — new "Structured Output Contract (review.json)" section: full schema, 4 severity prefixes, diff-line-annotation-only placement rule, fix-validated-against-real-tools rule, validator invocation, and an explicit never-runs-`gh pr review`/`gh pr comment`/`gh api .../reviews` boundary. This is item 1, landed as an augmentation of the existing review skill rather than a new one — following the same "compose from existing" principle Husband applied to item 3.
+- Script: `scripts/pr/validate_review_json.py` — stdlib-only schema validator; exits 1 with one `error:` line per failure, silent exit 0 on success.
+- Workflow: `.github/workflows/review-pull-requests.yml` — item 2's two-job least-privilege Action (`review`: `contents:read`/`pull-requests:read`, produces the artifact; `publish`: needs `review`, `pull-requests:write`, re-validates then posts via `gh api`). Coexists with the existing `claude-code-review.yml` (different mechanism, not a replacement).
+- Dashboard: `scripts/utils/dashboard.py`'s `render_automation_audit()` — added a 5th event source scanning `.claude/memory/pr-reviews/pr-*.md` and `docs/code-review-learning-report.md` sweep sections into the existing unified timeline, closing Husband's visibility ask without a new widget.
+
+**better-call verdicts (item 3 — composing the review mechanism from existing skills):**
+- vs. `.github/workflows/claude-code-review.yml` (official plugin, opaque, no schema) → **COEXIST** — different mechanism (structural/schema-controlled vs. black-box plugin), both ≥18/30, complementarity delta 5.
+- vs. `skills/gitnexus-pr-review/SKILL.md` (blast-radius/impact-analysis review) → **AUGMENT INCUMBENT** — challenger's schema/safety-boundary contract grafted on; its review *mechanism* (graph impact analysis) stays gitnexus's own, unreplaced.
+- vs. `~/.claude/skills/code-reviewer/SKILL.md` (global generic checklist, not harness-owned) → out of scope for augmentation (not harness-owned); left untouched, cited as the SKILL.md's documented CI fallback instead.
+- Rejected: a fourth standalone `review-pr` skill built from scratch — the from-scratch framing itself, per Husband's explicit redirect.
+
+---
+
+## Claude Code native subagent `memory:` frontmatter (Pasted text)
+**Added:** 2026-07-30 | **Source:** Pasted text — Claude Code docs excerpt on the `memory:` subagent field (`user`/`project`/`local`)
+
+**What it's about:** Claude Code's native per-subagent auto-memory: adding `memory: project` (or `user`/`local`) to a subagent's frontmatter creates `.claude/agent-memory/<name>/MEMORY.md`, auto-injected on every invocation of that subagent — no manual save/recall calls needed. Husband's follow-up directive after approving the initial 2-item proposal broadened scope: fix three side gaps found while auditing the harness's *existing* memory loop (`ctx_knowledge`, `hot-memory.md`/`patterns.md`), and make the fix genuinely mechanical — "memory needs to be DYNAMIC and NOT triggered manually," not dependent on an LLM remembering a prose step.
+
+**What we added:**
+- Frontmatter: `agents/kiro/harness-fix-agent.md` and `agents/kiro/skill-augment-agent.md` — both gained `memory: project`, giving each a persistent `.claude/agent-memory/<name>/MEMORY.md` auto-loaded on every future invocation instead of starting cold each run.
+- Hook (NEW): `hooks/claude/agent-trace-hook.sh` (`PostToolUse`, matcher `Agent`) — `trace.log` had zero reliable producers (population was a prose instruction buried in two rarely-run commands, so the file never got created). This hook writes a trace entry on every subagent spawn — agent name, model tier, derived outcome (`pass`/`error`/`dispatched` for backgrounded spawns), duration-hint — deterministically, with self-archival past 200 lines to `glacier/`. Registered in `templates/settings.json.template`.
+- Hook augmentation: `hooks/claude/stop-hook.sh` — learnings.jsonl promoter block. `reflect-agent`'s Step 6 told the LLM to append a curated learning at the end of a 6-step agent; attention decayed and the file was never created. This mechanically promotes today's highest-signal `observations.md` entry (ranked by tag: judge > skill-update > skill-update-flagged/-repair > seed-target > memory-gap > loop-debt > stale-action-item, else skipped as noise) into `learnings.jsonl`, but only if reflect-agent's own manual write for today doesn't already exist — the human/LLM-curated entry always wins.
+- Hook augmentation: `hooks/claude/stop-hook.sh` — stale-action-item escalator block. `action-items.md` due-dates were never mechanically checked; items sat silently past due until a human happened to re-read the file. This parses the `- [ ] <desc> | due:YYYY-MM-DD` format and, once per day, appends a `[stale-action-item]` observation for the most-overdue item, routing it through the same review loop as every other signal.
+- Verification: both `stop-hook.sh` and `agent-trace-hook.sh` pass `bash -n` and are `chmod +x`'d.
+- Rejected: nothing — the two-item native-memory proposal was approved as-is; the three side-gap fixes were an explicit follow-on directive, not independently critic-gated candidates.
+
+---
+
+## PostHog — "How much can you delegate to agents?" (Pasted text)
+**Added:** 2026-07-30 | **Source:** Pasted text — PostHog engineering blog on a 2-axis agent-delegation framework
+
+**What it's about:** A checkability-axis × reversibility-axis framework for deciding how much to delegate to an agent: is the work easy or hard to verify deterministically, and is a mistake cheap or costly to undo. Four resulting levels (L0 agent-as-assistant, L1 human-in-the-loop, L2 agent-delegation — default ceiling for most dev work, L3 self-driving) each carry distinct "how to level up" moves. Ran `better-call` against incumbent `agent-permissions-design` (existing reversibility-only write-class table + 7-rung Ladder of Agency): verdict **AUGMENT INCUMBENT** — the challenger's checkability axis and per-level level-up moves were genuinely new; its scope-inheritance/SoR/audit machinery was pure overlap.
+
+**What we added:**
+- Skill augmentation: `skills/agent-permissions-design/SKILL.md` — new "Delegation Ceiling (Checkability × Reversibility)" section inserted before the existing Ladder of Agency. 2x2 quadrant table crossing the new checkability axis with the existing reversibility axis; per-quadrant level-up moves (L0 decompose, L1 LLM-as-judge + scoped success contracts, L2 guardrails-as-code citing already-shipped `hooks/claude/agent-behavior-guard.sh` + the destructive-git/gh block hook, L3 sharpen scout-trigger signal citing already-shipped `daily-orchestrator.sh`/`pr-babysit`/`background-work-routing`); closing note reconciling the new 2x2 with the existing 7-rung ladder rather than leaving two disconnected models in one file.
+- Rejected: Scouts/self-driving background-agent pattern (already `daily-orchestrator.sh` + `ScheduleWakeup`/`CronCreate` + `pr-babysit` + `background-work-routing`); domain-specific verifier models + expert context banks (already `rag-architect`/`agent-memory-systems`/`context-driven-development`); guardrails-as-code as a new hook (already shipped, cited as evidence instead); standalone "delegation ceiling" skill (would duplicate `agent-permissions-design`'s territory almost entirely — augmentation was the correct verdict, not coexistence).
+
+---
+
+## Cache-dominated API costs in long orchestrator sessions (Pasted text)
+**Added:** 2026-07-30 | **Source:** Pasted text — article on Claude Code API costs, long orchestrator sessions
+
+**What it's about:** In long-running Claude Code orchestrator sessions, 84% of API cost after compaction can come from `cache_read`/`cache_creation` tokens rather than fresh input/output — compaction only briefly resets the ratio before it climbs back up.
+
+**What we added:**
+- Dashboard: `scripts/utils/dashboard.py` — new "% cost from cache" stat.
+- Hook augmentation: `hooks/claude/stop-hook.sh` — captures `transcript_path` from Stop-hook stdin; detects when cache tokens (read+write) hit ≥70% of total session tokens *and* the transcript shows ≥1 compaction (`isCompactSummary`/`compactMetadata`). When tripped, automatically calls `write_handoff.py --trigger cache-cost` to write a resumable session snapshot to `.claude/memory/handoff/latest.md` — unconditionally, not gated on the user reading/acting on a nudge.
+- Script augmentation: `scripts/session/write_handoff.py` — extended `--trigger` choices with `cache-cost`; docstring updated to mention the new Stop-hook caller. `scripts/README.md` updated to match.
+
+**Rejected:**
+- Standalone skill teaching Claude to watch for cache-cost dominance — rejected per Husband's explicit pushback ("might get pulled" doesn't fix a mechanically-detectable condition); a hook enforces every time a skill doesn't.
+- Blocking Stop hook (`decision: block`) forcing `/compact` the instant the ratio trips — rejected as disproportionate: overrides the user's explicit stop intent across every project/session, and the source article itself notes compaction only briefly resets the ratio, so the fix is marginal against a large blast radius.

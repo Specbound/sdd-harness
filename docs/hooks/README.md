@@ -41,7 +41,7 @@ Hook output is injected into Claude's context as system messages — Claude read
 ### `stop-hook.sh`
 **Event:** `Stop` — **Matcher:** _(all sessions)_
 
-**Purpose:** Six end-of-session health checks, all lightweight:
+**Purpose:** Nine end-of-session health checks, all lightweight:
 
 1. **Harness update check** — compares the harness repo’s latest commit timestamp to `.claude/.last-harness-check`. Prints a `Run: update.sh` nudge if the harness has changes since last install.
 2. **Memory health** — counts entries in `observations.md`. If >50, suggests `/kiro:housekeeping` to prune before the file bloats.
@@ -49,8 +49,11 @@ Hook output is injected into Claude's context as system messages — Claude read
 4. **Agent failure pattern** — scans `trace.log` for 3+ consecutive failures for the same agent type. Surfaces a `/kiro:evolve` nudge to investigate the friction pattern.
 5. **Session depth tracking** — appends an ISO timestamp to `.claude/memory/.session-history`, keeping the last 30 entries. This file is read by the dashboard’s **Context Health** section to show sessions/week, a sessions/day trend chart, and tips for `/compact` and subagent delegation.
 6. **Setup sequence capture** — reads `.claude/memory/.setup-session-buffer.log` (populated during the session by `setup-buffer-hook.sh`). If ≥2 setup commands were accumulated, appends them as a dated `bash` code block under `## <project> — <date>` in `.claude/memory/setup-knowledge.md` (creating the file if needed), then clears the buffer. Threshold of 2 prevents trivial one-off installs from polluting the knowledge file.
+7. **learnings.jsonl promoter** — deterministic fallback for `reflect-agent`'s Step 6 (a prose instruction that attention decays on, so the file was never actually created). Once per day, ranks today's `observations.md` entries by tag priority (`judge` > `skill-update` > `skill-update-flagged`/`-repair` > `seed-target` > `memory-gap` > `loop-debt` > `stale-action-item`, else skipped as noise) and appends the top-ranked one as a JSON line to `.claude/memory/learnings.jsonl`. Skips if `reflect-agent` already wrote a curated entry for today — the human/LLM-curated entry always wins.
+8. **Stale action-item escalator** — parses `.claude/memory/action-items.md`’s `- [ ] <desc> | due:YYYY-MM-DD` format and, once per day, appends a `[stale-action-item]` observation for the most-overdue item. Action-item due-dates were never mechanically checked before this — items sat silently past due until a human happened to re-read the file.
+9. **Cache-cost dominance nudge** — reads `transcript_path` from the Stop hook’s stdin JSON, parses the transcript for `cache_read_input_tokens`/`cache_creation_input_tokens`/`input_tokens`/`output_tokens` and any `isCompactSummary`/`compactMetadata` marker. If cache tokens are ≥70% of the session total *and* the session compacted at least once, appends a `[cache-cost]` observation (once per day) and automatically invokes `scripts/session/write_handoff.py --trigger cache-cost` to write a resumable handoff snapshot to `.claude/memory/handoff/latest.md` — unconditionally, not gated on the user noticing a warning.
 
-**Why it’s needed:** Session-end is the only consistent window to look back at what happened without adding latency to the conversation. These checks surface problems that accumulate across sessions rather than within them. Session depth tracking gives the dashboard a lightweight signal for context load without requiring transcript analysis. Setup sequence capture ensures environment bootstrap steps are never lost — they are captured automatically without requiring Claude to remember to save them.
+**Why it’s needed:** Session-end is the only consistent window to look back at what happened without adding latency to the conversation. These checks surface problems that accumulate across sessions rather than within them. Session depth tracking gives the dashboard a lightweight signal for context load without requiring transcript analysis. Setup sequence capture ensures environment bootstrap steps are never lost — they are captured automatically without requiring Claude to remember to save them. The learnings promoter and stale-action-item escalator close two gaps where memory files existed in spec/skill instructions but had no deterministic writer, so they sat empty indefinitely.
 
 **Output / side effect:**
 - Text nudges printed to Claude’s context (harness update, housekeeping)
@@ -58,6 +61,9 @@ Hook output is injected into Claude's context as system messages — Claude read
 - Appends `[session-charge]` charge entries to `observations.md` (async, non-blocking)
 - Appends ISO timestamp to `.claude/memory/.session-history` (always, at session end)
 - Appends setup command block to `.claude/memory/setup-knowledge.md` and clears buffer (when ≥2 setup commands captured)
+- Appends one ranked JSON line to `.claude/memory/learnings.jsonl` (at most once per day, only if reflect-agent hasn't already)
+- Appends `[stale-action-item]` observation to `observations.md` (at most once per day, only if an overdue item exists)
+- Appends `[cache-cost]` observation to `observations.md` and writes `.claude/memory/handoff/latest.md` (at most once per day, only if cache-ratio ≥70% after ≥1 compaction)
 
 **Respects:** `SDD_PROFILE=minimal` env var — skips entirely.
 
@@ -476,6 +482,38 @@ Hook output is injected into Claude's context as system messages — Claude read
 
 ---
 
+### `agent-trace-hook.sh`
+**Event:** `PostToolUse` — **Matcher:** `Agent`
+
+**Purpose:** `trace.log` had zero reliable producers — population was a manual prose instruction buried in two rarely-run commands (`harness-validate.md`, `validate-adversarial.md`), so the file never actually got created despite `session-judge`, `stop-hook.sh`, and `evolve.md` all reading it. This hook makes every subagent spawn write its own trace entry deterministically. Buffers the PostToolUse event JSON from stdin, extracts `subagent_type`/`model`, derives a duration hint from the model tier (`haiku`→fast, `sonnet`→medium, `opus`→slow), and derives outcome: `dispatched` for background spawns (no `tool_response` yet — real result arrives later, out of band), else `pass`/`error` via keyword scan of the response.
+
+**Format:** `YYYY-MM-DD HH:MM | agent | tier | outcome | duration-hint` (see `kiro/settings/rules/agent-tracing.md` for the full field spec, incl. optional `alignment`/`structural` fields this hook doesn't populate).
+
+**Known limitation:** for background spawns (the default), the PostToolUse event fires at dispatch, not completion — `tool_response` is the spawn ack, not the agent's real result, so outcome is recorded as `dispatched` rather than pass/fail. Real per-agent success/failure tracking for background agents would need a hook on the completion notification, which Claude Code does not currently expose. Foreground agents (`run_in_background: false`) get a real `pass`/`error` outcome.
+
+**Why it's needed:** `session-judge`, `stop-hook.sh`'s agent-failure-pattern check, and the `evolve` agent all read `trace.log` for evidence-based improvement — none of that works if the file is empty.
+
+**Output / side effect:** Appends one line to `.claude/memory/trace.log`. Self-archives past 200 lines to `.claude/memory/glacier/trace-<date>.log`. Never blocks or errors the tool flow (always exits 0).
+
+---
+
+### `agent-behavior-guard.sh`
+**Event:** `PreToolUse` — **Matcher:** `Read|Bash|WebFetch|WebSearch` — _(monitor-only by default, never blocks unless enforced)_
+
+**Purpose:** Ported from perplexityai/numbat's rule-engine design (network indicators, persistence, chained/sequence findings) — scoped down for a single local harness: no rule files, no versioning, no signed bundles. Covers three detections none of the existing per-event hooks reach:
+
+1. **`network_indicator`** — a Bash command or WebFetch/WebSearch target references a cloud-metadata SSRF endpoint (`169.254.169.254`, `metadata.google.internal`, `metadata.azure.com`, etc.)
+2. **`persistence`** — a Bash command writes to crontab, a shell rc file, `~/.ssh/authorized_keys`, or enables a systemd/launchd unit
+3. **`chained_secret_egress`** — a secret-bearing path (`.env`, `.pem`/`.key`/credentials files, `.aws/credentials`, `.ssh/`) is accessed via Read or Bash, then *later in the same session* an egress call happens (Bash `curl`/`wget`/`ssh`/`/dev/tcp/`/etc., or any WebFetch/WebSearch) — correlated across calls via a per-session ledger
+
+**Why it's needed:** `protected-path-hook.sh` only fires on `Write|Edit` and is stateless per call — it never sees `Read`, Bash-based egress, or a pattern that spans multiple tool calls. This hook fills that specific gap: read-then-exfiltrate and metadata-SSRF/persistence patterns that a single-event, single-tool guard cannot catch.
+
+**Default mode:** MONITOR ONLY — logs the finding and warns to stderr, always exits 0. Set `SDD_AGENT_GUARD_ENFORCE` to a comma-separated list of rule names (`network_indicator`, `persistence`, `chained_secret_egress`) or `all` to make matching rules hard-block (exit 2), mirroring numbat's monitor→enforce promotion without its rule-file machinery.
+
+**Output / side effect:** Appends one JSON line per finding (monitor or enforce) to `.claude/memory/agent-security-findings.jsonl`. Secret-access events for the chained-egress rule are recorded in `.claude/memory/.agent-behavior-guard-secret-access.jsonl`, keyed by `session_id`.
+
+---
+
 ## Hook Wiring Reference
 
 From `.claude/settings.json`:
@@ -505,6 +543,7 @@ PostToolUse    Bash                                          → action-capture.
 PostToolUse    Bash                                          → revert-detect-hook.sh
 PostToolUse    Bash                                          → setup-buffer-hook.sh
 PostToolUse    Bash                                          → pr-auto-create-hook.sh
+PostToolUse    Agent                                          → agent-trace-hook.sh
 PostToolUse    Read                                          → lean-ctx-nudge-hook.sh
 PreToolUse     Bash|mcp__.*                                  → tool-failure-recall.sh
 PostToolUseFailure Bash|mcp__.*                              → tool-failure-capture.sh
@@ -522,5 +561,5 @@ The `tool-failure-*` pair plus the `tool-failure-review` routine form the **tool
 3. Document it in this file (the `hook-added-notify.sh` hook will remind you if you forget).
 4. Update the Wiring Reference table above.
 
-_Last synced: 2026-07-29
+_Last synced: 2026-07-30
 

@@ -47,6 +47,30 @@ a finding, just an empty result.
   anywhere — only record it in the report below for human approval. Never edit a
   skill file directly from this sweep.
 
+### Finer tag (apply before the low-risk/higher-risk split above)
+
+- **validated** — logged review's original take held up; human agreed or raised no
+  contradiction. Not new information on its own.
+- **corrected** — a human explicitly reversed or fixed something the logged review
+  flagged or missed. Strong signal, usually low-risk.
+- **refined** — logged review was directionally right but a human added nuance
+  ("flag this, but only when X"). Usually low-risk; capture the nuance in the
+  **Why:** line.
+- **ambiguous** — can't tell from PR comments alone whether the human's action
+  reflects a real preference or a one-off. Never guess into a memory write.
+
+### Decision tree
+
+1. **validated**, nothing new → `no_changes`.
+2. **corrected** / **refined**, and it's only a fact/preference (no methodology
+   change) → `update_review_pr_local` — write to `.claude/memory/` per the
+   low-risk path above (name aside, this updates memory, not the skill).
+3. Changes what gets reviewed or how (**higher-risk**) → `update_review_pr` —
+   record in Pending Approval only; never edit the skill directly from this sweep.
+4. One PR yields both a low-risk fact and a higher-risk question → `both` — do
+   the memory write, and still record the higher-risk part in Pending Approval.
+5. **ambiguous** → treat as higher-risk (`update_review_pr`, pending approval).
+
 ---
 
 ## Phase 3 — Write Report

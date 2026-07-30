@@ -268,6 +268,16 @@ Distinct from `#### 3. Adversarial Verification`: generic adversarial verificati
 
 ---
 
+### Redundant Signal Check
+
+Before stacking a new review/verify pass onto a pipeline, check whether it's empirically redundant with a pass already in place. Coinbase's interview-loop rebuild found an 84% correlation between two rounds meant to test different things — most of the second round's signal was already captured by the first. The fix was not adding a third round to compensate; it was merging or replacing the redundant one. Their standing rule going forward: "we don't add rounds" — a new signal must replace an existing one or catch something demonstrably distinct, never just stack on top.
+
+Applies directly to review/verify pipelines built with this skill's patterns: if two reviewers, verifier passes, or persona reviews (`#### 3. Adversarial Verification`, Contrarian Persona Ensemble) agree on outcome most of the time, they are one signal wearing two costumes — merge them and spend the freed budget on a pass that catches a genuinely different failure mode instead.
+
+**Source:** Coinbase Engineering, "Interviewing Engineers in the AI Era: Lessons from a Year of Rebuilding" (2026).
+
+---
+
 ## Core Concepts
 
 Multi-agent systems address single-agent context limitations through distribution. Three dominant patterns exist: supervisor/orchestrator for centralized control, peer-to-peer/swarm for flexible handoffs, and hierarchical for layered abstraction. The critical design principle is context isolation—sub-agents exist primarily to partition context rather than to simulate organizational roles.
@@ -656,6 +666,6 @@ The harness daily loop (orchestrator → runners → observations spine) is alre
 ## Skill Metadata
 
 **Created**: 2025-12-20
-**Last Updated**: 2026-06-11
-**Author**: Agent Skills for Context Engineering Contributors; enhanced with arXiv:2605.18747, arXiv:2605.26112, claude.com/blog dynamic-workflows, movez.substack.com dynamic-workflow-patterns article, loop-engineering article (@bcherny/@steipete)
-**Version**: 1.5.0
+**Last Updated**: 2026-07-30
+**Author**: Agent Skills for Context Engineering Contributors; enhanced with arXiv:2605.18747, arXiv:2605.26112, claude.com/blog dynamic-workflows, movez.substack.com dynamic-workflow-patterns article, loop-engineering article (@bcherny/@steipete), Coinbase Engineering blog (interviewing-engineers-in-the-ai-era)
+**Version**: 1.6.0

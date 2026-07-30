@@ -139,7 +139,7 @@ Fix any failures before installation:
 
 **Compression heuristic:** Skill content should be ≤ 30% of the context needed to do the task manually. A skill longer than that without proportional value is net-negative.
 
-**Eval-driven development:** Before finalizing the skill's docs, define at least 3 evaluation scenarios and run a no-skill baseline; iterate the instructions against that baseline rather than shipping the first draft untested.
+**Eval-driven development:** Before finalizing the skill's docs, invoke `Skill("skill-eval-gate")` to define ≥3 evaluation scenarios, run a no-skill baseline against the treatment, and gate on a measured pass-rate lift — self-assessed confidence is not sufficient (SkillsBench, arXiv 2602.12670: self-authored skills scored 1.3pts *below* no-skill baseline). Iterate the instructions against the gate's verdict rather than shipping the first draft untested.
 
 **Per-tier testing:** Verify the skill works across Haiku/Sonnet/Opus, with tier-appropriate pass criteria — passing on one tier alone does not clear this gate.
 

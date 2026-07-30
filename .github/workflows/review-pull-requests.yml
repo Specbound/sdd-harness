@@ -1,0 +1,117 @@
+name: Schema-Controlled PR Review
+
+# Coexists with claude-code-review.yml (different mechanism: structural
+# blast-radius review via gitnexus-pr-review, not the official code-review
+# plugin) rather than replacing it — see better-call verdict in
+# docs/sources/x/README.md.
+#
+# Two-job least-privilege split, deliberately: the "review" job reads
+# untrusted PR content (diff, description) and MUST NOT hold write
+# credentials, so a prompt-injection payload in a PR body/diff can't use it
+# to post anything. Only "publish" — which never reads PR content itself,
+# only the validated review.json artifact — holds write permissions.
+#
+# CAVEAT (unresolved): GitNexus's MCP tools may not be available/authenticated
+# in a headless GitHub Actions runner. The prompt below asks Claude to read
+# skills/gitnexus-pr-review/SKILL.md's instructions directly from the checkout
+# rather than relying on skill auto-discovery (which only installs to
+# ~/.claude/skills on a real machine via install.sh, not in ephemeral CI). If
+# GitNexus's index/tools genuinely aren't reachable here, the skill's own
+# fallback applies: fall back to the code-reviewer skill's checklist review.
+
+on:
+  pull_request:
+    types: [opened, synchronize, ready_for_review, reopened]
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Run schema-controlled review
+        id: claude-review
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: |
+            Read skills/gitnexus-pr-review/SKILL.md in this checkout and follow
+            its instructions to review PR #${{ github.event.pull_request.number }}
+            in ${{ github.repository }} (fall back to the code-reviewer skill's
+            checklist if GitNexus's tools aren't reachable here).
+
+            Follow the SKILL.md's "Structured Output Contract (review.json)"
+            section exactly. Write ONLY these two files, nothing else:
+              - review-output/review.md
+              - review-output/review.json
+            Then run: python3 scripts/pr/validate_review_json.py review-output/review.json
+            and fix + re-validate on any error.
+
+            Do NOT run `gh pr review`, `gh pr comment`, or `gh api .../reviews`.
+            This job has read-only permissions and writing those two files is
+            the entire task.
+
+      - name: Upload review artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: review-output
+          path: review-output/
+          retention-days: 7
+
+  publish:
+    needs: review
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Download review artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: review-output
+          path: review-output/
+
+      - name: Validate review.json
+        run: python3 scripts/pr/validate_review_json.py review-output/review.json
+
+      - name: Post review
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          verdict=$(python3 -c "import json;print(json.load(open('review-output/review.json'))['verdict'])")
+          event="COMMENT"
+          [ "$verdict" = "APPROVE" ] && event="APPROVE"
+          [ "$verdict" = "REJECT" ] && event="REQUEST_CHANGES"
+
+          python3 -c "
+          import json
+          d = json.load(open('review-output/review.json'))
+          out = {
+              'body': d['body']['overview'] + '\n\n' + '\n'.join('- ' + c for c in d['body']['concerns']),
+              'event': '$event',
+              'comments': [
+                  {k: c[k] for k in ('path', 'line', 'side', 'start_line', 'start_side', 'body')}
+                  for c in d['comments']
+              ],
+          }
+          json.dump(out, open('review-payload.json', 'w'))
+          "
+          gh api "repos/$REPO/pulls/$PR_NUMBER/reviews" \
+            --method POST \
+            --input review-payload.json

@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Deterministic session handoff writer for the SDD harness.
 
-Fires from PreCompact and PreToolUse(Agent) hooks — never invoked manually.
+Fires from PreCompact, PreToolUse(Agent), and Stop (cache-cost trigger) hooks
+— never invoked manually.
 Parses the live transcript (no LLM call: this runs far more often than the
 daily signal-detection scripts, so it stays fast and dependency-free) and
 writes a structured brief to .claude/memory/handoff/latest.md so the next
@@ -160,7 +161,11 @@ def build_brief(path: Path, trigger: str) -> str:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--trigger", choices=["precompact", "agent-spawn"], required=True)
+    ap.add_argument(
+        "--trigger",
+        choices=["precompact", "agent-spawn", "cache-cost"],
+        required=True,
+    )
     ap.add_argument("--transcript-path", type=Path, default=None)
     ap.add_argument(
         "--out",

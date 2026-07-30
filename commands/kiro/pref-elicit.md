@@ -40,6 +40,14 @@ I'll ask 5 questions — answer freely, there are no wrong answers.
 Type "skip" to pass on any question.
 ```
 
+### Step 1.5: Confirm This Is Worth Building
+
+Before the 5-question session, ask once:
+
+> Quick check before we go deeper — what's the cost of NOT building this? If nothing breaks, no one waits, and it's not required by something else, is it still worth the spec/implementation effort?
+
+This is advisory, not a gate — do not block on the answer. If the user says "yes, proceed" or equivalent, continue directly to Step 2. If they hesitate or push back, record their answer verbatim; it becomes the "Why This Exists" line in Step 3.
+
 ### Step 2: Run the 5-question Socratic session
 
 Ask **ONE question at a time**. Wait for the user's full response before asking the next. Do not batch or preview all questions upfront.
@@ -70,6 +78,10 @@ After receiving all 5 answers (or skips), produce a structured file:
 
 ```markdown
 # Preference Brief — {feature or description}
+
+## Why This Exists
+
+[Answer from Step 1.5, or "Not challenged — proceeded directly" if the user skipped straight to yes]
 
 ## Imperative Preferences (non-negotiable — agent must follow exactly)
 
@@ -130,5 +142,5 @@ The agent will use prefs.md as context during requirements and design generation
 - If `$ARGUMENTS` is empty, open with: "What feature or project are we about to spec?"
 - If the user types "skip" on a question, record "No constraint stated" for that dimension — do not press
 - If a question elicits "I don't know", record the answer as is and move on — uncertainty is valid input
-- `prefs.md` is advisory context, not a gate — spec phases proceed regardless of its content
+- `prefs.md` is advisory context, not a gate — spec phases proceed regardless of its content, including the Step 1.5 existence check
 - Do not re-ask questions if the user has already answered them in a prior turn

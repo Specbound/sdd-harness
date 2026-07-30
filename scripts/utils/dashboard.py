@@ -1643,7 +1643,15 @@ def render_model_cost(sessions, pricing_snapshots):
             cost is not None and latest_cost is not None
             and abs(cost - latest_cost) > 1e-9
         )
-        priced.append({**s, "cost": cost, "price_changed": price_changed})
+        cache_cost = None
+        if hist_pricing:
+            p = hist_pricing.get(f"anthropic/{s['model']}")
+            if p:
+                cache_cost = (
+                    s["cache_read"]   * p["cache_read"]  / 1_000_000 +
+                    s["cache_create"] * p["cache_write"] / 1_000_000
+                )
+        priced.append({**s, "cost": cost, "price_changed": price_changed, "cache_cost": cache_cost})
 
     total_cost = sum(p["cost"] for p in priced if p["cost"] is not None)
     cutoff_30d = (NOW - timedelta(days=30)).strftime("%Y-%m-%d")
@@ -1651,9 +1659,11 @@ def render_model_cost(sessions, pricing_snapshots):
         p["cost"] for p in priced
         if p["cost"] is not None and p["date"] >= cutoff_30d
     )
+    total_cache_cost = sum(p["cache_cost"] for p in priced if p["cache_cost"] is not None)
+    cache_pct = (total_cache_cost / total_cost * 100) if total_cost > 0 else 0.0
 
     # ── Stats row ──────────────────────────────────────────────────────────────
-    summary = f"""<div style="display:grid;grid-template-columns:repeat(3,1fr);
+    summary = f"""<div style="display:grid;grid-template-columns:repeat(4,1fr);
                        gap:12px;margin-bottom:20px">
   <div class="stat-card">
     <div class="stat-val" style="color:#a6e3a1">${total_cost:.2f}</div>
@@ -1664,6 +1674,9 @@ def render_model_cost(sessions, pricing_snapshots):
   <div class="stat-card">
     <div class="stat-val" style="color:#f9e2af">{len(sessions)}</div>
     <div class="stat-lbl">sessions tracked</div></div>
+  <div class="stat-card">
+    <div class="stat-val" style="color:{'#f38ba8' if cache_pct >= 70 else '#cba6f7'}">{cache_pct:.0f}%</div>
+    <div class="stat-lbl">cost from cache (r+w)</div></div>
 </div>"""
 
     # ── Project filter ──────────────────────────────────────────────────────────
@@ -3152,6 +3165,54 @@ def render_automation_audit(rd, hd):
                 "summary": f"Scheduled · {r['schedule_human']} · {exit_str}",
                 "detail":  f"Artifact: {r['artifact_label']}\nChanges: +{r['diff_added']}/−{r['diff_removed']} lines",
                 "scope":   "harness",
+            })
+
+    # 5. PR review pipeline — log_review.sh writes + learning-sweep reports
+    pr_review_dir = Path(repo_path) / ".claude" / "memory" / "pr-reviews"
+    if pr_review_dir.is_dir():
+        for md_f in pr_review_dir.glob("pr-*.md"):
+            try:
+                mtime = datetime.fromtimestamp(md_f.stat().st_mtime, tz=timezone.utc)
+            except Exception:
+                continue
+            pr_num = md_f.stem.replace("pr-", "")
+            events.append({
+                "ts":      mtime.isoformat(),
+                "icon":    "📝",
+                "label":   "PR Review Logged",
+                "color":   "#89dceb",
+                "summary": f"PR #{pr_num} review written",
+                "detail":  None,
+                "scope":   "local",
+            })
+
+    learning_report = Path(repo_path) / "docs" / "code-review-learning-report.md"
+    if learning_report.is_file():
+        try:
+            text = learning_report.read_text(encoding="utf-8", errors="replace")
+        except Exception:
+            text = ""
+        for m in re.finditer(
+            r"^## Sweep — (\d{4}-\d{2}-\d{2})\n(.*?)(?=^## Sweep — |\Z)",
+            text, re.M | re.S,
+        ):
+            date_str, body = m.group(1), m.group(2)
+            pending_section = (
+                body.split("## Pending Approval", 1)[-1]
+                if "## Pending Approval" in body else ""
+            )
+            pending_count = 0 if "None this sweep" in pending_section else len(
+                re.findall(r"^-\s*#?\d+", pending_section, re.M)
+            )
+            events.append({
+                "ts":      date_str + "T12:00:00+00:00",
+                "icon":    "🎓",
+                "label":   "Review Learning Sweep",
+                "color":   "#89dceb",
+                "summary": (f"sweep ran · {pending_count} pending approval"
+                            if pending_count else "sweep ran · nothing pending"),
+                "detail":  body[:2000].strip() or None,
+                "scope":   "local",
             })
 
     if not events:

@@ -2,6 +2,18 @@
 # SDD Harness stop hook
 # 1. Check if harness has updates since last install
 # 2. Nudge /kiro:housekeeping if observations.md > 50 entries
+# 3. Nudge when cache-cost dominates spend after compaction (writes handoff automatically)
+
+# Claude Code passes {transcript_path, ...} JSON on stdin for Stop hooks.
+# Read once, up front — before any early-exit path — so it's available below.
+HOOK_INPUT=$(cat 2>/dev/null || true)
+TRANSCRIPT_PATH=$(printf '%s' "$HOOK_INPUT" | python3 -c "
+import json, sys
+try:
+    print(json.load(sys.stdin).get('transcript_path', ''))
+except Exception:
+    print('')
+" 2>/dev/null)
 
 # Profile guard — skip all checks if profile is minimal
 SDD_PROFILE="${SDD_PROFILE:-standard}"
@@ -120,5 +132,139 @@ if last_charge and last_charge >= last_update:
     sys.exit(0)
 print(f"- {today_str} [loop-debt]: skill updates from {last_update} ({days_since}d ago) with no session-charge since — possible cognitive surrender")
 PYEOF
+  fi
+fi
+
+# --- learnings.jsonl promoter (deterministic fallback for reflect-agent Step 6) ---
+# reflect-agent's Step 6 tells the LLM to append a curated learning, but that's a
+# prose instruction buried at the end of a 6-step agent — attention decays, so the
+# file was never actually created. This mechanically promotes today's
+# highest-signal observation if reflect-agent didn't already write one today.
+# Best-effort only: reflect-agent's own curated entry always wins (idempotency
+# guard checks the date first, so a manual write earlier today skips this).
+LEARN_FILE=".claude/memory/learnings.jsonl"
+if [ -f "$OBS_FILE" ] && [ -d ".claude/memory" ]; then
+  today=$(date +%Y-%m-%d)
+  if ! grep -q "\"date\": \"$today\"" "$LEARN_FILE" 2>/dev/null; then
+    python3 - "$OBS_FILE" "$LEARN_FILE" "$today" <<'PYEOF' 2>/dev/null || true
+import sys, re, json, datetime
+obs_path, learn_path, today = sys.argv[1], sys.argv[2], sys.argv[3]
+pat = re.compile(r"^- (\d{4}-\d{2}-\d{2}) \[([^\]]+)\]:\s*(.*)$")
+PRIORITY = ["judge", "skill-update", "skill-update-flagged", "skill-update-repair",
+            "seed-target", "memory-gap", "loop-debt", "stale-action-item", "routine-note"]
+
+def rank(tag):
+    base = tag.split(":")[0]
+    return PRIORITY.index(base) if base in PRIORITY else len(PRIORITY)
+
+todays = []
+for line in open(obs_path).read().splitlines():
+    m = pat.match(line)
+    if m and m.group(1) == today:
+        todays.append((m.group(2), m.group(3)))
+if not todays:
+    sys.exit(0)
+todays.sort(key=lambda t: rank(t[0]))
+tag, text = todays[0]
+if rank(tag) == len(PRIORITY):
+    sys.exit(0)  # low-signal tag only (e.g. routine-note noise) — not worth promoting
+entry = {
+    "date": today,
+    "situation": f"[{tag}] {text[:160]}",
+    "insight": text[:200],
+    "applies_when": f"a future run encounters a [{tag}]-tagged situation similar to this",
+}
+with open(learn_path, "a") as f:
+    f.write(json.dumps(entry) + "\n")
+PYEOF
+  fi
+fi
+
+# --- Stale action-item escalator ---
+# action-items.md due-dates were never mechanically checked — items past due sat
+# silently until a human happened to re-read the file. This surfaces them as
+# observations so they flow through the same review loop as everything else.
+ACTION_FILE=".claude/memory/action-items.md"
+if [ -f "$ACTION_FILE" ] && [ -f "$OBS_FILE" ]; then
+  today=$(date +%Y-%m-%d)
+  if ! grep -q "^- $today \[stale-action-item\]:" "$OBS_FILE" 2>/dev/null; then
+    python3 - "$ACTION_FILE" "$OBS_FILE" "$today" <<'PYEOF' >> "$OBS_FILE" 2>/dev/null || true
+import sys, re, datetime
+action_path, obs_path, today_str = sys.argv[1], sys.argv[2], sys.argv[3]
+today = datetime.date.fromisoformat(today_str)
+pat = re.compile(r"^- \[ \] (.+?) \| due:(\d{4}-\d{2}-\d{2})")
+stale = []
+for line in open(action_path).read().splitlines():
+    m = pat.match(line)
+    if not m:
+        continue
+    desc, due_str = m.group(1), m.group(2)
+    due = datetime.date.fromisoformat(due_str)
+    if due < today:
+        stale.append((due, desc))
+if not stale:
+    sys.exit(0)
+stale.sort()
+due, desc = stale[0]
+days_over = (today - due).days
+print(f"- {today_str} [stale-action-item]: '{desc[:100]}' overdue {days_over}d (due {due}) — see .claude/memory/action-items.md")
+PYEOF
+  fi
+fi
+
+# --- Cache-cost dominance nudge (long-session cost blowup) ---
+# Article: sessions that compact at least once and run cache-read+write >=70%
+# of total tokens are cache-cost-dominated. A nudge alone is a warning nobody
+# acts on — instead this writes a resumable handoff snapshot unconditionally,
+# the moment the threshold trips, so the next session/model can pick up free
+# of the human having to notice or remember to run anything.
+if [ -n "$TRANSCRIPT_PATH" ] && [ -f "$TRANSCRIPT_PATH" ] && [ -f "$OBS_FILE" ]; then
+  today=$(date +%Y-%m-%d)
+  if ! grep -q "^- $today \[cache-cost\]:" "$OBS_FILE" 2>/dev/null; then
+    CACHE_COST_RESULT=$(python3 - "$TRANSCRIPT_PATH" <<'PYEOF' 2>/dev/null
+import sys, json
+transcript_path = sys.argv[1]
+cache_read = cache_write = input_tok = output_tok = 0
+compacted = False
+with open(transcript_path, encoding="utf-8", errors="ignore") as f:
+    for line in f:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            entry = json.loads(line)
+        except ValueError:
+            continue
+        if entry.get("isCompactSummary") or "compactMetadata" in entry:
+            compacted = True
+        if entry.get("type") != "assistant":
+            continue
+        usage = (entry.get("message") or {}).get("usage")
+        if not usage:
+            continue
+        cache_read  += usage.get("cache_read_input_tokens", 0) or 0
+        cache_write += usage.get("cache_creation_input_tokens", 0) or 0
+        input_tok   += usage.get("input_tokens", 0) or 0
+        output_tok  += usage.get("output_tokens", 0) or 0
+total = cache_read + cache_write + input_tok + output_tok
+if total == 0 or not compacted:
+    sys.exit(0)
+ratio = (cache_read + cache_write) / total
+if ratio >= 0.70:
+    pct = round(ratio * 100)
+    print(f"{pct}|{cache_read + cache_write}|{total}")
+PYEOF
+)
+    if [ -n "$CACHE_COST_RESULT" ]; then
+      IFS='|' read -r pct cache_tot grand_tot <<< "$CACHE_COST_RESULT"
+      echo "- $today [cache-cost]: session cache tokens at ${pct}% of total (${cache_tot}/${grand_tot}) after >=1 compaction. Handoff snapshot written automatically." >> "$OBS_FILE"
+      python3 "$HARNESS_DIR/scripts/session/write_handoff.py" \
+        --trigger cache-cost --transcript-path "$TRANSCRIPT_PATH" \
+        --out ".claude/memory/handoff/latest.md" 2>/dev/null || true
+      echo ""
+      echo "Cache tokens dominate cost (${pct}% after compaction) — handoff snapshot written automatically."
+      echo "Safe to close this session now; next one resumes free via .claude/memory/handoff/latest.md."
+      echo ""
+    fi
   fi
 fi

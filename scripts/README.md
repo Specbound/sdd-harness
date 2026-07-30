@@ -32,7 +32,7 @@ Utility scripts used by the harness. All Python scripts use stdlib only (no virt
 | `detect_reexplanation.py` | Haiku-based session signal detector. Classifies sessions as drain (re-explanation) or charge (approval). Called by `hooks/claude/stop-hook.sh`. |
 | `micro_reflect.py` | Extracts durable facts from drain sessions → writes `[auto-learn]` entries to `hot-memory.md`. Can be invoked standalone on drain signals. |
 | `trust_score.py` | Applies Judge score delta to the trust score line in `hot-memory.md`. |
-| `session/write_handoff.py` | Deterministic (non-LLM) transcript-to-markdown session handoff. Reads the transcript path from stdin JSON, extracts branch/cwd/recent messages, writes `.claude/memory/handoff/latest.md`. Invoked with `--trigger precompact` from `compaction-discipline-hook.sh` and `--trigger agent-spawn` from `gbrain-agent-spawn.sh`; surfaced (if <24h fresh) by `session-start-hook.sh`. Never invoked manually. |
+| `session/write_handoff.py` | Deterministic (non-LLM) transcript-to-markdown session handoff. Reads the transcript path from stdin JSON, extracts branch/cwd/recent messages, writes `.claude/memory/handoff/latest.md`. Invoked with `--trigger precompact` from `compaction-discipline-hook.sh`, `--trigger agent-spawn` from `gbrain-agent-spawn.sh`, and `--trigger cache-cost` from `stop-hook.sh` when cache tokens hit ≥70% of session spend after ≥1 compaction; surfaced (if <24h fresh) by `session-start-hook.sh`. Never invoked manually. |
 
 ## PR Automation
 

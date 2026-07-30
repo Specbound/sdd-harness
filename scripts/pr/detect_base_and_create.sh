@@ -53,7 +53,16 @@ fi
 
 pr_number="$(echo "$pr_url" | grep -oE '[0-9]+$')"
 echo "[PR-AUTO-CREATED] PR #$pr_number opened against $base_branch (auto-detected base)."
-echo "Review it now (gitnexus-pr-review or code-reviewer), log the review to .claude/memory/pr-reviews/pr-$pr_number.md,"
-echo "then invoke the iterate-pr skill to babysit CI/review feedback."
+if [ -f "PULL_REQUEST_TEMPLATE.md" ] || [ -f ".github/PULL_REQUEST_TEMPLATE.md" ] || [ -f "docs/PULL_REQUEST_TEMPLATE.md" ]; then
+  echo "[PR-AUTO-CREATED] A PULL_REQUEST_TEMPLATE.md exists — rewrite PR #$pr_number's body to follow it,"
+  echo "sized to what a reviewer needs to make a decision (not the diff size), then run:"
+  echo "  gh pr edit $pr_number --body \"<rewritten body>\""
+fi
+LOG_SCRIPT=".claude/scripts/pr/log_review.sh"
+if [ -f "$LOG_SCRIPT" ]; then
+  nohup bash "$LOG_SCRIPT" "$pr_number" >/dev/null 2>&1 &
+  echo "[PR-AUTO-CREATED] Automated review logging to .claude/memory/pr-reviews/pr-$pr_number.md running in background."
+fi
+echo "Invoke the pr-babysit skill to watch CI/review feedback in the background."
 
 # REGISTRATION (see pr-auto-create-hook.sh / pr-mention-nudge.sh for the hooks that call this)

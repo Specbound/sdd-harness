@@ -152,6 +152,15 @@
             "command": "bash .claude/hooks/git-destructive-guard-hook.sh"
           }
         ]
+      },
+      {
+        "matcher": "Read|Bash|WebFetch|WebSearch",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/agent-behavior-guard.sh"
+          }
+        ]
       }
     ],
     "PostToolUse": [
@@ -208,6 +217,15 @@
           {
             "type": "command",
             "command": "bash .claude/hooks/ccr-routine-added-notify.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "Agent",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/agent-trace-hook.sh"
           }
         ]
       },

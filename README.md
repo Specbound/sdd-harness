@@ -516,6 +516,8 @@ Based on the methodology from ["Automating Skill Acquisition through Large-Scale
 | `verification-skill-authoring` | Custom | Turn manual domain checks into a reusable `<domain>-verify` skill; auto-invoked after skill creation (skill-extraction Phase 5d); encodes review checklists as Claude-executable steps |
 | `ai-native-org-patterns` | Custom | Organizational design patterns for AI-first teams: context engineering, async agent pipelines, skill-based modularity, evaluation loops, and human-in-the-loop governance |
 | `surfacing-unknowns` | Thariq — "Field Guide to Fable" | Pre-execution discovery routine: run before a spec/design/large change to close the map-vs-territory gap — surfaces blind spots and tacit taste before building; skip for well-specified mechanical tasks |
+| `pr-babysit` | Compound Engineering v3.20 | Monitor-tool background watch of a PR's CI/reviews after auto-create; branch-currency check; explicit authority boundary (fix/commit/push only — never merge/rebase/force-push/CI-approve). Merged with incumbent `iterate-pr` |
+| `diff-teach` | Compound Engineering v3.20 | Two-turn predict-then-reveal drill for diffs/commits/time-windows — closes comprehension debt on agent-written code the user never read line-by-line. Merged with incumbent `code-documentation-code-explain` |
 
 See [docs/skill-extraction/README.md](docs/skill-extraction/README.md) for the full extracted skills index.
 

@@ -161,3 +161,51 @@ Structure your review as:
 ### Recommendation
 APPROVE / REQUEST CHANGES / NEEDS DISCUSSION
 ```
+
+## Structured Output Contract (review.json)
+
+When invoked by an automated caller (e.g. `scripts/pr/log_review.sh`, or the
+`review-pull-requests.yml` GitHub Action's read-only "review" job), ALSO write a
+machine-readable `review.json` alongside the markdown review above, matching this
+schema exactly:
+
+```json
+{
+  "verdict": "APPROVE | REJECT",
+  "body": {
+    "overview": "1-3 sentence summary",
+    "concerns": ["short bullet", "..."],
+    "issue_count": 0,
+    "recommendation": "APPROVE | REQUEST CHANGES | NEEDS DISCUSSION"
+  },
+  "comments": [
+    {
+      "path": "relative/file/path.ts",
+      "line": 42,
+      "side": "RIGHT",
+      "start_line": 40,
+      "start_side": "RIGHT",
+      "body": "CRITICAL: description of the finding"
+    }
+  ]
+}
+```
+
+Rules:
+- Every `comments[].body` MUST start with one of exactly four prefixes:
+  `CRITICAL:` / `IMPORTANT:` / `SUGGESTION:` / `NIT:`. No other severity labels.
+- `line`/`side`/`start_line`/`start_side` are derived ONLY from the PR diff's
+  `[OLD:n]`, `[NEW:n]`, or `[OLD:n,NEW:m]` line annotations — never guessed or
+  computed from unannotated context. If a finding can't be pinned to an
+  annotated diff line, drop it from `comments` and fold it into `body.concerns`
+  instead.
+- Any suggested fix mentioned in a comment must first be checked against the
+  repo's real build/lint/test tooling (not asserted from reading alone) before
+  it's proposed.
+- After writing `review.json`, validate it: `python3 .claude/scripts/pr/validate_review_json.py <path>`.
+  Fix and re-validate on any reported error.
+- **This skill NEVER runs `gh pr review`, `gh pr comment`, or `gh api .../reviews`.**
+  Writing `review.json` is the entire task — a separate, write-permission-scoped
+  step (never this skill) is responsible for posting it. This split is a
+  deliberate prompt-injection blast-radius mitigation: the process that reads
+  untrusted PR content never holds credentials that can post.

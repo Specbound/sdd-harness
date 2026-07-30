@@ -507,3 +507,19 @@ GitHub repositories that were passed to `/skill-extraction` and turned into harn
 
 **What we added:**
 - Verification pass against `agent-harness-design` + `agent-execution-control` (most factors already landed via the 2026-07-14 triage). Two genuine gaps found and closed: Factor 5 "unify execution/business state" (added to `agent-harness-design`'s Orchestration Loop section) and Factor 12 "stateless reducer" — `(state, event) → new_state` framing (added to `agent-execution-control`'s Plan-Execute-Verify Loop section). Factor 9 "compact errors into context window" was already covered by Execution Trace Grounding — no edit needed.
+
+---
+
+## github.com/perplexityai/numbat
+**URL:** https://github.com/perplexityai/numbat | **Added:** 2026-07-30
+
+**What it's about:** Go-based AI-agent endpoint-monitoring tool. Runs a rule engine over both live events and forensic (post-hoc) events: network-indicator/SSRF detection, persistence-mechanism detection, and sequence/chained findings that correlate events across a session. Rules ship as versioned, signed bundles and support a monitor→enforce promotion model.
+
+**What we added:**
+- Hook: `hooks/claude/agent-behavior-guard.sh` — `PreToolUse` (matcher `Read|Bash|WebFetch|WebSearch`). Ported three of numbat's detections, scoped down for a single local harness (no rule files, no versioning, no signed bundles): `network_indicator` (cloud-metadata SSRF endpoints), `persistence` (crontab/rc-file/authorized_keys/systemd writes), and `chained_secret_egress` (a secret-bearing path accessed, then an egress call made later in the same session — correlated via a per-session ledger). Fills the gap `protected-path-hook.sh` doesn't cover: that hook only fires on `Write|Edit` and is stateless per call. Default mode is monitor-only (logs to `.claude/memory/agent-security-findings.jsonl`); `SDD_AGENT_GUARD_ENFORCE` promotes named rules (or `all`) to hard-block, mirroring numbat's monitor→enforce toggle without its rule-file machinery.
+- Documented in `docs/hooks/README.md` (new `agent-behavior-guard.sh` section + Wiring Reference row).
+
+**Rejected:**
+- Full rule-file/YAML DSL with versioning and cryptographic signing — massive overkill for a single-user local harness; three inline regex rules cover the real gap.
+- Forensic/replay event-source scanning — numbat's live+forensic dual-source model doesn't map to Claude Code's tool-call event stream; not applicable here.
+- Separate `numbat`-style CLI binary/daemon — the existing PreToolUse hook mechanism already provides the enforcement point; no separate process needed.

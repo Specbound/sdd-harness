@@ -71,6 +71,7 @@ Present all findings in one view before proposing any actions:
 1. **From weekly report:** duplicate pairs, quality scores below threshold, and the **Usage Evidence** section — deprecate candidates (no invocation in 30d) and archive candidates (90d), backed by real `logs/skill-usage.jsonl` fire data rather than file mtime
 2. **From Phase 2:** descriptions over the 150-char threshold
 3. **Module-count audit:** for each skill, count distinct modules/components/reference-files bundled into its SKILL.md; flag any skill over 3 as a split candidate (SkillsBench, arXiv 2602.12670 — focused skills bundling ≤3 modules consistently outperform larger bundles in task pass-rate)
+4. **Continuous eval-gate drift check** (Phase 3.5 below) — new failure modes observed in live skill invocations that the skill's original `skill-eval-gate` scenario set didn't cover
 
 For each finding, determine the action type:
 
@@ -80,7 +81,18 @@ For each finding, determine the action type:
 | **Compress description** | Description > 150 chars; propose shorter text inline |
 | **Split** | Skill bundles more than 3 distinct modules/components/reference-files (per Module-count audit) |
 | **Delete** | Low quality score + cold (no invocation in 30d per Usage Evidence) + no unique content |
+| **Add eval scenario** | Phase 3.5 drift check found a live failure mode the skill's `skill-eval-gate` scenario set doesn't cover |
 | **No action** | Flagged but justified; note reason explicitly. Never flag a `pinned: true` skill |
+
+### Phase 3.5: Continuous Eval-Gate Drift Check
+
+`skill-eval-gate` scenarios are authored once, at skill-creation time, and never revisited — a skill can drift out of sync with how it's actually used without anyone noticing. This phase closes that loop, borrowed from the "continuous evaluation" stage of a prompt-eval maturity model (source: `docs/sources/articles/README.md`, "Eval Gates for Prompts").
+
+1. Identify skills with a logged `skill-eval-gate` PASS verdict (check `docs/skill-curation-report.md` history / commit messages referencing the gate).
+2. If Raindrop Workshop traces are available (`mcp__raindrop__query_traces`), pull recent invocations of those skills.
+3. Run `active-observability`'s facet-clustering over the sampled traces to surface recurring failure patterns — a skill firing on the wrong trigger, an agent ignoring its steps, a task the skill claims to cover but visibly fails at.
+4. For each new failure pattern not already represented in that skill's original scenario table, draft one concrete new scenario (realistic prompt + deterministic pass/fail check, matching `skill-eval-gate` Phase 1's format) and flag it as an **Add eval scenario** finding.
+5. If Raindrop isn't connected or no traces exist yet for a skill, skip it silently — this phase only surfaces what live data shows, it never fabricates scenarios.
 
 ### Phase 4: Propose Actions
 
@@ -98,6 +110,9 @@ Present a numbered list — **always wait for user approval before executing:**
    Keep: `rag-architect`; fold unique implementation steps into a new Phase 4
 
 3. Delete — `csv-data-summarizer` (quality score 1.8/4, unused 45+ days, no unique content)
+
+4. Add eval scenario — `pr-babysit` (live traces show it firing on draft PRs with no reviewers requested; original scenario set didn't cover this)
+   New scenario: "PR opened as draft, no reviewers assigned" → pass = skill declines to nudge for review
 
 **Apply all? Or specify (e.g. "1 and 3", "skip 2", "only compressions"):**
 ```
@@ -117,6 +132,10 @@ Present a numbered list — **always wait for user approval before executing:**
 **Delete:**
 - Show the full SKILL.md one final time
 - Delete the directory only after explicit confirmation ("yes, delete it")
+
+**Add eval scenario:**
+- Append the new scenario to whatever scenario table/list the target skill's own docs or eval history use for `skill-eval-gate` runs
+- Note in the curation log which live failure pattern prompted it, so the provenance stays traceable
 
 **After all changes:** Re-run Phase 2 and show the delta:
 ```
