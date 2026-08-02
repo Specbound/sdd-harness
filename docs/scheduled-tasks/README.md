@@ -10,6 +10,8 @@ All tasks are wired into `scripts/orchestration/daily-orchestrator.sh`. The orch
 
 Each routine's stderr is captured to a per-run buffer; on a non-zero exit, the buffer is appended to `logs/orchestrator-errors.log` (in addition to the usual one-line summary in `logs/orchestrator.log`) so a failing run leaves a diagnosable trace instead of a silent exit=1.
 
+The orchestrator itself is fail-loud: every non-dry-run invocation logs a `run started (mode=...)` line to `logs/orchestrator.log` and, via an `EXIT` trap, a `run finished exit=<code> repos=<count>` line — so a crash before the repo loop even starts (bad args, missing `projects.txt`) leaves a diagnosable trace in `logs/orchestrator-errors.log` instead of looking identical to a zero-work success.
+
 ---
 
 ### Daily Maintenance
