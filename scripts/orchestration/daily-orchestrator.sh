@@ -26,18 +26,35 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --dry-run) DRY_RUN=true ;;
     --repo)
-      [ $# -lt 2 ] && { echo "--repo requires a path argument" >&2; exit 2; }
+      [ $# -lt 2 ] && { echo "--repo requires a path argument" >&2; echo "$(date -Iseconds) orchestrator: --repo requires a path argument" >> "$ERR_LOG"; exit 2; }
       shift
       SINGLE_REPO="$1"
       ;;
-    *) echo "unknown arg: $1" >&2; exit 2 ;;
+    *) echo "unknown arg: $1" >&2; echo "$(date -Iseconds) orchestrator: unknown arg: $1" >> "$ERR_LOG"; exit 2 ;;
   esac
   shift
 done
 
+# --- Fail-loud instrumentation ---
+# A run that dies before the repo loop (bad env, resolve-harness-dir.sh failure,
+# missing projects.txt) must never look identical to a zero-work success. Every
+# real invocation logs a start line and, via the EXIT trap, an end line — so a
+# silent zero-byte run becomes structurally visible (either both lines appear,
+# or the crash happened before the trap installed, which the ERR_LOG catches
+# below).
+PROCESSED=0
+if [ "$DRY_RUN" = false ]; then
+  MODE="${SINGLE_REPO:+repo:$SINGLE_REPO}"
+  MODE="${MODE:-fleet}"
+  echo "$(date -Iseconds) orchestrator: run started (mode=$MODE)" >> "$LOG_FILE"
+  trap '__ec=$?; echo "$(date -Iseconds) orchestrator: run finished exit=$__ec repos=$PROCESSED" >> "$LOG_FILE"' EXIT
+fi
+
 run_one() {
   local repo="$1"
   local ts="$(date -Iseconds)"
+
+  [ "$DRY_RUN" = false ] && PROCESSED=$((PROCESSED + 1))
 
   if [ ! -d "$repo/.claude" ]; then
     if [ "$DRY_RUN" = true ]; then
@@ -191,6 +208,7 @@ if [ -n "$SINGLE_REPO" ]; then
 else
   if [ ! -f "$PROJECTS_FILE" ]; then
     echo "projects.txt missing at $PROJECTS_FILE" >&2
+    echo "$(date -Iseconds) orchestrator: projects.txt missing at $PROJECTS_FILE" >> "$ERR_LOG"
     exit 1
   fi
   while IFS= read -r repo || [ -n "$repo" ]; do

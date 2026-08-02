@@ -4699,6 +4699,12 @@ class _DashboardHandler(BaseHTTPRequestHandler):
     def log_message(self, *_args):
         """Suppress default request logging."""
 
+    def handle_one_request(self):
+        try:
+            super().handle_one_request()
+        except (BrokenPipeError, ConnectionResetError):
+            self.close_connection = True
+
 
 def serve_companion(html_content: str, port: int, open_browser_fn):
     _DashboardHandler._html = html_content.encode("utf-8")
