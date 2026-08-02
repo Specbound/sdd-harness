@@ -6,13 +6,15 @@ All scheduled tasks run **locally** via the OS-level scheduler and the daily orc
 
 ## Active Scheduled Tasks
 
-All tasks are wired into `scripts/daily-orchestrator.sh`. The orchestrator fires daily at 18:00 via launchd (macOS), Windows Task Scheduler (WSL/Windows), or crontab (Linux). Catch-up runs if the machine was off: the session-start hook fires the per-repo runner in the background if the state file is >24h stale.
+All tasks are wired into `scripts/orchestration/daily-orchestrator.sh`. The orchestrator fires daily at 18:00 via launchd (macOS), Windows Task Scheduler (WSL/Windows), or crontab (Linux). Catch-up runs if the machine was off: the session-start hook fires the per-repo runner in the background if the state file is >24h stale.
+
+Each routine's stderr is captured to a per-run buffer; on a non-zero exit, the buffer is appended to `logs/orchestrator-errors.log` (in addition to the usual one-line summary in `logs/orchestrator.log`) so a failing run leaves a diagnosable trace instead of a silent exit=1.
 
 ---
 
 ### Daily Maintenance
-**Runner:** `.claude/scripts/daily-runner.sh`
-**Prompt:** `.claude/scripts/daily-maintenance-prompt.md`
+**Runner:** `.claude/scripts/orchestration/daily-runner.sh`
+**Prompt:** `.claude/scripts/routines/daily-maintenance-prompt.md`
 **Cadence:** Every day (idempotent; skips if already ran today)
 **Scope:** Every registered repo
 
@@ -25,12 +27,12 @@ All tasks are wired into `scripts/daily-orchestrator.sh`. The orchestrator fires
 
 **Channel summary (optional):** after the run, `daily-runner.sh` posts the last ~20 lines of output to your chat channels via `scripts/integrations/channels/notify.py` (title `Daily maintenance — <repo> (exit=<code>)`). No-op unless `~/.env.channels` exists, so the call stays unconditional. Opt out with `SDD_SKIP_CHANNEL_NOTIFY=1`. See [docs/integrations/channels](../integrations/channels/README.md).
 
-**Opt-out:** `rm .claude/scripts/daily-runner.sh` in that repo; or `SDD_SKIP_ROUTINE=1` to skip registration at install time.
+**Opt-out:** `rm .claude/scripts/orchestration/daily-runner.sh` in that repo; or `SDD_SKIP_ROUTINE=1` to skip registration at install time.
 
 ---
 
 ### Daily Security Scan
-**Runner:** `.claude/scripts/security-report-runner.sh`
+**Runner:** `.claude/scripts/routines/security-report-runner.sh`
 **Cadence:** Every day (`MIN_GAP_DAYS=1`; applies to every repo)
 **Scope:** Every registered repo
 
@@ -39,6 +41,7 @@ All tasks are wired into `scripts/daily-orchestrator.sh`. The orchestrator fires
 - Checks for OWASP patterns (injection sinks, XSS vectors, broken auth), exposed secrets, and unsafe patterns introduced in the last commit window
 - Writes a dated report to `.claude/reports/security/<date>-security-report.md`
 - Visible in the dashboard **Scheduled Tasks** section with last-run status, artifact diff, and any findings headline
+- Race-safe via `mkdir` lock; a lock older than 2h (left by a killed run) is auto-removed on the next run
 
 **Opt-out:** `SDD_SKIP_SECURITY_REPORT=1` env var.
 
@@ -61,8 +64,8 @@ All tasks are wired into `scripts/daily-orchestrator.sh`. The orchestrator fires
 ---
 
 ### Macro-Eval Sweep
-**Runner:** `.claude/scripts/macro-eval-runner.sh`
-**Prompt:** `.claude/scripts/macro-eval-prompt.md`
+**Runner:** `.claude/scripts/routines/macro-eval-runner.sh`
+**Prompt:** `.claude/scripts/routines/macro-eval-prompt.md`
 **Cadence:** ~Twice weekly (MIN_GAP_DAYS=3; override with `MACRO_EVAL_GAP_DAYS`)
 **Scope:** Every registered repo (no-ops if Raindrop MCP is unreachable)
 
@@ -71,13 +74,14 @@ All tasks are wired into `scripts/daily-orchestrator.sh`. The orchestrator fires
 - Clusters failure patterns by type and impact
 - Writes a dated report to `.claude/reports/macro-evals/YYYY-MM-DD.md`
 - Posts annotations to Workshop for top failing patterns
+- Race-safe via `mkdir` lock; a lock older than 2h (left by a killed run) is auto-removed on the next run
 
 **Opt-out:** `SDD_SKIP_MACRO_EVAL=1` env var; or preflight writes a `*-SKIPPED.md` report if MCP unreachable.
 
 ---
 
 ### Tool-Failure Review
-**Runner:** `.claude/scripts/tool-failure-review-runner.sh`
+**Runner:** `.claude/scripts/routines/tool-failure-review-runner.sh`
 **Command:** `.claude/commands/kiro/tool-failure-review.md` (`/kiro:tool-failure-review`)
 **Cadence:** ~Twice weekly (MIN_GAP_DAYS=3; override with `TOOL_FAILURE_GAP_DAYS`; force with `TOOL_FAILURE_FORCE=1`)
 **Scope:** Every registered repo (no-ops unless the ledger has a promotable signature)
@@ -86,7 +90,7 @@ All tasks are wired into `scripts/daily-orchestrator.sh`. The orchestrator fires
 - Reads the per-repo tool-failure ledger `.claude/memory/tool-failures.jsonl` (populated by the `tool-failure-capture.sh` PostToolUseFailure hook)
 - Promotes recurring, understood failures (count ≥ `TOOL_FAILURE_MIN_COUNT`, default 3, open, not yet promoted) into durable memory + `ERRORS.md`, diagnosing *why* the command shape keeps failing
 - Marks promoted entries resolved so the `tool-failure-recall.sh` PreToolUse hook stops warning about them
-- Self-paces via MIN_GAP_DAYS and a `mkdir` lock; pre-flights that the `claude` CLI is on PATH before running
+- Self-paces via MIN_GAP_DAYS and a `mkdir` lock; pre-flights that the `claude` CLI is on PATH before running; a lock older than 2h (left by a killed run) is auto-removed on the next run
 
 This is the **review** stage of the tool-failure-memory loop (capture → recall → review). See the `tool-failure-memory` skill.
 
@@ -98,22 +102,22 @@ This is the **review** stage of the tool-failure-memory loop (capture → recall
 **Runner:** `.claude/scripts/routines/code-review-learning-runner.sh`
 **Prompt:** `.claude/scripts/routines/code-review-learning-prompt.md`
 **Cadence:** Weekly (`CODE_REVIEW_LEARNING_GAP_DAYS`, default 7; force with `CODE_REVIEW_LEARNING_FORCE=1`)
-**Scope:** Every registered repo (no-ops unless there's a merged PR with a pr-babysit review log not yet processed)
+**Scope:** Every registered repo (no-ops unless there's a merged PR with a logged automated review not yet processed)
 
 **What it does:**
-- Discovers merged PRs with a logged `.claude/memory/pr-reviews/pr-<n>.md` (written by pr-babysit before merge) not yet processed, via `gh pr view --json state`
+- Discovers merged PRs with a logged `.claude/memory/pr-reviews/pr-<n>.md` (written by `scripts/pr/log_review.sh` via the `gitnexus-pr-review` skill, backgrounded from `scripts/pr/detect_base_and_create.sh` when the PR is created) not yet processed, via `gh pr view --json state`
 - For each: diffs the logged review against real human review activity (`gh api .../comments`, `.../reviews`) to find **missed** flags, **false positives**, or **convention gaps**
 - **Low-risk** findings (team conventions, dismissed-flag patterns) are written directly into `.claude/memory/` as `project`/`feedback` facts
 - **Higher-risk** findings (changes to the `code-reviewer` skill's methodology) are never auto-applied — only reported to `docs/code-review-learning-report.md` for human approval
-- Race-safe via `mkdir` lock; marks processed PRs in `.claude/memory/.code-review-learning-processed` only on a successful run
+- Race-safe via `mkdir` lock; marks processed PRs in `.claude/memory/.code-review-learning-processed` only on a successful run; a lock older than 2h (left by a killed run) is auto-removed on the next run
 
 **Opt-out:** `SDD_SKIP_CODE_REVIEW_LEARNING=1` env var.
 
 ---
 
 ### Weekly Skill-Curator Sweep
-**Runner:** `.claude/scripts/skill-curator-runner.sh`
-**Prompt:** `.claude/scripts/skill-curator-prompt.md`
+**Runner:** `.claude/scripts/routines/skill-curator-runner.sh`
+**Prompt:** `.claude/scripts/routines/skill-curator-prompt.md`
 **Cadence:** Weekly (MIN_GAP_DAYS=7; override with `SKILL_CURATOR_GAP_DAYS`; force with `SKILL_CURATOR_FORCE=1`)
 **Scope:** Harness repo only (exits 0 in non-harness repos via `docs/scheduled-tasks/` guard)
 
@@ -123,6 +127,7 @@ This is the **review** stage of the tool-failure-memory loop (capture → recall
 2. **Description budget audit** — measures description field length; flags >150 chars for compression
 3. **Memory governance health** — checks five compaction-discipline hook failure modes
 4. Writes `docs/skill-curation-report.md` (full weekly snapshot, replaced each run)
+- Race-safe via `mkdir` lock; a lock older than 2h (left by a killed run) is auto-removed on the next run
 
 **How to use:** After the routine runs, invoke `/skill-curator` locally to review findings and apply approved changes (merge/compress/delete) with human approval at every step.
 
@@ -131,14 +136,15 @@ This is the **review** stage of the tool-failure-memory loop (capture → recall
 ---
 
 ### Bi-Weekly Harness Health
-**Runner:** `.claude/scripts/harness-health-runner.sh`
-**Prompt:** `.claude/scripts/harness-health-prompt.md`
+**Runner:** `.claude/scripts/routines/harness-health-runner.sh`
+**Prompt:** `.claude/scripts/routines/harness-health-prompt.md`
 **Cadence:** Bi-weekly (MIN_GAP_DAYS=13; override with `HARNESS_HEALTH_GAP_DAYS`; force with `HARNESS_HEALTH_FORCE=1`)
 **Scope:** Harness repo only (exits 0 in non-harness repos via `docs/scheduled-tasks/` guard)
 
 **What it does:**
 1. **CLAUDE.md review** — reads all repos in `~/.claude/sdd-harness/projects.txt`; audits for stale instructions, model-assumption drift, and over-constraining rules from pre-Claude-4.x habits; rates each repo `clean` / `minor` / `needs-update`; writes `docs/claudemd-review-report.md`. This is the *harness-wide* pass. Its *per-repo* counterpart is the `/claudemd-review` global command (`commands/global/claudemd-review.md`), which `session-start-hook.sh` fires when a single repo's `.claude/memory/.last-claudemd-review` is >14 days stale; that command audits only the current repo (adding a 200-line size budget, an "inferable from the manifest" filter, and an `@AGENTS.md` import/dedup check) and writes `.claude/memory/claudemd-review-report.md` — do not confuse the two report paths.
 2. **Iterative skill repair** — reads `docs/skill-curation-report.md` for low-quality flags; applies a Review→Repair→Validate loop (up to 3 skills per run, max 3 repair iterations per skill); writes repaired `SKILL.md` files directly; appends a `## Iterative Repair Run — [date]` section to the curation report
+- Race-safe via `mkdir` lock; a lock older than 2h (left by a killed run) is auto-removed on the next run
 
 **How to use:** `git pull` after the routine runs, then read `docs/claudemd-review-report.md`. Stalled skills in the repair report need manual intervention — invoke the relevant skill locally with domain context the automated run couldn't supply.
 
@@ -147,7 +153,7 @@ This is the **review** stage of the tool-failure-memory loop (capture → recall
 ---
 
 ### Wednesday Drift Review
-**Mechanism:** Inline in `scripts/daily-orchestrator.sh` (harness-level section)
+**Mechanism:** Inline in `scripts/orchestration/daily-orchestrator.sh` (harness-level section)
 **Cadence:** Once per Wednesday (week-number dedup via `~/.claude/sdd-harness/.last-drift-review`)
 **Scope:** Harness-level (not per-repo)
 
@@ -165,20 +171,21 @@ This is the **review** stage of the tool-failure-memory loop (capture → recall
 
 Registration is automatic and idempotent — re-running `install.sh` or `update.sh` is safe.
 
-The dashboard's **Scheduled Tasks** tab shows live status for each task: schedule, last run + exit code, artifact path, diff vs. previous run, and the reasoning excerpt from the artifact. It also surfaces the OS scheduler's last-launch exit status.
+The dashboard's **Scheduled Tasks** tab shows live status for each task, scoped to whichever repo's dashboard is open: schedule, last run + exit code, artifact path, diff vs. previous run, and the reasoning excerpt from the artifact. Harness-only routines (skill-curator, harness-health) always show the harness's own state regardless of which repo is open; per-repo routines show that repo's state file and log entries. It also surfaces the OS scheduler's last-launch exit status.
 
 ---
 
 ## Adding a New Scheduled Task
 
-1. Create `scripts/<name>-prompt.md` — prompt template with `TODAY_PLACEHOLDER`
-2. Create `scripts/<name>-runner.sh` — copy the `macro-eval-runner.sh` pattern; set `MIN_GAP_DAYS`; add a harness guard (`docs/scheduled-tasks/`) if harness-only
-3. Add a call block in `run_one()` in `scripts/daily-orchestrator.sh` with a `SDD_SKIP_<NAME>` opt-out guard
+1. Create `scripts/routines/<name>-prompt.md` — prompt template with `TODAY_PLACEHOLDER`
+2. Create `scripts/routines/<name>-runner.sh` — copy the `scripts/routines/macro-eval-runner.sh` pattern; set `MIN_GAP_DAYS`; add a harness guard (`docs/scheduled-tasks/`) if harness-only
+3. Add a call block in `run_one()` in `scripts/orchestration/daily-orchestrator.sh` with a `SDD_SKIP_<NAME>` opt-out guard
 4. Add a `chmod +x` line in **both** `install.sh` and `update.sh` (the runner loop lists every `*-runner.sh` by name)
 5. Add an entry to `_scheduled_task_registry()` in `scripts/dashboard.py` so the routine shows up as a card on the dashboard's **Scheduled Tasks** tab (set `runner_log_token` to match how the orchestrator logs it)
-6. Sync both to `.claude/scripts/`: `cp scripts/<name>-* .claude/scripts/`
+6. Sync both to `.claude/scripts/`: `cp scripts/routines/<name>-* .claude/scripts/routines/`
 7. Document it in this file
 
 ---
 
-_Last synced: 2026-07-29_
+_Last synced: 2026-08-02_
+

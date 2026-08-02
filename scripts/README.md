@@ -12,18 +12,18 @@ Utility scripts used by the harness. All Python scripts use stdlib only (no virt
 
 | Script | Purpose |
 |---|---|
-| `daily-runner.sh` | Per-repo entry point for daily maintenance. Fires `/kiro:daily-maintenance` headlessly. Installed by `install.sh`; triggered nightly by Windows Task Scheduler (WSL) or `session-start-hook.sh` catch-up. |
-| `daily-orchestrator.sh` | Global orchestrator that iterates all registered projects and calls their `daily-runner.sh`. |
-| `setup-global-orchestrator.sh` | Register `daily-orchestrator.sh` with Windows Task Scheduler (schtasks). |
-| `setup-linux-orchestrator.sh` | Register `daily-orchestrator.sh` with cron (Linux). |
-| `setup-mac-orchestrator.sh` | Register `daily-orchestrator.sh` with launchd (macOS). |
-| `macro-eval-runner.sh` | Runs `/kiro:macro-eval-sweep` headlessly for trend analysis. |
-| `harness-health-runner.sh` | Runs the bi-weekly harness health routine (CLAUDE.md review + skill repair). |
-| `skill-curator-runner.sh` | Runs `/kiro:skill-extract` to curate and augment skills from session learnings. |
-| `tool-failure-review-runner.sh` | Promotes recurring tool failures from `.claude/memory/tool-failures.jsonl` into `ERRORS.md` + memory. |
-| `security-report-runner.sh` | Daily security scan: runs the security-report prompt headlessly, writes report to `.claude/reports/security/`. Runs at most once per day (`SECURITY_REPORT_GAP_DAYS`). Opt out with `SDD_SKIP_SECURITY_REPORT=1`. |
-| `routines/code-review-learning-runner.sh` | Self-improving code-review learning sweep: compares pr-babysit's logged reviews (`.claude/memory/pr-reviews/pr-<n>.md`) against real human review activity on merged PRs, promotes low-risk findings (conventions, dismissed-flag patterns) straight into memory, and reports higher-risk methodology changes to `docs/code-review-learning-report.md` for human approval. No-ops unless there's a merged+logged PR not yet processed; self-paces to weekly (`CODE_REVIEW_LEARNING_GAP_DAYS`, default 7) once there is. Applies to any repo. Wired into `daily-orchestrator.sh` `run_one()`. Opt out with `SDD_SKIP_CODE_REVIEW_LEARNING=1`. |
-| `routines/startup-payload-audit.sh` | Deterministic (no LLM) daily audit of the fixed per-session startup token tax (`CLAUDE.md` + `@imports` + `.claude/rules/*` + auto-loaded `MEMORY.md`). Writes `.claude/reports/context/startup-payload.json`, read by the dashboard's Context Health tab. Self-paces to daily via its own state-file guard. Wired into `daily-orchestrator.sh` `run_one()`. Opt out with `SDD_SKIP_STARTUP_AUDIT=1`. |
+| `orchestration/daily-runner.sh` | Per-repo entry point for daily maintenance. Fires `/kiro:daily-maintenance` headlessly. Installed by `install.sh`; triggered nightly by Windows Task Scheduler (WSL) or `session-start-hook.sh` catch-up. |
+| `orchestration/daily-orchestrator.sh` | Global orchestrator that iterates all registered projects and calls their `daily-runner.sh`. |
+| `orchestration/setup-global-orchestrator.sh` | Register `daily-orchestrator.sh` with Windows Task Scheduler (schtasks). |
+| `orchestration/setup-linux-orchestrator.sh` | Register `daily-orchestrator.sh` with cron (Linux). |
+| `orchestration/setup-mac-orchestrator.sh` | Register `daily-orchestrator.sh` with launchd (macOS). |
+| `routines/macro-eval-runner.sh` | Runs `/kiro:macro-eval-sweep` headlessly for trend analysis. |
+| `routines/harness-health-runner.sh` | Runs the bi-weekly harness health routine (CLAUDE.md review + skill repair). |
+| `routines/skill-curator-runner.sh` | Runs `/kiro:skill-extract` to curate and augment skills from session learnings. |
+| `routines/tool-failure-review-runner.sh` | Promotes recurring tool failures from `.claude/memory/tool-failures.jsonl` into `ERRORS.md` + memory. |
+| `routines/security-report-runner.sh` | Daily security scan: runs the security-report prompt headlessly, writes report to `.claude/reports/security/`. Runs at most once per day (`SECURITY_REPORT_GAP_DAYS`). Opt out with `SDD_SKIP_SECURITY_REPORT=1`. |
+| `routines/code-review-learning-runner.sh` | Self-improving code-review learning sweep: compares pr-babysit's logged reviews (`.claude/memory/pr-reviews/pr-<n>.md`) against real human review activity on merged PRs, promotes low-risk findings (conventions, dismissed-flag patterns) straight into memory, and reports higher-risk methodology changes to `docs/code-review-learning-report.md` for human approval. No-ops unless there's a merged+logged PR not yet processed; self-paces to weekly (`CODE_REVIEW_LEARNING_GAP_DAYS`, default 7) once there is. Applies to any repo. Wired into `orchestration/daily-orchestrator.sh` `run_one()`. Opt out with `SDD_SKIP_CODE_REVIEW_LEARNING=1`. |
+| `routines/startup-payload-audit.sh` | Deterministic (no LLM) daily audit of the fixed per-session startup token tax (`CLAUDE.md` + `@imports` + `.claude/rules/*` + auto-loaded `MEMORY.md`). Writes `.claude/reports/context/startup-payload.json`, read by the dashboard's Context Health tab. Self-paces to daily via its own state-file guard. Wired into `orchestration/daily-orchestrator.sh` `run_one()`. Opt out with `SDD_SKIP_STARTUP_AUDIT=1`. |
 
 ## Session Intelligence
 
@@ -38,7 +38,9 @@ Utility scripts used by the harness. All Python scripts use stdlib only (no virt
 
 | Script | Purpose |
 |---|---|
-| `pr/detect_base_and_create.sh` | Shared logic behind PR-babysitting automation. Auto-detects a feature branch's true fork-point base (via `git merge-base` + most-recent-commit-date comparison across all local/remote refs, falling back to the repo's default branch) and idempotently opens a draft PR (`gh pr create --fill --draft`) if one isn't already open. No-ops cleanly if `gh` isn't installed or the branch isn't inside a git work tree. Invoked from `hooks/claude/pr-auto-create-hook.sh` (after a successful non-force `git push`) and `hooks/claude/pr-mention-nudge.sh` (when the user's prompt mentions opening/creating a PR). |
+| `pr/detect_base_and_create.sh` | Shared logic behind PR-babysitting automation. Auto-detects a feature branch's true fork-point base (via `git merge-base` + most-recent-commit-date comparison across all local/remote refs, falling back to the repo's default branch) and idempotently opens a draft PR (`gh pr create --fill --draft`) if one isn't already open. Also checks for a `PULL_REQUEST_TEMPLATE.md` and backgrounds `pr/log_review.sh` via `nohup` once the PR exists. No-ops cleanly if `gh` isn't installed or the branch isn't inside a git work tree. Invoked from `hooks/claude/pr-auto-create-hook.sh` (after a successful non-force `git push`) and `hooks/claude/pr-mention-nudge.sh` (when the user's prompt mentions opening/creating a PR). Hands off to the `pr-babysit` skill (replaces the retired `iterate-pr` skill). |
+| `pr/log_review.sh` | Headless `claude --print` invocation of the `gitnexus-pr-review` skill against an open PR. Writes `.claude/memory/pr-reviews/pr-<n>.md` (human-readable review) and `pr-<n>.review.json` (structured verdict/body/comments). Never posts to GitHub itself — backgrounded by `pr/detect_base_and_create.sh`, and re-runnable by the `pr-babysit` skill. |
+| `pr/validate_review_json.py` | Schema validator for `pr-<n>.review.json` — checks `verdict` (APPROVE/REJECT), `body` (overview/concerns/issue_count/recommendation), and `comments[]` (path/line/side/start_line/start_side/body, with `body` required to start with `CRITICAL:`/`IMPORTANT:`/`SUGGESTION:`/`NIT:`). Run via `python3 .claude/scripts/pr/validate_review_json.py <path>` after `log_review.sh` writes the file, and by the `review-pull-requests.yml` GitHub Action's read-only "review" job before handing off to the write-permission "publish" job. |
 
 ## Integrations
 
@@ -66,11 +68,11 @@ Utility scripts used by the harness. All Python scripts use stdlib only (no virt
 
 | File | Purpose |
 |---|---|
-| `daily-maintenance-prompt.md` | Prompt injected by `daily-runner.sh` for `/kiro:daily-maintenance`. |
-| `harness-health-prompt.md` | Prompt for the bi-weekly harness health routine. |
-| `macro-eval-prompt.md` | Prompt for macro evaluation sweeps. |
-| `security-report-prompt.md` | Prompt for the security report runner. |
-| `skill-curator-prompt.md` | Prompt for skill curation runs. |
-| `code-review-learning-prompt.md` | Prompt for the self-improving code-review learning sweep. |
+| `routines/daily-maintenance-prompt.md` | Prompt injected by `daily-runner.sh` for `/kiro:daily-maintenance`. |
+| `routines/harness-health-prompt.md` | Prompt for the bi-weekly harness health routine. |
+| `routines/macro-eval-prompt.md` | Prompt for macro evaluation sweeps. |
+| `routines/security-report-prompt.md` | Prompt for the security report runner. |
+| `routines/skill-curator-prompt.md` | Prompt for skill curation runs. |
+| `routines/code-review-learning-prompt.md` | Prompt for the self-improving code-review learning sweep. |
 
-_Last synced: 2026-07-29
+_Last synced: 2026-08-02

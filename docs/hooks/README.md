@@ -516,41 +516,49 @@ Hook output is injected into Claude's context as system messages — Claude read
 
 ## Hook Wiring Reference
 
-From `.claude/settings.json`:
+Verified directly against `.claude/settings.json` on 2026-08-02 (not just this doc's prior claims):
 
 ```
 SessionStart   → session-start-hook.sh
 SessionStart   (all)                                        → caveman-activate.js  [global, ~/.claude/hooks/]
 Stop           → stop-hook.sh
 Stop           (all)                                        → address-check-hook.sh
-UserPromptSubmit (all, keyword-gated)                       → frontend-security-nudge.sh
-UserPromptSubmit (all, keyword-gated)                       → doc-parse-nudge.sh
-UserPromptSubmit (all, keyword-gated)                       → pr-mention-nudge.sh
+UserPromptSubmit (matcher: "")                                → doc-parse-nudge.sh
 PreToolUse     Bash                                          → rtk hook claude  [global, ~/.claude/settings.json — token compression]
+PreToolUse     Bash                                          → git-destructive-guard-hook.sh  [no dedicated section below yet]
 PreToolUse     Write|Edit                                    → memory-discipline-hook.sh
 PreToolUse     Write|Edit                                    → protected-path-hook.sh
 PreToolUse     Write|Edit                                    → skill-validate-hook.sh
 PreToolUse     Agent                                         → gbrain-agent-spawn.sh
-PreToolUse     mcp__raindrop__                               → raindrop-best-practices.sh
+PreToolUse     Agent                                         → prompt-quality-check.sh  [no dedicated section below yet]
 PreToolUse     mcp__plugin_claude-mem_mcp-search__save_obs  → gbrain-memory-write.sh
 PreToolUse     WebFetch|WebSearch                            → gbrain-external-search.sh
+PreToolUse     Read|Bash|WebFetch|WebSearch                  → agent-behavior-guard.sh
 PostToolUse    Write|Edit                                    → impeccable-detect-hook.sh
 PostToolUse    Write|Edit                                    → hook-added-notify.sh
 PostToolUse    Write|Edit  (*/skills/*/SKILL.md only)        → skill-permissions-gate.sh
 PostToolUse    Write|Edit|MultiEdit (test/CI config only)     → test-integrity-guard.sh
-PostToolUse    Skill                                         → skill-usage-tracker.sh
-PostToolUse    Bash                                          → action-capture.sh
 PostToolUse    Bash                                          → revert-detect-hook.sh
 PostToolUse    Bash                                          → setup-buffer-hook.sh
-PostToolUse    Bash                                          → pr-auto-create-hook.sh
-PostToolUse    Agent                                          → agent-trace-hook.sh
-PostToolUse    Read                                          → lean-ctx-nudge-hook.sh
-PreToolUse     Bash|mcp__.*                                  → tool-failure-recall.sh
-PostToolUseFailure Bash|mcp__.*                              → tool-failure-capture.sh
+PostToolUse    Bash                                          → action-capture.sh
 PreCompact     (all)                                         → compaction-discipline-hook.sh
 ```
 
-The `tool-failure-*` pair plus the `tool-failure-review` routine form the **tool-failure-memory loop** (capture → recall → review). See the `tool-failure-memory` skill and `docs/harness-documentation/SDD-SETUP-GUIDE.md`.
+**Documented above but NOT found wired in this repo's `.claude/settings.json` as of the same verification pass** (the hook file and/or its description section exist, but no matching event/matcher entry is present in the live config — confirm before relying on any of these firing):
+
+```
+UserPromptSubmit (all, keyword-gated)                       → frontend-security-nudge.sh   [NOT WIRED]
+UserPromptSubmit (all, keyword-gated)                       → pr-mention-nudge.sh          [NOT WIRED]
+PreToolUse     mcp__raindrop__                               → raindrop-best-practices.sh   [NOT WIRED]
+PostToolUse    Skill                                         → skill-usage-tracker.sh       [NOT WIRED]
+PostToolUse    Bash                                          → pr-auto-create-hook.sh       [NOT WIRED]
+PostToolUse    Agent                                          → agent-trace-hook.sh         [NOT WIRED]
+PostToolUse    Read                                          → lean-ctx-nudge-hook.sh       [NOT WIRED]
+PreToolUse     Bash|mcp__.*                                  → tool-failure-recall.sh       [NOT WIRED]
+PostToolUseFailure Bash|mcp__.*                              → tool-failure-capture.sh      [NOT WIRED]
+```
+
+The `tool-failure-*` pair plus the `tool-failure-review` routine are designed to form the **tool-failure-memory loop** (capture → recall → review), but per the check above neither `tool-failure-recall.sh` nor `tool-failure-capture.sh` currently has a matching entry in `.claude/settings.json` — the loop's hook half is presently unwired even though the routine and skill exist. See the `tool-failure-memory` skill and `docs/harness-documentation/SDD-SETUP-GUIDE.md`.
 
 ---
 
@@ -561,5 +569,5 @@ The `tool-failure-*` pair plus the `tool-failure-review` routine form the **tool
 3. Document it in this file (the `hook-added-notify.sh` hook will remind you if you forget).
 4. Update the Wiring Reference table above.
 
-_Last synced: 2026-07-30
+_Last synced: 2026-08-02
 

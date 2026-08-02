@@ -573,20 +573,22 @@ Starts a local HTTP server at `http://localhost:4569` and opens the browser auto
 | 3 | 🔬 Workshop | Raindrop Workshop trace browser; filter by repo, run eval loop, view agent traces |
 | 4 | 🗜 Headroom | Compression savings totals for RTK + headroom proxy; per-session block history with checkpoint-level token savings |
 | 5 | 🪝 Hooks History | Hook name, event type, last activity, active/inactive badge |
-| 6 | 📅 Scheduled Tasks | OS scheduler health card + per-routine cards (schedule, last run + exit code, artifact, diff vs. previous run, reasoning excerpt). Includes the Daily Security Scan routine (`security-report-runner.sh`) which scans recent git changes for OWASP patterns, secrets, and injection sinks. |
+| 6 | 📅 Scheduled Tasks | OS scheduler health card + per-routine cards (schedule, last run + exit code, artifact, diff vs. previous run, reasoning excerpt), scoped to whichever repo's dashboard is open — per-repo routines (including Tool-Failure Review and Code-Review Learning) show that repo's own state and log entries, harness-only routines always show the harness's. Includes the Daily Security Scan routine (`security-report-runner.sh`) which scans recent git changes for OWASP patterns, secrets, and injection sinks. |
 | 7 | 🧠 Memory Changes | Per-file cards for hot-memory, observations, and meta/patterns with day-over-day diffs ("since yesterday") computed from dated snapshots; full content expanded when a file is unchanged |
 | 8 | 🎯 Skill Changes | Skill usage stats (hot/cold from `skill-usage-tracker.sh` log — total/30d invocations, skills used, cold-skill count, top-skills bars, deprecate candidates) above the rendered skill-curation-report with audit age |
 | 9 | 📊 Session Quality | Score/keep-rate/memory-gap summary + 30-day chart; ✨ **Prompt Quality** sub-tab — per-dimension PQ trends (7-day avg, weakest dimension, rolling score chart) |
-| 10 | 💰 Model Cost | All-time and 30-day spend; 90-day daily cost bar chart; sessions table with model/tokens/cost; cross-provider "What if?" cost switcher |
+| 10 | 💰 Model Cost | All-time and 30-day spend; 90-day daily cost bar chart; sessions table with model/tokens/cost; cross-provider "What if?" cost switcher; cache-cost stat card showing what share of session spend is cache reads/writes vs. fresh tokens |
 | 11 | 🧵 Context Health | Sessions per day trend + `/compact` recommendations |
 | 12 | 🔧 Maintenance Status | Per-repo orchestrator log tail and last-run status; **deferred-work banner** — count of `DEBT:` markers (deliberate shortcuts, per `karpathy-guidelines`) found by `git grep` across tracked code, recomputed each dashboard launch |
-| 13 | 🤖 Automation Audit | Timeline of automated events — runs from every routine (daily-maintenance, macro-eval, skill-curator, harness-health, tool-failure, security, drift), each with its own icon/label; not-due checks (duration 0s) are hidden and daily-maintenance entries expand to show that day's brief; plus trust-judge scores, session signals, and scheduled task outcomes |
+| 13 | 🤖 Automation Audit | Timeline of automated events — runs from every routine (daily-maintenance, macro-eval, skill-curator, harness-health, tool-failure, security, drift), each with its own icon/label; not-due checks (duration 0s) are hidden and daily-maintenance entries expand to show that day's brief; plus trust-judge scores, session signals, scheduled task outcomes, and a PR-review-pipeline event section (`detect_base_and_create.sh` → `log_review.sh` → `validate_review_json.py` → GitHub Action publish) |
 
 ### 💰 Model Cost section
 
 Reads session JSONL files from `~/.claude/projects/*/`. Pricing is fetched from `models.dev/api.json` and cached at `.dashboard/models-pricing-history.json`, refreshed bi-weekly. Historical snapshots accumulate so past sessions are costed at the rate in effect when they ran. Sessions where pricing has changed since the run are flagged with a ⚠ icon.
 
 The **"What if?" switcher** lets you recalculate total projected cost against any supported provider (Anthropic, OpenAI, Google, Mistral, DeepSeek, xAI, Cohere, Amazon Bedrock, Azure, Perplexity, Groq) and model — select provider first, then model, and the projected vs. actual totals update instantly.
+
+The **cache-cost stat card** shows what share of a session's token spend was cache reads/writes vs. fresh tokens — the same signal `stop-hook.sh`'s cache-cost dominance check uses to decide whether to write a handoff snapshot.
 
 See `docs/workflow/superpowers/specs/2026-05-14-harness-dashboard-design.md` for the full section spec (gitignored — local only).
 
@@ -792,4 +794,4 @@ Four protocols extracted from [garrytan/gbrain](https://github.com/garrytan/gbra
 
 Full reference: `docs/gbrain-patterns/gbrain-patterns.md`
 
-_Last synced: 2026-07-06_
+_Last synced: 2026-08-02_
