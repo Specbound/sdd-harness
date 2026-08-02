@@ -59,6 +59,10 @@
           {
             "type": "command",
             "command": "bash {{HARNESS_DIR}}/.claude/hooks/stop-hook.sh"
+          },
+          {
+            "type": "command",
+            "command": "bash {{HARNESS_DIR}}/.claude/hooks/address-check-hook.sh"
           }
         ]
       }
@@ -100,20 +104,24 @@
           {
             "type": "command",
             "command": "bash {{HARNESS_DIR}}/.claude/hooks/setup-buffer-hook.sh"
-          }
-        ]
-      },
-      {
-        "matcher": "CronCreate",
-        "hooks": [
+          },
           {
             "type": "command",
-            "command": "bash {{HARNESS_DIR}}/.claude/hooks/ccr-routine-added-notify.sh"
+            "command": "bash {{HARNESS_DIR}}/.claude/hooks/action-capture.sh"
           }
         ]
       }
     ],
     "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash {{HARNESS_DIR}}/.claude/hooks/git-destructive-guard-hook.sh"
+          }
+        ]
+      },
       {
         "matcher": "Write|Edit",
         "hooks": [

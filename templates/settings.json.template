@@ -212,15 +212,6 @@
         ]
       },
       {
-        "matcher": "CronCreate",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash .claude/hooks/ccr-routine-added-notify.sh"
-          }
-        ]
-      },
-      {
         "matcher": "Agent",
         "hooks": [
           {
