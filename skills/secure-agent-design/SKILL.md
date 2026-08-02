@@ -236,6 +236,53 @@ agent.deny(send_email, lambda c: not c["to"].endswith("@ourco.com"))
 
 ---
 
+## Pattern 7: Provider-State Portability & Audit Trail
+
+When an agent's architecture relies on a stateful LLM provider API (OpenAI Responses API, Anthropic Messages with extended thinking, Gemini Interactions API), **treat provider-side state as untrusted and non-portable by default.** Modern provider APIs return a mix of visible text plus opaque server-bound state — encrypted reasoning tokens, hosted-tool results with only citations exposed, opaque compaction summaries, encrypted subagent messages, server-keyed conversation IDs. A saved transcript that only records the visible half is not a complete record of what happened, and cannot be replayed against a different provider or audited later.
+
+**Why:** Six real mechanisms break the old "transcript = full session" assumption: encrypted reasoning (`encrypted_content` / thinking `signature` fields), hosted web search where the client never sees the full source material, server-side compaction only the original provider can decrypt, encrypted subagent instructions/messages, file/vector-store/cache references resolvable only on one provider's servers, and conversation state keyed to a server-stored ID (`previousResponseId`, `store: true`) with no independent copy. Any of these silently breaks inspection, export, replay, audit, or deletion.
+
+**Five criteria to check before shipping a stateful agent architecture:**
+
+1. **Inspection** — Can a user see what the model, tools, and subagents actually did (not just a summary)?
+2. **Export** — Is the session self-contained, or does it depend on a foreign-key ID (`previousResponseId`) that only resolves on one provider's servers?
+3. **Replay** — Can the system reconstruct an equivalent context on a different provider or model?
+4. **Audit** — Can a human explain a past action from what was recorded, months later?
+5. **Deletion** — Can server-side dependent copies (stored responses, cached files, compacted summaries) be identified and removed on request?
+
+**Red flags in a design review:**
+- Storing only `response.id` / `previousResponseId` with `store: true` and no independently-held transcript → session cannot be exported or moved to another provider.
+- Using a hosted/server-side search tool and logging only citations/URLs, not the actual query, passages, and ranking the model saw → re-fetching the URL later will not reproduce what was actually read.
+- Passing encrypted `reasoning`/`encrypted_content`/thinking `signature` blocks across a model or provider switch without stripping them first → most providers' docs say these are provider-specific and won't be honored elsewhere; some will hard-error.
+- Multi-agent orchestration where subagent messages/instructions are encrypted between parent and child (e.g. provider-hosted multi-agent APIs) with no plaintext log kept independently → subagent behavior becomes unauditable.
+- Relying solely on a provider's compaction endpoint for context summarization with no locally-held, human-readable summary → the compacted state is a black box if you ever need to explain or replay it.
+
+**Implementation principle:**
+```python
+# Bad: state only exists as a foreign key into the provider's database
+resp = client.responses.create(model=MODEL, input=user_input, store=True)
+# ...next turn...
+resp2 = client.responses.create(model=MODEL, previous_response_id=resp.id, input=next_input)
+# If this provider is ever swapped out, or store expires, the session is gone.
+
+# Good: keep an independently-held, readable transcript alongside provider state
+local_transcript.append({"role": "user", "content": user_input})
+resp = client.responses.create(model=MODEL, input=user_input, store=True)
+local_transcript.append({"role": "assistant", "content": resp.output_text, "provider_id": resp.id})
+# local_transcript is the source of truth; provider_id is a convenience, not a dependency.
+```
+
+**Rules:**
+- Every agent that uses a stateful/hosted provider API keeps its own local, human-readable transcript — never rely solely on a provider-side ID as the only copy of session state.
+- Hosted tools (search, retrieval, code execution) log full inputs/outputs/evidence locally, not just what the provider surfaces as a citation.
+- Subagent tasks, messages, and results are logged in plaintext somewhere the orchestrating app controls, even if the provider's own multi-agent transport encrypts them in transit.
+- Before switching models or providers mid-session, strip provider-specific opaque blocks (encrypted reasoning, signatures) rather than forwarding them — they won't be honored and may error.
+- If a design can't satisfy Inspection/Export/Replay/Audit/Deletion, treat that as a documented limitation, not an oversight — call it out explicitly to whoever is reviewing the architecture.
+
+*Source: [The Session You Cannot Take With You](https://earendil.com/posts/session-portability/) — see `docs/sources/articles/README.md`.*
+
+---
+
 ## Checklist: Before Shipping an Agent
 
 - [ ] All untrusted input wrapped in `<untrusted_data>` in every prompt
@@ -245,3 +292,4 @@ agent.deny(send_email, lambda c: not c["to"].endswith("@ourco.com"))
 - [ ] No credentials in working directory; injected as env vars only
 - [ ] For consequential tool calls: whole plan verified (taint source→sink + allowlist) before any tool runs
 - [ ] Tested with a deliberately adversarial input (`Ignore all previous instructions...`)
+- [ ] If the agent uses a stateful provider API: local transcript kept independently of provider-side state (Inspection/Export/Replay/Audit/Deletion all satisfiable)

@@ -33,6 +33,33 @@ git add .
 STAGED_FILES=$(git diff --cached --name-only)
 DIFF_STAT=$(git diff --cached --stat)
 
+# --- Stacked PR detection (see stacking-pull-requests skill) ---
+# Eligibility: gh + gh-stack extension present, and either a stack is already
+# active for this branch (.git/gh-stack exists) or this looks like the first
+# commit on a spec-impl branch whose spec has enough tasks to be worth stacking.
+STACK_ACTIVE=false
+SDD_STACK_MIN_TASKS="${SDD_STACK_MIN_TASKS:-2}"
+if [ -z "${SDD_SKIP_STACK:-}" ] && command -v gh >/dev/null 2>&1; then
+    if [ -f ".git/gh-stack" ]; then
+        STACK_ACTIVE=true
+    elif gh extension list 2>/dev/null | grep -q "github/gh-stack"; then
+        for tasks_file in specs/*/tasks.md; do
+            [ -f "$tasks_file" ] || continue
+            slug="$(basename "$(dirname "$tasks_file")")"
+            case "$CURRENT_BRANCH" in
+                *"$slug"*)
+                    task_count=$(grep -cE "^- \[[ x]\]" "$tasks_file")
+                    if [ "$task_count" -ge "$SDD_STACK_MIN_TASKS" ] && gh stack init "$CURRENT_BRANCH" >/dev/null 2>&1; then
+                        info "Initialized gh-stack for $CURRENT_BRANCH ($task_count tasks in $tasks_file) — see stacking-pull-requests skill."
+                        STACK_ACTIVE=true
+                    fi
+                    break
+                    ;;
+            esac
+        done
+    fi
+fi
+
 # Analyze changes to determine commit type
 determine_commit_type() {
     local files="$1"
@@ -106,8 +133,7 @@ else
     info "Using provided message: $COMMIT_MSG"
 fi
 
-# Create commit with Claude Code footer
-git commit -m "$(cat <<EOF
+FULL_MSG="$(cat <<EOF
 ${COMMIT_MSG}
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)
@@ -115,6 +141,21 @@ ${COMMIT_MSG}
 Co-Authored-By: Claude <noreply@anthropic.com>
 EOF
 )"
+
+if [ "$STACK_ACTIVE" = true ]; then
+    info "Stack active — adding this task as a layer (gh stack add)"
+    if gh stack add -m "$FULL_MSG"; then
+        COMMIT_HASH=$(git rev-parse --short HEAD)
+        info "Created layer commit: $COMMIT_HASH"
+        info "Submitting stack (creates/updates the PR for this layer)..."
+        gh stack submit --auto || warn "gh stack submit failed — layer committed; submit manually with: gh stack submit --auto (or see stacking-pull-requests skill)"
+        exit 0
+    fi
+    error "gh stack add failed — falling back to plain commit"
+fi
+
+# Create commit with Claude Code footer (non-stacked path)
+git commit -m "$FULL_MSG"
 
 COMMIT_HASH=$(git rev-parse --short HEAD)
 info "Created commit: $COMMIT_HASH"

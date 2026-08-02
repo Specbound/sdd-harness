@@ -23,6 +23,12 @@ bash ~/.claude/skills/git-pushing/scripts/smart_commit.sh "feat: add feature"
 
 The script handles staging, conventional commit message generation, the Claude footer, and `push -u` for new branches.
 
+**Stacked PRs:** if `gh-stack` is installed and the current branch matches a
+multi-task spec (`specs/<slug>/tasks.md`), the script auto-detects this on the
+first task commit and routes every commit through `gh stack add` (one task = one
+stack layer) instead of a plain commit, submitting each layer's PR immediately.
+See the `stacking-pull-requests` skill for the eligibility rule and manual overrides.
+
 ## Constraints
 
 - Repo conventions override this skill: respect project CLAUDE.md rules (e.g. atomic commits per task, files that must never be committed) before staging everything.

@@ -17,6 +17,20 @@ git rev-parse --is-inside-work-tree >/dev/null 2>&1 || exit 0
 current_branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null)"
 [ -z "$current_branch" ] || [ "$current_branch" = "HEAD" ] && exit 0
 
+# If a gh-stack is already active for this branch (initiated by smart_commit.sh
+# per the stacking-pull-requests skill), submit the whole stack instead of
+# bundling everything into one PR. Covers the case of a manual `git push` that
+# bypassed smart_commit.sh's own submit call.
+if [ -f ".git/gh-stack" ]; then
+  stack_out="$(gh stack submit --auto 2>&1)"
+  if [ $? -eq 0 ]; then
+    echo "[STACK-SUBMITTED] gh-stack layers submitted for $current_branch."
+  else
+    echo "WARN: gh stack submit failed: $stack_out — see stacking-pull-requests skill (likely a sync conflict)." >&2
+  fi
+  exit 0
+fi
+
 default_branch="$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | sed 's#^origin/##')"
 
 best_ref=""

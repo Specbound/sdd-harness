@@ -7,7 +7,7 @@ All evaluation capabilities live in a single `evaluation/` skill family. The rou
 ```
 skills/evaluation/
   SKILL.md                  ← router: decision tree + multi-skill loading guide
-  micro/SKILL.md            ← per-run grading, LLM-as-judge, rubrics, quality gates
+  micro/SKILL.md            ← error-analysis bootstrap, per-run grading, LLM-as-judge, rubrics, quality gates
   macro/SKILL.md            ← population patterns, impact ranking, suspect tracing
   funnel/SKILL.md           ← pre-experiment filtering, A/B decisions, judge calibration
   long-trajectory/SKILL.md  ← long-horizon agents, stateful verification, rubric adaptation
@@ -31,13 +31,16 @@ Always invoke first. Provides the decision tree and tells you which sub-skill(s)
 `~/.claude/skills/evaluation/micro/SKILL.md`
 
 The foundational grading layer. Covers:
+- Error-analysis bootstrap — read ~100 real traces, build the initial failure-category taxonomy before you have any rubric
 - Multi-dimensional rubric design (factual accuracy, completeness, tool efficiency, citation accuracy)
 - LLM-as-judge implementation and prompt patterns
 - Test set construction and complexity stratification
 - Continuous evaluation pipelines and regression detection
 - End-state vs. process evaluation
 
-**Activate with:** "evaluate agent performance", "build test framework", "measure agent quality", "LLM-as-judge", "evaluation rubric", "quality gate"
+Error-analysis section extracted from: Hamel Husain's `error-analysis` skill ([hamelsmu/evals-skills](https://github.com/hamelsmu/evals-skills)) (2026-08-02). Human-driven, not automatable — findings written to `.claude/memory/failure-taxonomy-<date>.md`, picked up by the dashboard's memory-files panel automatically.
+
+**Activate with:** "evaluate agent performance", "build test framework", "measure agent quality", "LLM-as-judge", "evaluation rubric", "quality gate", "error analysis", "failure taxonomy", "what's breaking in my agent"
 
 **Invoke:** `Skill("evaluation/micro")`
 

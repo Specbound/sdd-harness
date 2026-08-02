@@ -523,3 +523,62 @@ GitHub repositories that were passed to `/skill-extraction` and turned into harn
 - Full rule-file/YAML DSL with versioning and cryptographic signing — massive overkill for a single-user local harness; three inline regex rules cover the real gap.
 - Forensic/replay event-source scanning — numbat's live+forensic dual-source model doesn't map to Claude Code's tool-call event stream; not applicable here.
 - Separate `numbat`-style CLI binary/daemon — the existing PreToolUse hook mechanism already provides the enforcement point; no separate process needed.
+
+---
+
+## github.com/mattpocock/skills — `wayfinder` skill
+**URL:** https://github.com/mattpocock/skills (skill: `skills/engineering/wayfinder/SKILL.md`) | **Added:** 2026-08-02
+
+**What it's about:** Plans oversized/ambiguous projects via a durable "map" — a single issue on the repo's issue tracker (GitHub/GitLab/local-markdown) indexing decision tickets (child issues). Tracks resolved decisions, fog-of-war (not-yet-specified), and out-of-scope, with blocking relationships and claim-by-assignment semantics across many async/concurrent sessions. Depends on companion skills (`/grilling`, `/domain-modeling`, `setup-matt-pocock-skills` onboarding, triage labels) for a whole adjacent SDD-style ecosystem.
+
+**What we added (ran `better-call`: verdict AUGMENT INCUMBENT, 21/30 vs 25/30, kiro's idea-refine→spec-grill pipeline):**
+- Skill: `issue-triage-routing` — added axis 4 "Scale" (feature vs program) and a new **PROGRAM** routing outcome (precedence: defer > program > clarify > spec > one-shot).
+- Command: `idea-refine` — on PROGRAM route, charts `specs/_maps/<name>.md` (Destination/Decisions-so-far/Fog/Out-of-scope) via the existing idea-refine-agent, then auto-decomposes the first fog item into a slice and re-triages it — hands off to spec-quick/spec-init in the same pass, no standalone command.
+- Command: `spec-tasks` — on tasks approval, auto-checks `specs/_maps/*.md` for a fog entry matching the completed feature and moves it to Decisions-so-far. Self-maintaining map, no manual upkeep.
+- Template: `kiro/settings/templates/specs/map-init.md` — new map scaffold matching existing `{{PLACEHOLDER}}` template convention.
+- Docs: `docs/harness-documentation/SDD-USAGE.md` — updated `idea-refine`/`spec-tasks` entries + Typical Workflow note.
+
+**Rejected:**
+- Whole wayfinder ticket/claim/tracker machinery — solves multi-contributor/concurrent-session claiming; this is a solo WSL harness with no issue tracker in use anywhere (confirmed via grep before proposing).
+- `setup-matt-pocock-skills` onboarding skill — duplicates `.claude/steering/`, which already owns per-repo project config.
+- Triage label vocabulary (`needs-triage`, `ready-for-agent`, etc.) — no `triage` skill installed, no team workflow to triage for.
+- `wayfinder:<type>` ticket taxonomy and claim/assignment semantics — pure concurrency control for multiple humans/agents on the same tracker; not applicable to single-user sessions.
+
+---
+
+## github.com/braintrustdata/agentbehavior
+**URL:** https://github.com/braintrustdata/agentbehavior | **Added:** 2026-08-02
+
+**What it's about:** Open standard for `BEHAVIOR.md` — a durable spec of expected agent conduct across a whole trajectory (Intent/Evidence/Decision/Execution/Recovery/Failure modes), stored per-project next to the agent it describes. Deliberately not a runtime prompt: answer-key material a reviewer/judge uses to grade a completed trajectory, kept blind from the agent being evaluated. Ships a portable authoring skill, a structural CLI validator, and a `true/false/na` judging convention.
+
+**What we added:**
+- Skill: `writing-behavior-specs` — ports the authoring/calibration workflow (3-part worth-saving test, 4-fixture calibration) to `.claude/behaviors/<name>/BEHAVIOR.md`. Invoked only by the agent below, never by the user.
+- Agent: `agents/kiro/behavior-spec-agent.md` — new subagent wired as Step 6b of `/kiro:daily-maintenance` (sibling to `skill-augment-agent`). Reads today's judge drains, `type: feedback` memories, and revert/drain observations; drafts/revises up to 3 BEHAVIOR.md specs/run when the same conduct class recurs ≥2 times (human feedback auto-qualifies at 1).
+- Script: `scripts/validate-behavior-spec.py` — small stdlib-only structural validator (frontmatter, name-matches-directory), ported instead of adopting the upstream npm CLI. Called automatically by the agent above, never run by hand.
+- Docs: added a `.claude/behaviors/` line to `templates/CLAUDE.md.template` and this repo's own `CLAUDE.md`; added step 8b to the pipeline description in `docs/harness-documentation/SDD-USAGE.md`; added a row to `scripts/README.md`.
+- Eval-gate: ran `skill-eval-gate` (3 scenarios, baseline vs. treatment) before finalizing — PASS (treatment beat baseline on 2/3 scenarios: correct BEHAVIOR.md frontmatter schema, correct auto-qualify-at-1 rule for feedback memories; tied on an easy reject case).
+
+**Rejected:**
+- Session-start bi-weekly interactive nudge (claudemd-review pattern) — riding the existing unattended nightly `daily-maintenance` pipeline is strictly more automated (no live session required) and avoids a redundant cadence file.
+- `tool-failures.jsonl` as the primary recurrence signal — too mechanical/syntactic (broken commands, not conduct); judge drains / feedback memories / revert observations are the right evidence source.
+- Adopting the upstream npm `agentbehavior` CLI — harness has no Node/pnpm dependency for its own tooling; the structural checks are 3 simple assertions, covered by a small stdlib Python script instead.
+- Dashboard widget and standalone drift-audit routine — no persistent metric or audit need yet; premature before any project has accumulated specs.
+
+---
+
+## github.com/fcakyon/claude-codex-settings
+**URL:** https://github.com/fcakyon/claude-codex-settings | **Added:** 2026-08-02
+
+**What it's about:** 30-plugin bundle of Claude Code / Codex / Cursor configs, hooks, skills, and subagents (Fatih Akyon). Mostly per-service skills (mongodb, stripe, azure, etc); the value here was in a handful of well-built hooks and two cross-model "second opinion" subagents.
+
+**What we added:**
+- Hook: `ai-writing-guard-hook.sh` (new) — `PreToolUse` deny on `Write|Edit|MultiEdit|Bash`. Blocks AI-sounding word/phrase patterns before they land in a file write/edit or a git-commit/gh message. Ported from the `humanize` plugin, with the em-dash check dropped (conflicts with this harness's own house style).
+- Hook: `reject-feedback-hook.sh` (new) — `UserPromptSubmit`, soft. Detects a rejected/interrupted tool call and classifies the user's follow-up into a reject reason, appending a `[friction]` line to `observations.md` for actionable categories only. Ported from `claude-telemetry-hooks`'s `user_prompt_reject_feedback.py` with the OTel export dropped (no OTel backend configured here) — reuses the existing `observations.md` append convention instead of a new file/pipeline, and is a distinct signal from `tool-failure-capture.sh`/`tool-failure-recall.sh` (command *execution* errors, not user pushback), confirmed via audit before implementing.
+- Augmentation: `compaction-discipline-hook.sh` — added 5 concrete fidelity sections (unanswered-question tracking, root-cause vs ruled-out-hypothesis separation, file importance tiers, subagent results as primary evidence, A-vs-B comparison preservation), via a `better-call` AUGMENT INCUMBENT verdict (25/30 vs 29/30) against the `intelligent-compact` plugin's `precompact_priorities.sh`.
+- Augmentation: `git-destructive-guard-hook.sh` — now strips quoted segments before matching (kills a false-positive when a force flag is mentioned inside a quoted commit message) and blocks bare `git rebase`, via a `better-call` AUGMENT INCUMBENT verdict (26/30 vs 27/30) against the `ultralytics-dev` plugin's `block_force_push.py`.
+
+**Rejected:**
+- `simplify`, `github-dev`, `adhd-output-style`, `agent-browser` — each a duplicate of an existing harness skill or hook (own `simplify` skill; `git-pushing`/`create-pr`/etc.; the caveman-mode hook system; `playwright-skill`/`browser-automation`).
+- `codex-advisor` / `fable-advisor` (cross-model second-opinion subagents) — genuinely different pattern, but `codex-advisor` needs an unconfirmed external `codex` CLI dependency; not proposing blind.
+- `claude-telemetry-hooks`'s `session_start_chat_id.py` — pure OTel session-linking telemetry, dead code with no OTel backend configured.
+- ~15 per-service skills (mongodb, supabase, stripe, polar, livekit, cloudflare, hetzner, dokploy, azure-tools, gcloud-tools, react-skills, python-skills, overleaf-skills, paper-search-tools, tavily-tools, openobserve-skills, web-performance-skills, frontend-design-skills, anthropic/openai-office-skills) — mostly duplicate the harness's existing catalog for services not confirmed in use; domain-saturation concern (generic dev-tooling, not an underserved domain).

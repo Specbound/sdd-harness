@@ -35,6 +35,56 @@ Research on the BrowseComp evaluation found three factors explain 95% of perform
 | Number of tool calls | ~10% | More exploration helps |
 | Model choice | ~5% | Model upgrades beat token increases |
 
+## Error-Analysis Bootstrap
+
+Run this **before** rubric design when you have no failure taxonomy yet — starting a new eval project, after a major pipeline change, when a metric drops, or post-incident. It builds the vocabulary of what actually breaks from real traces, so the rubric in the next section reflects observed failures instead of guessed-at dimensions.
+
+*Extracted from: Hamel Husain's `error-analysis` skill ([hamelsmu/evals-skills](https://github.com/hamelsmu/evals-skills)).*
+
+**Phase 1 — Collect ~100 Traces**
+
+"~100" is roughly where new traces stop revealing new kinds of failures. Prefer real usage data over synthetic.
+
+| Strategy | When |
+|---|---|
+| Random | Default |
+| Stratified | Ensure segment/complexity coverage |
+| Outlier | Extremes in length/latency/tool-call count |
+| Failure-driven | Flagged or complained-about traces |
+| Uncertainty | Judge/human disagreement cases |
+
+**Phase 2 — Read and Note**
+
+Judge each trace Pass/Fail. On failure, record **only the first root-cause issue** — later errors usually cascade from it, and cataloging symptoms instead of causes inflates the category count with noise. Keep notes observational ("what happened"), not interpretive ("why it probably happened"). Four-column template: `Trace ID | Trace | What Went Wrong | Pass/Fail`. If you can't articulate an issue, check against common categories first: fabricated facts, malformed output, ignored requirements, wrong tone, tool misuse.
+
+**Phase 3 — Group Into Categories**
+
+Start clustering once you have 30–50 read traces — don't wait for all 100. This is inductive: categories emerge from what you observed, not from a list you brought in. Split notes that share surface wording but differ in root cause; merge notes that share a root cause despite differing surface details. Target 5–10 categories that are distinct, clearly defined, and actionable. An LLM can suggest groupings from your notes, but review every suggestion yourself — LLMs cluster on wording, not on true cause.
+
+**Phase 4 — Label Every Trace**
+
+Apply binary pass/fail per category, across all traces (spreadsheet, annotation tool, or script).
+
+**Phase 5 — Compute Failure Rates**
+
+Sum each category's failure count over total traces, sort descending. This is your priority order — not the order you found them in.
+
+**Phase 6 — Decide Per Category**
+
+1. **Direct fix first** — prompt gap, missing tool, engineering bug. Most failures end here.
+2. **Only build an evaluator if the failure persists** and clears frequency + business-impact + will-actually-drive-iteration.
+3. Prefer a **code-based check** (regex/schema) for objective failures; reserve **LLM-judge evaluators** (see Evaluation Rubric Design below) for genuinely subjective ones. Safety/compliance failures may warrant an evaluator as a standing guardrail even after the prompt fix lands.
+
+**Phase 7 — Iterate**
+
+Expect 2–3 refinement rounds: merge overlapping categories, split overly broad ones, clarify fuzzy definitions, re-label.
+
+**Stopping criteria:** ~100 traces read, no new failure type in the last 20.
+
+**Anti-patterns:** brainstorming categories before reading data · starting from a fixed predefined list · skipping user/product-owner involvement in early review · treating a generic quality score as if it were a failure category · building an evaluator before trying the direct fix · treating this as one-off rather than repeatable after every major change.
+
+**Output:** write the taxonomy (categories, failure rates, decisions) to `.claude/memory/failure-taxonomy-<YYYY-MM-DD>.md` — same convention as `active-observability`'s `trace-patterns-<date>.md`. The harness dashboard's memory-files panel picks this up automatically; no separate registration needed.
+
 ## Evaluation Rubric Design
 
 **Multi-Dimensional Rubric**

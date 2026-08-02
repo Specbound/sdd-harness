@@ -157,6 +157,35 @@ Rules:
 
 Log the result. If skill-augment-agent errors, log `[routine-error]: skill-augment-agent failed` and continue. Skill augmentation is best-effort — it must never block trust score or gap detection.
 
+## Step 6b — Mine Behavior Specs
+
+Use the Task tool to invoke the Subagent:
+
+```
+Task(
+  subagent_type="behavior-spec-agent",
+  description="Draft/update BEHAVIOR.md conduct specs from recurring evidence",
+  prompt="""
+Review today's session evidence for recurring agent-conduct patterns and
+draft or revise durable BEHAVIOR.md specs under .claude/behaviors/.
+
+Judge verdict from Step 1:
+<paste Judge verdict JSON here, or "no verdict" if Step 1 failed>
+
+Today's date: <today's date>
+
+Rules:
+- Max 3 specs created/updated
+- Every spec cites a judge drain, a type: feedback memory, or a [revert]/[drain]
+  observation recurring ≥2 times (type: feedback auto-qualifies at 1 occurrence)
+- Validate every spec with .claude/scripts/validate-behavior-spec.py before finalizing
+- Never edit ~/.claude/skills/, CLAUDE.md, or any runtime-visible file — .claude/behaviors/ only
+"""
+)
+```
+
+Log the result. If behavior-spec-agent errors, log `[routine-error]: behavior-spec-agent failed` and continue. This step is best-effort — it must never block trust score or gap detection.
+
 ---
 
 
@@ -195,6 +224,7 @@ Daily Maintenance complete — YYYY-MM-DD
 - Trust Score: 42.3% (▼ -1.0 today, 7d: ▲ +3.1)
 - Unresolved memory-gaps: 1 → [routine-alert] appended
 - Skills augmented: 2 (brainstorming: +1 anti-pattern, systematic-debugging: +1 learned pattern)
+- Behavior specs: 1 (verify-before-claiming-done: created — evidence: 2 recurring judge drains)
 ```
 
 ## Notes

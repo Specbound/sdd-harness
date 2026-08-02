@@ -436,3 +436,17 @@ Five measured findings on skill authoring: (1) models cannot reliably self-autho
 **Rejected:**
 - Standalone skill teaching Claude to watch for cache-cost dominance — rejected per Husband's explicit pushback ("might get pulled" doesn't fix a mechanically-detectable condition); a hook enforces every time a skill doesn't.
 - Blocking Stop hook (`decision: block`) forcing `/compact` the instant the ratio trips — rejected as disproportionate: overrides the user's explicit stop intent across every project/session, and the source article itself notes compaction only briefly resets the ratio, so the fix is marginal against a large blast radius.
+
+---
+
+## "The harness is all you need (mostly)" — @burkeholland (Pasted text)
+**Added:** 2026-08-02 | **Source:** Pasted text — GitHub Copilot workflow post (prototype → plan → autopilot → review → rubber duck → commit)
+
+**What it's about:** An 8-step GitHub Copilot workflow: pick a tool, enable YOLO/allow-all mode, generate cheap tangible prototypes before committing to a design, plan methodically (grill-me-style clarifying questions), implement via an autopilot loop with automatic subagent routing, human-review and iterate, get a "rubber duck" review from a model of a different AI family before committing (different training data catches different blind spots), then commit.
+
+**What we added** (one augmentation — the harness already covers steps 1/2/4/5/6/8 via existing YOLO-mode permission settings, `brainstorming`/`spec-grill`/`pref-elicit`, native subagent routing + `TaskCreate`/`spec-impl`, and ordinary iteration. Ran `better-call` on the rubber-duck step against incumbent `/kiro:validate-adversarial`; verdict AUGMENT INCUMBENT (challenger's only edge was genuine cross-model-family diversity vs. validate-adversarial's same-family three-pass). Husband overrode even that: this harness has no funded/available path to a non-Claude model, so a cross-model loop is moot regardless of the verdict — rejected outright):
+- Agent augmentation: `agents/kiro/idea-refine-agent.md` Step 3 (Divergent Exploration) — added a "concrete-over-abstract rendering" rule: when the idea is visual/interface-shaped or has many plausible shapes, render the 2-3 approaches as a Mermaid diagram instead of plain bullets, since tangible comparisons surface reactions abstract text doesn't. Judgment-gated — skipped for backend-logic/single-path ideas.
+
+**Rejected:**
+- Cross-model "rubber duck" review loop (augment `blockrun` with an iterate-to-convergence pattern) — `better-call` verdict AUGMENT INCUMBENT vs. `/kiro:validate-adversarial` (13/30 vs 22/30, complementarity delta the only edge), then rejected outright by Husband: no non-Claude model is actually reachable in this harness, so the augmentation would be dead documentation.
+- YOLO/allow-all mode, methodical planning, autopilot loop, human review/iteration, "pick a tool" framing — already covered by existing harness mechanisms (see reasoning above); no artifact needed.

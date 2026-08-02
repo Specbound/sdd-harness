@@ -74,5 +74,16 @@ After the subagent completes:
    - Set `approvals.tasks.approved: true`
    - Update `updated_at` to current timestamp
 
-5. Confirm to user:
+5. **Update parent program map (if one exists):**
+   - Glob `specs/_maps/*.md`. Grep each for a "Not yet specified" line matching feature `$1`
+     (by slug or by a close text match to `$1`'s description).
+   - If found in some `specs/_maps/<name>.md`:
+     - Move that line from "Not yet specified" to "Decisions so far" as:
+       `- [<slice title>](specs/$1/) — <one-line gist from requirements.md's summary>`
+     - If "Not yet specified" is now empty, note in the map: `_(fog clear — all slices spec'd)_`
+   - If no map references `$1`, skip silently — this spec wasn't part of a charted program.
+
+6. Confirm to user:
    > ✅ Tasks approved. **Important**: clear conversation context before implementation. Then run `/kiro:spec-impl $1 1.1` to start the first task (clear context between each task for clean state).
+   >
+   > (if step 5 updated a map) 🗺️ Program map `specs/_maps/<name>.md` updated — N items left in the fog.

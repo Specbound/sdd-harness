@@ -93,7 +93,7 @@ Hook output is injected into Claude's context as system messages — Claude read
 
 **Why it's needed:** This is one of two trigger points (the other is `pr-auto-create-hook.sh` after a successful `git push`) for the PR-babysitting automation — catching the case where the user asks for a PR before pushing, or in a session where the push already happened earlier.
 
-**Output:** `[PR-AUTO-CREATED] PR #N opened against <base> (auto-detected base)` on success, or `[PR-AUTO-CREATED] PR #N already open...` if one exists. Silent (exit 0) on non-matching prompts, outside a git tree, or if `gh` is not installed.
+**Output:** `[PR-AUTO-CREATED] PR #N opened against <base> (auto-detected base)` on success, or `[PR-AUTO-CREATED] PR #N already open...` if one exists. Silent (exit 0) on non-matching prompts, outside a git tree, or if `gh` is not installed. If `.git/gh-stack` shows a stack is active for the branch (see `stacking-pull-requests` skill), runs `gh stack submit --auto` instead and outputs `[STACK-SUBMITTED] gh-stack layers submitted for <branch>` in place of the single-PR output.
 
 ---
 
@@ -232,7 +232,7 @@ Hook output is injected into Claude's context as system messages — Claude read
 
 **Why it's needed:** Pairs with `pr-mention-nudge.sh` as the second trigger point for PR-babysitting automation — catches the common case of pushing a branch and expecting a PR to exist, without requiring the user to ask. Made possible by the `templates/settings.json.template` permission change that narrowed the deny rule from blanket `Bash(git push*)` to only force-push variants, so this hook can now observe successful ordinary pushes.
 
-**Output:** `[PR-AUTO-CREATED] PR #N opened against <base> (auto-detected base)` on success, or `[PR-AUTO-CREATED] PR #N already open...` if one exists. Silent (exit 0) on force pushes, failed pushes, outside a git tree, or if `gh` is not installed.
+**Output:** `[PR-AUTO-CREATED] PR #N opened against <base> (auto-detected base)` on success, or `[PR-AUTO-CREATED] PR #N already open...` if one exists. Silent (exit 0) on force pushes, failed pushes, outside a git tree, or if `gh` is not installed. If `.git/gh-stack` shows a stack is active for the branch (see `stacking-pull-requests` skill), runs `gh stack submit --auto` instead and outputs `[STACK-SUBMITTED] gh-stack layers submitted for <branch>` in place of the single-PR output.
 
 **Location:** ships in `hooks/claude/`, copied to each project's `.claude/hooks/`; wired via `PostToolUse` matcher `Bash` in `templates/settings.json.template`, alongside `revert-detect-hook.sh` / `setup-buffer-hook.sh`.
 
@@ -334,6 +334,7 @@ Hook output is injected into Claude's context as system messages — Claude read
 - **Timing:** Compact at workflow boundaries (end of phase, task completion) — not arbitrary message counts.
 - **Preserve:** Working state, open questions, artifact paths, unresolved concerns, decisions + rationale.
 - **Do not over-compress:** Never strip file paths, function names, error messages, specific values.
+- **Fidelity requirements:** Unanswered-question tracking (answered/partial/unanswered + a "Pending Questions" subheading); root causes kept separate from ruled-out hypotheses (with file:line); files grouped into critical/referenced/mentioned tiers instead of a flat list; subagent/Task results treated as primary evidence to preserve in full; A-vs-B option comparisons preserved with which side won. Ported from claude-codex-settings' `intelligent-compact` plugin — concrete additions the rules above state only in the abstract.
 - **Domain-aware strategy:** Code → chunk-level (keep signatures, drop implementations already acted on). Prose → sentence-level (keep topic sentences, drop elaboration). RAG results → query-aware (filter to last user intent). Conversation → keep decisions and user corrections, drop filler. Tool output → keep errors and key metrics, drop passing output.
 - **Method:** Merge new content into existing summary sections — do not regenerate from scratch.
 
@@ -527,6 +528,43 @@ Hook output is injected into Claude's context as system messages — Claude read
 
 ---
 
+### `git-destructive-guard-hook.sh`
+**Event:** `PreToolUse` — **Matcher:** `Bash` — _(hard block)_
+
+**Purpose:** Blocks destructive git/gh operations independent of `settings.json`'s declarative allow/deny list (observed to not reliably block `git push --force` in some sessions even with an explicit deny entry present). Inspects the literal Bash command and exits 2 on any match. Blocks: any force-push variant, remote branch deletion via push (`--delete`, empty-refspec `:branch`), mirror push, local force branch delete (`git branch -D`), `gh repo delete`, and `git rebase` (rewrites shared history the same way a force-push does).
+
+**Why it's needed:** Soft nudges (`protected-path-hook.sh`) only warn — this is the one place in the harness that actually refuses to run a destructive git/gh command.
+
+**Matching detail:** all checks run against the command with quoted segments stripped, not the raw string, so a commit message or PR body containing the text `-f` or "force" inside quotes cannot false-trip the block. (Ported from claude-codex-settings' `ultralytics-dev` plugin, github.com/fcakyon/claude-codex-settings, which also added the `git rebase` check.)
+
+**Output / side effect:** `BLOCKED: ...` to stderr with reason and the offending command, exit 2. Silent (exit 0) on anything else.
+
+---
+
+### `ai-writing-guard-hook.sh`
+**Event:** `PreToolUse` — **Matcher:** `Write|Edit|MultiEdit|Bash` — _(hard block)_
+
+**Purpose:** Blocks AI-sounding word/phrase patterns (a small swap-list of overused words like `leverage`/`delve`, a few cliche openers like `it is important to note`, and hedge words such as `crucial`/`significant` repeated 3+ times) before they land in a file write/edit or a `git commit` / `gh` command's message text. Scoped so it never touches real code: markdown files are checked whole (minus fenced/inline code, so words inside backticks are exempt), code files only in `#`/`//`/`/* */` comments and docstrings, Bash only in the `-m`/`--message`/`-b`/`--body`/`-t`/`--title` value or heredoc body of a git/gh command. Em-dash is deliberately NOT flagged — this harness's own docs and hook banners already use it as house style.
+
+**Why it's needed:** None of the harness's other hooks check how text reads — they cover security/git-safety/behavior, not style drift. Long sessions drift toward AI-sounding writing that a prompt reminder won't reliably self-police; this is a hard-block domain like the destructive-git guard above, not a nudge domain. Ported from claude-codex-settings' `humanize` plugin (github.com/fcakyon/claude-codex-settings).
+
+**Output / side effect:** On a match, emits `{"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny", ...}}` naming the offending word/phrase and a plain swap. Silent (exit 0) on clean text or unrecognized file types.
+
+---
+
+### `reject-feedback-hook.sh`
+**Event:** `UserPromptSubmit` — **Matcher:** _(all)_ — _(soft, never blocks)_
+
+**Purpose:** When the user rejects or interrupts a tool call, their explanation arrives as their next prompt. This hook walks the transcript backward to detect that pattern, classifies the explanation into a reject reason (`wrong_target`, `tool_steering`, `scope_drift`, `verify_first`, `rule_setting`, `factual_challenge` — other categories like profanity or a bare "no" are treated as noise and dropped), and appends a `[friction]` line to `observations.md` for actionable categories only.
+
+**Why it's needed:** The harness's auto-memory system asks Claude to manually notice corrections and save `feedback` memories — inconsistent in practice. This makes the signal systematic instead of relying on Claude catching every pushback.
+
+**Explicitly NOT a duplicate of the tool-failure-memory loop:** `tool-failure-capture.sh`/`tool-failure-recall.sh` record when a Bash/MCP call ran and errored (a command-execution signal, with its own ledger and promotion routine). This hook fires on the user declining or redirecting a proposed action — a different signal — and deliberately reuses the existing `observations.md` append convention (same file `revert-detect-hook.sh` and `action-capture.sh` write to) instead of inventing a parallel file or pipeline.
+
+**Output / side effect:** Appends `- YYYY-MM-DD [friction]: tool rejected (<category>) — "<excerpt>"` to `observations.md`. De-duplicates by excerpt. Ported from claude-codex-settings' `claude-telemetry-hooks` plugin (github.com/fcakyon/claude-codex-settings), with its OTel export dropped — this harness has no OTel backend configured.
+
+---
+
 ## Hook Wiring Reference
 
 Verified directly against `.claude/settings.json` on 2026-08-02 (not just this doc's prior claims):
@@ -538,11 +576,13 @@ Stop           → stop-hook.sh
 Stop           (all)                                        → address-check-hook.sh
 Stop           (all)                                        → caveman-savings-hook.sh
 UserPromptSubmit (matcher: "")                                → doc-parse-nudge.sh
+UserPromptSubmit (matcher: "")                                → reject-feedback-hook.sh
 PreToolUse     Bash                                          → rtk hook claude  [global, ~/.claude/settings.json — token compression]
-PreToolUse     Bash                                          → git-destructive-guard-hook.sh  [no dedicated section below yet]
+PreToolUse     Bash                                          → git-destructive-guard-hook.sh
 PreToolUse     Write|Edit                                    → memory-discipline-hook.sh
 PreToolUse     Write|Edit                                    → protected-path-hook.sh
 PreToolUse     Write|Edit                                    → skill-validate-hook.sh
+PreToolUse     Write|Edit|MultiEdit|Bash                     → ai-writing-guard-hook.sh
 PreToolUse     Agent                                         → gbrain-agent-spawn.sh
 PreToolUse     Agent                                         → prompt-quality-check.sh  [no dedicated section below yet]
 PreToolUse     mcp__plugin_claude-mem_mcp-search__save_obs  → gbrain-memory-write.sh
@@ -583,5 +623,5 @@ The `tool-failure-*` pair plus the `tool-failure-review` routine are designed to
 3. Document it in this file (the `hook-added-notify.sh` hook will remind you if you forget).
 4. Update the Wiring Reference table above.
 
-_Last synced: 
+_Last synced: 2026-08-02_
 

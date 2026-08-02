@@ -1,6 +1,6 @@
 ---
 name: issue-triage-routing
-description: Triage a raw issue or idea before implementing or spec'ing — classify by roadmap-fit, ambiguity, and complexity, then route to one-shot, spec, clarify, or defer. Use when deciding if work needs a spec.
+description: Triage a raw issue or idea before implementing or spec'ing — classify by roadmap-fit, scale, ambiguity, and complexity, then route to one-shot, spec, clarify, defer, or program (multi-spec initiative). Use when deciding if work needs a spec.
 ---
 
 # Issue Triage Routing
@@ -59,22 +59,37 @@ Read `.claude/steering/` (product/vision/roadmap docs) if present.
   integration.
 - **Simple** = a bounded change, one folder/module, well under a few hundred LOC.
 
+### 4. Scale
+- **Program-scale** = the idea spans multiple decisions that each deserve their own spec —
+  you cannot write one coherent `requirements.md` because the destination contains several
+  not-yet-separated features or subsystems. "Build the whole X system" or "my most ambitious
+  project yet" are signals; a single bounded feature request is not.
+- **Feature-scale** = the idea maps to one spec, however complex or ambiguous that spec is.
+
+Check scale *before* ambiguity/complexity — a program-scale idea can sound simple in one
+sentence yet still need decomposing before either axis is meaningful.
+
 ## Routing Table (apply in order)
 
 | # | Condition | Outcome | Local route |
 |---|-----------|---------|-------------|
 | 1 | Off-roadmap (axis 1) | **DEFER** | Stop. Note *why* it's off-roadmap; leave for human. (`wait-to-implement`) |
-| 2 | Ambiguous **and** the ambiguity blocks even a spec (you can't tell what to spec) | **CLARIFY** | `Skill("questions")` / `/kiro:idea-refine` — resolve the ambiguity, then re-triage. (`needs-info`) |
-| 3 | On-roadmap **and** (Complex **or** Ambiguous-but-spec'able) | **SPEC** | `/kiro:spec-quick` (or `spec-init` for full manual control), seeded with the issue. (`ready-to-spec`) |
-| 4 | On-roadmap **and** Simple **and** Not ambiguous | **ONE-SHOT** | Plan + implement directly (or `/kiro:jira-solve` type-routing for tickets). (`ready-to-implement`) |
+| 2 | On-roadmap **and** Program-scale (axis 4) | **PROGRAM** | `/kiro:idea-refine` — charts or updates `specs/_maps/<name>.md`, decomposes the fog into the first ticket-sized slice, then re-triages that slice against rows 3–5. |
+| 3 | On-roadmap **and** Feature-scale **and** Ambiguous (blocks even a spec) | **CLARIFY** | `Skill("questions")` / `/kiro:idea-refine` — resolve the ambiguity, then re-triage. (`needs-info`) |
+| 4 | On-roadmap **and** Feature-scale **and** (Complex **or** Ambiguous-but-spec'able) | **SPEC** | `/kiro:spec-quick` (or `spec-init` for full manual control), seeded with the issue. (`ready-to-spec`) |
+| 5 | On-roadmap **and** Feature-scale **and** Simple **and** Not ambiguous | **ONE-SHOT** | Plan + implement directly (or `/kiro:jira-solve` type-routing for tickets). (`ready-to-implement`) |
 
-**Precedence:** roadmap-fit (defer) beats clarify beats spec beats one-shot. Evaluate top-down;
-first matching row wins.
+**Precedence:** roadmap-fit (defer) beats program beats clarify beats spec beats one-shot.
+Evaluate top-down; first matching row wins.
 
-**Distinction between rows 2 and 3:** both involve ambiguity. Row 2 (**clarify**) is for
+**Distinction between rows 3 and 4:** both involve ambiguity. Row 3 (**clarify**) is for
 ambiguity so fundamental you can't even write a coherent spec — you'd be guessing at the goal.
-Row 3 (**spec**) is for ambiguity where the goal is clear but the *implementation choice* needs
+Row 4 (**spec**) is for ambiguity where the goal is clear but the *implementation choice* needs
 human sign-off — exactly what a spec's requirements/design review gate exists to resolve.
+
+**Distinction between row 2 and everything below it:** program-scale is orthogonal to
+ambiguity/complexity, not a bigger version of them. A program-scale idea gets decomposed
+first; only the resulting slice gets checked against ambiguity/complexity.
 
 ## Output
 
@@ -83,9 +98,10 @@ State the verdict explicitly, then act:
 ```
 Triage: <issue one-liner>
 - Roadmap-fit: <fits | off-roadmap | unknown (no steering docs)> — <reason>
+- Scale:       <feature | program> — <reason>
 - Ambiguity:   <clear | ambiguous> — <reason>
 - Complexity:  <simple | complex> — <reason>
-→ Route: <DEFER | CLARIFY | SPEC | ONE-SHOT>  → <local command / next action>
+→ Route: <DEFER | PROGRAM | CLARIFY | SPEC | ONE-SHOT>  → <local command / next action>
 ```
 
 Then take the routed action (or, if the human is in the loop, propose it and wait).
@@ -100,3 +116,6 @@ Then take the routed action (or, if the human is in the loop, propose it and wai
   launder an assumption into a route.
 - **Re-triaging in-flight work.** Once routed and started, don't re-litigate. This gate is
   upstream only.
+- **Treating "big" as "complex."** Program-scale isn't a bigger point on the complexity axis
+  — it's "this is more than one spec." Route those through `/kiro:idea-refine`'s map-charting
+  (row 2), not straight into `spec-quick`.

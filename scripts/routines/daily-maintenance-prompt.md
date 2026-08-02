@@ -6,7 +6,7 @@ You are running the local daily maintenance loop for this repository. This invoc
 
 Today's date: TODAY_PLACEHOLDER
 
-Execute the three steps below in order. Each is error-isolated — if one step fails, log the failure and continue to the next.
+Execute the seven steps below in order. Each is error-isolated — if one step fails, log the failure and continue to the next.
 
 ## Step A — Daily Maintenance (trust-battery loop)
 
@@ -83,12 +83,28 @@ Be skeptical. Default to flagging if uncertain. You are the checker; Step E was 
 
 Idempotent: if `[skill-update-verified]:` or `[skill-update-flagged]:` entries already exist for TODAY_PLACEHOLDER, skip silently.
 
-## Output
+## Step G — Behavior Spec Mining
 
-When all six steps are done, emit a single summary line on stdout:
+Invoke the `behavior-spec-agent` via the Agent tool. Pass this as the task prompt:
 
 ```
-Daily maintenance complete: judge=<delta> session-quality=<N/5> keep-rate=<N%> trust-score=<score>% skill-updates=<N> skill-check=<passed|flagged|skipped>
+Draft/update BEHAVIOR.md conduct specs from recurring evidence.
+Date: TODAY_PLACEHOLDER
+Judge verdict: <paste the full judge JSON from Step A, or "no verdict" if Step A was skipped>
+```
+
+This is the process-focused sibling of Step E: instead of augmenting runtime-visible `SKILL.md` content, it drafts or revises durable `.claude/behaviors/<name>/BEHAVIOR.md` specs — answer-key material for grading future trajectories, never shown to the agent being graded. It reads today's judge drains, `type: feedback` memories, and `[revert]`/`[drain]` observations, requires the same conduct class to recur ≥2 times (a `type: feedback` memory auto-qualifies at 1), validates every spec with `.claude/scripts/validate-behavior-spec.py` before finalizing, and caps at 3 specs/run. Logs each as `[behavior-update]`.
+
+Idempotent: if `[behavior-update]:` entries already exist for TODAY_PLACEHOLDER, the agent exits without duplicate writes.
+
+If Step A failed and no judge verdict is available, pass "no verdict" — the agent falls back to feedback memories and observations only.
+
+## Output
+
+When all seven steps are done, emit a single summary line on stdout:
+
+```
+Daily maintenance complete: judge=<delta> session-quality=<N/5> keep-rate=<N%> trust-score=<score>% skill-updates=<N> skill-check=<passed|flagged|skipped> behavior-specs=<N>
 ```
 
 If any step was skipped or failed, replace the value with `skipped` or `failed`.

@@ -23,6 +23,19 @@ DO NOT over-compress:
   ✗ Never collapse multi-step decisions into vague summaries
   ✗ Never lose specific values (numbers, identifiers) that will be needed
 
+FIDELITY REQUIREMENTS — concrete, checkable additions to the rules above:
+  ✓ Unanswered questions: mark each user question answered / partially / unanswered.
+    Add a "Pending Questions" subheading listing every unanswered or partial one verbatim.
+  ✓ Root causes vs ruled-out hypotheses: keep them separate. Record confirmed root causes
+    with file:line. Keep ruled-out hypotheses too, so they don't get re-tried.
+  ✓ File importance tiers: group files as critical (caused/fixed the issue), referenced
+    (read for context), or mentioned (came up in discussion only) — not a flat list.
+  ✓ Subagent/Task tool results are PRIMARY EVIDENCE, not compressible chatter — preserve
+    a subagent's final report in full (file paths, findings, citations) wherever it applies.
+    Subagent runs are expensive to redo.
+  ✓ A-vs-B comparisons: when the user weighed option A vs option B, preserve both sides
+    and the decision criteria — and which side won, if decided.
+
 DOMAIN-AWARE STRATEGY — match compression style to content type:
 
   CODE (functions, classes, tests, configs):

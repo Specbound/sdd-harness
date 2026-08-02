@@ -6,6 +6,7 @@
 - `.claude/steering/` — read when you need project architecture, stack, or code structure context
 - `.claude/memory/` — read when you need cross-session context or past decisions
 - `specs/` — read when working on or near a feature that has a spec
+- `.claude/behaviors/` — read when reviewing agent conduct or grading a trace, not upfront; kept blind from the agent whose trajectory it grades
 - `.claude/docs/SDD-USAGE.md` — read when you need SDD command reference
 - `ERRORS.md` — check before suggesting solutions to problems; log approaches that took 2+ attempts
 

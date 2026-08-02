@@ -166,17 +166,28 @@ fi
 echo "$HARNESS_DIR" > "$HOME/.sdd-harness-root"
 
 # --- Sync harness's own .claude/ runtime from canonical sources ---
-# hooks/claude/ and scripts/ are the canonical source of truth. The harness's runtime
-# copy under .claude/ is regenerated each update so its own hooks/scripts cannot
-# drift from the source.
+# hooks/claude/, scripts/, commands/kiro/, agents/, kiro/, docs/, rules/ are the
+# canonical source of truth. The harness's runtime copy under .claude/ is regenerated
+# each update — same six sync_dir targets every other registered project gets via
+# do_update, just aimed at the harness's own .claude/ since do_update() itself
+# deliberately skips the harness source (see guard above). Previously this block only
+# synced scripts/, so .claude/agents/ and most of .claude/commands/kiro/ never existed
+# here — Task-tool subagent_type lookups (skill-augment-agent, behavior-spec-agent, etc.)
+# and slash commands were silently falling back to whatever short inline prompt text
+# called them, not their full agents/kiro/*.md instructions.
 for hook in "$HARNESS_DIR/hooks/claude/"*.sh; do
   [ -f "$hook" ] || continue
   name="$(basename "$hook")"
   cp "$hook" "$HARNESS_DIR/.claude/hooks/$name"
   chmod +x "$HARNESS_DIR/.claude/hooks/$name"
 done
+sync_dir "$HARNESS_DIR/commands/kiro" "$HARNESS_DIR/.claude/commands"
+sync_dir "$HARNESS_DIR/agents"        "$HARNESS_DIR/.claude"
+sync_dir "$HARNESS_DIR/kiro"          "$HARNESS_DIR/.claude"
 # scripts/ is a nested directory — sync preserves subdirectory structure.
-sync_dir "$HARNESS_DIR/scripts" "$HARNESS_DIR/.claude"
+sync_dir "$HARNESS_DIR/scripts"       "$HARNESS_DIR/.claude"
+sync_dir "$HARNESS_DIR/docs"          "$HARNESS_DIR/.claude"
+sync_dir "$HARNESS_DIR/rules"         "$HARNESS_DIR/.claude"
 find "$HARNESS_DIR/.claude/scripts" -name "*.sh" -exec chmod +x {} \;
 [ "$(uname)" = "Darwin" ] && xattr -cr "$HARNESS_DIR/.claude/" 2>/dev/null || true
 

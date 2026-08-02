@@ -29,12 +29,15 @@ Creates a focused steering doc for a specific domain.
 
 ## Ideation & Debugging
 
-### `/kiro:idea-refine` — Refine a vague idea into a spec-ready brief
+### `/kiro:idea-refine` — Refine a vague idea into a spec-ready brief (or chart a program map)
 Takes a rough idea through structured divergent/convergent thinking to produce a clear problem statement, proposed solution, constraints, and a paste-ready description for `/kiro:spec-init`.
+
+For **program-scale** ideas — too big for one spec (`Skill("issue-triage-routing")` axis 4: "build the whole X system") — it charts `specs/_maps/<name>.md` instead: a Destination/Decisions-so-far/Fog/Out-of-scope index, then automatically decomposes the first fog item into a slice and hands it to the normal spec flow. No separate command to remember — `/kiro:spec-tasks` auto-updates the map's Decisions-so-far when each slice's tasks are approved, and re-running `/kiro:idea-refine` on the same idea picks up the next fog item.
 
 ```
 /kiro:idea-refine "something to help users track their spending"
 /kiro:idea-refine "we need better error handling"
+/kiro:idea-refine "rebuild our whole reporting platform"   → charts specs/_maps/, decomposes first slice
 ```
 
 Wired into `/kiro:spec-quick` — in interactive mode, if the description is vague, you'll be prompted to refine first.
@@ -104,7 +107,7 @@ Runs an interactive domain-expert questioning session against the approved requi
 Signal completion with "done", "looks good", or "move on". Also available as phase 3.5 in `/kiro:spec-quick` (interactive mode); skipped in `--auto` mode since it requires user interaction.
 
 ### `/kiro:spec-tasks` — Generate implementation tasks
-Breaks the design into parallelizable tasks with dependencies. After generation, opens a **Proof collaborative review session** for approval before implementation begins. Pass `--sequential` to suppress parallel `(P)` markers when you want strictly ordered tasks.
+Breaks the design into parallelizable tasks with dependencies. After generation, opens a **Proof collaborative review session** for approval before implementation begins. Pass `--sequential` to suppress parallel `(P)` markers when you want strictly ordered tasks. On approval, also checks `specs/_maps/*.md` for a parent program map referencing this feature and auto-moves it from fog to Decisions-so-far — no manual map upkeep.
 
 ```
 /kiro:spec-tasks revenue-trend-chart
@@ -376,6 +379,7 @@ Pipeline:
 6. **Keep rate** — `keep-rate` skill evaluates pattern retention, writes a `[keep-rate]` observation.
 7. **Trust Score update** — `scripts/session/trust_score.py` runs after session quality and keep rate are written so all signals (`[session-charge]`, `[memory-gap]`, `[session-quality]`, `[keep-rate]`) are visible. Rewrites the `## Harness Trust Score:` line in `hot-memory.md`, appends to `.claude/memory/trust-score.jsonl`.
 8. **Skill augmentation** — `skill-augment-agent` reviews today's observations and judge drains, encodes up to 5 evidence-backed improvements (circuit breaker cap) into relevant `SKILL.md` files (append-only, ≤150 chars each). Logs each change as a `[skill-update]` observation. Also processes any `[seed-target:]` observations written by the action-capture hook during the session, and today's `type: feedback` memories (user corrections), which auto-qualify and are drafted before judge drains — human ground-truth outranks the LLM grader.
+8b. **Behavior spec mining** — `behavior-spec-agent` (process-focused sibling of step 8) reviews the same evidence for *recurring agent conduct* rather than skill-content gaps, and drafts/revises up to 3 durable `BEHAVIOR.md` specs under `.claude/behaviors/<name>/` — answer-key material for grading future trajectories, deliberately never shown to the agent being graded (unlike `SKILL.md`/`CLAUDE.md`). Requires ≥2 recurring occurrences of the same conduct class, except `type: feedback` memories which auto-qualify at 1. Every spec is validated with `scripts/validate-behavior-spec.py` before being left in place. Logs each change as a `[behavior-update]` observation. See the `writing-behavior-specs` skill for the format and calibration methodology.
 9. **Adversarial check** — a separate verification agent (no loyalty to step 8's output) reviews each `[skill-update]` written today: does it address the stated gap? does it contradict existing guidance? Flags failures as `[skill-update-flagged]`, confirms passes as `[skill-update-verified]`. Skipped if step 8 wrote nothing.
 
 Idempotent per calendar day (uses today's `[judge]` observation as the sentinel). Each step is error-isolated: a bad Judge pass does not block housekeeping.
@@ -723,6 +727,8 @@ Bundled in the harness — replicated to every machine via `install.sh`. No per-
 ```
 
 For larger features, use the individual spec phases (`spec-requirements` → `spec-design` → `spec-grill` → `spec-tasks`) instead of `spec-quick` to review each phase separately.
+
+For a whole ambitious project spanning many not-yet-scoped features, `/kiro:idea-refine` charts a program map (`specs/_maps/<name>.md`) and decomposes it slice-by-slice — see the `idea-refine` entry above.
 
 ### Quality Gate Sequence (pre-completion)
 

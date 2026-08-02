@@ -48,6 +48,8 @@ For each approach, note:
 - Key assumptions
 - What it doesn't solve
 
+**Concrete-over-abstract rendering**: if the idea is visual/interface-shaped (UI, layout, navigation flow) or has many plausible shapes (API contract options, state-machine variants), render the approaches as a Mermaid diagram instead of plain bullets. Tangible comparisons surface reactions ("oh, I like how B lets you zoom to X") that abstract text descriptions don't — the same approach doesn't fit ideas that are purely backend logic or single-path by nature; use judgment.
+
 ### Step 4: Convergent Filtering
 
 Evaluate approaches against project context:

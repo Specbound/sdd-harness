@@ -12,6 +12,12 @@
 #   - mirror push (can delete/overwrite arbitrary remote refs)
 #   - local force branch delete: git branch -D / --delete --force
 #   - repo deletion: gh repo delete
+#   - git rebase (rewrites shared history same as force-push)
+#
+# Matching runs against BARE (quoted segments stripped), not the raw command —
+# a commit message or PR body that happens to mention "-f" or "force" inside
+# quotes must not false-trip the block. (Ported fix from claude-codex-settings'
+# ultralytics-dev plugin, github.com/fcakyon/claude-codex-settings.)
 
 EVENT=$(cat)
 COMMAND=$(echo "$EVENT" | python3 -c "
@@ -25,6 +31,12 @@ except Exception:
 
 [ -z "$COMMAND" ] && exit 0
 
+BARE=$(python3 -c "
+import re, sys
+text = sys.argv[1]
+print(re.sub(r\"'[^']*'|\\\"[^\\\"]*\\\"\", ' ', text))
+" "$COMMAND" 2>/dev/null || echo "$COMMAND")
+
 block() {
   echo "BLOCKED: destructive git/gh operation refused by git-destructive-guard-hook.sh" >&2
   echo "Reason: $1" >&2
@@ -33,24 +45,28 @@ block() {
   exit 2
 }
 
-if echo "$COMMAND" | grep -qE 'git[[:space:]]+push' ; then
-  if echo "$COMMAND" | grep -qE -- '--force-with-lease|--force-if-includes|--force\b|[[:space:]]-f([[:space:]]|$)'; then
+if echo "$BARE" | grep -qE 'git[[:space:]]+push' ; then
+  if echo "$BARE" | grep -qE -- '--force-with-lease|--force-if-includes|--force\b|[[:space:]]-f([[:space:]]|$)'; then
     block "force-push variant detected"
   fi
-  if echo "$COMMAND" | grep -qE -- '--delete|--mirror' ; then
+  if echo "$BARE" | grep -qE -- '--delete|--mirror' ; then
     block "remote branch deletion or mirror-push detected"
   fi
-  if echo "$COMMAND" | grep -qE ':[A-Za-z0-9._/-]+([[:space:]]|$)' && echo "$COMMAND" | grep -qE 'push[[:space:]]+[A-Za-z0-9._/-]+[[:space:]]+:[A-Za-z0-9._/-]*([[:space:]]|$)'; then
+  if echo "$BARE" | grep -qE ':[A-Za-z0-9._/-]+([[:space:]]|$)' && echo "$BARE" | grep -qE 'push[[:space:]]+[A-Za-z0-9._/-]+[[:space:]]+:[A-Za-z0-9._/-]*([[:space:]]|$)'; then
     block "empty-refspec remote branch deletion detected"
   fi
 fi
 
-if echo "$COMMAND" | grep -qE 'git[[:space:]]+branch[[:space:]]+.*(-D\b|--delete[[:space:]]+--force|--force[[:space:]]+--delete)'; then
+if echo "$BARE" | grep -qE 'git[[:space:]]+branch[[:space:]]+.*(-D\b|--delete[[:space:]]+--force|--force[[:space:]]+--delete)'; then
   block "force local branch delete detected"
 fi
 
-if echo "$COMMAND" | grep -qE 'gh[[:space:]]+repo[[:space:]]+delete'; then
+if echo "$BARE" | grep -qE 'gh[[:space:]]+repo[[:space:]]+delete'; then
   block "repo deletion via gh CLI detected"
+fi
+
+if echo "$BARE" | grep -qE 'git[[:space:]]+rebase\b'; then
+  block "git rebase rewrites shared history — add a follow-up commit or a fresh branch instead"
 fi
 
 exit 0
