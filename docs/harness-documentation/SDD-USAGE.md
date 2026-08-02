@@ -571,7 +571,7 @@ Starts a local HTTP server at `http://localhost:4569` and opens the browser auto
 | 1 | ⚡ Trust Battery | Arc gauge + 30-day bar chart of daily trust deltas |
 | 2 | 🕸 GitNexus | Stats strip + embedded visual explorer (localhost:4567) |
 | 3 | 🔬 Workshop | Raindrop Workshop trace browser; filter by repo, run eval loop, view agent traces |
-| 4 | 🗜 Headroom | Compression savings totals for RTK + headroom proxy; per-session block history with checkpoint-level token savings |
+| 4 | 🗜 Headroom | Compression savings totals for RTK + lean-ctx + Caveman (response-style, sampled once/day via `caveman-savings-hook.sh`) + headroom proxy, folded into a combined-savings total; per-session block history with checkpoint-level token savings |
 | 5 | 🪝 Hooks History | Hook name, event type, last activity, active/inactive badge |
 | 6 | 📅 Scheduled Tasks | OS scheduler health card + per-routine cards (schedule, last run + exit code, artifact, diff vs. previous run, reasoning excerpt), scoped to whichever repo's dashboard is open — per-repo routines (including Tool-Failure Review and Code-Review Learning) show that repo's own state and log entries, harness-only routines always show the harness's. Includes the Daily Security Scan routine (`security-report-runner.sh`) which scans recent git changes for OWASP patterns, secrets, and injection sinks. |
 | 7 | 🧠 Memory Changes | Per-file cards for hot-memory, observations, and meta/patterns with day-over-day diffs ("since yesterday") computed from dated snapshots; full content expanded when a file is unchanged |
