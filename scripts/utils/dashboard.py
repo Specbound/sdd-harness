@@ -3542,6 +3542,8 @@ LEAN_CTX_LEDGER  = _platform_config_dir("lean-ctx") / "savings" / "ledger.jsonl"
 CAVEMAN_CONFIG   = _platform_config_dir("caveman") / "config.json"
 # Sonnet 4.6 input price per million tokens (used to estimate RTK $ savings)
 _SONNET_INPUT_PER_M = 3.0
+# Sonnet 4.6 output price per million tokens (used to estimate caveman $ savings) — approximate.
+_SONNET_OUTPUT_PER_M = 15.0
 
 
 def _repo_to_lean_ctx_hash(repo_path: str) -> str:
@@ -3628,6 +3630,44 @@ def _read_caveman_config() -> dict:
         except Exception:
             pass
     return {"active": False, "mode": None}
+
+
+def _read_caveman_savings(repo_path: "str | None" = None) -> dict:
+    """Read .claude/memory/caveman-savings.jsonl — written by
+    caveman-savings-hook.sh, one sample per day when caveman mode is active.
+
+    Values are word-count-based estimates, not exact BPE token counts (see
+    the hook's header comment for why usage.output_tokens isn't trustworthy
+    here — it's contaminated by extended-thinking tokens on the "actual"
+    side). Treat this as directionally useful, not a billing-grade figure.
+    """
+    empty = {"saved_tokens": 0, "actual_tokens": 0, "baseline_tokens": 0,
+             "samples": 0, "avg_pct": 0.0}
+    base = Path(repo_path) if repo_path else HARNESS_DIR
+    ledger = base / ".claude" / "memory" / "caveman-savings.jsonl"
+    if not ledger.exists():
+        return empty
+    saved = actual = baseline = 0
+    pcts = []
+    try:
+        for line in ledger.read_text().splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                e = json.loads(line)
+            except Exception:
+                continue
+            saved    += e.get("saved_tokens", 0)
+            actual   += e.get("actual_tokens", 0)
+            baseline += e.get("baseline_tokens", 0)
+            if "saved_pct" in e:
+                pcts.append(e["saved_pct"])
+    except Exception:
+        return empty
+    avg_pct = sum(pcts) / len(pcts) if pcts else 0.0
+    return {"saved_tokens": saved, "actual_tokens": actual, "baseline_tokens": baseline,
+            "samples": len(pcts), "avg_pct": avg_pct}
 
 
 def _read_rtk_stats() -> dict:
@@ -3800,12 +3840,31 @@ def render_headroom(repo_path: "str | None" = None) -> str:
 
     cav_mode = cav_cfg.get("mode") or "off"
     cav_active = cav_cfg.get("active", False)
-    caveman_layer = _layer(
-        "🦴", "Caveman — Response Style",
-        "–", "–", 0, 0.0, "–", "output tokens", "shorter responses",
-        note=f"mode: {cav_mode} · output-side, not metered" if cav_active else "not active · output-side, not metered",
-        dimmed=not cav_active,
-    )
+    cav_data = _read_caveman_savings(repo_path=repo_path)
+    if cav_active and cav_data["samples"] > 0:
+        cav_cost_est = cav_data["saved_tokens"] * _SONNET_OUTPUT_PER_M / 1_000_000
+        caveman_layer = _layer(
+            "🦴", "Caveman — Response Style",
+            "baseline (est.)", f"{cav_data['baseline_tokens']:,}",
+            cav_data["saved_tokens"], cav_data["avg_pct"],
+            f"~${cav_cost_est:.3f}",
+            "actual (est.)", f"{cav_data['actual_tokens']:,}",
+            note=(f"mode: {cav_mode} · {cav_data['samples']} sampled day{'s' if cav_data['samples'] != 1 else ''} "
+                  f"· word-count estimate, not exact tokens"),
+        )
+    else:
+        cav_cost_est = 0.0
+        caveman_layer = _layer(
+            "🦴", "Caveman — Response Style",
+            "–", "–", 0, 0.0, "–", "output tokens", "shorter responses",
+            note=(f"mode: {cav_mode} · measuring — first sample lands after today's session ends" if cav_active
+                  else "not active"),
+            dimmed=not cav_active,
+        )
+
+    if cav_active and cav_data["samples"] > 0:
+        total_saved    += cav_data["saved_tokens"]
+        total_cost_est += cav_cost_est
 
     pipeline_html = f"""
 <div style="margin-bottom:20px">
@@ -3842,7 +3901,8 @@ def render_headroom(repo_path: "str | None" = None) -> str:
     </div>
   </div>
   <div style="font-size:10px;color:var(--overlay0);margin-top:8px">
-    RTK cost estimate uses Sonnet 4.6 input rate ($3/M). Caveman + lean-ctx not tracked.
+    RTK cost estimate uses Sonnet 4.6 input rate ($3/M); caveman uses the output rate ($15/M, approx).
+    Caveman figures are word-count estimates, not exact tokens, and only appear once sampled.
     Layers are additive (different pipeline stages, no double-counting).
   </div>
 </div>"""
