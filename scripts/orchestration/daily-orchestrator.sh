@@ -16,6 +16,7 @@ __here="$(cd -P "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 . "$__here/../lib/resolve-harness-dir.sh"
 PROJECTS_FILE="$HARNESS_DIR/projects.txt"
 LOG_FILE="$HARNESS_DIR/logs/orchestrator.log"
+ERR_LOG="$HARNESS_DIR/logs/orchestrator-errors.log"
 mkdir -p "$(dirname "$LOG_FILE")"
 
 DRY_RUN=false
@@ -63,10 +64,15 @@ run_one() {
   local last_day="$(cut -dT -f1 "$state" 2>/dev/null || echo "")"
   if [ "$last_day" != "$today" ]; then
     local start=$(date +%s)
-    (cd "$repo" && bash .claude/scripts/orchestration/daily-runner.sh) > /dev/null 2>&1
+    local dm_errbuf; dm_errbuf=$(mktemp)
+    (cd "$repo" && bash .claude/scripts/orchestration/daily-runner.sh) > /dev/null 2>"$dm_errbuf"
     local exit_code=$?
     local duration=$(($(date +%s) - start))
     echo "$ts $repo exit=$exit_code duration=${duration}s" >> "$LOG_FILE"
+    if [ "$exit_code" -ne 0 ] && [ -s "$dm_errbuf" ]; then
+      { echo "--- $ts $repo daily-maintenance (exit=$exit_code) ---"; cat "$dm_errbuf"; } >> "$ERR_LOG"
+    fi
+    rm -f "$dm_errbuf"
   fi
 
   # Macro-eval sweep — self-paces to ~twice a week via its own MIN_GAP_DAYS guard,
@@ -75,27 +81,42 @@ run_one() {
   # SDD_SKIP_MACRO_EVAL=1.
   if [ "${SDD_SKIP_MACRO_EVAL:-0}" != "1" ] && [ -f "$repo/.claude/scripts/routines/macro-eval-runner.sh" ]; then
     local me_start=$(date +%s)
-    (cd "$repo" && bash .claude/scripts/routines/macro-eval-runner.sh) > /dev/null 2>&1
+    local me_errbuf; me_errbuf=$(mktemp)
+    (cd "$repo" && bash .claude/scripts/routines/macro-eval-runner.sh) > /dev/null 2>"$me_errbuf"
     local me_exit=$?
     echo "$ts $repo macro-eval exit=$me_exit duration=$(($(date +%s) - me_start))s" >> "$LOG_FILE"
+    if [ "$me_exit" -ne 0 ] && [ -s "$me_errbuf" ]; then
+      { echo "--- $ts $repo macro-eval (exit=$me_exit) ---"; cat "$me_errbuf"; } >> "$ERR_LOG"
+    fi
+    rm -f "$me_errbuf"
   fi
 
   # Skill-curator sweep — self-paces to weekly (MIN_GAP_DAYS=7). Harness-only;
   # non-harness repos exit 0 immediately. Opt out with SDD_SKIP_SKILL_CURATOR=1.
   if [ "${SDD_SKIP_SKILL_CURATOR:-0}" != "1" ] && [ -f "$repo/.claude/scripts/routines/skill-curator-runner.sh" ]; then
     local sc_start=$(date +%s)
-    (cd "$repo" && bash .claude/scripts/routines/skill-curator-runner.sh) > /dev/null 2>&1
+    local sc_errbuf; sc_errbuf=$(mktemp)
+    (cd "$repo" && bash .claude/scripts/routines/skill-curator-runner.sh) > /dev/null 2>"$sc_errbuf"
     local sc_exit=$?
     echo "$ts $repo skill-curator exit=$sc_exit duration=$(($(date +%s) - sc_start))s" >> "$LOG_FILE"
+    if [ "$sc_exit" -ne 0 ] && [ -s "$sc_errbuf" ]; then
+      { echo "--- $ts $repo skill-curator (exit=$sc_exit) ---"; cat "$sc_errbuf"; } >> "$ERR_LOG"
+    fi
+    rm -f "$sc_errbuf"
   fi
 
   # Harness-health sweep — self-paces to bi-weekly (MIN_GAP_DAYS=13). Harness-only;
   # non-harness repos exit 0 immediately. Opt out with SDD_SKIP_HARNESS_HEALTH=1.
   if [ "${SDD_SKIP_HARNESS_HEALTH:-0}" != "1" ] && [ -f "$repo/.claude/scripts/routines/harness-health-runner.sh" ]; then
     local hh_start=$(date +%s)
-    (cd "$repo" && bash .claude/scripts/routines/harness-health-runner.sh) > /dev/null 2>&1
+    local hh_errbuf; hh_errbuf=$(mktemp)
+    (cd "$repo" && bash .claude/scripts/routines/harness-health-runner.sh) > /dev/null 2>"$hh_errbuf"
     local hh_exit=$?
     echo "$ts $repo harness-health exit=$hh_exit duration=$(($(date +%s) - hh_start))s" >> "$LOG_FILE"
+    if [ "$hh_exit" -ne 0 ] && [ -s "$hh_errbuf" ]; then
+      { echo "--- $ts $repo harness-health (exit=$hh_exit) ---"; cat "$hh_errbuf"; } >> "$ERR_LOG"
+    fi
+    rm -f "$hh_errbuf"
   fi
 
   # Tool-failure review — promotes recurring Bash/MCP failures into memory so the
@@ -104,9 +125,14 @@ run_one() {
   # cheap. Applies to every repo. Opt out with SDD_SKIP_TOOL_FAILURE_REVIEW=1.
   if [ "${SDD_SKIP_TOOL_FAILURE_REVIEW:-0}" != "1" ] && [ -f "$repo/.claude/scripts/routines/tool-failure-review-runner.sh" ]; then
     local tf_start=$(date +%s)
-    (cd "$repo" && bash .claude/scripts/routines/tool-failure-review-runner.sh) > /dev/null 2>&1
+    local tf_errbuf; tf_errbuf=$(mktemp)
+    (cd "$repo" && bash .claude/scripts/routines/tool-failure-review-runner.sh) > /dev/null 2>"$tf_errbuf"
     local tf_exit=$?
     echo "$ts $repo tool-failure-review exit=$tf_exit duration=$(($(date +%s) - tf_start))s" >> "$LOG_FILE"
+    if [ "$tf_exit" -ne 0 ] && [ -s "$tf_errbuf" ]; then
+      { echo "--- $ts $repo tool-failure-review (exit=$tf_exit) ---"; cat "$tf_errbuf"; } >> "$ERR_LOG"
+    fi
+    rm -f "$tf_errbuf"
   fi
 
   # Code-review learning sweep — compares pr-babysit's logged reviews against real
@@ -116,9 +142,14 @@ run_one() {
   # once there is. Applies to any repo. Opt out with SDD_SKIP_CODE_REVIEW_LEARNING=1.
   if [ "${SDD_SKIP_CODE_REVIEW_LEARNING:-0}" != "1" ] && [ -f "$repo/.claude/scripts/routines/code-review-learning-runner.sh" ]; then
     local crl_start=$(date +%s)
-    (cd "$repo" && bash .claude/scripts/routines/code-review-learning-runner.sh) > /dev/null 2>&1
+    local crl_errbuf; crl_errbuf=$(mktemp)
+    (cd "$repo" && bash .claude/scripts/routines/code-review-learning-runner.sh) > /dev/null 2>"$crl_errbuf"
     local crl_exit=$?
     echo "$ts $repo code-review-learning exit=$crl_exit duration=$(($(date +%s) - crl_start))s" >> "$LOG_FILE"
+    if [ "$crl_exit" -ne 0 ] && [ -s "$crl_errbuf" ]; then
+      { echo "--- $ts $repo code-review-learning (exit=$crl_exit) ---"; cat "$crl_errbuf"; } >> "$ERR_LOG"
+    fi
+    rm -f "$crl_errbuf"
   fi
 
   # Security report — daily static security scan of recent git changes. Writes a
@@ -127,9 +158,14 @@ run_one() {
   # Opt out with SDD_SKIP_SECURITY_REPORT=1.
   if [ "${SDD_SKIP_SECURITY_REPORT:-0}" != "1" ] && [ -f "$repo/.claude/scripts/routines/security-report-runner.sh" ]; then
     local sr_start=$(date +%s)
-    (cd "$repo" && bash .claude/scripts/routines/security-report-runner.sh) > /dev/null 2>&1
+    local sr_errbuf; sr_errbuf=$(mktemp)
+    (cd "$repo" && bash .claude/scripts/routines/security-report-runner.sh) > /dev/null 2>"$sr_errbuf"
     local sr_exit=$?
     echo "$ts $repo security-report exit=$sr_exit duration=$(($(date +%s) - sr_start))s" >> "$LOG_FILE"
+    if [ "$sr_exit" -ne 0 ] && [ -s "$sr_errbuf" ]; then
+      { echo "--- $ts $repo security-report (exit=$sr_exit) ---"; cat "$sr_errbuf"; } >> "$ERR_LOG"
+    fi
+    rm -f "$sr_errbuf"
   fi
 
   # Startup-payload audit — deterministic (no LLM). Measures the fixed per-session
@@ -139,9 +175,14 @@ run_one() {
   # cheap. Applies to every repo. Opt out with SDD_SKIP_STARTUP_AUDIT=1.
   if [ "${SDD_SKIP_STARTUP_AUDIT:-0}" != "1" ] && [ -f "$repo/.claude/scripts/routines/startup-payload-audit.sh" ]; then
     local sp_start=$(date +%s)
-    (cd "$repo" && bash .claude/scripts/routines/startup-payload-audit.sh) > /dev/null 2>&1
+    local sp_errbuf; sp_errbuf=$(mktemp)
+    (cd "$repo" && bash .claude/scripts/routines/startup-payload-audit.sh) > /dev/null 2>"$sp_errbuf"
     local sp_exit=$?
     echo "$ts $repo startup-payload exit=$sp_exit duration=$(($(date +%s) - sp_start))s" >> "$LOG_FILE"
+    if [ "$sp_exit" -ne 0 ] && [ -s "$sp_errbuf" ]; then
+      { echo "--- $ts $repo startup-payload (exit=$sp_exit) ---"; cat "$sp_errbuf"; } >> "$ERR_LOG"
+    fi
+    rm -f "$sp_errbuf"
   fi
 }
 
@@ -171,8 +212,14 @@ if [ "$DOW" = "3" ] && [ "$DRY_RUN" = false ]; then
     ts="$(date -Iseconds)"
     echo "$ts harness: starting drift review ($DRIFT_WEEK)" >> "$LOG_FILE"
     echo "$DRIFT_WEEK" > "$DRIFT_STATE"
+    drift_errbuf=$(mktemp)
     echo "Use the repo-drift-review skill to sweep the SDD harness for drift. Auto-fix what you can. Write the summary to $HARNESS_DIR/docs/drift-review-report.md" | \
-      claude --print --output-format text --permission-mode bypassPermissions > /dev/null 2>&1
-    echo "$ts harness: drift review exit=$?" >> "$LOG_FILE"
+      claude --print --output-format text --permission-mode bypassPermissions > /dev/null 2>"$drift_errbuf"
+    drift_exit=$?
+    echo "$ts harness: drift review exit=$drift_exit" >> "$LOG_FILE"
+    if [ "$drift_exit" -ne 0 ] && [ -s "$drift_errbuf" ]; then
+      { echo "--- $ts harness drift-review (exit=$drift_exit) ---"; cat "$drift_errbuf"; } >> "$ERR_LOG"
+    fi
+    rm -f "$drift_errbuf"
   fi
 fi

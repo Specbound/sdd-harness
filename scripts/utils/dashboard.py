@@ -480,14 +480,21 @@ def parse_orchestrator_log():
 # Source of truth for the Scheduled Tasks dashboard tab. To add a routine here:
 # the orchestrator already logs it under `runner_log_token`; just append an entry
 # and the dashboard picks it up.
-def _scheduled_task_registry():
+def _scheduled_task_registry(repo_dir=None):
+    """repo_dir: base directory for scope="per-repo" entries — the routine's own
+    state/artifact files always live under the repo it actually ran in. Defaults
+    to HARNESS_DIR for backward-compat callers that want the harness's own view.
+    scope="harness" entries always resolve against HARNESS_DIR regardless, since
+    those routines only ever run against the harness repo itself.
+    """
+    base = Path(repo_dir) if repo_dir else HARNESS_DIR
     return [
         {
             "key":               "daily-maintenance",
             "name":              "Daily Maintenance",
             "runner_log_token":  "daily-maintenance",
-            "state_file":        HARNESS_DIR / ".claude" / "memory" / ".last-routine-run",
-            "artifact_glob":     str(HARNESS_DIR / ".claude" / "memory" / "daily" / "*-brief.md"),
+            "state_file":        base / ".claude" / "memory" / ".last-routine-run",
+            "artifact_glob":     str(base / ".claude" / "memory" / "daily" / "*-brief.md"),
             "artifact_label":    ".claude/memory/daily/<date>-brief.md",
             "schedule_human":    "Daily at 18:00 (local)",
             "interval_seconds":  86400,
@@ -498,8 +505,8 @@ def _scheduled_task_registry():
             "key":               "macro-eval",
             "name":              "Macro-Eval Sweep",
             "runner_log_token":  "macro-eval",
-            "state_file":        HARNESS_DIR / ".claude" / "memory" / ".last-macro-eval-run",
-            "artifact_glob":     str(HARNESS_DIR / ".claude" / "reports" / "macro-evals" / "*.md"),
+            "state_file":        base / ".claude" / "memory" / ".last-macro-eval-run",
+            "artifact_glob":     str(base / ".claude" / "reports" / "macro-evals" / "*.md"),
             "artifact_label":    ".claude/reports/macro-evals/<date>.md",
             "schedule_human":    "Twice weekly (MIN_GAP_DAYS=3)",
             "interval_seconds":  3 * 86400,
@@ -547,7 +554,7 @@ def _scheduled_task_registry():
             "name":              "Daily Security Scan",
             "runner_log_token":  "security-report",
             "state_file":        None,  # per-repo state; dashboard shows last log entry
-            "artifact_glob":     str(HARNESS_DIR / ".claude" / "reports" / "security" / "*.md"),
+            "artifact_glob":     str(base / ".claude" / "reports" / "security" / "*.md"),
             "artifact_label":    ".claude/reports/security/<date>-security-report.md",
             "schedule_human":    "Daily (MIN_GAP_DAYS=1)",
             "interval_seconds":  86400,
@@ -558,13 +565,37 @@ def _scheduled_task_registry():
             "key":               "startup-payload",
             "name":              "Startup Payload Audit",
             "runner_log_token":  "startup-payload",
-            "state_file":        HARNESS_DIR / ".claude" / "memory" / ".last-startup-payload-audit",
-            "artifact_glob":     str(HARNESS_DIR / ".claude" / "reports" / "context" / "startup-payload.json"),
+            "state_file":        base / ".claude" / "memory" / ".last-startup-payload-audit",
+            "artifact_glob":     str(base / ".claude" / "reports" / "context" / "startup-payload.json"),
             "artifact_label":    ".claude/reports/context/startup-payload.json",
             "schedule_human":    "Daily (deterministic, no LLM)",
             "interval_seconds":  86400,
             "scope":             "per-repo",
             "what_it_does":      "Measures fixed per-session token tax (CLAUDE.md + @imports + rules + auto-MEMORY.md); flags over-budget, stale files, ghost refs",
+        },
+        {
+            "key":               "tool-failure-review",
+            "name":              "Tool-Failure Review",
+            "runner_log_token":  "tool-failure-review",
+            "state_file":        base / ".claude" / "memory" / ".last-tool-failure-review",
+            "artifact_glob":     str(base / ".claude" / "memory" / "tool-failures.jsonl"),
+            "artifact_label":    ".claude/memory/tool-failures.jsonl (input ledger — promotes findings into meta/patterns.md, no dedicated report)",
+            "schedule_human":    "~Twice weekly (MIN_GAP_DAYS=3)",
+            "interval_seconds":  3 * 86400,
+            "scope":             "per-repo",
+            "what_it_does":      "Promotes recurring Bash/MCP tool failures from the ledger into memory patterns",
+        },
+        {
+            "key":               "code-review-learning",
+            "name":              "Code-Review Learning Sweep",
+            "runner_log_token":  "code-review-learning",
+            "state_file":        base / ".claude" / "memory" / ".last-code-review-learning-run",
+            "artifact_glob":     str(base / "docs" / "code-review-learning-report.md"),
+            "artifact_label":    "docs/code-review-learning-report.md",
+            "schedule_human":    "Weekly (MIN_GAP_DAYS=7)",
+            "interval_seconds":  7 * 86400,
+            "scope":             "per-repo",
+            "what_it_does":      "Compares pr-babysit reviews against real human review activity on merged PRs; promotes low-risk findings",
         },
     ]
 
@@ -753,19 +784,27 @@ def _detect_os_scheduler():
     return result
 
 
-def parse_scheduled_tasks():
+def parse_scheduled_tasks(repo_dir=None):
     runs = parse_orchestrator_log()
-    # Group by runner_log_token → newest-first list of run records
-    runs_by_runner = {}
+    # Group by (runner, repo path) — not just runner — so a per-repo-scoped
+    # routine only ever surfaces runs from the repo actually being viewed,
+    # instead of whichever registered repo happened to run most recently.
+    runs_by_runner_repo = {}
     for r in runs:
-        runs_by_runner.setdefault(r["runner"], []).append(r)
-    for v in runs_by_runner.values():
+        runs_by_runner_repo.setdefault((r["runner"], r["path"]), []).append(r)
+    for v in runs_by_runner_repo.values():
         v.sort(key=lambda x: x["ts"], reverse=True)
 
+    target_repo = str(Path(repo_dir)) if repo_dir else str(HARNESS_DIR)
+
     out = []
-    for spec in _scheduled_task_registry():
+    for spec in _scheduled_task_registry(repo_dir):
+        # scope="harness" routines (skill-curator, harness-health, drift-review)
+        # only ever run against the harness repo, regardless of which repo's
+        # dashboard is currently being rendered.
+        scope_repo = target_repo if spec["scope"] == "per-repo" else str(HARNESS_DIR)
         last_ts = _read_state_ts(spec["state_file"])
-        recent  = runs_by_runner.get(spec["runner_log_token"], [])
+        recent  = runs_by_runner_repo.get((spec["runner_log_token"], scope_repo), [])
         # Prefer most recent entry that actually did work (duration > 0); fall back to any.
         # Guard-hit 0s entries from other repos can otherwise mask real runs.
         last_run_record = next((r for r in recent if r["duration"] > 0), recent[0] if recent else None)
@@ -925,7 +964,7 @@ def scan_memory_files(repo):
                     "hash": "", "rel": rel_time(dt.isoformat()),
                     "subject": f"[updated] {f.name}",
                 }))
-    tmp.sort(reverse=True)
+    tmp.sort(key=lambda pair: pair[0], reverse=True)
     return [e for _, e in tmp[:30]]
 
 def read_memory_file_cards(repo):
@@ -942,8 +981,12 @@ def read_memory_file_cards(repo):
     yesterday_dir = snap_dir / yesterday_str
     today_dir.mkdir(parents=True, exist_ok=True)
 
-    priority  = ["hot-memory.md", "observations.md", "entities.md", "patterns.md"]
-    all_files = sorted(mem_dir.glob("*.md"), key=lambda f: (
+    priority   = ["hot-memory.md", "observations.md", "entities.md", "patterns.md"]
+    candidates = list(mem_dir.glob("*.md"))
+    meta_patterns = mem_dir / "meta" / "patterns.md"
+    if meta_patterns.is_file():
+        candidates.append(meta_patterns)
+    all_files = sorted(candidates, key=lambda f: (
         priority.index(f.name) if f.name in priority else len(priority), f.name
     ))
     cards = []
@@ -1808,8 +1851,13 @@ def render_model_cost(sessions, pricing_snapshots):
 </div>"""
 
 
-def render_scheduled_tasks(hd, repos_data=None):
-    routines  = hd.get("scheduled_tasks", [])
+def render_scheduled_tasks(hd, repos_data=None, routines=None):
+    # routines: pass the repo-scoped list from parse_scheduled_tasks(repo_path)
+    # so per-repo routines (macro-eval, security-report, ...) show that repo's
+    # own state, not whichever registered repo last ran. Falls back to hd's
+    # harness-scoped list only for callers that don't care (none currently do).
+    if routines is None:
+        routines = hd.get("scheduled_tasks", [])
     scheduler = hd.get("scheduler", {}) or {}
 
     # ── Scheduler health card ────────────────────────────────────────────────
@@ -3958,14 +4006,17 @@ def build_html(repos_data, harness_data, usage_sessions, pricing_snapshots, init
         for key, icon, label in SECTION_DEFS
     )
 
-    # Render global (non-repo) sections once
-    scheduled_html  = render_scheduled_tasks(harness_data, repos_data)
+    # Render global (non-repo) sections once — these are repo-invariant
     skill_html      = render_skill_changes(harness_data)
     model_cost_html = render_model_cost(usage_sessions, pricing_snapshots)
 
     sections_map = {}
     for rd in repos_data:
         headroom_html = render_headroom(repo_path=rd["path"])
+        # Scheduled tasks must be recomputed per repo — per-repo-scoped routines
+        # (macro-eval, security-report, ...) each have their own state files.
+        repo_scheduled_tasks = parse_scheduled_tasks(rd["path"])
+        scheduled_html = render_scheduled_tasks(harness_data, repos_data, routines=repo_scheduled_tasks)
         sections_map[rd["path"]] = {
             "session_health": _combined_section("Session Health", "sh", [
                 ("trust",   "⚡", "Trust Battery",   render_trust_battery(rd)),
