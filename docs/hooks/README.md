@@ -413,6 +413,19 @@ Hook output is injected into Claude's context as system messages — Claude read
 
 ---
 
+### `caveman-savings-hook.sh`
+**Event:** `Stop` — **Matcher:** _(all turns)_
+
+**Purpose:** When Caveman mode is active (`~/.claude/.caveman-active` or `~/.config/caveman/config.json`), once per calendar day takes the last real assistant response from the session transcript and asks a cheap Haiku call (`claude --print --model claude-haiku-4-5-20251001`) to re-expand it into normal, complete-sentence prose. Diffs the two response lengths to produce a real sample of how many tokens Caveman actually saves, instead of a guess. Both sides are measured via a word-count heuristic (~1.3 tokens/word) derived from visible response text — not `usage.output_tokens`, which on the "actual" side is contaminated by invisible extended-thinking tokens unrelated to response length. Guarded against self-recursion via `SDD_CAVEMAN_MEASURING=1` on the nested `claude` call, since that call would otherwise re-trigger this same Stop hook.
+
+**Outputs:** Appends one JSON line to `.claude/memory/caveman-savings.jsonl` (`ts`, `mode`, `method`, `actual_tokens`, `baseline_tokens`, `saved_tokens`, `saved_pct`). Exits silently (no-op) if Caveman isn't active, `jq`/`claude` aren't on PATH, today's sample already ran (`.claude/memory/.last-caveman-savings-run`), or the transcript/expansion call comes back empty.
+
+**Consumed by:** `scripts/utils/dashboard.py`'s `_read_caveman_savings()`, which feeds the Caveman layer in the dashboard's Budget & Efficiency → Compression Pipeline view and folds its estimated $ savings (at the Sonnet 4.6 *output* rate, ~$15/M, since this is response-side savings) into the combined-savings total alongside RTK and lean-ctx.
+
+**Location:** ships in `hooks/claude/`; wired via `Stop` (all turns) in `templates/settings.harness.json.template` (harness-only for now — not shipped to consumer repos via `templates/settings.json.template`).
+
+---
+
 ### `hook-added-notify.sh`
 **Event:** `PostToolUse` — **Matcher:** `Write|Edit`
 
@@ -523,6 +536,7 @@ SessionStart   → session-start-hook.sh
 SessionStart   (all)                                        → caveman-activate.js  [global, ~/.claude/hooks/]
 Stop           → stop-hook.sh
 Stop           (all)                                        → address-check-hook.sh
+Stop           (all)                                        → caveman-savings-hook.sh
 UserPromptSubmit (matcher: "")                                → doc-parse-nudge.sh
 PreToolUse     Bash                                          → rtk hook claude  [global, ~/.claude/settings.json — token compression]
 PreToolUse     Bash                                          → git-destructive-guard-hook.sh  [no dedicated section below yet]
@@ -569,5 +583,5 @@ The `tool-failure-*` pair plus the `tool-failure-review` routine are designed to
 3. Document it in this file (the `hook-added-notify.sh` hook will remind you if you forget).
 4. Update the Wiring Reference table above.
 
-_Last synced: 2026-08-02
+_Last synced: 
 
