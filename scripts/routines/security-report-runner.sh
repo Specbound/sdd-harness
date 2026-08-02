@@ -35,6 +35,14 @@ if [ ! -f "$PROMPT_TEMPLATE" ]; then
 fi
 
 # --- Race protection ---
+# Stale lock: if >2h old it was left by a SIGKILL'd run — safe to remove.
+if [ -d "$LOCK_DIR" ]; then
+  LOCK_AGE=$(( $(date +%s) - $(stat -c %Y "$LOCK_DIR" 2>/dev/null || stat -f %m "$LOCK_DIR" 2>/dev/null || echo 0) ))
+  if [ "$LOCK_AGE" -gt 7200 ]; then
+    log "removing stale lock (age=${LOCK_AGE}s)"
+    rm -rf "$LOCK_DIR"
+  fi
+fi
 if ! mkdir "$LOCK_DIR" 2>/dev/null; then
   log "another scan active, skipping"
   exit 0
