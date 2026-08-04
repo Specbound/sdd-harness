@@ -73,6 +73,16 @@ done
 ```
 All three outputs land in the same `ollama-runs/<slug>_<hash>/` folder.
 
+**Custom runner (non-Ollama CLI model/agent):**
+```bash
+python3 .claude/scripts/ollama_model_test.py \
+  --model my-agent-v2 \
+  --runner ./scripts/my_agent_runner.sh \
+  --prompt-file prompt.txt \
+  --runs 3
+```
+`--runner` requires `--model` (no Ollama model discovery for custom runners). The runner executable is invoked once per run with the prompt on stdin and `OMT_MODEL`/`OMT_PROMPT`/`OMT_RUN_DIR` set in its environment; its stdout becomes the recorded response. Use this to point OMT at any CLI-wrapped model or agent, not just Ollama.
+
 ## Phase 4: Read Results
 
 Output structure:
@@ -112,6 +122,24 @@ Key metadata fields:
 **Model too slow?**
 - Try a smaller quantization: `llama3.1:8b-instruct-q4_K_M` vs `llama3.1:8b`
 - Check `total_duration` in metadata.json
+
+## Phase 6: Grading
+
+Add `--checker PATH` to get an automated pass/fail verdict instead of eyeballing output. The checker executable is invoked once after all generations for a model complete, with `OMT_RUN_DIR`/`OMT_MODEL` set in its environment. Its stdout must be JSON:
+
+```json
+{"pass": true, "score": 0.9, "notes": "matched expected structure"}
+```
+
+The verdict is appended to `grades.json` in the run directory (parallel to `metadata.json`) and printed to the console:
+
+```bash
+python3 .claude/scripts/ollama_model_test.py \
+  --model llama3.1:8b --prompt-file prompt.txt \
+  --checker ./scripts/my_checker.sh --no-stream
+```
+
+Works with both the Ollama path and `--runner`. Omit `--checker` for the original human-eyeballing workflow — no behavior change.
 
 ## Common Workflows
 

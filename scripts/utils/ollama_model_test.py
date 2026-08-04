@@ -9,7 +9,9 @@ import hashlib
 import io
 import json
 import math
+import os
 import re
+import subprocess
 import sys
 import time
 import urllib.error
@@ -38,20 +40,30 @@ def main(argv: list[str] | None = None) -> int:
     print("===================")
     print()
 
-    try:
-        models = list_ollama_models()
-    except RuntimeError as exc:
-        print(f"Could not list Ollama models: {exc}", file=sys.stderr)
-        print("Make sure Ollama is running, then try again.", file=sys.stderr)
-        return 1
+    if args.runner is not None:
+        if args.model is None:
+            print(
+                "--model is required when --runner is set "
+                "(no model discovery for custom runners).",
+                file=sys.stderr,
+            )
+            return 1
+        model = args.model
+    else:
+        try:
+            models = list_ollama_models()
+        except RuntimeError as exc:
+            print(f"Could not list Ollama models: {exc}", file=sys.stderr)
+            print("Make sure Ollama is running, then try again.", file=sys.stderr)
+            return 1
 
-    if not models:
-        print("No local Ollama models found. Install one with `ollama pull <model>`.")
-        return 1
+        if not models:
+            print("No local Ollama models found. Install one with `ollama pull <model>`.")
+            return 1
 
-    model = resolve_model(args.model, models)
-    if model is None:
-        return 1
+        model = resolve_model(args.model, models)
+        if model is None:
+            return 1
 
     prompt = resolve_prompt(args.prompt_file)
     if prompt is None:
@@ -89,7 +101,10 @@ def main(argv: list[str] | None = None) -> int:
     results: list[dict[str, Any]] = []
     for index in range(1, runs + 1):
         print(f"Run {index}/{runs} using {model}...")
-        result = generate_once(model, prompt, options, stream=stream)
+        if args.runner is not None:
+            result = run_via_custom_runner(args.runner, model, prompt, run_dir)
+        else:
+            result = generate_once(model, prompt, options, stream=stream)
         results.append(result)
         status = "ok" if result["ok"] else "error"
         elapsed = result["elapsed_seconds"]
@@ -114,6 +129,13 @@ def main(argv: list[str] | None = None) -> int:
         prompt,
         prompt_path.name,
     )
+
+    if args.checker is not None:
+        grade = run_checker(args.checker, model, run_dir)
+        write_grades_file(run_dir / "grades.json", model, grade)
+        verdict = "PASS" if grade.get("pass") else "FAIL"
+        print()
+        print(f"Checker verdict: {verdict} (score={grade.get('score')}) {grade.get('notes', '')}".rstrip())
 
     print()
     print(f"Done. Wrote {output_path}")
@@ -147,6 +169,26 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help=(
             "Path to a UTF-8 text file containing the prompt. "
             "If omitted, enter the prompt interactively."
+        ),
+    )
+    parser.add_argument(
+        "--runner",
+        type=str,
+        help=(
+            "Path to an executable wrapping a non-Ollama CLI model/agent. Called once per "
+            "run with the prompt on stdin and OMT_MODEL/OMT_PROMPT/OMT_RUN_DIR set in its "
+            "environment; stdout becomes the recorded response. Requires --model. Omit to "
+            "use the built-in Ollama path."
+        ),
+    )
+    parser.add_argument(
+        "--checker",
+        type=str,
+        help=(
+            "Path to an executable run once after all generations complete, with "
+            "OMT_RUN_DIR/OMT_MODEL set. Its stdout must be JSON: "
+            '{"pass": bool, "score": number, "notes": str}. Result is appended to '
+            "grades.json in the run directory."
         ),
     )
     stream_group = parser.add_mutually_exclusive_group()
@@ -414,6 +456,128 @@ def generate_once(
             "elapsed_seconds": elapsed,
             "error": str(exc),
         }
+
+
+def run_via_custom_runner(
+    runner: str,
+    model: str,
+    prompt: str,
+    run_dir: Path,
+) -> dict[str, Any]:
+    started = time.monotonic()
+    generated_at = now_local()
+
+    env = os.environ.copy()
+    env["OMT_MODEL"] = model
+    env["OMT_PROMPT"] = prompt
+    env["OMT_RUN_DIR"] = str(run_dir)
+
+    try:
+        completed = subprocess.run(
+            [runner],
+            input=prompt,
+            capture_output=True,
+            text=True,
+            env=env,
+            timeout=600,
+        )
+    except OSError as exc:
+        elapsed = time.monotonic() - started
+        return {
+            "ok": False,
+            "generated_at": generated_at.isoformat(),
+            "elapsed_seconds": elapsed,
+            "error": f"could not run --runner {runner}: {exc}",
+        }
+    except subprocess.TimeoutExpired as exc:
+        elapsed = time.monotonic() - started
+        return {
+            "ok": False,
+            "generated_at": generated_at.isoformat(),
+            "elapsed_seconds": elapsed,
+            "error": f"--runner {runner} timed out: {exc}",
+        }
+
+    elapsed = time.monotonic() - started
+    if completed.returncode != 0:
+        return {
+            "ok": False,
+            "generated_at": generated_at.isoformat(),
+            "elapsed_seconds": elapsed,
+            "error": (
+                f"--runner {runner} exited {completed.returncode}: "
+                f"{completed.stderr.strip()}"
+            ),
+        }
+
+    return {
+        "ok": True,
+        "generated_at": generated_at.isoformat(),
+        "elapsed_seconds": elapsed,
+        "response": completed.stdout,
+        "raw": {"runner": runner, "returncode": completed.returncode},
+    }
+
+
+def run_checker(checker: str, model: str, run_dir: Path) -> dict[str, Any]:
+    env = os.environ.copy()
+    env["OMT_MODEL"] = model
+    env["OMT_RUN_DIR"] = str(run_dir)
+
+    try:
+        completed = subprocess.run(
+            [checker],
+            capture_output=True,
+            text=True,
+            env=env,
+            timeout=600,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return {"pass": False, "score": 0.0, "notes": f"could not run --checker {checker}: {exc}"}
+
+    try:
+        grade = json.loads(completed.stdout)
+    except json.JSONDecodeError as exc:
+        return {
+            "pass": False,
+            "score": 0.0,
+            "notes": f"--checker {checker} did not print valid JSON: {exc}",
+        }
+
+    if not isinstance(grade, dict) or "pass" not in grade:
+        return {
+            "pass": False,
+            "score": 0.0,
+            "notes": f"--checker {checker} JSON missing required 'pass' key",
+        }
+
+    return grade
+
+
+def write_grades_file(path: Path, model: str, grade: dict[str, Any]) -> None:
+    if path.exists():
+        try:
+            existing = json.loads(path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            existing = {}
+    else:
+        existing = {}
+
+    grades = existing.get("grades")
+    if not isinstance(grades, list):
+        grades = []
+
+    grades.append(
+        {
+            "model": model,
+            "graded_at": now_local().isoformat(),
+            "pass": grade.get("pass"),
+            "score": grade.get("score"),
+            "notes": grade.get("notes"),
+        }
+    )
+
+    path.write_text(json.dumps({"grades": grades}, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
 def ollama_get_json(path: str) -> dict[str, Any]:

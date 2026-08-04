@@ -1,10 +1,19 @@
 #!/bin/bash
 # One-time Windows Task Scheduler bootstrap for the SDD daily orchestrator.
 # Creates a scheduled task "SDD Daily Orchestrator" that fires at 18:00 local
-# every day (evening, Israel time when Windows TZ = Jerusalem). Uses
+# and then repeats every 4h, all day (6 fires/day) — not just once. A single
+# daily trigger is fragile: if the machine/WSL is asleep at that one precise
+# moment, Windows' own missed-run catch-up (StartWhenAvailable) only retries
+# ONE missed occurrence and has been observed to report success while doing
+# nothing (silent no-op — see daily-orchestrator.sh's fail-loud logging, added
+# 2026-08-02, which would have caught this). Every sub-routine self-gates on
+# its own last-run state file, so 5 of 6 daily fires are near-instant no-ops —
+# repeating cheaply just means the machine only needs to be awake for ANY ONE
+# of 6 daily windows instead of one exact moment.
 # "RunOnlyIfIdle=false" and "StartWhenAvailable=true" so the task runs as soon
 # as possible after a missed start. The SessionStart hook is a backup catch-up
-# path: if the runner hasn't fired in >24h, opening a Claude session triggers it.
+# path: if the runner hasn't fired in >24h, opening a Claude session triggers it,
+# and escalates to a full-fleet run if the global orchestrator log is >36h stale.
 #
 # Idempotent: re-running with no args is a no-op if the task already exists.
 # Pass --force to delete and recreate (e.g. after editing the schedule here).
@@ -69,12 +78,17 @@ cat > "$XML_PATH" <<XML
 <?xml version="1.0" encoding="UTF-16"?>
 <Task version="1.4" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
   <RegistrationInfo>
-    <Description>SDD harness daily maintenance — runs daily-orchestrator.sh inside WSL.</Description>
+    <Description>SDD harness daily maintenance — runs daily-orchestrator.sh inside WSL. Fires at 18:00 and repeats every 4h (6x/day); each sub-routine self-gates on its own last-run state so repeat fires are cheap no-ops except the one that's actually due.</Description>
   </RegistrationInfo>
   <Triggers>
     <CalendarTrigger>
       <StartBoundary>2026-01-01T18:00:00</StartBoundary>
       <ScheduleByDay><DaysInterval>1</DaysInterval></ScheduleByDay>
+      <Repetition>
+        <Interval>PT4H</Interval>
+        <Duration>P1D</Duration>
+        <StopAtDurationEnd>false</StopAtDurationEnd>
+      </Repetition>
       <Enabled>true</Enabled>
     </CalendarTrigger>
   </Triggers>
@@ -116,7 +130,7 @@ schtasks.exe /Query /TN "$TASK_NAME" >/dev/null 2>&1 && \
 
 # Create from XML
 if schtasks.exe /Create /TN "$TASK_NAME" /XML "$WIN_XML_PATH" /F >/dev/null 2>&1; then
-  echo "✓ Task '$TASK_NAME' created. Daily run at 18:00 local time."
+  echo "✓ Task '$TASK_NAME' created. Runs at 18:00 local, repeats every 4h (6x/day)."
   echo "  Verify: schtasks.exe /Query /TN \"$TASK_NAME\" /V /FO LIST"
   echo "  Run now: schtasks.exe /Run /TN \"$TASK_NAME\""
   echo "  Delete:  schtasks.exe /Delete /TN \"$TASK_NAME\" /F"

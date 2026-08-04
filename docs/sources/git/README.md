@@ -582,3 +582,24 @@ GitHub repositories that were passed to `/skill-extraction` and turned into harn
 - `codex-advisor` / `fable-advisor` (cross-model second-opinion subagents) — genuinely different pattern, but `codex-advisor` needs an unconfirmed external `codex` CLI dependency; not proposing blind.
 - `claude-telemetry-hooks`'s `session_start_chat_id.py` — pure OTel session-linking telemetry, dead code with no OTel backend configured.
 - ~15 per-service skills (mongodb, supabase, stripe, polar, livekit, cloudflare, hetzner, dokploy, azure-tools, gcloud-tools, react-skills, python-skills, overleaf-skills, paper-search-tools, tavily-tools, openobserve-skills, web-performance-skills, frontend-design-skills, anthropic/openai-office-skills) — mostly duplicate the harness's existing catalog for services not confirmed in use; domain-saturation concern (generic dev-tooling, not an underserved domain).
+
+---
+
+## github.com/prime-radiant-inc/smevals
+**URL:** https://github.com/prime-radiant-inc/smevals | **Added:** 2026-08-04
+
+**What it's about:** External pip/uv CLI eval tool (180 stars, ~3 weeks old). Core model: Eval (dir) > Task (yaml prompt) x Config (yaml: runner script + model) → Run (immutable, disk-persisted via `SMEVALS_MODEL`/`SMEVALS_PROMPT`/`SMEVALS_RUN_DIR` env vars passed to any user-supplied Runner executable) → Grader (list of Checkers, built-in or custom, emitting JSON score/notes + exit code) → Grade (separate from Run, resumable/regradable). Generalizes generation to any CLI-wrapped model/agent via the Runner contract, not just one provider.
+
+**better-call verdict:** AUGMENT INCUMBENT (19/30 challenger vs 21/30 incumbent `local-llm-eval`/`ollama_model_test.py`, source `github.com/ulyssestenn/omt`). Challenger scored higher only on generalization/coverage-breadth (Runner contract works for any CLI model, not just Ollama) and grading rigor (structured Checker/Grade split with pass/fail exit codes) — everything else (maintenance cost of a new external uv/pip dependency from a small, very new repo; harness fit; automation potential) favored the incumbent's zero-dependency stdlib design.
+
+**What we added:**
+- Augmentation: `scripts/utils/ollama_model_test.py` — grafted smevals' Runner and Checker/Grader contracts onto the existing script instead of adopting the tool wholesale.
+  - `--runner PATH` (new): invokes an executable once per generation with the prompt on stdin and `OMT_MODEL`/`OMT_PROMPT`/`OMT_RUN_DIR` in its environment; stdout becomes the recorded response. Requires `--model`. Falls back to the existing Ollama HTTP path (`generate_once()`) when omitted — zero behavior change for existing callers.
+  - `--checker PATH` (new): invokes an executable once after all generations for a model complete, with `OMT_RUN_DIR`/`OMT_MODEL` set. stdout must be JSON `{"pass": bool, "score": float, "notes": str}`; result is appended to a new `grades.json` in the run directory (parallel to `metadata.json`) and a PASS/FAIL line is printed.
+  - Docs: `skills/local-llm-eval/SKILL.md` Phase 3 (runner example) + new Phase 6 (Grading); `docs/evaluation/local-llm-eval/README.md` flags table + `grades.json` schema.
+
+**Rejected:**
+- Wholesale adoption of `smevals` as a new external dependency — a small (180-star, 3-week-old) startup repo; the specific gap (generalized Runner + pass/fail Grader) was fully closeable as a targeted augmentation of the existing zero-dependency incumbent, per the `better-call` verdict.
+- `skill-eval-gate` Runner backend integration — that skill's ad-hoc baseline/treatment subagent comparison for grading SKILL.md changes is a different eval shape (agentic scenario scoring, not raw prompt/model output grading); the Runner contract doesn't map cleanly onto it.
+- Static-site report generation (`smevals serve`/`build`) — no persistent multi-eval-suite need yet; premature before the harness accumulates enough graded runs to warrant a report UI.
+- Resumable `-n N` top-up semantics (`smevals run -n N` is idempotent, no-op once N successful runs exist) — the incumbent's `--runs N` always runs N fresh generations; adding idempotent top-up is a bigger behavior change than the augmentation warranted and wasn't part of the approved scope.
