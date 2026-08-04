@@ -133,7 +133,7 @@ This is the **review** stage of the tool-failure-memory loop (capture → recall
 - Race-safe via `mkdir` lock; a lock older than 2h (left by a killed run) is auto-removed on the next run
 - Retries automatically on failure — `STATE_FILE` is only written after a successful run (exit 0), so a failed sweep doesn't consume the gap-days window; full stdout is also tee'd to `.claude/memory/.last-skill-curator-output.log` since the orchestrator wrapper that calls this runner redirects its stdout to `/dev/null` and only captures stderr
 
-**How to use:** After the routine runs, invoke `/skill-curator` locally to review findings and apply approved changes (merge/compress/delete) with human approval at every step.
+**How to use:** After the routine runs, invoke `/skill-curator` locally to review findings and apply approved changes (merge/compress/delete) with human approval at every step. Alternatively, in the dashboard's companion mode, use the **Skill Changes** tab's "🔍 Analyze & Propose" / "✅ Apply Approved" buttons — propose writes a numbered proposal to `.claude/memory/.skill-curator-proposal.md` via a headless `claude --print` session; apply backs up `~/.claude/skills/` first, then executes the approved subset and logs it to `docs/skill-curation-report.md`.
 
 **Opt-out:** `SDD_SKIP_SKILL_CURATOR=1` env var.
 

@@ -881,7 +881,7 @@ Requires at least one project registered in `projects.txt` (added automatically 
 | 5 | 🪝 Hooks History | Hook name, event type, last activity, active/inactive badge |
 | 6 | 📅 Scheduled Tasks | OS-scheduler health card + per-routine schedule, last run, next expected, artifact diff, overdue alerts. Includes the Daily Security Scan routine (`security-report-runner.sh`) which scans recent git changes for OWASP patterns, secrets, and injection sinks. |
 | 7 | 🧠 Memory Changes | Per-file cards for hot-memory, observations, and meta/patterns with day-over-day diffs ("since yesterday") computed from dated snapshots; full content expanded when a file is unchanged |
-| 8 | 🎯 Skill Changes | Rendered skill-curation-report with audit age |
+| 8 | 🎯 Skill Changes | Rendered skill-curation-report with audit age; in companion mode, "🔍 Analyze & Propose" / "✅ Apply Approved" buttons run the skill-curator's propose/apply phases in a headless `claude --print` session, backing up `~/.claude/skills/` before any apply |
 | 9 | 📊 Session Quality | Score/keep-rate/memory-gap summary + 30-day chart |
 | 10 | 💰 Model Cost | All-time and 30-day spend; 90-day daily cost bar chart; sessions table with model/tokens/cost; cross-provider "What if?" cost switcher |
 | 11 | 🧵 Context Health | Sessions per day trend + `/compact` recommendations |
@@ -956,4 +956,4 @@ The Model Cost section reads session data from `~/.claude/projects/*/`. Pricing 
 
 Private repository. Contact the maintainer for access.
 
-_Last synced: 2026-08-02_
+_Last synced: 2026-08-04_
