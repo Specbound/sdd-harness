@@ -14,10 +14,12 @@ set -u
 # Self-locate the harness root (no hardcoded paths — see scripts/lib/resolve-harness-dir.sh)
 __here="$(cd -P "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 . "$__here/../lib/resolve-harness-dir.sh"
+. "$__here/../lib/env-detect.sh"
 PROJECTS_FILE="$HARNESS_DIR/projects.txt"
 LOG_FILE="$HARNESS_DIR/logs/orchestrator.log"
 ERR_LOG="$HARNESS_DIR/logs/orchestrator-errors.log"
 mkdir -p "$(dirname "$LOG_FILE")"
+detect_host_env
 
 DRY_RUN=false
 SINGLE_REPO=""
@@ -63,6 +65,15 @@ run_one() {
       echo "$ts [orphan] $repo — not installed" >> "$LOG_FILE"
     fi
     return 0
+  fi
+
+  local fs_class="$(classify_repo_fs "$repo")"
+  if [ "$fs_class" = "cross-fs" ]; then
+    if [ "$DRY_RUN" = true ]; then
+      echo "[cross-fs] $repo"
+    else
+      echo "$ts orchestrator: WARNING $repo is cross-filesystem (perf risk, confirmed not fixable via dispatch — migrate to a native path)" >> "$LOG_FILE"
+    fi
   fi
 
   local state="$repo/.claude/memory/.last-routine-run"
@@ -218,26 +229,39 @@ else
   done < "$PROJECTS_FILE"
 fi
 
-# --- Harness-level weekly tasks ---
-# Wednesday (DOW=3): repo drift review
+# --- Harness-level periodic task: repo drift review ---
+# Gated on elapsed days since the last *successful* run (like skill-curator /
+# security-report), not calendar day-of-week. A day-of-week gate can only ever
+# fire on Wednesday — if the machine is asleep/logged-out through every trigger
+# window that day, the whole week is silently lost. An elapsed-days gate is
+# self-healing: whichever day the orchestrator next actually runs, if due, it runs.
 DRIFT_STATE="$HARNESS_DIR/.last-drift-review"
-DRIFT_WEEK="$(date +%Y-W%V)"
-DOW="$(date +%u)"
+DRIFT_GAP_DAYS="${DRIFT_REVIEW_GAP_DAYS:-7}"
 
-if [ "$DOW" = "3" ] && [ "$DRY_RUN" = false ]; then
-  LAST_DRIFT_WEEK="$(cat "$DRIFT_STATE" 2>/dev/null || echo "")"
-  if [ "$LAST_DRIFT_WEEK" != "$DRIFT_WEEK" ]; then
+if [ "$DRY_RUN" = false ]; then
+  DRIFT_DUE=true
+  if [ -s "$DRIFT_STATE" ]; then
+    LAST_DRIFT_RAW="$(cat "$DRIFT_STATE")"
+    LAST_DRIFT_EPOCH="$(date -d "$LAST_DRIFT_RAW" +%s 2>/dev/null || echo 0)"
+    if [ "$LAST_DRIFT_EPOCH" -gt 0 ]; then
+      DRIFT_GAP=$(( ($(date +%s) - LAST_DRIFT_EPOCH) / 86400 ))
+      [ "$DRIFT_GAP" -lt "$DRIFT_GAP_DAYS" ] && DRIFT_DUE=false
+    fi
+  fi
+  if [ "$DRIFT_DUE" = true ]; then
     ts="$(date -Iseconds)"
-    echo "$ts harness: starting drift review ($DRIFT_WEEK)" >> "$LOG_FILE"
-    echo "$DRIFT_WEEK" > "$DRIFT_STATE"
+    echo "$ts harness: starting drift review" >> "$LOG_FILE"
     drift_errbuf=$(mktemp)
+    drift_outbuf=$(mktemp)
     echo "Use the repo-drift-review skill to sweep the SDD harness for drift. Auto-fix what you can. Write the summary to $HARNESS_DIR/docs/drift-review-report.md" | \
-      claude --print --output-format text --permission-mode bypassPermissions > /dev/null 2>"$drift_errbuf"
+      claude --print --output-format text --permission-mode bypassPermissions > "$drift_outbuf" 2>"$drift_errbuf"
     drift_exit=$?
     echo "$ts harness: drift review exit=$drift_exit" >> "$LOG_FILE"
-    if [ "$drift_exit" -ne 0 ] && [ -s "$drift_errbuf" ]; then
-      { echo "--- $ts harness drift-review (exit=$drift_exit) ---"; cat "$drift_errbuf"; } >> "$ERR_LOG"
+    if [ "$drift_exit" -eq 0 ]; then
+      echo "$ts" > "$DRIFT_STATE"
+    elif [ -s "$drift_errbuf" ] || [ -s "$drift_outbuf" ]; then
+      { echo "--- $ts harness drift-review (exit=$drift_exit) ---"; cat "$drift_errbuf" "$drift_outbuf"; } >> "$ERR_LOG"
     fi
-    rm -f "$drift_errbuf"
+    rm -f "$drift_errbuf" "$drift_outbuf"
   fi
 fi

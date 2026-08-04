@@ -74,13 +74,22 @@ mkdir -p "$REPORT_DIR"
 # --- Substitute today's date into prompt ---
 PROMPT="$(sed "s|TODAY_PLACEHOLDER|$TODAY|g" "$PROMPT_TEMPLATE")"
 
-# --- Mark started ---
-echo "$TIMESTAMP" > "$STATE_FILE"
 log "starting security scan"
 
 # --- Invoke claude ---
-echo "$PROMPT" | SDD_HEADLESS=1 claude --print --output-format text --permission-mode bypassPermissions
-EXIT=$?
+# stdout is tee'd to a log file because the orchestrator wrapper that calls this
+# script redirects our stdout to /dev/null and only captures stderr — without this,
+# a failure's actual output (as opposed to permission-check noise on stderr) is
+# unrecoverable after the fact.
+echo "$PROMPT" | SDD_HEADLESS=1 claude --print --output-format text --permission-mode bypassPermissions \
+  | tee "$MEMORY_DIR/.last-security-report-output.log"
+EXIT=${PIPESTATUS[0]}
+
+# --- Mark done only on success — a failed scan must NOT consume the daily
+# cadence gate, or every retry until MIN_GAP_DAYS elapses silently no-ops. ---
+if [ "$EXIT" -eq 0 ]; then
+  echo "$TIMESTAMP" > "$STATE_FILE"
+fi
 
 log "completed exit=$EXIT"
 exit $EXIT
