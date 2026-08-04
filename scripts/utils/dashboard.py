@@ -921,6 +921,14 @@ def read_skill_report():
     )
     return report.read_text(), (rel_time(git_ts) if git_ts else "unknown")
 
+SKILL_PROPOSAL_PATH = HARNESS_DIR / ".claude" / "memory" / ".skill-curator-proposal.md"
+
+def read_skill_proposal():
+    if not SKILL_PROPOSAL_PATH.exists():
+        return None, None
+    mtime = datetime.fromtimestamp(SKILL_PROPOSAL_PATH.stat().st_mtime, tz=timezone.utc)
+    return SKILL_PROPOSAL_PATH.read_text(), rel_time(mtime.isoformat())
+
 def git_log_memory(repo):
     out = run_cmd(
         ["git", "log", "--format=%H|%cr|%s", "-30", "--", ".claude/memory/"],
@@ -2461,7 +2469,7 @@ def render_skill_usage():
         + summary + top_html + cold_html
     )
 
-def render_skill_changes(hd):
+def render_skill_changes(hd, companion=False):
     usage    = render_skill_usage()
     content  = hd.get("skill_report_content")
     last_mod = hd.get("skill_report_age")
@@ -2481,6 +2489,46 @@ def render_skill_changes(hd):
   {d}
   {empty_state("No report yet — waiting for first scheduled run.")}
 </div>"""
+
+    proposal_content, proposal_age = read_skill_proposal()
+
+    action_html = ""
+    if companion:
+        if proposal_content:
+            action_html = f"""<div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--surface0)">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+      <span style="color:var(--overlay0);font-size:12px">
+        Proposal generated: <strong style="color:var(--subtext1)">{h(proposal_age)}</strong></span>
+    </div>
+    <div style="font-size:12px;line-height:1.7;margin-bottom:12px">{mini_md(proposal_content)}</div>
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+      <input id="sc-instruction" type="text" value="apply all"
+             style="background:var(--surface0);color:var(--text);border:1px solid var(--overlay0);
+                    border-radius:6px;padding:8px 12px;font-size:12px;flex:1;min-width:180px"/>
+      <button id="sc-apply-btn"
+              style="background:var(--green);color:var(--crust);border:none;border-radius:6px;
+                     padding:9px 18px;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap"
+              onclick="runSkillCuratorApply()">✅ Apply Approved</button>
+      <button id="sc-propose-btn"
+              style="background:transparent;color:var(--subtext0);border:1px solid var(--surface0);
+                     border-radius:6px;padding:9px 14px;font-size:12px;cursor:pointer;white-space:nowrap"
+              onclick="runSkillCuratorPropose()">🔍 Re-analyze</button>
+    </div>
+  </div>"""
+        else:
+            action_html = f"""<div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--surface0)">
+    <button id="sc-propose-btn"
+            style="background:var(--mauve);color:var(--crust);border:none;border-radius:6px;
+                   padding:9px 18px;font-size:12px;font-weight:600;cursor:pointer"
+            onclick="runSkillCuratorPropose()">🔍 Analyze &amp; Propose</button>
+  </div>"""
+    elif proposal_content:
+        action_html = f"""<div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--surface0)">
+    <div style="color:var(--overlay0);font-size:12px;margin-bottom:10px">
+      Proposal generated: <strong style="color:var(--subtext1)">{h(proposal_age)}</strong></div>
+    <div style="font-size:12px;line-height:1.7">{mini_md(proposal_content)}</div>
+  </div>"""
+
     return f"""<div class="section-inner">
   <h2 class="section-title">Skill Changes</h2>
   {usage}
@@ -2490,6 +2538,7 @@ def render_skill_changes(hd):
     {badge("Weekly", "info")}
   </div>
   <div style="font-size:12px;line-height:1.7">{mini_md(content)}</div>
+  <div id="sc-panel">{action_html}</div>
 </div>"""
 
 def render_session_quality(rd):
@@ -4067,7 +4116,7 @@ def build_html(repos_data, harness_data, usage_sessions, pricing_snapshots, init
     )
 
     # Render global (non-repo) sections once — these are repo-invariant
-    skill_html      = render_skill_changes(harness_data)
+    skill_html      = render_skill_changes(harness_data, companion=companion)
     model_cost_html = render_model_cost(usage_sessions, pricing_snapshots)
 
     sections_map = {}
@@ -4260,6 +4309,66 @@ function runEvalLoop(repoPath, repoName) {
       setTimeout(function() { if (btn) { btn.disabled = false; btn.textContent = '⚗ Run Eval Loop'; } }, 8000);
     })
     .catch(function() { if (btn) { btn.disabled = false; btn.textContent = '⚗ Run Eval Loop'; } });
+}
+
+function _scEsc(s) {
+  var d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+function _scRenderPanel(content, age) {
+  var panel = document.getElementById('sc-panel');
+  if (!panel) return;
+  panel.innerHTML =
+    '<div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--surface0)">' +
+    '<div style="color:var(--overlay0);font-size:12px;margin-bottom:10px">' +
+    'Proposal generated: <strong style="color:var(--subtext1)">' + _scEsc(age) + '</strong></div>' +
+    '<div style="font-size:12px;line-height:1.7;white-space:pre-wrap">' + _scEsc(content) + '</div>' +
+    '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:12px">' +
+    '<input id="sc-instruction" type="text" value="apply all" ' +
+    'style="background:var(--surface0);color:var(--text);border:1px solid var(--overlay0);' +
+    'border-radius:6px;padding:8px 12px;font-size:12px;flex:1;min-width:180px"/>' +
+    '<button id="sc-apply-btn" style="background:var(--green);color:var(--crust);border:none;' +
+    'border-radius:6px;padding:9px 18px;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap" ' +
+    'onclick="runSkillCuratorApply()">✅ Apply Approved</button>' +
+    '<button id="sc-propose-btn" style="background:transparent;color:var(--subtext0);' +
+    'border:1px solid var(--surface0);border-radius:6px;padding:9px 14px;font-size:12px;' +
+    'cursor:pointer;white-space:nowrap" onclick="runSkillCuratorPropose()">🔍 Re-analyze</button>' +
+    '</div></div>';
+}
+
+function _scPollProposal(n) {
+  if (n > 40) {
+    var btn = document.getElementById('sc-propose-btn');
+    if (btn) { btn.disabled = false; btn.textContent = '🔍 Analyze & Propose (taking longer than expected — try again)'; }
+    return;
+  }
+  fetch('/api/skill-curator-proposal')
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      if (d && d.content) { _scRenderPanel(d.content, d.age); }
+      else { setTimeout(function() { _scPollProposal(n + 1); }, 3000); }
+    })
+    .catch(function() { setTimeout(function() { _scPollProposal(n + 1); }, 3000); });
+}
+
+function runSkillCuratorPropose() {
+  var btn = document.getElementById('sc-propose-btn');
+  if (btn) { btn.disabled = true; btn.textContent = '🔍 Analyzing…'; }
+  fetch('/api/skill-curator-propose', { method: 'POST' })
+    .then(function() { setTimeout(function() { _scPollProposal(0); }, 5000); })
+    .catch(function() { if (btn) { btn.disabled = false; btn.textContent = '🔍 Analyze & Propose'; } });
+}
+
+function runSkillCuratorApply() {
+  var input = document.getElementById('sc-instruction');
+  var instruction = input ? input.value : 'apply all';
+  var btn = document.getElementById('sc-apply-btn');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Applying…'; }
+  fetch('/api/skill-curator-apply?instruction=' + encodeURIComponent(instruction), { method: 'POST' })
+    .then(function() { if (btn) btn.textContent = '✓ Refresh to see results'; })
+    .catch(function() { if (btn) { btn.disabled = false; btn.textContent = '✅ Apply Approved'; } });
 }""" if companion else ""
 
     headroom_funs = f"""
@@ -4516,6 +4625,83 @@ def _run_workshop_eval(repo_path: str) -> None:
             continue
 
 
+def _run_skill_curator_propose() -> None:
+    """Spawn a headless claude session to run skill-curator Phases 1-4 and write a
+    terse proposal to SKILL_PROPOSAL_PATH instead of printing it to chat."""
+    prompt = (
+        "Use the skill-curator skill's Phase 1 (Load & Orient) through Phase 4 "
+        "(Propose Actions) logic to analyze docs/skill-curation-report.md. "
+        "Cap each proposed item to 1-2 sentences of rationale — shorter than the "
+        "skill's default Phase 4 format. Do NOT execute anything and do NOT print "
+        f"the proposal to chat — instead write the numbered proposal as markdown to "
+        f"{SKILL_PROPOSAL_PATH}, creating parent directories if needed."
+    )
+    env = {**os.environ, "SDD_HEADLESS": "1"}
+    log_path = HARNESS_DIR / "logs" / "skill-curator-propose.log"
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    logfile = open(log_path, "w")
+    logfile.write(
+        f"[{datetime.now(timezone.utc).isoformat()}] skill-curator propose run\n"
+        f"prompt: {prompt}\n\n"
+    )
+    logfile.flush()
+    subprocess.Popen(
+        ["claude", "--print", "--permission-mode", "bypassPermissions", prompt],
+        cwd=str(HARNESS_DIR),
+        stdout=logfile, stderr=subprocess.STDOUT,
+        env=env,
+    )
+
+
+def _backup_skills_dir() -> str:
+    """Tar ~/.claude/skills/ before an apply step touches anything. Returns the
+    backup path (relative label, not used for anything but the caller's own note)."""
+    skills_dir = Path.home() / ".claude" / "skills"
+    backup_dir = HARNESS_DIR / ".dashboard" / "skill-backups"
+    backup_dir.mkdir(parents=True, exist_ok=True)
+    ts = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+    backup_path = backup_dir / f"skills-{ts}.tar.gz"
+    if skills_dir.is_dir():
+        subprocess.run(
+            ["tar", "-czf", str(backup_path), "-C", str(skills_dir.parent), skills_dir.name],
+            check=False,
+        )
+    return str(backup_path)
+
+
+def _run_skill_curator_apply(instruction: str) -> None:
+    """Back up ~/.claude/skills/ then spawn a headless claude session to execute the
+    approved subset of the pending proposal per skill-curator Phases 5-6."""
+    backup_path = _backup_skills_dir()
+    proposal = SKILL_PROPOSAL_PATH.read_text() if SKILL_PROPOSAL_PATH.exists() else ""
+    prompt = (
+        f"A backup of ~/.claude/skills/ was just taken at {backup_path}. "
+        "Read the pending proposal below and the user's approval instruction, then "
+        "use the skill-curator skill's Phase 5 (Execute Approved Changes) and "
+        "Phase 6 (Update Source Log) rules to execute only the approved subset and "
+        "append the curation log entry to docs/skill-curation-report.md. "
+        f"Finally, delete {SKILL_PROPOSAL_PATH} so it can't be re-applied.\n\n"
+        f"## Pending Proposal\n{proposal}\n\n"
+        f"## User Approval Instruction\n{instruction}"
+    )
+    env = {**os.environ, "SDD_HEADLESS": "1"}
+    log_path = HARNESS_DIR / "logs" / "skill-curator-apply.log"
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    logfile = open(log_path, "w")
+    logfile.write(
+        f"[{datetime.now(timezone.utc).isoformat()}] skill-curator apply run\n"
+        f"backup: {backup_path}\n"
+        f"instruction: {instruction}\n\n"
+    )
+    logfile.flush()
+    subprocess.Popen(
+        ["claude", "--print", "--permission-mode", "bypassPermissions", prompt],
+        cwd=str(HARNESS_DIR),
+        stdout=logfile, stderr=subprocess.STDOUT,
+        env=env,
+    )
+
+
 class _DashboardHandler(BaseHTTPRequestHandler):
     _html: bytes = b""
 
@@ -4545,6 +4731,14 @@ class _DashboardHandler(BaseHTTPRequestHandler):
                 self.send_header("Content-Type", "application/json")
                 self.end_headers()
                 self.wfile.write(b'{"error":"read-failed"}')
+        elif parsed.path == "/api/skill-curator-proposal":
+            content, age = read_skill_proposal()
+            body = json.dumps({"content": content, "age": age}).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            self.wfile.write(body)
         elif parsed.path == "/api/workshop-runs":
             qs         = parse_qs(parsed.query)
             event_name = qs.get("event_name", [""])[0]
@@ -4688,6 +4882,22 @@ class _DashboardHandler(BaseHTTPRequestHandler):
             repo_path = qs.get("repo", [""])[0]
             if repo_path and Path(repo_path).is_dir():
                 _run_workshop_eval(repo_path)
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            self.wfile.write(b'{"ok":true}')
+        elif parsed.path == "/api/skill-curator-propose":
+            _run_skill_curator_propose()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            self.wfile.write(b'{"ok":true}')
+        elif parsed.path == "/api/skill-curator-apply":
+            qs = parse_qs(parsed.query)
+            instruction = qs.get("instruction", ["apply all"])[0] or "apply all"
+            _run_skill_curator_apply(instruction)
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.send_header("Access-Control-Allow-Origin", "*")
