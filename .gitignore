@@ -15,6 +15,9 @@ __pycache__/
 # Harness-owned tool venv (liteparse etc.) — built by scripts/setup/liteparse-setup.sh
 .venv-tools/
 
+# Platform-compiled skill deps — reinstall per machine (npm install), never vendor binaries
+skills/pptx-official/node_modules/
+
 # Tool-generated files — runtime state, not source
 headroom_memory.db
 /LEAN-CTX.md
