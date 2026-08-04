@@ -44,6 +44,7 @@ The orchestrator itself is fail-loud: every non-dry-run invocation logs a `run s
 - Writes a dated report to `.claude/reports/security/<date>-security-report.md`
 - Visible in the dashboard **Scheduled Tasks** section with last-run status, artifact diff, and any findings headline
 - Race-safe via `mkdir` lock; a lock older than 2h (left by a killed run) is auto-removed on the next run
+- Retries automatically on failure — `STATE_FILE` is only written after a successful run (exit 0), so a failed scan doesn't consume the gap-days window; full stdout is also tee'd to `.claude/memory/.last-security-report-output.log` since the orchestrator wrapper that calls this runner redirects its stdout to `/dev/null` and only captures stderr
 
 **Opt-out:** `SDD_SKIP_SECURITY_REPORT=1` env var.
 
@@ -130,6 +131,7 @@ This is the **review** stage of the tool-failure-memory loop (capture → recall
 3. **Memory governance health** — checks five compaction-discipline hook failure modes
 4. Writes `docs/skill-curation-report.md` (full weekly snapshot, replaced each run)
 - Race-safe via `mkdir` lock; a lock older than 2h (left by a killed run) is auto-removed on the next run
+- Retries automatically on failure — `STATE_FILE` is only written after a successful run (exit 0), so a failed sweep doesn't consume the gap-days window; full stdout is also tee'd to `.claude/memory/.last-skill-curator-output.log` since the orchestrator wrapper that calls this runner redirects its stdout to `/dev/null` and only captures stderr
 
 **How to use:** After the routine runs, invoke `/skill-curator` locally to review findings and apply approved changes (merge/compress/delete) with human approval at every step.
 
@@ -154,12 +156,12 @@ This is the **review** stage of the tool-failure-memory loop (capture → recall
 
 ---
 
-### Wednesday Drift Review
+### Drift Review
 **Mechanism:** Inline in `scripts/orchestration/daily-orchestrator.sh` (harness-level section)
-**Cadence:** Once per Wednesday (week-number dedup via `~/.claude/sdd-harness/.last-drift-review`)
+**Cadence:** Gated on elapsed days since the last **successful** run (`DRIFT_REVIEW_GAP_DAYS`, default 7), not day-of-week — a day-of-week gate can only ever fire on Wednesday, so a machine asleep/logged-out through every trigger window that day silently loses the whole week; an elapsed-days gate is self-healing, firing on whichever day the orchestrator next actually runs, if due. State tracked as a timestamp in `~/.claude/sdd-harness/.last-drift-review`.
 **Scope:** Harness-level (not per-repo)
 
-**What it does:** Invokes the `repo-drift-review` skill to sweep the SDD harness for drift. Auto-fixes what it can. Writes `~/.claude/sdd-harness/docs/drift-review-report.md`.
+**What it does:** Invokes the `repo-drift-review` skill to sweep the SDD harness for drift. Auto-fixes what it can. Writes `~/.claude/sdd-harness/docs/drift-review-report.md`. The state file is only updated on a successful run (exit 0); both stdout and stderr are captured and, on failure, appended to `logs/orchestrator-errors.log`.
 
 ---
 
