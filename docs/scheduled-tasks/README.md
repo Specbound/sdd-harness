@@ -6,7 +6,7 @@ All scheduled tasks run **locally** via the OS-level scheduler and the daily orc
 
 ## Active Scheduled Tasks
 
-All tasks are wired into `scripts/orchestration/daily-orchestrator.sh`. The orchestrator fires daily at 18:00 via launchd (macOS), Windows Task Scheduler (WSL/Windows), or crontab (Linux). Catch-up runs if the machine was off: the session-start hook fires the per-repo runner in the background if the state file is >24h stale.
+All tasks are wired into `scripts/orchestration/daily-orchestrator.sh`. The orchestrator fires at 18:00 via launchd (macOS) or crontab (Linux), once daily. On WSL/Windows, Task Scheduler (`setup-global-orchestrator.sh`) fires at 18:00 and repeats every 4h for the rest of the day (6x/day total) — each sub-routine self-gates on its own last-run state, so 5 of 6 fires are cheap no-ops. Catch-up runs if the machine was off: the session-start hook fires the per-repo runner in the background if the state file is >24h stale.
 
 Each routine's stderr is captured to a per-run buffer; on a non-zero exit, the buffer is appended to `logs/orchestrator-errors.log` (in addition to the usual one-line summary in `logs/orchestrator.log`) so a failing run leaves a diagnosable trace instead of a silent exit=1.
 
@@ -189,5 +189,5 @@ The dashboard's **Scheduled Tasks** tab shows live status for each task, scoped 
 
 ---
 
-_Last synced: 2026-08-02_
+_Last synced: 2026-08-04_
 
