@@ -51,6 +51,29 @@ the human-invoked `/skill-curator` skill.
 
 ---
 
+## Phase 1.6 — Dependency Cross-Reference
+
+The map below was generated deterministically (grep, word-boundary) BEFORE this
+prompt ran, over other skills' SKILL.md bodies, hooks, agents, commands, CLAUDE.md,
+kiro rules, and routine scripts. Treat it as ground truth — do not re-derive it or
+second-guess it with your own search.
+
+```
+DEPENDENCY_MAP_PLACEHOLDER
+```
+
+A skill listed here has live referrers: other skills, hooks, or agents depend on it
+by name. Cross-reference this map against the Phase 1 low-quality list and the Phase
+1.5 cold/archive candidates:
+
+- A skill that is BOTH (low-quality or cold) AND in this map is a **dependency flag**
+  — it must be reported separately, never folded silently into a plain deletion
+  candidate. The human-invoked `/skill-curator` skill must see this flag and address
+  the referrers explicitly (update them or fold their logic in) before deleting or
+  merging — never a bare delete.
+
+---
+
 ## Phase 2 — Description Budget Audit
 
 For each skill found in Phase 1, check the `description:` frontmatter value:
@@ -94,6 +117,7 @@ Write `docs/skill-curation-report.md` with this structure:
 - Duplicate pairs: N
 - Description flags (>150 chars): N
 - Cold skills (no use in 30d): N | Archive candidates (90d): N
+- Dependency flags: N
 - Memory governance: <ok|warn|critical>
 
 ## Usage Evidence
@@ -104,6 +128,18 @@ Write `docs/skill-curation-report.md` with this structure:
 
 ### Archive Candidates (no invocation in 90d)
 [skill name] — last seen DATE (or "never")
+
+## Dependency Flags
+
+MANDATORY — this heading and its content must appear in the written report exactly
+as produced by this phase, even when empty. Do not omit this section.
+
+[Skills that are BOTH (low-quality or cold/archive candidate) AND cross-referenced
+per Phase 1.6's map. If none, write "No dependency flags — no cross-referenced
+skill is currently a deletion/archive candidate."]
+
+⚠️ [skill name] — referenced by: [referrer list from the map] — do not delete/merge
+without updating these referrers first.
 
 ## Description Budget
 

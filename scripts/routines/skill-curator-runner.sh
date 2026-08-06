@@ -75,8 +75,16 @@ fi
 
 mkdir -p "docs"
 
-# --- Substitute today's date into prompt ---
-PROMPT="$(sed "s|TODAY_PLACEHOLDER|$TODAY|g" "$PROMPT_TEMPLATE")"
+# --- Substitute today's date + dependency cross-reference map into prompt ---
+# (map substitution goes through a temp file + sed's `r`/`d` trick, not a
+# variable-based sed/awk replacement, since referrer paths could contain
+# characters — &, \ — that both sed and awk treat specially in a replacement.)
+DEPENDENCY_MAP_FILE="$(mktemp)"
+trap 'rm -f "$DEPENDENCY_MAP_FILE"; rm -rf "$LOCK_DIR"' EXIT
+bash scripts/utils/skill-dependency-scan.sh > "$DEPENDENCY_MAP_FILE" 2>/dev/null
+[ -s "$DEPENDENCY_MAP_FILE" ] || echo "No cross-referenced skills found." > "$DEPENDENCY_MAP_FILE"
+PROMPT="$(sed "s|TODAY_PLACEHOLDER|$TODAY|g" "$PROMPT_TEMPLATE" \
+  | sed -e "/DEPENDENCY_MAP_PLACEHOLDER/{r $DEPENDENCY_MAP_FILE" -e "d}")"
 
 log "starting skill-curator sweep"
 

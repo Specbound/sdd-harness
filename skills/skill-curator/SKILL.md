@@ -72,15 +72,17 @@ Present all findings in one view before proposing any actions:
 2. **From Phase 2:** descriptions over the 150-char threshold
 3. **Module-count audit:** for each skill, count distinct modules/components/reference-files bundled into its SKILL.md; flag any skill over 3 as a split candidate (SkillsBench, arXiv 2602.12670 — focused skills bundling ≤3 modules consistently outperform larger bundles in task pass-rate)
 4. **Continuous eval-gate drift check** (Phase 3.5 below) — new failure modes observed in live skill invocations that the skill's original `skill-eval-gate` scenario set didn't cover
+5. **From weekly report's `## Dependency Flags` section:** skills that are both a deletion/archive candidate AND cross-referenced by another skill, hook, agent, or command (per the runner's deterministic `skill-dependency-scan.sh` map). Treat this section as ground truth — do not re-derive it with your own search, and never propose a bare delete/merge for anything listed here.
 
 For each finding, determine the action type:
 
 | Action | When |
 |--------|------|
-| **Merge** | Two skills have overlapping scope; keep the better one, fold unique content in |
+| **Merge** | Two skills have overlapping scope; keep the better one, fold unique content in. Requires the merged-out skill is NOT in Dependency Flags, or its referrers are addressed as part of the same action |
 | **Compress description** | Description > 150 chars; propose shorter text inline |
 | **Split** | Skill bundles more than 3 distinct modules/components/reference-files (per Module-count audit) |
-| **Delete** | Low quality score + cold (no invocation in 30d per Usage Evidence) + no unique content |
+| **Delete** | Low quality score + cold (no invocation in 30d per Usage Evidence) + no unique content + NOT in Dependency Flags |
+| **Delete + migrate references** | Same deletion criteria, but the skill IS in Dependency Flags — propose updating/removing each listed referrer (or folding the referenced logic into another skill) as one combined action, never a bare delete |
 | **Add eval scenario** | Phase 3.5 drift check found a live failure mode the skill's `skill-eval-gate` scenario set doesn't cover |
 | **No action** | Flagged but justified; note reason explicitly. Never flag a `pinned: true` skill |
 
@@ -114,6 +116,11 @@ Present a numbered list — **always wait for user approval before executing:**
 4. Add eval scenario — `pr-babysit` (live traces show it firing on draft PRs with no reviewers requested; original scenario set didn't cover this)
    New scenario: "PR opened as draft, no reviewers assigned" → pass = skill declines to nudge for review
 
+5. Delete + migrate references — `active-observability` (quality score 2.1/4, unused 40+ days)
+   ⚠️ REFERENCED — used by `hooks/claude/raindrop-best-practices.sh:25`, skill `skill-curator` (Phase 3.5)
+   Must update these before/with deletion. Proposed: fold its facet-clustering step directly
+   into `skill-curator` Phase 3.5, then update the hook's reference before removing the skill.
+
 **Apply all? Or specify (e.g. "1 and 3", "skip 2", "only compressions"):**
 ```
 
@@ -132,6 +139,11 @@ Present a numbered list — **always wait for user approval before executing:**
 **Delete:**
 - Show the full SKILL.md one final time
 - Delete the directory only after explicit confirmation ("yes, delete it")
+
+**Delete + migrate references:**
+- **Hard rule:** if the target skill appears in the report's Dependency Flags section, do NOT delete or merge it until each listed referrer has been either (a) updated/edited to no longer depend on it, or (b) the user has explicitly confirmed it's safe to leave (e.g. that referrer is itself being removed in the same batch). A flagged skill is never a bare delete.
+- Show each referrer file/skill and the proposed edit (updated reference, or the logic folded into the surviving skill) before touching anything
+- Apply the referrer updates first, then delete the target directory, same confirmation gate as a plain Delete
 
 **Add eval scenario:**
 - Append the new scenario to whatever scenario table/list the target skill's own docs or eval history use for `skill-eval-gate` runs
