@@ -19,7 +19,7 @@ Utility scripts used by the harness. All Python scripts use stdlib only (no virt
 | `orchestration/setup-mac-orchestrator.sh` | Register `daily-orchestrator.sh` with launchd (macOS). |
 | `routines/macro-eval-runner.sh` | Runs `/kiro:macro-eval-sweep` headlessly for trend analysis. |
 | `routines/harness-health-runner.sh` | Runs the bi-weekly harness health routine (CLAUDE.md review + skill repair). |
-| `routines/skill-curator-runner.sh` | Runs `/kiro:skill-extract` to curate and augment skills from session learnings. |
+| `routines/skill-curator-runner.sh` | Runs `/kiro:skill-extract` to curate and augment skills from session learnings. Before invoking the prompt, runs `utils/skill-dependency-scan.sh` and substitutes its output into `DEPENDENCY_MAP_PLACEHOLDER` so the sweep can flag cross-referenced skills before proposing delete/merge. |
 | `routines/tool-failure-review-runner.sh` | Promotes recurring tool failures from `.claude/memory/tool-failures.jsonl` into `ERRORS.md` + memory. |
 | `routines/security-report-runner.sh` | Daily security scan: runs the security-report prompt headlessly, writes report to `.claude/reports/security/`. Runs at most once per day (`SECURITY_REPORT_GAP_DAYS`). Opt out with `SDD_SKIP_SECURITY_REPORT=1`. |
 | `routines/code-review-learning-runner.sh` | Self-improving code-review learning sweep: compares pr-babysit's logged reviews (`.claude/memory/pr-reviews/pr-<n>.md`) against real human review activity on merged PRs, promotes low-risk findings (conventions, dismissed-flag patterns) straight into memory, and reports higher-risk methodology changes to `docs/code-review-learning-report.md` for human approval. No-ops unless there's a merged+logged PR not yet processed; self-paces to weekly (`CODE_REVIEW_LEARNING_GAP_DAYS`, default 7) once there is. Applies to any repo. Wired into `orchestration/daily-orchestrator.sh` `run_one()`. Opt out with `SDD_SKIP_CODE_REVIEW_LEARNING=1`. |
@@ -65,6 +65,7 @@ Utility scripts used by the harness. All Python scripts use stdlib only (no virt
 | `lib/env-detect.sh` | Sourced by `orchestration/daily-orchestrator.sh`. Detects host OS and WSL, and classifies a registered repo path as `cross-fs` when it's under `/mnt/*` on WSL — the one confirmed real perf risk (native-Windows-side dispatch was A/B-tested and does not fix it). Surfaces cross-fs repos as a `WARNING` line in `logs/orchestrator.log`; does not attempt to reroute or fix. |
 | `headroom-setup.sh` | Installs `headroom-ai` globally + per registered-repo virtualenv, installs the persistent proxy service (launchd on macOS, systemd on Linux), and wires Claude Code to route through it durably (`headroom init --global --memory claude`) once the proxy's `/readyz` check passes. Removes any legacy `~/.bashrc`/`~/.zshrc` `alias claude='headroom wrap claude'` on re-run. |
 | `sync-memories-to-headroom.py` | Bidirectional sync: harness markdown memories ↔ headroom SQLite DB. Called at session start when headroom is installed. |
+| `utils/skill-dependency-scan.sh` | Deterministic (grep, word-boundary) cross-reference scan: for every skill in `~/.claude/skills/*/`, finds referrers across other skills' SKILL.md bodies, hooks, agents, commands, CLAUDE.md, kiro rules, and routine scripts. Outputs `file:line` locations only, capped at 8 referrers per skill. Called by `routines/skill-curator-runner.sh` to build the dependency map injected into the skill-curator prompt; run standalone from the repo root for a one-off check. |
 
 ## Prompts (used by runners)
 
@@ -77,4 +78,4 @@ Utility scripts used by the harness. All Python scripts use stdlib only (no virt
 | `routines/skill-curator-prompt.md` | Prompt for skill curation runs. |
 | `routines/code-review-learning-prompt.md` | Prompt for the self-improving code-review learning sweep. |
 
-_Last synced: 2026-08-04_
+_Last synced: 2026-08-06_
