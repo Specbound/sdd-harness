@@ -680,18 +680,22 @@ install_project() {
         echo "  Added .gitnexus/ to .gitignore."
       fi
 
-      if [ -f "$PROJECT_DIR/.claude/settings.json" ]; then
-        if ! grep -q '"gitnexus"' "$PROJECT_DIR/.claude/settings.json" 2>/dev/null; then
-          echo "  NOTE: Add GitNexus MCP server to .claude/settings.json:"
-          echo '    "mcpServers": { "gitnexus": { "command": "npx", "args": ["-y", "gitnexus", "mcp"] } }'
-          echo "  Or run /kiro:gitnexus-setup inside Claude Code for automatic cfg."
-        else
-          echo "  GitNexus MCP already configured in settings.json."
-        fi
-      fi
+      # Wire the MCP server for real. This used to only print a note telling the
+      # user to paste JSON by hand — and `gitnexus setup` below still wrote its
+      # MUST/NEVER CLAUDE.md block, so every install where nobody pasted it left
+      # the agent ordered to call gitnexus_* tools that were never registered.
+      local GN_RECONCILE="$HARNESS_DIR/scripts/setup/gitnexus-reconcile.sh"
+      bash "$GN_RECONCILE" "$PROJECT_DIR" --wire
 
-      (cd "$PROJECT_DIR" && npx gitnexus setup 2>/dev/null) || true
-      echo "  GitNexus editor integration registered."
+      # Only let GitNexus write its managed block once index + MCP both exist.
+      if bash "$GN_RECONCILE" "$PROJECT_DIR" --check; then
+        (cd "$PROJECT_DIR" && npx gitnexus setup 2>/dev/null) || true
+        echo "  GitNexus editor integration registered."
+        bash "$GN_RECONCILE" "$PROJECT_DIR"
+      else
+        echo "  Skipped 'gitnexus setup' — index or MCP server missing."
+        echo "  Run /kiro:gitnexus-setup inside Claude Code to finish wiring."
+      fi
     else
       echo "  WARNING: gitnexus not found. Install with: npm install -g gitnexus"
       echo "  Skipping GitNexus setup. Run /kiro:gitnexus-setup later inside Claude Code."

@@ -98,6 +98,15 @@ do_update() {
     cp "$HARNESS_DIR/templates/settings.notes.md.template" "$proj/.claude/settings.notes.md"
   fi
 
+  # --- Reconcile the GitNexus managed block in CLAUDE.md ---
+  # The block is committed; the .gitnexus/ index is gitignored and the MCP server
+  # lives in local config. A fresh clone therefore inherits MUST/NEVER rules for
+  # tools it cannot call. Strip the block when it is dead, repair it when it is
+  # live. No-op for projects that never ran `gitnexus setup`.
+  if [ -f "$HARNESS_DIR/scripts/setup/gitnexus-reconcile.sh" ]; then
+    bash "$HARNESS_DIR/scripts/setup/gitnexus-reconcile.sh" "$proj" || true
+  fi
+
   # --- Sync ALL hooks from canonical source ($HARNESS_DIR/hooks/claude/) ---
   # Every .sh in hooks/claude/ is propagated unconditionally to every project.
   # The harness is the source of truth; user-chosen wiring lives in settings.json.

@@ -1,0 +1,163 @@
+#!/bin/bash
+# ──────────────────────────────────────────────────────────────────────────────
+# gitnexus-reconcile.sh <project_dir> [--wire|--check]
+#
+# Keeps a project's GitNexus state self-consistent. `npx gitnexus setup` writes a
+# managed block into CLAUDE.md containing MUST/NEVER rules that call gitnexus_*
+# MCP tools. That block is committed; the .gitnexus/ index is gitignored and the
+# MCP server lives in local config — so on a fresh clone, after `gitnexus clean`,
+# or when the server was never wired, the block orders the agent to call tools
+# that do not exist. Every edit and commit then deadlocks.
+#
+# Modes:
+#   --check   quiet; exit 0 when index AND MCP server are both present
+#   --wire    write the MCP server config (idempotent), then report
+#   (none)    reconcile CLAUDE.md: strip the managed block when the tools are
+#             not callable, or repair its skill paths when they are
+#
+# Only bytes between <!-- gitnexus:start --> and <!-- gitnexus:end --> are ever
+# rewritten, plus the blank lines that surround the block when it is removed.
+# Always exits 0 in reconcile mode — never blocks an install or update.
+# ──────────────────────────────────────────────────────────────────────────────
+set -u
+
+PROJ="${1:-}"
+MODE="${2:-}"
+
+if [ -z "$PROJ" ] || [ ! -d "$PROJ" ]; then
+  echo "usage: gitnexus-reconcile.sh <project_dir> [--wire|--check]" >&2
+  exit 2
+fi
+
+SCRIPT_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
+MCP_HELPER="$SCRIPT_DIR/gitnexus-mcp.py"
+CLAUDE_MD="$PROJ/CLAUDE.md"
+START_MARKER='<!-- gitnexus:start -->'
+
+has_index() { [ -d "$PROJ/.gitnexus" ]; }
+
+has_mcp() {
+  if command -v python3 >/dev/null 2>&1 && [ -f "$MCP_HELPER" ]; then
+    python3 "$MCP_HELPER" check "$PROJ" >/dev/null 2>&1
+    return $?
+  fi
+  # Fallback without python3: match the server entry shape, not the Bash perms
+  grep -q '"gitnexus"[[:space:]]*:[[:space:]]*{' \
+    "$PROJ/.mcp.json" "$PROJ/.claude/settings.json" 2>/dev/null
+}
+
+has_block() { grep -qF "$START_MARKER" "$CLAUDE_MD" 2>/dev/null; }
+
+# ── Remove the managed block, collapsing the surrounding blank lines to one ───
+strip_block() {
+  local tmp="$CLAUDE_MD.gitnexus.tmp"
+  awk '
+    { lines[NR] = $0 }
+    index($0, "<!-- gitnexus:start -->") && !s { s = NR }
+    index($0, "<!-- gitnexus:end -->")   && s && !e { e = NR }
+    END {
+      if (!s || !e || e < s) { for (i = 1; i <= NR; i++) print lines[i]; exit }
+      b = s - 1; while (b >= 1  && lines[b] ~ /^[[:space:]]*$/) b--
+      a = e + 1; while (a <= NR && lines[a] ~ /^[[:space:]]*$/) a++
+      for (i = 1; i <= b; i++) print lines[i]
+      if (b >= 1 && a <= NR) print ""
+      for (i = a; i <= NR; i++) print lines[i]
+    }
+  ' "$CLAUDE_MD" > "$tmp" && mv "$tmp" "$CLAUDE_MD"
+}
+
+# ── Repair skill paths inside the block ───────────────────────────────────────
+# GitNexus writes project-local `.claude/skills/gitnexus/...` paths; the harness
+# installs its skills to ~/.claude/skills/. Rewrite is confined to the block and
+# is idempotent (already-correct paths are parked behind a sentinel first).
+fix_skill_paths() {
+  local tmp="$CLAUDE_MD.gitnexus.tmp"
+  awk '
+    index($0, "<!-- gitnexus:start -->") { inblock = 1 }
+    inblock {
+      line = $0
+      gsub(/~\/\.claude\/skills\//, "@@GNSKILLS@@", line)
+      gsub(/\.claude\/skills\/gitnexus\/gitnexus-/, "@@GNSKILLS@@gitnexus-", line)
+      gsub(/\.claude\/skills\/gitnexus-/, "@@GNSKILLS@@gitnexus-", line)
+      gsub(/@@GNSKILLS@@/, "~/.claude/skills/", line)
+      if (line != $0) changed = 1
+      $0 = line
+    }
+    index($0, "<!-- gitnexus:end -->") { inblock = 0 }
+    { print }
+    END { exit (changed ? 0 : 1) }
+  ' "$CLAUDE_MD" > "$tmp"
+  local rewrote=$?
+  if [ $rewrote -eq 0 ]; then
+    mv "$tmp" "$CLAUDE_MD"
+    echo "  GitNexus skill paths in CLAUDE.md repointed to ~/.claude/skills/"
+  else
+    rm -f "$tmp"
+  fi
+}
+
+# ── Warn about skills the block references that are not installed ─────────────
+warn_missing_skills() {
+  local missing=""
+  local name
+  for name in $(grep -o '~/\.claude/skills/[A-Za-z0-9_-]*' "$CLAUDE_MD" 2>/dev/null \
+                | sed 's|~/\.claude/skills/||' | sort -u); do
+    [ -d "$HOME/.claude/skills/$name" ] || missing="$missing $name"
+  done
+  [ -n "$missing" ] && echo "  WARNING: CLAUDE.md references uninstalled skills:$missing"
+  return 0
+}
+
+wire_mcp() {
+  if ! has_index; then
+    echo "  Skipping MCP wiring — no .gitnexus/ index in $PROJ."
+    return 0
+  fi
+  if has_mcp; then
+    echo "  GitNexus MCP server already configured."
+    return 0
+  fi
+  if command -v python3 >/dev/null 2>&1 && [ -f "$MCP_HELPER" ]; then
+    python3 "$MCP_HELPER" wire "$PROJ" || \
+      echo "  WARNING: could not wire GitNexus MCP server — run /kiro:gitnexus-setup."
+  else
+    echo "  WARNING: python3 not found — add the MCP server manually:"
+    echo '    .mcp.json → "mcpServers": { "gitnexus": { "command": "npx", "args": ["-y", "gitnexus", "mcp"] } }'
+  fi
+  return 0
+}
+
+case "$MODE" in
+  --check)
+    has_index && has_mcp
+    exit $?
+    ;;
+
+  --wire)
+    wire_mcp
+    exit 0
+    ;;
+esac
+
+# ── Default: reconcile CLAUDE.md against real state ───────────────────────────
+has_block || exit 0
+
+# An index with no MCP server is recoverable — repair it rather than deleting a
+# block the project clearly opted into. Only an unrecoverable state is stripped.
+if has_index && ! has_mcp; then
+  echo "  GitNexus block present but MCP server missing — wiring it."
+  wire_mcp
+fi
+
+if ! has_index; then
+  strip_block
+  echo "  Removed dead GitNexus block from CLAUDE.md (no .gitnexus/ index)."
+elif ! has_mcp; then
+  strip_block
+  echo "  Removed dead GitNexus block from CLAUDE.md (MCP server could not be wired)."
+else
+  fix_skill_paths
+  warn_missing_skills
+fi
+
+exit 0
