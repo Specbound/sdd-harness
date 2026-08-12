@@ -7,7 +7,7 @@
 # scripts/lib/resolve-harness-dir.sh) or computed from that self-location — so
 # the harness runs unchanged on any machine, OS, or clone location.
 #
-# Run manually:        bash scripts/check-no-hardcoded-paths.sh
+# Run manually:        bash scripts/utils/check-no-hardcoded-paths.sh
 # Wired into:          /kiro:harness-validate  and  .git/hooks/pre-commit
 #
 # Scope: *.sh and *.py under the harness root, EXCLUDING:
