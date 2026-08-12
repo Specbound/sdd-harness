@@ -34,3 +34,9 @@ docs/workflow/superpowers/
 # local. Already-tracked .claude/memory/**/.gitkeep persist as clone scaffolding.
 .claude/
 specs/
+
+# SDD harness — local-only, never committed
+CLAUDE.md
+
+# Serena symbol index — regenerable per machine via `serena project index`
+.serena/

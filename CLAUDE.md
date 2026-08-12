@@ -19,7 +19,7 @@
 - Every feature needs an approved spec in `specs/` before implementation
 - Atomic commits per task (one task = one commit, code only)
 - Never skip the human review gate between spec phases
-- Never commit SDD files — harness is local only
+- Never commit installed harness output — `.claude/` and `specs/` are local (see `.gitignore`). In this repo the top-level source tree (`agents/ commands/ hooks/ kiro/ scripts/ docs/ rules/ skills/ templates/`) IS the product and is committed normally
 - Before any significant task, show 2-3 approaches and wait for confirmation before proceeding
 - Maintain `ERRORS.md`: when an approach takes 2+ attempts, log what failed, what worked, and why
 
@@ -33,13 +33,15 @@
 
 ## Quality Gates (automated)
 - `ruff check`: on every `.py` file write
-- `pytest -x --ignore=tests/integration`: after each impl task
+- `pytest -x --ignore=tests/integration`: after each impl task, in projects that have a test suite — this repo has none; shell work is verified by `*.test.sh` scripts and throwaway-tree runs
 - doc sync: automatically on every `git commit` via post-commit hook
+- lean-ctx enforces a shell allowlist: `bash`, `sh`, `zsh`, `uvx`, `claude` and `python3 -c` are refused by default. The "permanent restriction" wording is not a policy refusal — run `lean-ctx allow <cmd>` rather than abandoning the check
 
 ## Serena (Python code intelligence — mandatory, not optional)
 - After editing any `.py` file: call `mcp__serena__get_diagnostics_for_file(path)` — real type/lint errors, not just ruff
 - Before renaming or deleting any Python function/class: call `mcp__serena__find_referencing_symbols(symbol)` to confirm blast radius
-- `initial_instructions` is excluded — Serena loads silently with zero session overhead
+- Registered user-scope, so every project inherits it: `claude mcp add serena --scope user -- uvx --from git+https://github.com/oraios/serena serena start-mcp-server --context claude-code`
+- The `claude-code` context excludes `initial_instructions` — Serena loads silently with zero session overhead. There is no `ide-assistant` context any more
 
 ## Post-Task Convention
 After any coding task, end with:
