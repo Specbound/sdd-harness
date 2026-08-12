@@ -46,6 +46,17 @@ For each agent file:
 2. Verify referenced template files exist in the templates directory
 3. Report missing templates
 
+Then validate the settings templates and the live settings file as strict JSON:
+
+```
+scripts/setup/check-settings-json.sh templates/settings.json.template \
+  templates/settings.harness.json.template .claude/settings.json
+```
+
+Non-zero exit is a blocker: Claude Code drops every permission rule and hook in a
+malformed settings.json without warning, and a broken template propagates that to
+every project installed from it. Notes belong in `settings.notes.md`, not in JSON.
+
 ### Step 4: Check Memory Caps
 
 If `.claude/memory/` exists:

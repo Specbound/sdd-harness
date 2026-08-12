@@ -4,6 +4,16 @@ Approaches that took 2+ attempts — what failed, what worked, and why.
 
 ---
 
+## 2026-08-12 — every new project got an unparseable settings.json (comments in JSON)
+
+**Symptom:** Opening a freshly installed project shows "Settings file failed to parse: `<project>/.claude/settings.json` — Invalid or malformed JSON. Permission rules and other settings from this file are not in effect." No other error; hooks and permissions just silently do nothing.
+
+**Root cause:** `templates/settings.json.template` closed its root object at line 269, then carried 19 `//` comment lines documenting the optional ktx MCP server. JSON permits neither comments nor trailing content. `install.sh` copied that template verbatim into every new project, so every install produced a dead settings file. Ironically `install.sh` already stripped `//` comments before merging `~/.claude/settings.json` — the project-copy path skipped that step. `update.sh` never touches project settings, so bad files never self-healed.
+
+**Fix:** Comments removed from the template; notes moved to `templates/settings.notes.md.template`, copied to `.claude/settings.notes.md` on install/update. `scripts/setup/check-settings-json.sh` validates templates before `install.sh` copies and after `update.sh` regenerates; `scripts/setup/repair-settings-json.py` peels a trailing comment block into the sidecar and runs idempotently on every install/update. Backfilled `whisper-pipeline` (JSON body byte-identical to the original lines 1-269).
+
+**Lesson:** Claude Code fails *quiet* on malformed settings — the file parses to nothing and the session looks normal. Never annotate a `.json` file, even with content after the final brace; use a `.notes.md` sidecar. Any template copied verbatim by the installer needs a parse check in the copy path.
+
 ## 2026-07-12 — launchd daily-orchestrator never ran (stale plist path + macOS TCC)
 
 **Symptom:** Dashboard Automation tab: Drift Review / Skill-Curator "never" ran; Daily Maintenance last real run ~May 27 (46 days). `launchctl list com.sdd.daily-orchestrator` showed `LastExitStatus = 32512` (exit 127); `orchestrator.stderr.log` was a wall of "No such file or directory".

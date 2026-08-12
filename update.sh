@@ -88,6 +88,16 @@ do_update() {
   sync_dir "$HARNESS_DIR/rules"         "$proj/.claude"
   mkdir -p "$proj/.claude/memory/sessions"
 
+  # --- Repair settings.json broken by the old template's trailing // comments ---
+  # Claude Code parses settings.json as strict JSON; a malformed file loses every
+  # permission rule and hook silently. Idempotent — valid files are left alone.
+  if command -v python3 >/dev/null 2>&1; then
+    python3 "$HARNESS_DIR/scripts/setup/repair-settings-json.py" "$proj" | grep -v '^OK ' || true
+  fi
+  if [ ! -f "$proj/.claude/settings.notes.md" ]; then
+    cp "$HARNESS_DIR/templates/settings.notes.md.template" "$proj/.claude/settings.notes.md"
+  fi
+
   # --- Sync ALL hooks from canonical source ($HARNESS_DIR/hooks/claude/) ---
   # Every .sh in hooks/claude/ is propagated unconditionally to every project.
   # The harness is the source of truth; user-chosen wiring lives in settings.json.
@@ -197,6 +207,9 @@ find "$HARNESS_DIR/.claude/scripts" -name "*.sh" -exec chmod +x {} \;
 sed "s|{{HARNESS_DIR}}|$HARNESS_DIR|g" "$HARNESS_DIR/templates/settings.harness.json.template" \
   > "$HARNESS_DIR/.claude/settings.json"
 echo "  Harness settings.json regenerated (paths resolved to $HARNESS_DIR)."
+bash "$HARNESS_DIR/scripts/setup/check-settings-json.sh" "$HARNESS_DIR/.claude/settings.json" \
+  "$HARNESS_DIR/templates/settings.json.template" || \
+  echo "  WARNING: settings JSON validation failed — see above."
 
 echo "$(date +%Y-%m-%d)" > "$HARNESS_DIR/VERSION"
 

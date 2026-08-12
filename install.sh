@@ -604,9 +604,26 @@ install_project() {
   fi
 
   # --- settings.json for target project (skip if exists) ---
+  # Validate the template before copying: Claude Code parses settings.json as
+  # strict JSON and silently drops every rule and hook in a malformed file.
+  # A bad template used to propagate that breakage into every new project.
   if [ ! -f "$PROJECT_DIR/.claude/settings.json" ]; then
-    cp "$HARNESS_DIR/templates/settings.json.template" "$PROJECT_DIR/.claude/settings.json"
-    echo "  .claude/settings.json created from template — review and customize."
+    if bash "$HARNESS_DIR/scripts/setup/check-settings-json.sh" "$HARNESS_DIR/templates/settings.json.template"; then
+      cp "$HARNESS_DIR/templates/settings.json.template" "$PROJECT_DIR/.claude/settings.json"
+      echo "  .claude/settings.json created from template — review and customize."
+    else
+      err "templates/settings.json.template is not valid JSON — settings.json NOT created."
+    fi
+  fi
+
+  # Sidecar for notes that cannot live inside settings.json (JSON has no comments).
+  if [ ! -f "$PROJECT_DIR/.claude/settings.notes.md" ]; then
+    cp "$HARNESS_DIR/templates/settings.notes.md.template" "$PROJECT_DIR/.claude/settings.notes.md"
+  fi
+
+  # Self-heal projects installed before the template was fixed.
+  if command -v python3 >/dev/null 2>&1; then
+    python3 "$HARNESS_DIR/scripts/setup/repair-settings-json.py" "$PROJECT_DIR" | grep -v '^OK ' || true
   fi
 
   # --- Generate project stack summary ---
