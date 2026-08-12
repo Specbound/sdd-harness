@@ -3,6 +3,8 @@
 All hooks live in `.claude/hooks/` and are wired in `.claude/settings.json`.
 Hook output is injected into Claude's context as system messages — Claude reads it before acting.
 
+> `.claude/settings.json` must be strict JSON: no comments, nothing after the closing brace. Claude Code drops a malformed file whole and silently, so **every** hook below stops firing while the session looks normal. Keep notes in the `.claude/settings.notes.md` sidecar, and check a file with `scripts/setup/check-settings-json.sh .claude/settings.json`. `install.sh` and `update.sh` validate the templates and repair legacy comment-broken files automatically.
+
 **Hook types used in this harness:**
 
 | Type | When it fires |
@@ -623,5 +625,5 @@ The `tool-failure-*` pair plus the `tool-failure-review` routine are designed to
 3. Document it in this file (the `hook-added-notify.sh` hook will remind you if you forget).
 4. Update the Wiring Reference table above.
 
-_Last synced: 2026-08-02_
+_Last synced: 2026-08-12_
 

@@ -75,6 +75,9 @@ This will:
 - Create the `.claude/` directory structure with commands, agents, hooks, skills, docs, templates, and `.claude/rules/` (context-engineering rules synced from the top-level `rules/` source dir)
 - Initialize memory files from templates
 - Generate `CLAUDE.md` (the project constitution)
+- Create `.claude/settings.json` from the template — but only after `scripts/setup/check-settings-json.sh` confirms the template is strict JSON, since Claude Code silently drops every permission rule and hook in a settings file it cannot parse
+- Create `.claude/settings.notes.md` for notes that cannot live inside `settings.json` (JSON allows no comments and no trailing content)
+- Run `scripts/setup/repair-settings-json.py` to self-heal any existing `settings.json` broken by a trailing `//` comment block, moving it into the notes sidecar (`update.sh` does this too)
 - Register the project in `projects.txt`
 - Install the git post-commit hook
 
@@ -230,6 +233,8 @@ sdd-harness/
 │   │   └── trust_score.py          #   Applies Judge score delta to hot-memory.md
 │   ├── setup/                    #   One-time project setup helpers
 │   │   ├── generate-project-stack.sh # Auto-detect tech stack
+│   │   ├── check-settings-json.sh    # Strict-JSON validation of settings files and templates
+│   │   ├── repair-settings-json.py   # Moves a trailing // comment block out of settings.json into settings.notes.md
 │   │   ├── headroom-setup.sh         # Install headroom memory proxy
 │   │   └── raindrop-setup.sh         # Auto-installs raindrop-ai in virtualenvs
 │   └── utils/                    #   Standalone utilities
@@ -262,7 +267,8 @@ sdd-harness/
 │
 ├── templates/                    # Project-level templates
 │   ├── CLAUDE.md.template        #   Project constitution (context paths, rules, quality gates)
-│   ├── settings.json.template    #   Claude Code permissions and hooks config (per-project installs)
+│   ├── settings.json.template    #   Claude Code permissions and hooks config (per-project installs) — strict JSON, no comments
+│   ├── settings.notes.md.template #  Sidecar notes for settings.json (copied to .claude/settings.notes.md on install/update)
 │   └── settings.harness.json.template # Same config for the harness repo itself ({{HARNESS_DIR}} paths)
 │
 └── docs/                         # Reference documentation
@@ -956,4 +962,4 @@ The Model Cost section reads session data from `~/.claude/projects/*/`. Pricing 
 
 Private repository. Contact the maintainer for access.
 
-_Last synced: 2026-08-04_
+_Last synced: 2026-08-12_

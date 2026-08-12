@@ -349,6 +349,8 @@ Or use the WSL2 path if Claude Code is running inside WSL2. From PowerShell, inv
 
 `install.sh` propagates **every** hook in the harness's `hooks/` directory into the project's `.claude/hooks/` (and `chmod +x`'s them), syncs `docs/` into `.claude/docs/`, and generates a project stack summary. The harness is the source of truth — which hooks actually fire is governed by the project's `.claude/settings.json` wiring, not by which files are present. Re-run `update.sh` to re-sync after the harness changes.
 
+`install.sh` validates `templates/settings.json.template` with `scripts/setup/check-settings-json.sh` before copying it; if the template is not strict JSON the copy is skipped and an error is printed rather than shipping a settings file Claude Code cannot parse. It also drops `.claude/settings.notes.md` (from `templates/settings.notes.md.template`) — the place for notes that cannot live inside `settings.json`, since JSON allows no comments and no content after the closing brace. Both `install.sh` and `update.sh` then run `scripts/setup/repair-settings-json.py` over the project, which peels a trailing `//` comment block out of an existing `settings.json` into that sidecar. It is idempotent, leaves valid files untouched, and reports (rather than guesses) when the breakage is something other than a trailing comment block.
+
 Then, inside Claude Code in the project directory, run these once:
 
 ```
@@ -425,4 +427,4 @@ Run through this on a fresh machine:
 | `Settings file failed to parse: .claude/settings.json — Invalid or malformed JSON` (permission rules and hooks silently inactive) | Comments or notes after the closing brace — JSON allows neither. Installs before 2026-08-12 copied a template that carried a `//` block | `python3 ~/.claude/sdd-harness/scripts/setup/repair-settings-json.py /path/to/project` moves the block to `.claude/settings.notes.md`; `update.sh` now does this automatically. Keep all notes in `settings.notes.md` |
 | `headroom` proxy exits with `FastAPI required` or `h2 package not installed` | Missing `uvicorn` or `httpx[http2]` in headroom's uv env | Re-run `install.sh` (patched) or manually: `uv tool install headroom-ai --python 3.12 --with-requirements ~/.claude/sdd-harness/scripts/setup/headroom-extras.txt` |
 
-_Last synced: 2026-06-14_
+_Last synced: 2026-08-12_

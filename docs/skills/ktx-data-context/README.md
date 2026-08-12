@@ -67,7 +67,7 @@ Add to project `.claude/settings.json`:
 }
 ```
 
-A commented-out template block is also available at the end of `templates/settings.json.template`.
+The same snippet, with prerequisites, is documented in `templates/settings.notes.md.template` — copied to `.claude/settings.notes.md` on install and update. It used to be a commented-out block at the end of `templates/settings.json.template`; that made the generated `settings.json` unparseable (JSON allows no comments and no content after the closing brace), so notes now live in the sidecar only. Paste the JSON above into `settings.json` itself, never the surrounding notes.
 
 ---
 

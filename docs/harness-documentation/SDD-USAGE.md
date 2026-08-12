@@ -324,6 +324,7 @@ The generated pipeline enforces: build, type-check, lint (with zero-warning tole
 
 ### `/kiro:harness-validate` — Check harness structural integrity
 Validates command→agent references, template existence, memory caps, L0 headers, and generates a component relationship index. Also includes:
+- **Settings JSON check** (part of Step 3) — runs `scripts/setup/check-settings-json.sh` over the settings templates and the live `.claude/settings.json`. Non-zero exit is a blocker: Claude Code silently drops every permission rule and hook in a malformed settings file, and a broken template propagates that to every project installed from it. Notes belong in `settings.notes.md`, not in the JSON
 - **Step 8: Instruction architecture audit** — entry file line count vs. 50–200 target, hard constraint count vs. 15 max, topic document adoption, hard-constraint phrases after line 50 (lost-in-middle risk)
 - **Step 9: Feature list primitive audit** — triple structure compliance (behavior+verification+state), WIP=1 discipline, pass-state gating evidence
 
@@ -800,4 +801,4 @@ Four protocols extracted from [garrytan/gbrain](https://github.com/garrytan/gbra
 
 Full reference: `docs/gbrain-patterns/gbrain-patterns.md`
 
-_Last synced: 2026-08-04_
+_Last synced: 2026-08-12_

@@ -39,7 +39,7 @@ Task(
 Check the SDD harness installation in this project for structural integrity:
 
 1. Verify all command → agent references are valid
-2. Verify all agent → template references exist
+2. Verify all agent → template references exist, and validate the settings templates and the live `.claude/settings.json` as strict JSON via `scripts/setup/check-settings-json.sh` (non-zero exit is a blocker — Claude Code drops every permission rule and hook in a malformed settings file without warning)
 3. Check memory file caps (hot-memory <50 lines, patterns <70 lines, observations <50 entries)
 4. Verify L0 headers on all steering and memory files
 5. Check rule file consistency

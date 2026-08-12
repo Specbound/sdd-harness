@@ -7,6 +7,8 @@ Utility scripts used by the harness. All Python scripts use stdlib only (no virt
 | Script | Purpose |
 |---|---|
 | `generate-project-stack.sh` | Auto-detect project language, runtime, package manager, deps, test commands, Docker services → writes `PROJECT_STACK.md`. Called by `install.sh` and `update.sh` automatically. |
+| `setup/check-settings-json.sh` | Strict-JSON validation for one or more settings files/templates (`check-settings-json.sh <file> [<file> ...]`). Exit 1 if any file is unparseable, naming the line and column. Claude Code parses `.claude/settings.json` as strict JSON — no comments, no content after the closing brace — and silently ignores a malformed file, so every permission rule and hook in it stops working. `install.sh` runs it on `templates/settings.json.template` before copying; `update.sh` runs it on the regenerated harness settings plus the per-project template; `/kiro:harness-validate` runs it as a blocking step. No-ops with a warning if `python3` is absent. |
+| `setup/repair-settings-json.py` | Repairs a project's `.claude/settings.json` broken by a trailing `//` comment block (shipped by the pre-2026-08-12 template): peels the block into `.claude/settings.notes.md` and leaves valid JSON behind. Idempotent — valid files report `OK` and are untouched; anything not fixable by removing a trailing comment block is reported `MANUAL` rather than guessed at. `repair-settings-json.py <project_dir> [...]`, `--dry-run` to preview. Run on every `install.sh` and `update.sh`. |
 
 ## Daily Maintenance & Evaluation
 
@@ -78,4 +80,4 @@ Utility scripts used by the harness. All Python scripts use stdlib only (no virt
 | `routines/skill-curator-prompt.md` | Prompt for skill curation runs. |
 | `routines/code-review-learning-prompt.md` | Prompt for the self-improving code-review learning sweep. |
 
-_Last synced: 2026-08-06_
+_Last synced: 2026-08-12_

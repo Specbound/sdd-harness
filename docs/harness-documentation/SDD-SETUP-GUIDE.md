@@ -2,7 +2,7 @@
 
 > This file is managed by the SDD harness (`sdd-harness/docs/`).
 > It is the single source of truth — do not edit copies in individual projects.
-> _Last synced: 2026-08-06_
+> _Last synced: 2026-08-12_
 
 A complete, self-contained guide to setting up the Spec-Driven Development (SDD)
 harness used in this project. Follow these steps to replicate the setup in any
@@ -35,11 +35,14 @@ Add to `.gitignore`:
 specs/
 scripts/setup-git-hooks.sh
 scripts/remap-ccsdd-paths.sh
+
+# SDD harness — local-only, never committed
+CLAUDE.md
 ```
 
 One `.claude/` line replaces the previous per-subdirectory list (`.claude/hooks/`, `.claude/commands/`, `.claude/agents/`, `.claude/kiro/`, `.claude/steering/`, `.claude/settings.json`, `.claude/memory/**` + its `!` re-includes). Already-tracked `.claude/memory/**/.gitkeep` files persist as clone scaffolding — the broad ignore does not untrack them.
 
-**`CLAUDE.md` is no longer ignored** in the harness repo — the project constitution is source and is committed. Per-project installs may still ignore it if the generated constitution is machine-specific.
+`CLAUDE.md` is ignored again in the harness repo (under a `# SDD harness — local-only, never committed` header), matching the core three entries `install.sh` writes into every project's `.gitignore` (`.claude/`, `specs/`, `CLAUDE.md`). Note that the git post-commit hook still lists `^CLAUDE\.md$` among the harness-updater triggers — that trigger simply never fires while the file is ignored.
 
 Commit: `git add .gitignore && git commit -m "chore: add SDD harness gitignore entries"`
 
@@ -155,7 +158,13 @@ New-Item -ItemType Directory -Force -Path .claude\hooks
 
 > **Windows hook paths**: The `command` values in the hooks below use `/bin/bash /path/to/...`. On native Windows, replace `/bin/bash` with the Git Bash path: `"C:/Program Files/Git/bin/bash.exe" /path/to/...`. On WSL2, the Linux paths work as-is.
 
-Create `.claude/settings.json`:
+Create `.claude/settings.json`.
+
+> **Strict JSON — no comments, nothing after the closing brace.** Claude Code parses this file as strict JSON and fails *quiet*: a malformed file is dropped whole, so every permission rule and hook in it silently stops working while the session looks normal. Keep explanatory notes in a `.claude/settings.notes.md` sidecar instead (`install.sh` and `update.sh` create one from `templates/settings.notes.md.template`). The annotations below the JSON block are documentation only — do not paste them into the file. Validate any settings file or template with:
+>
+> ```bash
+> scripts/setup/check-settings-json.sh .claude/settings.json
+> ```
 
 ```json
 {
@@ -170,11 +179,8 @@ Create `.claude/settings.json`:
   },
   "permissions": {
     "allow": [
-      // Pre-approved ruff lint commands
       "Bash(ruff check:*)",
       "Bash(python -m ruff check <file>)",
-      // Edit + Write permissions for doc sync + harness updater subagents (spawned by post-commit hook).
-      // Pair a Write(...) rule with every Edit(...) rule so the subagents can create new files, not just edit existing ones.
       "Edit(docs/**)",
       "Write(docs/**)",
       "Edit(specs/**)",
@@ -185,17 +191,13 @@ Create `.claude/settings.json`:
       "Write(.claude/steering/**)",
       "Edit(.claude/memory/**)",
       "Write(.claude/memory/**)",
-      // Allow Edit/Write on any markdown file so doc-update hooks (doc-sync, harness-updater) proceed without an approval prompt
       "Edit(**/*.md)",
       "Write(**/*.md)",
-      // WebFetch for domains Claude needs to access
       "WebFetch(domain:raw.githubusercontent.com)",
-      // Skill permissions (add as needed)
       "Skill(kiro:your-skill-name)",
       "Skill(kiro:your-skill-name:*)"
     ],
     "additionalDirectories": [
-      // Directories outside the repo root that Claude should have read access to
       "/path/to/.claude/kiro/settings/templates/memory",
       "/path/to/.claude/memory",
       "/path/to/.claude/docs",
@@ -328,9 +330,20 @@ Create `.claude/settings.json`:
 }
 ```
 
+What the entries above are for (keep this in `settings.notes.md`, not in the JSON):
+
+- `Bash(ruff check:*)`, `Bash(python -m ruff check <file>)` — pre-approved ruff lint commands.
+- `Edit(...)` / `Write(...)` pairs on `docs/**`, `specs/**`, `.claude/docs/**`, `.claude/steering/**`, `.claude/memory/**` — permissions for the doc-sync and harness-updater subagents spawned by the post-commit hook. Pair a `Write(...)` rule with every `Edit(...)` rule so the subagents can create new files, not just edit existing ones.
+- `Edit(**/*.md)` / `Write(**/*.md)` — lets the doc-update hooks proceed without an approval prompt.
+- `WebFetch(domain:...)` — domains Claude is allowed to fetch.
+- `Skill(kiro:...)` — skill permissions, added as needed.
+- `additionalDirectories` — directories outside the repo root that Claude should have read access to.
+
 > Replace `/path/to/` with your repo's absolute path, or let `setup-git-hooks.sh` (Step 8) do it automatically.
 
 > **Canonical source**: this JSON is an illustrative excerpt. The authoritative hook wiring lives in the harness source tree at `templates/settings.json.template` (per-project, relative `.claude/hooks/...` paths) and `templates/settings.harness.json.template` (the harness's own repo, `{{HARNESS_DIR}}`-prefixed paths). `install.sh` / `update.sh` render these templates — edit the templates, not a generated `settings.json`. Both templates register `skill-permissions-gate.sh` on `PostToolUse Write|Edit` and `setup-buffer-hook.sh` on `PostToolUse Bash`. `caveman-savings-hook.sh` is wired on `Stop` in `templates/settings.harness.json.template` only (the harness's own dogfood repo) — not in the generic per-project `settings.json.template`. `templates/settings.json.template` also registers `reject-feedback-hook.sh` on `UserPromptSubmit` and `ai-writing-guard-hook.sh` on `PreToolUse Write|Edit|MultiEdit|Bash` (both new; see Automated Hooks below).
+
+> **Templates are validated on the way out.** `install.sh` runs `scripts/setup/check-settings-json.sh templates/settings.json.template` before copying and refuses to create `.claude/settings.json` if the template is not strict JSON; `update.sh` runs the same check against the regenerated harness `settings.json` and the per-project template. Until 2026-08-12 the per-project template carried a trailing `//` comment block documenting the optional ktx MCP server, which made every settings file installed from it unparseable — that block now lives in `templates/settings.notes.md.template`, copied to `.claude/settings.notes.md` on install and update. `scripts/setup/repair-settings-json.py <project>` backfills projects installed before the fix (idempotent; `--dry-run` to preview). `/kiro:harness-validate` runs the checker as a blocking step.
 
 ---
 
@@ -547,7 +560,7 @@ Conventions are defined in `.claude/kiro/settings/rules/memory-conventions.md`:
 | `/kiro:daily-maintenance` | Nightly orchestrator — wires Judge → Reflect → Housekeeping → Trust Score → Skill Augment → Behavior Spec Mining into one pipeline; idempotent per calendar day (guards on today's `[judge]` observation), surfaces unresolved `[memory-gap]`s as `[routine-alert]`. Never edits code/specs — memory and skills only |
 | `/kiro:evolve` | Audit harness rules effectiveness, propose improvements (subagent) |
 | `/kiro:harness-fix` | Encode a behavioral prevention rule from a specific mistake |
-| `/kiro:harness-validate` | Check structural integrity of harness installation |
+| `/kiro:harness-validate` | Check structural integrity of harness installation — broken references, missing files, memory caps, plus a blocking strict-JSON check of the settings templates and the live `.claude/settings.json` via `scripts/setup/check-settings-json.sh` |
 | `/kiro:harness-test` | Haiku smoke-test to expose vague prompts |
 | `/kiro:tool-failure-review [min-count]` | Review the tool-failure ledger — diagnose recurring Bash/MCP failures and promote durable lessons into memory (default `min-count` 3). Review step of the tool-failure-memory loop (capture → recall → review) |
 | `/kiro:guardrails` | Audit/scaffold linter complexity rules for deterministic enforcement |
@@ -587,7 +600,7 @@ Conventions are defined in `.claude/kiro/settings/rules/memory-conventions.md`:
 | `@agents-evolve` | `/kiro:evolve` | Rule audit, friction analysis, trace log analysis, improvement proposals, linter graduation |
 | `@agents-guardrails` | `/kiro:guardrails` | Linter complexity rule auditing and scaffolding |
 | `@agents-ci-scaffold` | `/kiro:ci-scaffold` | CI configuration generation (GitHub Actions, GitLab CI, Azure Pipelines) |
-| `@agents-harness-validate` | `/kiro:harness-validate` | Structural integrity check, component index generation |
+| `@agents-harness-validate` | `/kiro:harness-validate` | Structural integrity check, component index generation. Step 3 also runs `scripts/setup/check-settings-json.sh` over `templates/settings.json.template`, `templates/settings.harness.json.template`, and `.claude/settings.json` — non-zero exit is a blocker, since Claude Code drops every permission rule and hook in a malformed settings file without warning and a broken template propagates that to every project installed from it. Notes belong in `settings.notes.md`, not in the JSON |
 | `@agents-autoresearch-init` | `/kiro:autoresearch-init` | Interactive interview → file generation |
 | `@agents-autoresearch` | `/kiro:autoresearch` | Autonomous ML experiment loop |
 | `@agents-skill-augment` | `/kiro:daily-maintenance` (nightly) | Encodes session learnings into SKILL.md files; max 3 skills/run, append-only, ≤150 chars/addition. Evidence-gated on observations, judge drains, or `type: feedback` memories — human-feedback auto-qualifies and is drafted before machine signals. Dreaming step writes synthetic worked examples to `resources/examples/` |
@@ -844,7 +857,7 @@ JIRA_API_TOKEN=your-api-token
 }
 ```
 
-> Replace `/path/to/repo` with the repo's absolute path. Merge with existing `PostToolUse` entries — do not replace the ruff lint hook.
+> Replace `/path/to/repo` with the repo's absolute path. Merge with existing `PostToolUse` entries — do not replace the ruff lint hook. The merged file must stay strict JSON (no comments, nothing after the closing brace); confirm with `scripts/setup/check-settings-json.sh .claude/settings.json` and keep any explanatory notes in `.claude/settings.notes.md`.
 
 ### Usage
 
@@ -1408,5 +1421,5 @@ disown 2>/dev/null || true
 
 The Stop hook should only contain **passive checks** (e.g., nudging housekeeping when observations exceed a threshold). See `.claude/hooks/stop-hook.sh` for the reference implementation.
 
-_Last synced: 2026-08-06_
+_Last synced: 2026-08-12_
 
