@@ -21,7 +21,7 @@ Capturing traces is **free** — no tokens consumed. The self-healing eval loop 
 
 ## Setup (automatic via harness)
 
-`install.sh` and `update.sh` both run `scripts/raindrop-setup.sh` automatically. That script:
+`install.sh` and `update.sh` both run `scripts/setup/raindrop-setup.sh` automatically. That script:
 
 1. Adds `RAINDROP_LOCAL_DEBUGGER=http://localhost:5899` to `~/.claude/settings.json` env so all Claude-spawned subprocesses pick it up.
 2. Adds the same export to `~/.bashrc` so all interactive shell sessions (where you run `uvicorn`, `python`, etc.) inherit it.

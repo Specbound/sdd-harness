@@ -96,9 +96,9 @@ Format: Jira wiki markup (not Markdown), so it renders correctly in Jira's UI.
 
 | Script | Purpose |
 |---|---|
-| `scripts/jira_client.py` | Stdlib-only Jira REST API client. Supports fetch ticket, post comment, search. No external dependencies. |
-| `scripts/jira_capture_ticket.py` | Reads Claude's stdin JSON, extracts ticket ID from prompt text via regex, writes state file. |
-| `scripts/jira_push_comment.py` | Reads git log/diff, finds relevant docs, assembles wiki-markup comment, posts via `jira_client.py`. |
+| `scripts/integrations/jira/jira_client.py` | Stdlib-only Jira REST API client. Supports fetch ticket, post comment, search. No external dependencies. |
+| `scripts/integrations/jira/jira_capture_ticket.py` | Reads Claude's stdin JSON, extracts ticket ID from prompt text via regex, writes state file. |
+| `scripts/integrations/jira/jira_push_comment.py` | Reads git log/diff, finds relevant docs, assembles wiki-markup comment, posts via `jira_client.py`. |
 
 All scripts are stdlib-only Python — no `pip install` needed.
 

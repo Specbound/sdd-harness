@@ -65,7 +65,7 @@ Based on a post by [@nityeshaga](https://x.com/nityeshaga/status/204486411468274
 
 ### 1. Session Signal Detector — drains and charges
 
-**File**: `scripts/detect_reexplanation.py`
+**File**: `scripts/session/detect_reexplanation.py`
 **Trigger**: stop-hook (every session end), also callable from CI
 **Model**: Claude Haiku (LLM-based, runs once per session)
 
@@ -121,7 +121,7 @@ The orchestrator passes the Judge's verdict JSON directly into the reflect-agent
 
 ### 4. Trust Score — scoreboard math
 
-**File**: `scripts/trust_score.py`
+**File**: `scripts/session/trust_score.py`
 **State**: `.claude/memory/trust-score.jsonl`
 **Trigger**: Step 4 of `/kiro:daily-maintenance`
 
@@ -198,6 +198,8 @@ SDD_SKIP_ROUTINE=1 ~/.claude/sdd-harness/install.sh /path/to/project
 ```
 
 Or after the fact (per platform, global): `launchctl unload -w ~/Library/LaunchAgents/com.sdd.daily-orchestrator.plist` (macOS), `crontab -l | grep -vF sdd-daily-orchestrator | crontab -` (Linux), `schtasks.exe /Delete /TN "SDD Daily Orchestrator" /F` (WSL). Per-repo: `rm .claude/scripts/daily-runner.sh`.
+
+Note that the orchestrator also does one harness-level thing before it visits any repo: once per calendar day it runs `update.sh` to sync harness changes into every registered project (previously nothing ever ran `update.sh` on its own — the stop hook only nudged a human to). Opt out of that part alone with `SDD_SKIP_HARNESS_SYNC=1`, which leaves the per-repo maintenance runs untouched.
 
 ## Rubric at a Glance
 
@@ -286,3 +288,7 @@ The deliberate non-goals above are stable. If any of these come up in a future r
 - [`docs/SDD-SETUP-GUIDE.md`](../../harness-documentation/SDD-SETUP-GUIDE.md#automated-hooks) — hook and Routine registration flow
 - [`kiro/settings/rules/session-quality-rubric.md`](../../../kiro/settings/rules/session-quality-rubric.md) — the full rubric the Judge applies
 - [`kiro/settings/rules/anti-rationalization.md`](../../../kiro/settings/rules/anti-rationalization.md) — rule the "rationalized rule-skip" drain enforces
+
+---
+
+_Last synced: 2026-08-12_

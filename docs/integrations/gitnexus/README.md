@@ -202,7 +202,11 @@ gitnexus setup
 ~/.claude/sdd-harness/install.sh /path/to/project --with-gitnexus
 ```
 
-The `--with-gitnexus` flag adds GitNexus configuration during harness installation.
+The `--with-gitnexus` flag adds GitNexus configuration during harness installation. It performs step 3 for you rather than telling you to do it: `install.sh` calls `scripts/setup/gitnexus-reconcile.sh <project> --wire`, which writes the `mcpServers.gitnexus` entry into `.mcp.json` and adds `gitnexus` to `enabledMcpjsonServers` in `.claude/settings.json` (a no-op if `enableAllProjectMcpServers` is already true, or if any config scope already provides the server). Previously it only printed a `NOTE:` with the JSON to paste by hand, while `gitnexus setup` still wrote its managed MUST/NEVER `CLAUDE.md` block — so every install where nobody pasted the JSON left the agent under orders to call `gitnexus_*` tools that were never registered.
+
+Step 4 is now gated: `install.sh` runs `gitnexus setup` only if `gitnexus-reconcile.sh <project> --check` confirms that both the index and the MCP server exist. If not, it prints `Skipped 'gitnexus setup' — index or MCP server missing.` and points you at `/kiro:gitnexus-setup` to finish wiring. After a successful `gitnexus setup`, the reconciler runs once more to repair the managed block.
+
+`update.sh` runs the same reconciler (`scripts/setup/gitnexus-reconcile.sh <project>`, non-fatal) on every sync. The managed `CLAUDE.md` block is committed, but `.gitnexus/` is gitignored and the MCP server lives in local config, so a fresh clone inherits rules for tools it cannot call — the reconciler strips the block when it is dead and repairs it when it is live. It no-ops for projects that never ran `gitnexus setup`.
 
 ## Web UI
 
@@ -310,3 +314,7 @@ gitnexus clean --all --force  # delete all indexes
 | `detect_changes` returns empty | No uncommitted changes | Make changes first, or use `gitnexus impact --from HEAD~1` |
 | Stage 0 skipped in verify | GitNexus MCP not available | Expected behavior — Stage 0 is opt-in |
 | Slow initial index | Large repo with embeddings | Use `gitnexus analyze --skip-embeddings` for faster indexing |
+
+---
+
+_Last synced: 2026-08-12_

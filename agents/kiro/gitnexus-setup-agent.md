@@ -45,18 +45,15 @@ Capture output. On failure, report first 20 lines of error and stop.
 
 ### Step 3: Configure MCP Server
 
-Read `.claude/settings.json`. Parse JSON to check for `mcpServers.gitnexus`.
+Do not hand-edit config. Run the harness wiring script — it writes `.mcp.json`,
+enables the server in `.claude/settings.json`, and is idempotent:
 
-If missing, add the MCP server configuration. Use Edit tool to merge — never overwrite the full file.
-
-The MCP config to add:
-```json
-"gitnexus": {
-  "command": "npx",
-  "args": ["-y", "gitnexus", "mcp"],
-  "env": {}
-}
+```bash
+bash .claude/scripts/setup/gitnexus-reconcile.sh . --wire
 ```
+
+It refuses to touch a settings file it cannot parse, and no-ops when the server
+is already configured in any scope.
 
 ### Step 4: Update .gitignore
 
@@ -66,9 +63,18 @@ grep -qF '.gitnexus/' .gitignore 2>/dev/null || echo -e '\n# GitNexus index (loc
 
 ### Step 5: Editor Registration
 
+`gitnexus setup` writes a managed MUST/NEVER block into `CLAUDE.md` that calls
+`gitnexus_*` tools. Only run it once index and MCP server both exist, then
+reconcile the block so its skill paths point at the installed skills:
+
 ```bash
-npx gitnexus setup 2>&1 | tail -5
+bash .claude/scripts/setup/gitnexus-reconcile.sh . --check \
+  && npx gitnexus setup 2>&1 | tail -5 \
+  && bash .claude/scripts/setup/gitnexus-reconcile.sh .
 ```
+
+If `--check` fails, skip this step and report which half is missing — never
+leave a block behind that references uncallable tools.
 
 Report which editors were configured.
 
@@ -80,7 +86,7 @@ GitNexus Setup Complete
 
   CLI:       gitnexus vX.Y.Z
   Index:     .gitnexus/ [created|already existed]
-  MCP:       [configured|already configured] in .claude/settings.json
+  MCP:       [configured|already configured] in .mcp.json
   Gitignore: [added|already present]
   Editors:   [list from gitnexus setup output]
 

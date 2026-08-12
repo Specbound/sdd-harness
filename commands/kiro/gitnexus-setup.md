@@ -45,25 +45,15 @@ Report indexing progress to the user. If indexing fails, show the error output a
 
 ## Step 3: Configure MCP Server
 
-Read `.claude/settings.json`. If it exists, check whether `mcpServers.gitnexus` is already configured.
+Run the harness wiring script instead of editing config by hand. It writes
+`.mcp.json`, enables the server in `.claude/settings.json`, is idempotent, and
+leaves an unparseable settings file untouched:
 
-If not configured, add the GitNexus MCP server:
-
-```json
-{
-  "mcpServers": {
-    "gitnexus": {
-      "command": "npx",
-      "args": ["-y", "gitnexus", "mcp"],
-      "env": {}
-    }
-  }
-}
+```bash
+bash .claude/scripts/setup/gitnexus-reconcile.sh . --wire
 ```
 
-Merge with existing settings — do not overwrite other MCP servers or permissions.
-
-If already configured, report "MCP server already configured."
+If already configured, it reports "MCP server already configured."
 
 ## Step 4: Add .gitnexus/ to .gitignore
 
@@ -80,11 +70,18 @@ If not present, append:
 
 ## Step 5: Register Editor Integration
 
+`gitnexus setup` also writes a managed MUST/NEVER block into `CLAUDE.md` that
+calls `gitnexus_*` tools, so gate it on index + MCP both being present, then
+reconcile the block:
+
 ```bash
-npx gitnexus setup
+bash .claude/scripts/setup/gitnexus-reconcile.sh . --check \
+  && npx gitnexus setup \
+  && bash .claude/scripts/setup/gitnexus-reconcile.sh .
 ```
 
 This configures the MCP server for supported editors (Claude Code, Cursor, Codex, Windsurf).
+If `--check` fails, skip it and report which half is missing.
 
 ## Step 6: Report
 
@@ -92,7 +89,7 @@ This configures the MCP server for supported editors (Claude Code, Cursor, Codex
 GitNexus setup complete.
 
   Index:     .gitnexus/ (created)
-  MCP:       configured in .claude/settings.json
+  MCP:       configured in .mcp.json
   Gitignore: .gitnexus/ added
 
 Available commands:

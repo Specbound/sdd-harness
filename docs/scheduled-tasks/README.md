@@ -14,6 +14,22 @@ The orchestrator itself is fail-loud: every non-dry-run invocation logs a `run s
 
 ---
 
+### Fleet Harness Sync
+**Mechanism:** Inline in `scripts/orchestration/daily-orchestrator.sh` (harness-level section, runs **before** the per-repo runners)
+**Cadence:** Once per calendar day. State tracked as a timestamp in `~/.claude/sdd-harness/.last-harness-sync`; the gate compares day strings (`cut -dT -f1`) rather than using GNU-only `date -d`.
+**Scope:** Harness-level — syncs into every registered project (or just `--repo <path>`, which is forwarded to `update.sh`)
+
+**What it does:** Runs `update.sh` so registered projects pick up harness changes with no human step. Nothing else ever ran `update.sh`: `stop-hook.sh` only prints a `Run: update.sh` nudge and then waits for someone to act on it, so a harness fix could sit unapplied in an installed project indefinitely — which is how a `settings.json` broken by an old template survived for months in an installed repo.
+
+Guards:
+- **Parse before sync** — `bash -n "$HARNESS_DIR/update.sh"` must pass first. A syntax error in `update.sh` would otherwise be run across the whole fleet; on failure the sync is skipped and the reason is logged to both `logs/orchestrator.log` and `logs/orchestrator-errors.log`.
+- **Retry on failure** — `.last-harness-sync` is written only on exit 0, so a failed sync doesn't consume the day's window; stderr is appended to `logs/orchestrator-errors.log`.
+- **Dry run** — `--dry-run` prints a `[would-sync]` line and changes nothing.
+
+**Opt-out:** `SDD_SKIP_HARNESS_SYNC=1` env var.
+
+---
+
 ### Daily Maintenance
 **Runner:** `.claude/scripts/orchestration/daily-runner.sh`
 **Prompt:** `.claude/scripts/routines/daily-maintenance-prompt.md`
@@ -158,7 +174,7 @@ This is the **review** stage of the tool-failure-memory loop (capture → recall
 
 ### Drift Review
 **Mechanism:** Inline in `scripts/orchestration/daily-orchestrator.sh` (harness-level section)
-**Cadence:** Gated on elapsed days since the last **successful** run (`DRIFT_REVIEW_GAP_DAYS`, default 7), not day-of-week — a day-of-week gate can only ever fire on Wednesday, so a machine asleep/logged-out through every trigger window that day silently loses the whole week; an elapsed-days gate is self-healing, firing on whichever day the orchestrator next actually runs, if due. State tracked as a timestamp in `~/.claude/sdd-harness/.last-drift-review`.
+**Cadence:** Gated on elapsed days since the last **successful** run (`DRIFT_REVIEW_GAP_DAYS`, default 7), not day-of-week — a day-of-week gate can only ever fire on Wednesday, so a machine asleep/logged-out through every trigger window that day silently loses the whole week; an elapsed-days gate is self-healing, firing on whichever day the orchestrator next actually runs, if due. State tracked as a timestamp in `~/.claude/sdd-harness/.last-drift-review`. The elapsed-days math is done with `python3` (`datetime.date.fromisoformat`), not `date -d` — `date -d` is GNU-only, so on macOS the epoch lookup always failed, the comparison was skipped, and this "weekly" review fired a full `claude --print` session on **every** orchestrator run.
 **Scope:** Harness-level (not per-repo)
 
 **What it does:** Invokes the `repo-drift-review` skill to sweep the SDD harness for drift. Auto-fixes what it can. Writes `~/.claude/sdd-harness/docs/drift-review-report.md`. The state file is only updated on a successful run (exit 0); both stdout and stderr are captured and, on failure, appended to `logs/orchestrator-errors.log`.
@@ -185,11 +201,11 @@ The dashboard's **Scheduled Tasks** tab shows live status for each task, scoped 
 2. Create `scripts/routines/<name>-runner.sh` — copy the `scripts/routines/macro-eval-runner.sh` pattern; set `MIN_GAP_DAYS`; add a harness guard (`docs/scheduled-tasks/`) if harness-only
 3. Add a call block in `run_one()` in `scripts/orchestration/daily-orchestrator.sh` with a `SDD_SKIP_<NAME>` opt-out guard
 4. Add a `chmod +x` line in **both** `install.sh` and `update.sh` (the runner loop lists every `*-runner.sh` by name)
-5. Add an entry to `_scheduled_task_registry()` in `scripts/dashboard.py` so the routine shows up as a card on the dashboard's **Scheduled Tasks** tab (set `runner_log_token` to match how the orchestrator logs it)
+5. Add an entry to `_scheduled_task_registry()` in `scripts/utils/dashboard.py` so the routine shows up as a card on the dashboard's **Scheduled Tasks** tab (set `runner_log_token` to match how the orchestrator logs it)
 6. Sync both to `.claude/scripts/`: `cp scripts/routines/<name>-* .claude/scripts/routines/`
 7. Document it in this file
 
 ---
 
-_Last synced: 2026-08-04_
+_Last synced: 2026-08-12_
 

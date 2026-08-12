@@ -366,6 +366,8 @@ The rule is added to the appropriate agent file or rule file and distributed via
 
 Runs the full maintenance cycle end-to-end: **Judge → Reflect → Housekeeping → Session Quality → Keep Rate → Trust Score → Augment Skills → Adversarial Check**. Designed to run on a nightly schedule (18:00 local) with a SessionStart hook as catch-up. The scheduler is registered automatically by `install.sh` / `update.sh`: Windows Task Scheduler on WSL (`setup-global-orchestrator.sh`) fires at 18:00 and repeats every 4h for the rest of the day (6x/day total — each sub-routine self-gates on its own last-run state, so 5 of 6 fires are cheap no-ops), cron on Linux (`setup-linux-orchestrator.sh`), and launchd on macOS (`setup-mac-orchestrator.sh`) still fire once daily.
 
+Before it visits any repo, `daily-orchestrator.sh` runs one harness-level task: once per calendar day it executes `update.sh` so every registered project picks up harness changes with no human step. Nothing else ever did — `stop-hook.sh` only prints a `Run: update.sh` nudge and waits — so a harness fix could sit unapplied in an installed project indefinitely. It runs `bash -n update.sh` first so a half-written `update.sh` is never run across the fleet, and it writes its state file only on success, so a failed sync retries tomorrow rather than being skipped. Opt out with `SDD_SKIP_HARNESS_SYNC=1`.
+
 ```
 /kiro:daily-maintenance
 ```
@@ -397,7 +399,7 @@ Starts at 20% on fresh install. Daily cap ±4.5%. History lives in `.claude/memo
 SDD_SKIP_ROUTINE=1 ~/.claude/sdd-harness/install.sh /path/to/project
 ```
 
-Or after install: `schtasks.exe /Delete /TN "SDD Daily Orchestrator"` (global) or `rm .claude/scripts/orchestration/daily-runner.sh` (per-repo).
+Or after install: `schtasks.exe /Delete /TN "SDD Daily Orchestrator"` (global) or `rm .claude/scripts/orchestration/daily-runner.sh` (per-repo). To keep daily maintenance but stop the once-a-day fleet-wide `update.sh` sync, set `SDD_SKIP_HARNESS_SYNC=1` instead.
 
 ### `scripts/session/detect_reexplanation.py` — session signal detector
 

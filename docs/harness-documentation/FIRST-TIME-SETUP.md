@@ -190,6 +190,8 @@ GitNexus requires indexing each repo separately. Either:
 
 This indexes the repo (`.gitnexus/`), adds the MCP server to `.claude/settings.json`, updates `.gitignore`, and registers editor integration.
 
+Option A now does the MCP wiring itself: `install.sh --with-gitnexus` calls `scripts/setup/gitnexus-reconcile.sh <project> --wire` instead of printing a note asking you to paste the `mcpServers` JSON by hand, and it only runs `gitnexus setup` once a `--check` confirms both the index and the MCP server exist. If that check fails it says so and sends you to Option B — that gate exists because `gitnexus setup` writes a MUST/NEVER block into `CLAUDE.md`, and an unwired install left the agent ordered to call `gitnexus_*` tools that did not exist.
+
 ---
 
 ## Step 4: impeccable (Frontend Design QA)
@@ -379,6 +381,9 @@ specs/
 !.claude/memory/.gitkeep
 !.claude/memory/**/.gitkeep
 .claude/docs/
+
+# Serena symbol index — regenerable per machine via `serena project index`
+.serena/
 
 # Keep this one committed:
 !.claude/settings.local.json
