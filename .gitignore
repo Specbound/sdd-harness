@@ -40,3 +40,7 @@ CLAUDE.md
 
 # Serena symbol index — regenerable per machine via `serena project index`
 .serena/
+
+# Tool-written backups (e.g. `lean-ctx setup` saving the prior AGENTS.md).
+# Git history is the backup — a .bak in the tree is a second source of truth.
+*.bak
