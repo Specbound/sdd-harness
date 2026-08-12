@@ -14,6 +14,24 @@ fi
 # macl-free because update.sh always refreshes it via cp (not Write tool).
 [ "$(uname)" = "Darwin" ] && xattr -cr .claude/hooks/ 2>/dev/null || true
 
+# --- settings.json self-heal ---
+# Claude Code parses .claude/settings.json as strict JSON and silently ignores a
+# malformed file: every permission rule and hook in it stops working, with no error
+# inside the session. Repairing here caps the damage at one session instead of lasting
+# until someone happens to run update.sh. Idempotent and cheap — valid files are read
+# and left alone. Runs before the memory-bootstrap gate below because a broken settings
+# file needs fixing whether or not this repo has memory yet.
+SDD_ROOT="$(cat "$HOME/.sdd-harness-root" 2>/dev/null || true)"
+SETTINGS_REPAIR="${SDD_ROOT:+$SDD_ROOT/scripts/setup/repair-settings-json.py}"
+if [ -f ".claude/settings.json" ] && [ -n "$SETTINGS_REPAIR" ] && [ -f "$SETTINGS_REPAIR" ] \
+   && command -v python3 >/dev/null 2>&1; then
+  repair_out="$(python3 "$SETTINGS_REPAIR" "$PWD" 2>/dev/null | grep -v '^OK ' || true)"
+  if [ -n "$repair_out" ]; then
+    echo "[SETTINGS-REPAIRED] $repair_out"
+    echo "Claude Code read settings.json before this repair ran, so its permission rules and hooks are inactive for THIS session and return at the next session start."
+  fi
+fi
+
 OBS_FILE=".claude/memory/observations.md"
 today=$(date +%Y-%m-%d)
 

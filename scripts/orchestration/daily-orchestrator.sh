@@ -52,6 +52,43 @@ if [ "$DRY_RUN" = false ]; then
   trap '__ec=$?; echo "$(date -Iseconds) orchestrator: run finished exit=$__ec repos=$PROCESSED" >> "$LOG_FILE"' EXIT
 fi
 
+# --- Harness-level periodic task: sync the harness into every registered project ---
+# Nothing else ever runs update.sh. stop-hook.sh only prints "Run: update.sh" and
+# then waits for a human to do it, so a harness fix could sit unapplied in a project
+# indefinitely — that is how a settings.json broken by an old template survived for
+# months in an installed repo. Syncing here, before the per-repo runners, means every
+# registered project picks up harness changes without anyone typing anything.
+# Runs once per calendar day. Opt out with SDD_SKIP_HARNESS_SYNC=1.
+SYNC_STATE="$HARNESS_DIR/.last-harness-sync"
+
+if [ "$DRY_RUN" = true ]; then
+  echo "[would-sync] $HARNESS_DIR/update.sh ${SINGLE_REPO:-(all registered projects)}"
+elif [ "${SDD_SKIP_HARNESS_SYNC:-0}" != "1" ] && [ -f "$HARNESS_DIR/update.sh" ]; then
+  # Day-string compare (portable; avoids GNU-only `date -d`), same guard shape as run_one.
+  sync_last_day="$(cut -dT -f1 "$SYNC_STATE" 2>/dev/null || echo "")"
+  if [ "$sync_last_day" != "$(date +%Y-%m-%d)" ]; then
+    ts="$(date -Iseconds)"
+    # Never run a half-written update.sh across the whole fleet — a syntax error here
+    # would touch every registered repo. Parse first, sync second.
+    if ! bash -n "$HARNESS_DIR/update.sh" 2>/dev/null; then
+      echo "$ts harness: update.sh has a syntax error — sync skipped" >> "$LOG_FILE"
+      echo "$ts harness: update.sh failed bash -n, fleet sync skipped" >> "$ERR_LOG"
+    else
+      sync_start=$(date +%s)
+      sync_errbuf=$(mktemp)
+      bash "$HARNESS_DIR/update.sh" ${SINGLE_REPO:+"$SINGLE_REPO"} > /dev/null 2>"$sync_errbuf"
+      sync_exit=$?
+      echo "$ts harness: update.sh sync exit=$sync_exit duration=$(($(date +%s) - sync_start))s target=${SINGLE_REPO:-fleet}" >> "$LOG_FILE"
+      if [ "$sync_exit" -eq 0 ]; then
+        echo "$ts" > "$SYNC_STATE"
+      elif [ -s "$sync_errbuf" ]; then
+        { echo "--- $ts harness update.sh sync (exit=$sync_exit) ---"; cat "$sync_errbuf"; } >> "$ERR_LOG"
+      fi
+      rm -f "$sync_errbuf"
+    fi
+  fi
+fi
+
 run_one() {
   local repo="$1"
   local ts="$(date -Iseconds)"
@@ -241,11 +278,17 @@ DRIFT_GAP_DAYS="${DRIFT_REVIEW_GAP_DAYS:-7}"
 if [ "$DRY_RUN" = false ]; then
   DRIFT_DUE=true
   if [ -s "$DRIFT_STATE" ]; then
-    LAST_DRIFT_RAW="$(cat "$DRIFT_STATE")"
-    LAST_DRIFT_EPOCH="$(date -d "$LAST_DRIFT_RAW" +%s 2>/dev/null || echo 0)"
-    if [ "$LAST_DRIFT_EPOCH" -gt 0 ]; then
-      DRIFT_GAP=$(( ($(date +%s) - LAST_DRIFT_EPOCH) / 86400 ))
-      [ "$DRIFT_GAP" -lt "$DRIFT_GAP_DAYS" ] && DRIFT_DUE=false
+    # `date -d` is GNU-only: on macOS it always failed, LAST_DRIFT_EPOCH fell back to 0,
+    # and the gate below was skipped — so this "weekly" review fired on EVERY run, one
+    # full `claude --print` session each time. Python3 does the epoch math portably
+    # (same approach as the CLAUDE.md review gate in session-start-hook.sh).
+    DRIFT_GAP="$(python3 -c "
+import datetime, sys
+raw = open('$DRIFT_STATE').read().strip()[:10]
+print((datetime.date.today() - datetime.date.fromisoformat(raw)).days)
+" 2>/dev/null || echo "")"
+    if [ -n "$DRIFT_GAP" ] && [ "$DRIFT_GAP" -lt "$DRIFT_GAP_DAYS" ] 2>/dev/null; then
+      DRIFT_DUE=false
     fi
   fi
   if [ "$DRIFT_DUE" = true ]; then

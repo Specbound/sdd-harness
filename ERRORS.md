@@ -4,6 +4,16 @@ Approaches that took 2+ attempts — what failed, what worked, and why.
 
 ---
 
+## 2026-08-12 — "weekly" drift review ran on every orchestrator run (macOS `date -d`)
+
+**Symptom:** A test of `daily-orchestrator.sh` in a throwaway harness tree hung past 300s with a same-day `.last-drift-review` in place — the gate that should have said "not due" let the review through, and it spawned a real `claude --print` session.
+
+**Root cause:** The gate used `date -d "$LAST_DRIFT_RAW" +%s`. `-d` is GNU-only; on macOS it errors, the `|| echo 0` fallback set `LAST_DRIFT_EPOCH=0`, and the elapsed-days comparison was inside `if [ "$LAST_DRIFT_EPOCH" -gt 0 ]` — so on macOS the comparison never ran and `DRIFT_DUE` stayed `true`. The review fired every single run instead of every 7 days, burning a full Claude session each time. The comment above it explains at length why an elapsed-days gate beats a day-of-week gate, which is correct and was never the problem.
+
+**Fix:** Replaced the `date -d` arithmetic with the portable `python3` epoch math already used by the CLAUDE.md review gate in `session-start-hook.sh`. Test now asserts the review stays gated.
+
+**Lesson:** `date -d` and `date -r` are not portable — `date -d` is GNU, `date -r` is BSD. Anywhere the harness needs date math, use `python3 -c` or compare `YYYY-MM-DD` day strings via `cut -dT -f1`. A `|| echo 0` fallback that feeds a guard clause turns a portability failure into a silently-inverted gate, which is worse than a crash.
+
 ## 2026-08-12 — every new project got an unparseable settings.json (comments in JSON)
 
 **Symptom:** Opening a freshly installed project shows "Settings file failed to parse: `<project>/.claude/settings.json` — Invalid or malformed JSON. Permission rules and other settings from this file are not in effect." No other error; hooks and permissions just silently do nothing.
