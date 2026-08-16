@@ -1862,6 +1862,26 @@ def render_model_cost(sessions, pricing_snapshots):
 </div>"""
 
 
+def _scheduler_banner(title, detail, footer):
+    """Full-width red banner for a scheduler that cannot run.
+
+    Deliberately loud and placed above the routine cards: the failure mode this exists
+    for is a dead scheduler rendering as a page full of calm "PENDING" badges.
+    """
+    return (
+        '<div style="border:1px solid var(--red);border-left:4px solid var(--red);'
+        'border-radius:8px;padding:12px 14px;margin-bottom:14px;'
+        'background:rgba(243,139,168,0.10)">'
+        '<div style="color:var(--red);font-weight:700;font-size:12px;'
+        'letter-spacing:0.4px;margin-bottom:4px">✗ ' + h(title) + '</div>'
+        '<div style="color:var(--text);font-size:11px;line-height:1.5">'
+        + h(detail) + '</div>'
+        '<div style="color:var(--subtext1);font-size:10px;margin-top:6px;'
+        'font-family:ui-monospace,monospace">' + footer + '</div>'
+        '</div>'
+    )
+
+
 def render_scheduled_tasks(hd, repos_data=None, routines=None):
     # routines: pass the repo-scoped list from parse_scheduled_tasks(repo_path)
     # so per-repo routines (macro-eval, security-report, ...) show that repo's
@@ -1889,6 +1909,12 @@ def render_scheduled_tasks(hd, repos_data=None, routines=None):
     last_act_str = rel_time(last_act) if last_act else "never"
 
     install_hint = ""
+    # scheduler_alarm is rendered as a full-width banner ABOVE the automation cards, not
+    # just as a line inside this card. A dead scheduler was previously reported only as
+    # small yellow text here, while every routine below rendered a calm "PENDING" — so
+    # a fleet that had executed nothing for four days looked merely idle. A scheduler
+    # that cannot run is the single fact that invalidates everything under it.
+    scheduler_alarm = ""
     if not scheduler.get("installed"):
         install_hint = (
             f'<div style="margin-top:8px;font-size:11px;color:var(--red)">'
@@ -1896,15 +1922,37 @@ def render_scheduled_tasks(hd, repos_data=None, routines=None):
             f'<code style="background:var(--surface0);padding:1px 5px;border-radius:3px">'
             f'{h(scheduler.get("install_hint",""))}</code></div>'
         )
+        scheduler_alarm = _scheduler_banner(
+            "SCHEDULER NOT INSTALLED",
+            "No routine below can run. Nothing on this page reflects scheduled work.",
+            f'Run: {h(scheduler.get("install_hint", ""))}',
+        )
     elif scheduler.get("last_exit") not in (None, 0):
         # launchd reports exit*256 (e.g. 32256 = exit 126 shifted left 8 bits)
         raw = scheduler.get("last_exit")
         shifted = raw >> 8 if raw and raw > 255 else raw
         install_hint = (
-            f'<div style="margin-top:8px;font-size:11px;color:var(--yellow)">'
+            f'<div style="margin-top:8px;font-size:11px;color:var(--red)">'
             f'⚠ Last orchestrator launch returned exit={shifted} — check '
             f'<code style="background:var(--surface0);padding:1px 5px;border-radius:3px">'
             f'{h(str(HARNESS_DIR / "logs" / "orchestrator.stderr.log"))}</code></div>'
+        )
+        # 126 is "found but could not execute" — on macOS almost always the TCC denial
+        # you get when the harness sits under ~/Documents, ~/Desktop or ~/Downloads.
+        detail = (
+            "The scheduler is registered but its last launch could not execute. "
+            "Every routine below is stale regardless of what its status says."
+        )
+        if shifted == 126:
+            detail += (
+                " Exit 126 means the OS refused to run the orchestrator — on macOS this "
+                "is normally Full Disk Access: launchd cannot read ~/Documents, "
+                "~/Desktop or ~/Downloads."
+            )
+        scheduler_alarm = _scheduler_banner(
+            f"SCHEDULER FAILING — last launch exited {shifted}",
+            detail,
+            f'stderr: {h(str(HARNESS_DIR / "logs" / "orchestrator.stderr.log"))}',
         )
 
     scheduler_card = f"""<div style="border:1px solid {inst_color}55;border-radius:10px;
@@ -2018,7 +2066,7 @@ def render_scheduled_tasks(hd, repos_data=None, routines=None):
     if not routines:
         return (f'<div class="section-inner">'
                 f'<h2 class="section-title">Scheduled Tasks</h2>'
-                f'{scheduler_card}{maintenance_html}{intro}'
+                f'{scheduler_alarm}{scheduler_card}{maintenance_html}{intro}'
                 f'{empty_state("No scheduled tasks configured.")}</div>')
 
     # ── Per-routine cards ────────────────────────────────────────────────────
@@ -2151,7 +2199,7 @@ def render_scheduled_tasks(hd, repos_data=None, routines=None):
 
     return (f'<div class="section-inner">'
             f'<h2 class="section-title">Scheduled Tasks</h2>'
-            f'{scheduler_card}{maintenance_html}{intro}{cards}</div>')
+            f'{scheduler_alarm}{scheduler_card}{maintenance_html}{intro}{cards}</div>')
 
 def render_memory_changes(rd, hd):
     cards    = rd.get("memory_cards", [])
@@ -3662,8 +3710,12 @@ def _platform_config_dir(app: str) -> Path:
 
 
 RTK_DB           = _platform_data_dir("rtk") / "history.db"
-LEAN_CTX_STATS   = _platform_config_dir("lean-ctx") / "stats.json"
-LEAN_CTX_LEDGER  = _platform_config_dir("lean-ctx") / "savings" / "ledger.jsonl"
+# lean-ctx writes its real data ledger to XDG_DATA_HOME/lean-ctx (~/.local/share on
+# macOS too — it does NOT follow the macOS "Application Support" convention that
+# _platform_data_dir assumes for other apps). ~/.config/lean-ctx only holds config.toml.
+_LEAN_CTX_DATA_DIR = Path(os.environ.get("XDG_DATA_HOME") or (Path.home() / ".local" / "share")) / "lean-ctx"
+LEAN_CTX_STATS   = _LEAN_CTX_DATA_DIR / "stats.json"
+LEAN_CTX_LEDGER  = _LEAN_CTX_DATA_DIR / "savings" / "ledger.jsonl"
 CAVEMAN_CONFIG   = _platform_config_dir("caveman") / "config.json"
 # Sonnet 4.6 input price per million tokens (used to estimate RTK $ savings)
 _SONNET_INPUT_PER_M = 3.0

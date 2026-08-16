@@ -264,6 +264,20 @@ else
     [ "${repo:0:1}" = "#" ] && continue   # allow comments
     run_one "$repo"
   done < "$PROJECTS_FILE"
+
+  # Roster completeness — a harness-installed repo that never made it into
+  # projects.txt gets zero routines and shows up nowhere, because the dashboard only
+  # renders repos it is told about. Absence is invisible unless something looks for
+  # it, so look for it on every fleet run. Never fatal: this is a report, not a gate.
+  REG_CHECK="$HARNESS_DIR/scripts/utils/check-fleet-registration.sh"
+  if [ "$DRY_RUN" = false ] && [ -f "$REG_CHECK" ]; then
+    reg_errbuf="$(mktemp)"
+    if ! bash "$REG_CHECK" --quiet > "$reg_errbuf" 2>&1; then
+      echo "$(date -Iseconds) orchestrator: unregistered harness repo(s) found" >> "$LOG_FILE"
+      { echo "--- $(date -Iseconds) fleet registration ---"; cat "$reg_errbuf"; } >> "$ERR_LOG"
+    fi
+    rm -f "$reg_errbuf"
+  fi
 fi
 
 # --- Harness-level periodic task: repo drift review ---
