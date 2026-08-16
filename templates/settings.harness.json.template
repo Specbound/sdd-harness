@@ -48,7 +48,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash {{HARNESS_DIR}}/.claude/hooks/session-start-hook.sh"
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/session-start-hook.sh\""
           }
         ]
       }
@@ -58,15 +58,15 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash {{HARNESS_DIR}}/.claude/hooks/stop-hook.sh"
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/stop-hook.sh\""
           },
           {
             "type": "command",
-            "command": "bash {{HARNESS_DIR}}/.claude/hooks/address-check-hook.sh"
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/address-check-hook.sh\""
           },
           {
             "type": "command",
-            "command": "bash {{HARNESS_DIR}}/.claude/hooks/caveman-savings-hook.sh"
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/caveman-savings-hook.sh\""
           }
         ]
       }
@@ -77,15 +77,15 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash {{HARNESS_DIR}}/.claude/hooks/impeccable-detect-hook.sh"
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/impeccable-detect-hook.sh\""
           },
           {
             "type": "command",
-            "command": "bash {{HARNESS_DIR}}/.claude/hooks/hook-added-notify.sh"
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/hook-added-notify.sh\""
           },
           {
             "type": "command",
-            "command": "bash {{HARNESS_DIR}}/.claude/hooks/skill-permissions-gate.sh"
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/skill-permissions-gate.sh\""
           }
         ]
       },
@@ -94,11 +94,11 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash {{HARNESS_DIR}}/.claude/hooks/test-integrity-guard.sh"
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/test-integrity-guard.sh\""
           },
           {
             "type": "command",
-            "command": "bash {{HARNESS_DIR}}/.claude/hooks/ruff-quality-gate-hook.sh"
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/ruff-quality-gate-hook.sh\""
           }
         ]
       },
@@ -107,15 +107,15 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash {{HARNESS_DIR}}/.claude/hooks/revert-detect-hook.sh"
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/revert-detect-hook.sh\""
           },
           {
             "type": "command",
-            "command": "bash {{HARNESS_DIR}}/.claude/hooks/setup-buffer-hook.sh"
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/setup-buffer-hook.sh\""
           },
           {
             "type": "command",
-            "command": "bash {{HARNESS_DIR}}/.claude/hooks/action-capture.sh"
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/action-capture.sh\""
           }
         ]
       }
@@ -126,7 +126,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash {{HARNESS_DIR}}/.claude/hooks/git-destructive-guard-hook.sh"
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/git-destructive-guard-hook.sh\""
           }
         ]
       },
@@ -135,15 +135,15 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash {{HARNESS_DIR}}/.claude/hooks/memory-discipline-hook.sh"
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/memory-discipline-hook.sh\""
           },
           {
             "type": "command",
-            "command": "bash {{HARNESS_DIR}}/.claude/hooks/protected-path-hook.sh"
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/protected-path-hook.sh\""
           },
           {
             "type": "command",
-            "command": "bash {{HARNESS_DIR}}/.claude/hooks/skill-validate-hook.sh"
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/skill-validate-hook.sh\""
           }
         ]
       },
@@ -152,11 +152,11 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash {{HARNESS_DIR}}/.claude/hooks/gbrain-agent-spawn.sh"
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/gbrain-agent-spawn.sh\""
           },
           {
             "type": "command",
-            "command": "bash {{HARNESS_DIR}}/.claude/hooks/prompt-quality-check.sh"
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/prompt-quality-check.sh\""
           }
         ]
       },
@@ -165,7 +165,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash {{HARNESS_DIR}}/.claude/hooks/gbrain-memory-write.sh"
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/gbrain-memory-write.sh\""
           }
         ]
       },
@@ -174,7 +174,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash {{HARNESS_DIR}}/.claude/hooks/gbrain-external-search.sh"
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/gbrain-external-search.sh\""
           }
         ]
       },
@@ -183,7 +183,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash {{HARNESS_DIR}}/.claude/hooks/agent-behavior-guard.sh"
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/agent-behavior-guard.sh\""
           }
         ]
       }
@@ -194,7 +194,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash {{HARNESS_DIR}}/.claude/hooks/doc-parse-nudge.sh",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/doc-parse-nudge.sh\"",
             "timeout": 5
           }
         ]
@@ -205,7 +205,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash {{HARNESS_DIR}}/.claude/hooks/compaction-discipline-hook.sh"
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/compaction-discipline-hook.sh\""
           }
         ]
       }

@@ -14,6 +14,7 @@ set -e
 # Single source of truth: scripts/lib/resolve-harness-dir.sh. No hardcoded paths.
 __here="$(cd -P "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 . "$__here/scripts/lib/resolve-harness-dir.sh"
+. "$__here/scripts/lib/harness-pointer.sh"
 TARGET="${1:-}"
 
 # ---------------------------------------------------------------------------
@@ -180,9 +181,11 @@ else
   done < "$HARNESS_DIR/projects.txt"
 fi
 
-# --- Persist harness root so stop-hook.sh can locate it at runtime ---
-# stop-hook.sh reads this file instead of having the path baked in via sed substitution.
-echo "$HARNESS_DIR" > "$HOME/.sdd-harness-root"
+# --- Persist harness root: THE single stored pointer to the harness ---
+# Cross-repo hooks read this instead of having a path baked in. Rewritten on every
+# update, so moving the harness and re-running update.sh heals every consumer.
+write_harness_pointer "$HARNESS_DIR"
+install_harness_pre_commit "$HARNESS_DIR"
 
 # --- Sync harness's own .claude/ runtime from canonical sources ---
 # hooks/claude/, scripts/, commands/kiro/, agents/, kiro/, docs/, rules/ are the
@@ -211,11 +214,15 @@ find "$HARNESS_DIR/.claude/scripts" -name "*.sh" -exec chmod +x {} \;
 [ "$(uname)" = "Darwin" ] && xattr -cr "$HARNESS_DIR/.claude/" 2>/dev/null || true
 
 # Regenerate the harness's own settings.json from the template.
-# Substitutes {{HARNESS_DIR}} with the actual path so hook commands use absolute paths —
-# Claude Code's hook runner does not set CWD to the project directory.
-sed "s|{{HARNESS_DIR}}|$HARNESS_DIR|g" "$HARNESS_DIR/templates/settings.harness.json.template" \
-  > "$HARNESS_DIR/.claude/settings.json"
-echo "  Harness settings.json regenerated (paths resolved to $HARNESS_DIR)."
+# Hook commands are `bash "${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/x.sh"` — absolute when
+# Claude Code exports CLAUDE_PROJECT_DIR, CWD-relative otherwise, machine-specific never.
+# This block used to substitute {{HARNESS_DIR}} into an absolute path, which baked the
+# install-time location into a generated file: moving the harness left 23 dead hook
+# paths that failed silently, and check-no-hardcoded-paths.sh could not see them
+# because it scanned neither JSON nor .claude/. Copy verbatim instead.
+cp "$HARNESS_DIR/templates/settings.harness.json.template" \
+  "$HARNESS_DIR/.claude/settings.json"
+echo "  Harness settings.json regenerated (portable hook paths)."
 bash "$HARNESS_DIR/scripts/setup/check-settings-json.sh" "$HARNESS_DIR/.claude/settings.json" \
   "$HARNESS_DIR/templates/settings.json.template" || \
   echo "  WARNING: settings JSON validation failed — see above."

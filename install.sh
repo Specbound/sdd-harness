@@ -51,6 +51,7 @@
 # resolves to the real physical path, works on any machine/OS/clone location.
 __here="$(cd -P "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 . "$__here/scripts/lib/resolve-harness-dir.sh"
+. "$__here/scripts/lib/harness-pointer.sh"
 
 # ── Flags ──────────────────────────────────────────────────────────────────────
 YES=false
@@ -866,14 +867,26 @@ install_globals() {
     echo "  Global commands installed to ~/.claude/commands/"
   fi
 
-  # --- Persist harness root so stop-hook.sh can locate it at runtime ---
-  echo "$HARNESS_DIR" > "$HOME/.sdd-harness-root"
+  # --- Persist harness root: THE single stored pointer to the harness ---
+  # Cross-repo hooks (stop-hook.sh, session-start-hook.sh) run from an installed
+  # project, so they cannot self-locate the harness the way in-tree scripts do via
+  # scripts/lib/resolve-harness-dir.sh. This file is the one place that records where
+  # the harness lives. A plain file, not a symlink, because Windows/Git Bash needs
+  # privileges to create symlinks. Rewritten on every install and update, so moving
+  # the harness and re-running either command is enough to heal every consumer.
+  write_harness_pointer "$HARNESS_DIR"
+  install_harness_pre_commit "$HARNESS_DIR"
 
-  # --- Regenerate harness's own settings.json with absolute paths ---
-  # Always regenerate so hook paths reflect the actual harness location on this machine.
-  sed "s|{{HARNESS_DIR}}|$HARNESS_DIR|g" "$HARNESS_DIR/templates/settings.harness.json.template" \
-    > "$HARNESS_DIR/.claude/settings.json"
-  echo "  Harness settings.json generated (paths resolved to $HARNESS_DIR)."
+  # --- Regenerate harness's own settings.json ---
+  # Hook commands are project-relative (`bash .claude/hooks/x.sh`), matching
+  # templates/settings.json.template. They used to be absolutised through a
+  # {{HARNESS_DIR}} placeholder, which machine-locked the generated file: moving the
+  # harness or cloning onto a new machine left 23 dead hook paths that failed silently.
+  # For the harness repo $HARNESS_DIR *is* the project root, so relative and absolute
+  # resolved to the same file anyway — the substitution bought nothing.
+  cp "$HARNESS_DIR/templates/settings.harness.json.template" \
+    "$HARNESS_DIR/.claude/settings.json"
+  echo "  Harness settings.json generated (project-relative hook paths)."
 
   # --- Raindrop Workshop wiring (env vars + venv installs) ---
   echo ""

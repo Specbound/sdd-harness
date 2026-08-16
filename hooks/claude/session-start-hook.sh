@@ -21,7 +21,15 @@ fi
 # until someone happens to run update.sh. Idempotent and cheap — valid files are read
 # and left alone. Runs before the memory-bootstrap gate below because a broken settings
 # file needs fixing whether or not this repo has memory yet.
+# Single stored pointer to the harness (see scripts/lib/harness-pointer.sh). Warn loudly
+# when it is set but stale — that means the harness moved and every cross-repo hook on
+# this machine is silently dead, which is exactly how a move goes unnoticed for weeks.
 SDD_ROOT="$(cat "$HOME/.sdd-harness-root" 2>/dev/null || true)"
+if [ -n "$SDD_ROOT" ] && [ ! -d "$SDD_ROOT" ]; then
+  echo "[HARNESS-POINTER-STALE] ~/.sdd-harness-root points at $SDD_ROOT, which does not exist."
+  echo "  The harness has moved. Cross-repo hooks are inactive until you re-run: bash <harness>/update.sh"
+  SDD_ROOT=""
+fi
 SETTINGS_REPAIR="${SDD_ROOT:+$SDD_ROOT/scripts/setup/repair-settings-json.py}"
 if [ -f ".claude/settings.json" ] && [ -n "$SETTINGS_REPAIR" ] && [ -f "$SETTINGS_REPAIR" ] \
    && command -v python3 >/dev/null 2>&1; then

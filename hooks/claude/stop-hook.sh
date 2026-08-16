@@ -21,10 +21,23 @@ if [ "$SDD_PROFILE" = "minimal" ]; then
   exit 0
 fi
 
-HARNESS_DIR="$(cat "$HOME/.sdd-harness-root" 2>/dev/null || true)"
-if [ -z "$HARNESS_DIR" ] || [ ! -d "$HARNESS_DIR" ]; then
+# Locate the harness via the single stored pointer (see scripts/lib/harness-pointer.sh).
+# A *missing* pointer means the harness was never installed globally — silent skip is
+# correct. A pointer that names a directory which no longer exists means the harness
+# MOVED, and every cross-repo hook on this machine is dead. That used to be an
+# indistinguishable `exit 0`, so a move could disable the harness fleet-wide with no
+# symptom for weeks. Say so instead.
+POINTER_RAW="$(cat "$HOME/.sdd-harness-root" 2>/dev/null || true)"
+if [ -z "$POINTER_RAW" ]; then
   exit 0
 fi
+if [ ! -d "$POINTER_RAW" ]; then
+  echo "[HARNESS-POINTER-STALE] ~/.sdd-harness-root points at $POINTER_RAW, which does not exist."
+  echo "  The harness has moved. Cross-repo hooks are inactive until you re-run:"
+  echo "  bash <harness>/update.sh"
+  exit 0
+fi
+HARNESS_DIR="$POINTER_RAW"
 LAST_CHECK_FILE=".claude/.last-harness-check"
 
 # --- Harness update check ---

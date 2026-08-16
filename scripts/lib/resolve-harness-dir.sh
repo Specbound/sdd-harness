@@ -8,7 +8,7 @@
 #   - where the harness was cloned (~/.claude/sdd-harness, ~/Documents/..., etc.)
 #   - the caller's current working directory
 #   - the harness root being reached through a symlink (e.g.
-#     ~/.claude/sdd-harness -> ~/Documents/GitHub/sdd-harness)
+#     ~/.claude/sdd-harness -> ~/GitHub/sdd-harness)
 #   - this file itself being a symlink
 #
 # Usage (from any script under scripts/):
