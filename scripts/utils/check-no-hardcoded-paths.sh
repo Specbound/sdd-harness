@@ -10,11 +10,26 @@
 # Run manually:        bash scripts/utils/check-no-hardcoded-paths.sh
 # Wired into:          /kiro:harness-validate  and  .git/hooks/pre-commit
 #
-# Scope: *.sh and *.py under the harness root, EXCLUDING:
-#   - .claude/**           installed copies (generated from this source)
+# Scope: *.sh, *.py, *.json and *.template under the harness root, EXCLUDING:
+#   - .claude/**           synced copies of this source (would double-report)
 #   - docs/**              prose + frozen historical plan/spec records
+#   - skills/**            vendored third-party skills — someone else's code and
+#                          recorded benchmark output (e.g. /Users/lokesh/... inside
+#                          loki-mode result JSON). Not our path plumbing, and 13 of
+#                          them drowned the real findings before this exclusion.
 #   - scripts/lib/resolve-harness-dir.sh  (the one allowed depth marker)
+#   - scripts/lib/harness-pointer.sh      (the one allowed namer of the pointer file
+#                                          and its convenience symlink)
 #   - this script itself   (it names the very patterns it bans)
+#
+# ...plus GENERATED_SCANNED below, which re-admits the specific gitignored files
+# that are generated onto each machine and must still be path-free.
+#
+# History: this guard originally scanned only *.sh and *.py, and excluded .claude/**
+# wholesale. .claude/settings.json is JSON *and* lives under .claude/, so it was
+# invisible on both counts — while holding 23 absolute hook paths baked in by a
+# {{HARNESS_DIR}} substitution. The guard reported "✓ No hardcoded paths" the entire
+# time. Moving the harness silently disabled every hook. Config counts as code.
 # =============================================================================
 set -u
 
@@ -44,18 +59,28 @@ PATTERNS=(
   'cd "\$\(dirname	logical-cd self-location resolves symlinks/junctions to the wrong path — use "cd -P" and/or source lib/resolve-harness-dir.sh'
 )
 
+# Gitignored files that are generated per-machine and still must not contain a
+# machine-specific path. `git ls-files` cannot see these, so name them explicitly.
+# Only settings.json — settings.local.json is the user's own file and may legitimately
+# hold absolute paths (e.g. permissions additionalDirectories).
+GENERATED_SCANNED=(
+  '.claude/settings.json'
+)
+
 # Collect candidate files: tracked + newly-added (not-yet-committed, not
-# gitignored) *.sh and *.py, minus the exclusions.
+# gitignored) sources, minus the exclusions.
 FILES=()
 while IFS= read -r line; do
   FILES+=("$line")
 done < <(
-  { git ls-files '*.sh' '*.py' 2>/dev/null
-    git ls-files --others --exclude-standard '*.sh' '*.py' 2>/dev/null
+  { git ls-files '*.sh' '*.py' '*.json' '*.template' 2>/dev/null
+    git ls-files --others --exclude-standard '*.sh' '*.py' '*.json' '*.template' 2>/dev/null
   } | sort -u \
     | grep -Ev '^\.claude/' \
     | grep -Ev '^docs/' \
+    | grep -Ev '^skills/' \
     | grep -Ev '^scripts/lib/resolve-harness-dir\.sh$' \
+    | grep -Ev '^scripts/lib/harness-pointer\.sh$' \
     | grep -Ev '^scripts/utils/check-no-hardcoded-paths\.sh$'
 )
 
@@ -64,14 +89,21 @@ if [ "${#FILES[@]}" -eq 0 ]; then
   while IFS= read -r line; do
     FILES+=("$line")
   done < <(
-    find . \( -name '*.sh' -o -name '*.py' \) \
+    find . \( -name '*.sh' -o -name '*.py' -o -name '*.json' -o -name '*.template' \) \
       -not -path './.claude/*' \
       -not -path './docs/*' \
+      -not -path './skills/*' \
+      -not -path './node_modules/*' \
       -not -path './scripts/lib/resolve-harness-dir.sh' \
+      -not -path './scripts/lib/harness-pointer.sh' \
       -not -path './scripts/check-no-hardcoded-paths.sh' \
       -not -path './.git/*' | sed 's|^\./||'
   )
 fi
+
+for gen in "${GENERATED_SCANNED[@]}"; do
+  [ -f "$gen" ] && FILES+=("$gen")
+done
 
 violations=0
 for entry in "${PATTERNS[@]}"; do

@@ -10,8 +10,9 @@
 # projects by install.sh — a user's own project may legitimately reference
 # absolute paths. It guards the harness's own portability, nothing else.
 #
-# Install (from the harness repo):
-#   cp git-hooks/pre-commit .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit
+# Installed automatically into the harness repo by install.sh and update.sh. To place
+# it by hand (from the harness repo):
+#   cp hooks/git/pre-commit .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit
 #
 # Bypass for one commit (discouraged): git commit --no-verify
 # =============================================================================
