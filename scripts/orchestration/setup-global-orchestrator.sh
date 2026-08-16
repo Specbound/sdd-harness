@@ -140,3 +140,33 @@ else
 fi
 
 rm -f "$XML_PATH"
+
+# ---------------------------------------------------------------------------
+# preflight — prove the orchestrator runs, not merely that the task was created.
+# ---------------------------------------------------------------------------
+# Task creation succeeding says nothing about whether the task can execute. The macOS
+# sibling of this script learned that the hard way: a LaunchAgent registered cleanly
+# and then exited 126 every day for four days because launchd could not read the
+# harness under a TCC-protected folder, with setup reporting success throughout.
+#
+# The direct WSL equivalent is cheap, so do it: run --dry-run through the same
+# `wsl.exe -d <distro> -- bash -lc` path the task itself uses.
+#
+# WARN-ONLY, unlike the macOS and Linux preflights which exit 1. Verifying the
+# *Windows-side* execution (schtasks /Run, then reading LastTaskResult) is the check
+# that would actually match those two, and it is not implemented here because it
+# could not be tested on this machine. Rather than gate installs on untested Windows
+# behaviour, this reports and continues. Verify by hand with the /Query line above.
+if command -v wsl.exe >/dev/null 2>&1; then
+  preflight_err="$(mktemp)"
+  if wsl.exe -d "$WSL_DISTRO" -- bash -lc "$ORCHESTRATOR --dry-run" \
+       >/dev/null 2>"$preflight_err"; then
+    echo "✓ Preflight passed — the orchestrator runs inside $WSL_DISTRO."
+  else
+    echo "" >&2
+    echo "⚠ PREFLIGHT WARNING — task created, but the orchestrator failed inside WSL." >&2
+    [ -s "$preflight_err" ] && sed 's/^/    /' "$preflight_err" >&2
+    echo "  The scheduled task will most likely do nothing. Investigate before relying on it." >&2
+  fi
+  rm -f "$preflight_err"
+fi
