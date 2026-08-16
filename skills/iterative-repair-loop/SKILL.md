@@ -1,6 +1,6 @@
 ---
 name: iterative-repair-loop
-description: Three-phase Review→Repair→Validate loop with structured JSON handoffs and remaining-delta feedback. Generic engine for any artifact with measurable validation. Stops on convergence, stall, or max iterations. Token cost ~3k–20k per cycle.
+description: Three-phase Review→Repair→Validate loop with structured JSON handoffs and remaining-delta feedback. Generic engine for any artifact with measurable validation. Stops on convergence, stall, max iterations, held-out-set failure, or a flaky result. Token cost ~3k–20k per cycle.
 source: https://developers.openai.com/cookbook/examples/codex/build_iterative_repair_loops_with_codex
 risk: low
 ---
@@ -40,6 +40,8 @@ Before looping, establish:
 - Docs: required sections, link validity, currency of examples
 
 **Validation rubric** — the scoring function for Phase 3. Must be specific and executable.
+
+**Held-out set** — reserve ~20% of validation cases untouched during iteration (Phase 2 never sees them, Phase 3 doesn't score against them until after convergence). Re-run them once, after the loop reports `passed: true`. A visible-case pass that fails held-out cases means the loop gamed the rubric, not solved it — treat this as FAIL, not a partial win. Skip this for artifacts with <5 total cases (nothing left to hold out).
 
 **Max iterations** — default 3.
 
@@ -98,6 +100,8 @@ Run the validation rubric. Return:
 - Shrinking → continue looping
 - Unchanged or growing → **stall detected** → stop, surface remaining delta to user
 
+**Flaky-result rule:** if a case's pass/fail flips across two identical re-runs (same artifact state, same rubric), do not average it away or drop it from the count. Stop the loop and report it as a finding — it means either the artifact or the judge is non-deterministic in a way the rubric doesn't account for. Fix the source of non-determinism before resuming the loop, don't paper over it with a re-run.
+
 ---
 
 ## Loop Logic
@@ -147,11 +151,13 @@ Save after each iteration (path: `/tmp/repair-<artifact>-iter<N>.json`):
 ## Repair Loop Complete — <artifact>
 
 Iterations: N / max_N
-Outcome: Passed ✅ | Stalled ⚠️ | Max iterations reached 🔁
+Outcome: Passed ✅ | Stalled ⚠️ | Max iterations reached 🔁 | Held-out FAIL ⚠️ | Flaky result ⚠️
 
 Changes made:
 - <iteration 1>: <summary>
 - <iteration 2>: <summary>
+
+Held-out check: <passed / FAILED — gamed rubric, treated as overall FAIL / skipped, <5 cases>
 
 Remaining delta (if any):
 - <issue_type>: <description>

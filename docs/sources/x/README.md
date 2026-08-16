@@ -450,3 +450,37 @@ Five measured findings on skill authoring: (1) models cannot reliably self-autho
 **Rejected:**
 - Cross-model "rubber duck" review loop (augment `blockrun` with an iterate-to-convergence pattern) — `better-call` verdict AUGMENT INCUMBENT vs. `/kiro:validate-adversarial` (13/30 vs 22/30, complementarity delta the only edge), then rejected outright by Husband: no non-Claude model is actually reachable in this harness, so the augmentation would be dead documentation.
 - YOLO/allow-all mode, methodical planning, autopilot loop, human review/iteration, "pick a tool" framing — already covered by existing harness mechanisms (see reasoning above); no artifact needed.
+
+---
+
+## "7 rules for self-improving agent loops every AI engineer should know" — agents-cli (Google Cloud ADK) (Pasted text)
+**Added:** 2026-08-16 | **Source:** Pasted text — article by @Saboo_Shubham_ and @secchi_elia introducing `agents-cli`
+
+**What it's about:** A self-improving agent loop (propose fix → grade against an author-owned metric → revise from the reason) built on Google's `agents-cli`/ADK: `eval generate` → `eval grade` → `eval compare`. Argues the loop can automate everything except defining what "good" means — that definition has to stay a human-authored, versioned metric the loop cannot move. Lists 7 discipline rules: start with one case not a suite; make judges explain themselves; use code for deterministic checks; score behavior not exact trajectory; treat a flaky case as a finding, not noise to delete; never let the proposer move the bar (lowered threshold / edited expected output / dropped case) — guard with a held-out slice; auto-optimize prompts once, at the end, not in a loop.
+
+**What we added** (ran `better-call` — challenger 17/30 vs incumbent `iterative-repair-loop` 26/30; verdict AUGMENT INCUMBENT: incumbent wins on structure/automation but 2 ideas were genuinely absent):
+- Skill augmentation: `skills/iterative-repair-loop/SKILL.md` — added a **held-out set** rule to Phase 0 (reserve ~20% of validation cases untouched during iteration, re-run only after convergence; a visible-case pass that fails held-out cases is a gamed rubric, scored FAIL not a partial win) and a **flaky-result rule** to Phase 3 (a case flipping pass/fail across two identical re-runs stops the loop and is reported as a finding — non-determinism in the artifact or judge, not something to average away). Report template's Outcome line extended with the two new stop conditions.
+
+**Rejected:**
+- The `agents-cli` CLI / ADK eval generate-grade-compare tooling itself — Google-specific infra for ADK-built agents; nothing in this harness builds ADK agents, no wiring path.
+- Rule 2 (judges explain themselves) — already covered by `skill-eval-gate` Phase 5 and `iterative-repair-loop`'s existing `remaining_delta.description`/`fix_direction` fields.
+- Rule 3 (code for deterministic checks) — already covered by `skill-eval-gate` Phase 1's "deterministic pass/fail check" requirement.
+- Rule 4 (score behavior not exact trajectory) — already covered in spirit by `agent-evaluation`'s "Output String Matching" anti-pattern.
+- Rule 7 (auto-optimize once, at the end) — already covered by `iterative-repair-loop`'s default `max_iterations = 3` + stall detection.
+- "Custom metric as durable, human-owned artifact" — already covered by `skill-eval-gate`'s rubric-authoring step and `agent-evaluation`'s general framing.
+- Production monitoring via the same metric over live traces (BigQuery) — infra-specific to Google Cloud, no equivalent surface in this harness; overlaps `raindrop-eval-loop`/`active-observability` territory without a concrete wiring path here.
+
+---
+
+## Subagents on Subagents: How Many Layers Deep Is Too Many? (Pasted text)
+**Added:** 2026-08-16
+**Source / Author:** Pasted text — article on multi-agent delegation depth
+
+**What it's about:** Argues nesting depth is the wrong risk signal for recursive subagent delegation — the real signal is graph position/blast radius: how many downstream nodes inherit an artifact if it's wrong. Frames this as "dependency engineering" — deciding what's allowed to depend on what, and gating high-fan-out nodes (verifier, structured output, evidence-travels-with-conclusion, N-way independent production, human approval) proportionally to their downstream influence rather than applying uniform depth-based caution.
+
+**What we added:**
+- Skill augmentation: `skills/multi-agent-patterns/SKILL.md` (Skill Routing Quality section, after "Post-condition coupling pattern") — added "Scale scrutiny to blast radius, not nesting depth" heuristic. Ran `better-call` first (challenger 19/30 vs incumbent 25/30, complementarity delta 4/5) → verdict AUGMENT INCUMBENT: incumbent already covers error propagation, post-condition coupling, and summary-substitution, but lacked an explicit rule tying gate strength to a node's downstream fan-out count. Extracted just that idea; rest of article (graph-vs-tree framing, generic error-propagation discussion) already redundant with existing content.
+
+**Rejected:**
+- Standalone skill on "graph engineering" / dependency engineering — full article content ~70%+ subsumed by `multi-agent-patterns` (hierarchical layering, error propagation, post-condition coupling, summary substitution anti-pattern); `better-call` verdict was AUGMENT not COEXIST or ADOPT.
+- Hook or dashboard integration — this is a design-time judgment call made when architecting a multi-agent system, not a runtime-detectable condition; no automation path exists (correctly "not automatable — contextual" per Step 3d).
