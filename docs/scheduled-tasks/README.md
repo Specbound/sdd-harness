@@ -181,6 +181,19 @@ This is the **review** stage of the tool-failure-memory loop (capture → recall
 
 ---
 
+### Fleet Registration Check
+**Mechanism:** Inline in `scripts/orchestration/daily-orchestrator.sh`, immediately after the per-repo loop — full-fleet runs only, skipped under `--dry-run` and under `--repo <path>`
+**Cadence:** Every fleet run (no gap-days gate — it is a cheap directory scan, no LLM call)
+**Scope:** Harness-level
+
+**What it does:** Runs `scripts/utils/check-fleet-registration.sh --quiet` to find repos that carry a harness install (`.claude/scripts/orchestration/daily-runner.sh`) but are absent from `projects.txt`. Such a repo receives zero routines and appears nowhere: the dashboard only renders repos it is told about, so an unregistered repo is not *shown as failing*, it is simply not shown — absence is invisible unless something looks for it, so it is looked for on every fleet run.
+
+Scan roots are **derived** from `projects.txt` (the parent directory of each registered repo) rather than stored anywhere, so `projects.txt` remains the only file on disk that records a fleet path.
+
+**Never a gate.** On a finding it logs a one-line `orchestrator: unregistered harness repo(s) found` summary to `logs/orchestrator.log` and the full detail to `logs/orchestrator-errors.log`; the orchestrator's own exit code is unaffected. Run it by hand with `bash scripts/utils/check-fleet-registration.sh`.
+
+---
+
 ## OS Scheduler Setup
 
 | OS | Scheduler | Registered by | Remove with |
@@ -191,7 +204,21 @@ This is the **review** stage of the tool-failure-memory loop (capture → recall
 
 Registration is automatic and idempotent — re-running `install.sh` or `update.sh` is safe.
 
-The dashboard's **Scheduled Tasks** tab shows live status for each task, scoped to whichever repo's dashboard is open: schedule, last run + exit code, artifact path, diff vs. previous run, and the reasoning excerpt from the artifact. Harness-only routines (skill-curator, harness-health) always show the harness's own state regardless of which repo is open; per-repo routines show that repo's state file and log entries. It also surfaces the OS scheduler's last-launch exit status.
+### Preflight — registration is not execution
+
+Each setup script now proves the orchestrator can actually *run* under its scheduler, instead of trusting that registration succeeded. `launchctl load` returning 0 only means the job was registered: with the harness under `~/Documents`, launchd (which holds no Full Disk Access) was refused at exec time with `Operation not permitted`, exiting 126 every day for four days while setup reported success and `launchctl list` showed the job present.
+
+| OS | Preflight | On failure |
+|---|---|---|
+| **macOS** | Registers a throwaway probe LaunchAgent (`com.sdd.orchestrator-preflight`) that runs `daily-orchestrator.sh --dry-run` in the same launchd context, waits up to 30s for its exit code, then boots it out | **exit 1**. Names TCC explicitly when `$HARNESS_DIR` is under `~/Documents`, `~/Desktop` or `~/Downloads`, and gives both fixes: move the harness somewhere unprotected (e.g. `~/GitHub/`) and re-run `install.sh`, or grant Full Disk Access to `/bin/bash` in System Settings → Privacy & Security |
+| **Linux** | Runs `--dry-run` under an approximated cron environment (`env -i`, `PATH=/usr/local/bin:/usr/bin:/bin`) — cron's near-empty environment is its version of the same silent failure | **exit 1**, printing the captured stderr and the usual cause (a command only on PATH for interactive shells) |
+| **WSL / Windows** | Runs `--dry-run` through the same `wsl.exe -d <distro> -- bash -lc` path the scheduled task uses | **warn only** — the matching check would verify Windows-side execution via `schtasks /Run` + `LastTaskResult`; that is not implemented because it could not be tested, and gating installs on untested Windows behaviour is worse than reporting. Verify by hand with the `/Query` line the script prints |
+
+The preflight also runs on the **"already registered / already loaded"** path, not just on fresh registration — that is exactly the state a silently-dead job reports.
+
+TCC grants are per-machine and never travel with a clone, so a fleet can be silently dead on a brand-new machine behind a green install. That is the case this exists to catch.
+
+The dashboard's **Scheduled Tasks** tab shows live status for each task, scoped to whichever repo's dashboard is open: schedule, last run + exit code, artifact path, diff vs. previous run, and the reasoning excerpt from the artifact. Harness-only routines (skill-curator, harness-health) always show the harness's own state regardless of which repo is open; per-repo routines show that repo's state file and log entries. It also surfaces the OS scheduler's last-launch exit status — and when that scheduler cannot run, it renders as a **full-width red banner above the routine cards**, naming TCC explicitly on exit 126. That status used to be small yellow text inside the scheduler card, beside a page of routines each showing a calm `PENDING` badge; a scheduler that cannot run is the one fact that invalidates everything under it.
 
 ---
 
@@ -207,5 +234,5 @@ The dashboard's **Scheduled Tasks** tab shows live status for each task, scoped 
 
 ---
 
-_Last synced: 2026-08-12_
+_Last synced: 2026-08-16_
 

@@ -25,7 +25,17 @@ Before delegating to the agent, run the hardcoded-path guard and fold its result
 bash .claude/scripts/utils/check-no-hardcoded-paths.sh
 ```
 
-It scans harness scripts for machine/user-specific absolute paths and the hardcoded `$HOME/.claude/sdd-harness` root. Every path must instead be self-located via `scripts/lib/resolve-harness-dir.sh` or computed from `$HARNESS_DIR`. If it exits non-zero, report each offending `file:line` and do not issue a "pass" verdict.
+It scans harness sources — `*.sh`, `*.py`, `*.json` and `*.template`, plus the generated-but-gitignored `.claude/settings.json` by name — for machine/user-specific absolute paths and the hardcoded `$HOME/.claude/sdd-harness` root. Config counts as code: the guard originally scanned only `*.sh`/`*.py` and excluded `.claude/**`, so `.claude/settings.json` was invisible on both counts while holding 23 absolute hook paths. Every path must instead be self-located via `scripts/lib/resolve-harness-dir.sh`, read from `scripts/lib/harness-pointer.sh`, or computed from `$HARNESS_DIR`. If it exits non-zero, report each offending `file:line` and do not issue a "pass" verdict.
+
+The same guard is installed as the harness repo's `.git/hooks/pre-commit` by `install.sh` / `update.sh`, so this step should normally already be clean.
+
+Then run the fleet roster check and fold its result in as a WARNING-level finding (not a gate — an unregistered repo is a roster gap, not structural corruption):
+
+```
+bash .claude/scripts/utils/check-fleet-registration.sh
+```
+
+It reports repos that carry a harness install but are missing from `projects.txt`, and therefore receive no scheduled routines and appear on no dashboard. Report each `UNREGISTERED:` path.
 
 ## Invoke Subagent
 

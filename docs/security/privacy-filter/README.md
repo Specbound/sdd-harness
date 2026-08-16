@@ -61,6 +61,10 @@ Then make it executable:
 chmod +x .git/hooks/pre-commit
 ```
 
+In a normal project the slot is free: the harness's own hardcoded-path guard (`hooks/git/pre-commit`) is deliberately never propagated downstream, and if `install.sh` / `update.sh` find a pre-commit they don't recognise they leave it alone.
+
+**In the harness repo itself**, `.git/hooks/pre-commit` is owned by that guard and is rewritten on every `install.sh` / `update.sh` run, so a `scan-pii.sh` line added there is lost at the next update. Add it to `hooks/git/pre-commit` in the source tree instead.
+
 ---
 
 ## Usage

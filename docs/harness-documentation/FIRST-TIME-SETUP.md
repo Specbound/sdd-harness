@@ -360,7 +360,7 @@ Then, inside Claude Code in the project directory, run these once:
 /codebase-legibility   # sets up CLAUDE.md hierarchy, .claudeignore, and codebase map
 ```
 
-Daily maintenance runs automatically via the local OS scheduler (registered by `install.sh` / `update.sh`). No per-project setup is required.
+Daily maintenance runs automatically via the local OS scheduler (registered by `install.sh` / `update.sh`). No per-project setup is required. Registration is followed by a **preflight** that runs the orchestrator once under the scheduler's own environment — on macOS and Linux the install fails (exit 1) if that comes back non-zero, so a job that registers but cannot execute is reported at setup instead of doing nothing nightly. On macOS the most common cause is a harness under a TCC-protected folder (`~/Documents`, `~/Desktop`, `~/Downloads`), which launchd is refused access to; the preflight names it and gives both fixes.
 
 Update `.gitignore` to exclude harness files. `install.sh` automatically adds the core three entries (`.claude/`, `specs/`, `CLAUDE.md`) under a `# SDD harness` header — skip those below if already present. For the full recommended exclusion set:
 ```gitignore
@@ -424,6 +424,9 @@ Run through this on a fresh machine:
 | GitNexus context missing in Claude | MCP not in `settings.json` or repo not indexed | Run `/kiro:gitnexus-setup` |
 | impeccable scans not appearing | Binary not in PATH | `npm install -g impeccable` |
 | Local daily maintenance not running (macOS) | LaunchAgent not loaded | `launchctl list com.sdd.daily-orchestrator` to check; re-run `install.sh` or `update.sh` to re-register |
+| Local daily maintenance not running (macOS) **while the LaunchAgent is loaded** | launchd holds no Full Disk Access, so it is refused at exec time (`Operation not permitted`, exit 126) when the harness lives under a TCC-protected folder — `~/Documents`, `~/Desktop`, `~/Downloads`. `launchctl list` shows the job as present the whole time | Run `bash ~/.claude/sdd-harness/scripts/orchestration/setup-mac-orchestrator.sh --force`; its preflight reproduces the failure and names the cause. Fix by moving the harness somewhere unprotected (e.g. `~/GitHub/`) and re-running `install.sh`, or by granting Full Disk Access to `/bin/bash` in System Settings → Privacy & Security. The grant is per-machine and never travels with a clone |
+| Harness cross-repo hooks stopped firing everywhere | `~/.sdd-harness-root` points at a directory that no longer exists — the harness was moved or renamed | Session start and session end now print `[HARNESS-POINTER-STALE]` naming the dead path. Re-run `bash <harness>/update.sh` from the new location to rewrite the pointer |
+| A repo gets no scheduled routines and appears on no dashboard | It carries a harness install but was never added to `projects.txt`, and the dashboard only renders repos it is told about | `bash ~/.claude/sdd-harness/scripts/utils/check-fleet-registration.sh` lists every such repo; add it to `projects.txt` or uninstall the harness there |
 | Local daily maintenance not running (Linux) | Cron entry missing | `crontab -l \| grep sdd-daily` to check; re-run `install.sh` or `update.sh` to re-register |
 | Local daily maintenance not running (WSL) | Task Scheduler entry missing | `schtasks.exe /Query /TN "SDD Daily Orchestrator"` to check; re-run `install.sh` to re-register |
 | **Windows:** hooks fail with `bash: /bin/bash: No such file` | Claude Code running on native Windows; hook paths are Linux-style | Use WSL2 so Claude Code runs in Linux, or change hook commands from `/bin/bash` to the Git Bash path (`C:/Program Files/Git/bin/bash.exe`) |
@@ -432,4 +435,4 @@ Run through this on a fresh machine:
 | `Settings file failed to parse: .claude/settings.json — Invalid or malformed JSON` (permission rules and hooks silently inactive) | Comments or notes after the closing brace — JSON allows neither. Installs before 2026-08-12 copied a template that carried a `//` block | `python3 ~/.claude/sdd-harness/scripts/setup/repair-settings-json.py /path/to/project` moves the block to `.claude/settings.notes.md`; `update.sh` now does this automatically. Keep all notes in `settings.notes.md` |
 | `headroom` proxy exits with `FastAPI required` or `h2 package not installed` | Missing `uvicorn` or `httpx[http2]` in headroom's uv env | Re-run `install.sh` (patched) or manually: `uv tool install headroom-ai --python 3.12 --with-requirements ~/.claude/sdd-harness/scripts/setup/headroom-extras.txt` |
 
-_Last synced: 2026-08-12_
+_Last synced: 2026-08-16_

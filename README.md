@@ -219,7 +219,10 @@ sdd-harness/
 │   ├── orchestration/            #   Daily maintenance scheduling
 │   │   ├── daily-orchestrator.sh #     Global orchestrator (all repos)
 │   │   ├── daily-runner.sh       #     Per-repo daily maintenance loop (idempotent, race-safe)
-│   │   └── setup-*-orchestrator.sh #   OS scheduler registration (global/linux/mac)
+│   │   └── setup-*-orchestrator.sh #   OS scheduler registration (global/linux/mac) — each preflights that the orchestrator can actually run under its scheduler, not just that it registered
+│   ├── lib/                      #   Sourced helpers (not run directly)
+│   │   ├── resolve-harness-dir.sh #    Self-locate $HARNESS_DIR from a script's own position on disk
+│   │   └── harness-pointer.sh    #     Owns ~/.sdd-harness-root — THE single stored pointer to the harness, for cross-repo hooks that cannot self-locate
 │   ├── routines/                 #   Scheduled routine prompts + runners
 │   │   ├── daily-maintenance-prompt.md
 │   │   ├── macro-eval-runner.sh
@@ -241,7 +244,8 @@ sdd-harness/
 │       ├── dashboard.py          #     Local harness dashboard (13 sections, Workshop + Headroom tabs)
 │       ├── ollama_model_test.py  #     Zero-dependency Ollama model test runner
 │       ├── sync-memories-to-headroom.py # Bidirectional harness memory ↔ headroom sync
-│       └── check-no-hardcoded-paths.sh  # Verify no hardcoded paths in hook files
+│       ├── check-no-hardcoded-paths.sh  # Verify no machine-specific paths in harness sources (*.sh, *.py, *.json, *.template + the generated .claude/settings.json); installed as the harness repo's .git/hooks/pre-commit
+│       └── check-fleet-registration.sh  # Find harness-installed repos missing from projects.txt (they get no routines and appear on no dashboard)
 │
 ├── hooks/                        # Claude Code and Git lifecycle hooks
 │   ├── claude/                   # Claude Code session hooks (synced to .claude/hooks/ on install/update)
@@ -263,6 +267,7 @@ sdd-harness/
 │   │   ├── caveman-statusline.sh #     Statusline command: emits [CAVEMAN] / [CAVEMAN:ULTRA] badge + live context-usage meter (color-coded %ctx)
 │   │   └── lean-ctx-rewrite.sh  #     PreToolUse(Bash): rewrites common shell commands to lean-ctx equivalents
 │   └── git/                      # Git lifecycle hooks (copied to .git/hooks/ on install/update)
+│       ├── pre-commit            #     Harness repo only: runs check-no-hardcoded-paths.sh and blocks a commit that would bake a machine-specific path into harness source. Never propagated to downstream projects
 │       └── post-commit           #     On commit: detects doc-sync/harness-update work, then runs it in ONE detached job (log: .git/post-commit-docsync.log) that auto-commits/pushes only the .md files touched; serialized on .git/post-commit-docsync.lock so concurrent commits skip instead of racing the git index
 │
 ├── templates/                    # Project-level templates
@@ -650,6 +655,8 @@ echo 'bash "$(git rev-parse --show-toplevel)/.claude/hooks/scan-pii.sh" --staged
   >> .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit
 ```
 
+> **In the harness repo itself**, `.git/hooks/pre-commit` is owned by `hooks/git/pre-commit` (the hardcoded-path guard), which `install.sh` / `update.sh` rewrite on every run — a line appended there is lost at the next install or update. Add the scan-pii line to `hooks/git/pre-commit` in the source tree instead. In any other project the slot is free: the harness guard is deliberately not propagated downstream, and the installer leaves a pre-commit it doesn't recognise alone.
+
 See [docs/privacy-filter/README.md](docs/privacy-filter/README.md).
 
 ---
@@ -713,7 +720,7 @@ Install once with Homebrew (`brew install rtk && rtk init -g`) and the global ho
 
 ### Session Start Hook (`hooks/claude/session-start-hook.sh`)
 
-Runs when a Claude Code session starts (SessionStart). First self-heals `.claude/settings.json` by running `scripts/setup/repair-settings-json.py` (located via `$HOME/.sdd-harness-root`) against the current project, ahead of every other check — Claude Code silently drops a malformed settings file, so every permission rule and hook in it stops working with no in-session error. When the repair changes something it prints `[SETTINGS-REPAIRED]` plus a note that this session's rules are inactive until the next session start; a healthy or missing file produces no output. Then two modes: (1) if no local `daily-runner.sh` is installed — checks if today's `[judge]` sentinel is absent from `observations.md` and asks Claude to run `/kiro:daily-maintenance`; (2) if `daily-runner.sh` is installed and stale (>24h or never ran) — fires it in the background via `nohup` silently, without consuming session context. Also checks if the per-repo CLAUDE.md review is >2 weeks stale (`.claude/memory/.last-claudemd-review`) and asks Claude to run `/claudemd-review` if so. Also surfaces a fresh (<24h) session-handoff snapshot at `.claude/memory/handoff/latest.md` — written by `scripts/session/write_handoff.py` from `compaction-discipline-hook.sh` and `gbrain-agent-spawn.sh` — with a reminder to read it before responding. Additionally runs a background headroom memory sync (`scripts/utils/sync-memories-to-headroom.py`) when headroom is installed — bidirectional: harness memories to headroom SQLite and new headroom extractions to MEMORY.md.
+Runs when a Claude Code session starts (SessionStart). First reads `$HOME/.sdd-harness-root` — the single stored pointer to the harness — and, if it names a directory that no longer exists, prints `[HARNESS-POINTER-STALE]` with the dead path and the fix (`bash <harness>/update.sh`), since a moved harness silently deactivates every cross-repo hook on the machine. Then self-heals `.claude/settings.json` by running `scripts/setup/repair-settings-json.py` (located via that same pointer) against the current project, ahead of every other check — Claude Code silently drops a malformed settings file, so every permission rule and hook in it stops working with no in-session error. When the repair changes something it prints `[SETTINGS-REPAIRED]` plus a note that this session's rules are inactive until the next session start; a healthy or missing file produces no output. Then two modes: (1) if no local `daily-runner.sh` is installed — checks if today's `[judge]` sentinel is absent from `observations.md` and asks Claude to run `/kiro:daily-maintenance`; (2) if `daily-runner.sh` is installed and stale (>24h or never ran) — fires it in the background via `nohup` silently, without consuming session context. Also checks if the per-repo CLAUDE.md review is >2 weeks stale (`.claude/memory/.last-claudemd-review`) and asks Claude to run `/claudemd-review` if so. Also surfaces a fresh (<24h) session-handoff snapshot at `.claude/memory/handoff/latest.md` — written by `scripts/session/write_handoff.py` from `compaction-discipline-hook.sh` and `gbrain-agent-spawn.sh` — with a reminder to read it before responding. Additionally runs a background headroom memory sync (`scripts/utils/sync-memories-to-headroom.py`) when headroom is installed — bidirectional: harness memories to headroom SQLite and new headroom extractions to MEMORY.md.
 
 ### Context Priming Hook (`hooks/claude/prompt-hook.sh`)
 

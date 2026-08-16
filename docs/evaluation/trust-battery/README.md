@@ -185,9 +185,11 @@ Auto-registered by `install.sh` on first install (and `update.sh` on existing in
 
 | OS | Scheduler | Force-recreate |
 |---|---|---|
-| **macOS** | launchd LaunchAgent | `bash ~/.claude/sdd-harness/scripts/setup-mac-orchestrator.sh --force` |
-| **Linux** | crontab | `bash ~/.claude/sdd-harness/scripts/setup-linux-orchestrator.sh --force` |
-| **WSL / Windows** | Windows Task Scheduler | `bash ~/.claude/sdd-harness/scripts/setup-global-orchestrator.sh --force` |
+| **macOS** | launchd LaunchAgent | `bash ~/.claude/sdd-harness/scripts/orchestration/setup-mac-orchestrator.sh --force` |
+| **Linux** | crontab | `bash ~/.claude/sdd-harness/scripts/orchestration/setup-linux-orchestrator.sh --force` |
+| **WSL / Windows** | Windows Task Scheduler | `bash ~/.claude/sdd-harness/scripts/orchestration/setup-global-orchestrator.sh --force` |
+
+Each script ends with a **preflight** that proves the orchestrator can actually execute under its scheduler — registration succeeding says nothing about whether the job can run. macOS registers a throwaway probe LaunchAgent that runs `daily-orchestrator.sh --dry-run` in the same launchd context; Linux runs it under an approximated cron environment; both exit 1 if it comes back non-zero. WSL/Windows warns only. The preflight also runs when the job is already registered, since "already loaded" is exactly what a silently-dead job reports. On macOS, a harness under `~/Documents`, `~/Desktop` or `~/Downloads` is refused by TCC at exec time (exit 126) — the failure output names this and gives both fixes.
 
 Fires at 18:00 local for all repos listed in `~/.claude/sdd-harness/projects.txt` — once daily on macOS/Linux; on WSL/Windows, Task Scheduler repeats every 4h after 18:00 (6x/day total, each sub-routine self-gating on its own last-run state so repeat fires are cheap no-ops). Each repo runs its own `daily-runner.sh`, maintaining its own memory, score history, and rubric application. A SessionStart hook provides catch-up: if the runner hasn't fired in >24h, opening any Claude session in the repo fires it silently in the background.
 
@@ -291,4 +293,4 @@ The deliberate non-goals above are stable. If any of these come up in a future r
 
 ---
 
-_Last synced: 2026-08-12_
+_Last synced: 2026-08-16_
