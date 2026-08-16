@@ -52,17 +52,19 @@ From git history and session context, identify noteworthy items:
 - Debugging insights (root causes found)
 - Workflow friction points
 - Cross-cutting insights
+- Spec integrity findings — if a `validate-impl` run in this session flagged "Spec Integrity Check" drift (requirements.md/design.md weakened post-approval), capture which feature, which invariant, and whether it recurred across specs. This is the harness's longitudinal signal for which kinds of specs/models drift — tag `spec-drift`.
 
 Format each observation:
 ```
 - YYYY-MM-DD [tag1, tag2]: observation text
 ```
 
-**Tags**: `spec`, `impl`, `design`, `debug`, `decision`, `friction`, `insight`, `pattern`, `enforceable`, `escaped`
+**Tags**: `spec`, `impl`, `design`, `debug`, `decision`, `friction`, `insight`, `pattern`, `enforceable`, `escaped`, `spec-drift`
 
 **Special tagging rules**:
 - `enforceable`: Add this tag when the observation describes a convention violation that could be prevented by a linter rule. This feeds the evolve agent's graduation pipeline (see `rules/self-tightening.md`).
 - `escaped`: Add this tag when a bug passed validation but was caught later (in CI, testing, or production). These are highest-priority graduation candidates.
+- `spec-drift`: Add this tag when a `validate-impl` run flagged post-approval weakening of requirements.md/design.md. 3+ `spec-drift` observations sharing a theme (same feature repeatedly drifting, same invariant type weakened, same model tier implicated) should promote to `meta/patterns.md` per Step 2.
 - An observation can have multiple tags: `[friction, enforceable]` means "this was painful AND could be a linter rule"
 
 **Rules**:

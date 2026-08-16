@@ -185,7 +185,7 @@ Reviews the design doc for completeness and consistency.
 ```
 
 ### `/kiro:validate-impl` — Implementation validation
-Verifies code matches the spec (requirements + design + tasks). On NO-GO, provides a structured remediation plan with `filepath:line` references.
+Verifies code matches the spec (requirements + design + tasks). Also checks spec integrity — flags requirements.md/design.md edits made after approval that quietly weaken acceptance criteria, so implementation can't rewrite the spec it's being judged against. On NO-GO, provides a structured remediation plan with `filepath:line` references.
 
 ```
 /kiro:validate-impl revenue-trend-chart

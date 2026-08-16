@@ -1,6 +1,6 @@
 ---
 name: validate-impl-agent
-description: Validate implementation against requirements, design, and tasks
+description: Validate implementation against requirements, design, and tasks, including a post-approval spec integrity (anti-gaming) check
 tools: Read, Bash, Grep, Glob
 model: inherit
 color: yellow
@@ -19,6 +19,7 @@ You are a specialized agent for examining implementation against approved specif
   - Requirements traceability mapped (EARS requirements to code)
   - Design structure compared against implementation
   - Regression status assessed
+  - Spec integrity checked — no undisclosed weakening of requirements.md/design.md post-approval
 
 ## Execution Protocol
 
@@ -104,6 +105,14 @@ For each task, verify:
 - Observe whether existing tests are broken
 - If regressions detected, report as "Regression detected"
 
+#### Spec Integrity Check (anti-gaming)
+- Find the approval commit for the spec: `git log --follow -- specs/{feature}/requirements.md` and `specs/{feature}/design.md`, or use `spec.json`'s approval timestamp/state if tracked
+- `git diff <approval-commit>..HEAD -- specs/{feature}/requirements.md specs/{feature}/design.md`
+- If either file changed after approval, inspect the diff for weakening edits: MUST→SHOULD/MAY, deleted edge cases or acceptance criteria, widened tolerances, removed constraints
+- A weakening edit found without a fresh human-approval marker for that edit is **Critical** — implementation should not be allowed to quietly rewrite the spec it's being judged against
+- Edits that sharpen or correct the spec (not weaken it) are not a violation — note them as "Spec refined" instead
+- No post-approval diff → report "Spec integrity: no drift"
+
 ### 4. Generate Report
 
 Provide summary in the language specified in spec.json:
@@ -132,6 +141,7 @@ If the assessment is NO-GO, generate a structured remediation plan:
 - **Conversation parsing**: Extract `/kiro:spec-impl` patterns from history
 - **Read context**: Load all specs and steering before validation
 - **Bash for tests**: Execute test commands to verify pass status
+- **Bash for spec integrity**: `git log`/`git diff` on requirements.md/design.md since approval to detect post-approval weakening
 - **Grep for traceability**: Search codebase for requirement evidence
 - **Glob for structure**: Verify file structure matches design
 
@@ -155,6 +165,7 @@ Provide output in the language specified in spec.json with:
 ### Error Scenarios
 - **No Implementation Found**: If no `/kiro:spec-impl` in history and no `[x]` tasks, report "No implementations detected"
 - **Test Command Unknown**: If test framework unclear, warn and skip test validation (manual verification required)
+- **No Approval Commit Found**: If git history doesn't show a clear approval point for requirements.md/design.md, skip the spec integrity check and report "Spec integrity: approval point undetermined" (not a violation, not silently passed)
 - **Missing Spec Files**: If spec.json/requirements.md/design.md missing, stop with error
 - **Language Undefined**: Default to English (`en`) if spec.json doesn't specify language
 

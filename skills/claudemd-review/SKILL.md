@@ -1,6 +1,6 @@
 ---
 name: claudemd-review
-description: "Bi-weekly audit of the current repo's CLAUDE.md files. Identifies stale model-assumption instructions, outdated gotchas, over-constraining rules from pre-Claude-4.x habits, and missing capability documentation. Empirically ablation-tests ambiguous candidates (cost-bounded) before proposing removal. Triggered automatically by session-start hook per repo."
+description: "Bi-weekly audit of the current repo's CLAUDE.md and AGENTS.md files. Identifies stale model-assumption instructions, outdated gotchas, over-constraining rules from pre-Claude-4.x habits, missing capability documentation, AGENTS.md/CLAUDE.md drift, and hardcoded-path staleness. Empirically ablation-tests ambiguous candidates (cost-bounded) before proposing removal. Triggered automatically by session-start hook per repo."
 allowed-tools: Read, Bash, Edit, Glob
 user-invocable: true
 risk: safe
@@ -25,12 +25,12 @@ Audit all CLAUDE.md files for content that has drifted out of date — especiall
 
 ---
 
-## Phase 1: Discover All CLAUDE.md Files
+## Phase 1: Discover All CLAUDE.md and AGENTS.md Files
 
-Find every CLAUDE.md in the current repo (root + subdirectories):
+Find every CLAUDE.md and AGENTS.md in the current repo (root + subdirectories) — AGENTS.md is the open cross-tool standard (Codex, Cursor, Aider, etc.) that sits alongside CLAUDE.md; both need to stay in sync:
 
 ```bash
-find . -name "CLAUDE.md" -not -path "*/node_modules/*" -not -path "*/.git/*"
+find . \( -name "CLAUDE.md" -o -name "AGENTS.md" \) -not -path "*/node_modules/*" -not -path "*/.git/*"
 ```
 
 Read each file found.
@@ -78,6 +78,17 @@ Flag gaps where Claude 4.x capabilities could be better leveraged:
 - No reference to available MCP tools that Claude could use automatically
 - No mention of relevant skills available for recurring workflows
 
+### AGENTS.md / CLAUDE.md Drift
+
+If both files exist in the same directory, compare them:
+- One is a near-empty stub while the other carries real project conventions → flag for reconciliation (a tool that only reads AGENTS.md — Codex, Cursor, Aider — would see almost nothing)
+- Content diverges materially between the two (different rules, contradictory instructions) → flag the specific lines that disagree
+- Only one of the pair exists where the repo is known to be used with multiple AI coding tools → flag as a gap, not a blocker
+
+### Hardcoded File-Path Staleness
+
+Flag instructions that name an exact file path to describe a capability or convention (e.g. "see `scripts/foo.sh` for X"). These go stale as the codebase evolves and the file moves, renames, or is deleted. Verify the path still exists; if not, flag as stale and propose either updating the path or rephrasing to describe the capability without pinning a path.
+
 ---
 
 ## Phase 2b: Empirical Ablation Check (cost-bounded, CLAUDE.md only)
@@ -114,7 +125,7 @@ Only run this on candidates Phase 2 could not confidently classify (skip it enti
 ## Phase 3: Score Each File
 
 ```
-## [repo-name] — [relative path to CLAUDE.md]
+## [repo-name] — [relative path to CLAUDE.md or AGENTS.md]
 
 Freshness: [Fresh / Needs minor update / Needs significant update / Stale]
 
@@ -126,6 +137,11 @@ Over-constraining rules:
 
 Missing:
 - [gap] → [recommended addition]
+
+AGENTS.md / CLAUDE.md drift: [None / "[quoted divergence]" → recommended reconciliation]
+
+Hardcoded path staleness:
+- "[quoted path]" → [exists / stale — path no longer found] → [recommended fix]
 
 Queued for next cycle (ceiling reached):
 - "[quoted text]" — not yet tested
@@ -155,6 +171,7 @@ Apply edits. Lean files are better than well-organized verbose ones — when in 
 | File | Status | Changes |
 |---|---|---|
 | CLAUDE.md | [Fresh/Updated] | [what changed or "no changes"] |
+| AGENTS.md | [Fresh/Updated/Reconciled with CLAUDE.md] | [what changed or "no changes"] |
 | [subdir]/CLAUDE.md | [Fresh/Updated] | [what changed or "no changes"] |
 
 Queued for ablation next cycle: [N candidates, or "none"]

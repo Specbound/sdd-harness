@@ -719,3 +719,29 @@ Two additional resources (OpenWiki — git, PACE — papers) are logged in their
 - Skill: `skills/cma-advisor/SKILL.md` (new, sibling to the existing `skills/cma-outcomes/SKILL.md`) — covers roster setup, the platform-enforced constraints (one advisor per roster, reserved `anthropic.advisor` name, no-input tool so policy lives in the system prompt, fixed at session creation, concurrency-exempt, no per-consultation spend cap), the thread-lifecycle event stream (distinct from `agent.tool_use`), reliable thread identification (`thread.agent.type == "advisor"`, more reliable than the name), per-consultation cost retrieval, and the redaction behavior. Distinct API surface and use case from `cma-outcomes` (mid-turn escalation vs. post-hoc grade-and-revise) — not a merge candidate.
 
 **Rejected:** nothing else proposed from this source — it's a single, narrow cookbook page describing one platform feature; the whole extraction is the one skill above.
+
+---
+
+## A Complete Guide to AGENTS.md
+**URL:** https://www.aihero.dev/a-complete-guide-to-agents-md | **Added:** 2026-08-16 | **Source:** aihero.dev
+
+**What it's about:** Guide to preventing AGENTS.md/CLAUDE.md files from becoming a bloated, contradictory "ball of mud" — lean entry file, progressive disclosure into topic files, avoiding hardcoded file paths (they go stale as the codebase evolves), monorepo root/package splitting, periodic cleanup audits with a copy-paste audit prompt.
+
+**What we added:**
+- Augmentation: `skills/claudemd-review/SKILL.md` — Phase 1 discovery now also finds `AGENTS.md` (the open cross-tool standard read by Codex/Cursor/Aider alongside CLAUDE.md); new Phase 2 checks for AGENTS.md/CLAUDE.md drift (one file a near-empty stub while the other carries real project conventions) and hardcoded-file-path staleness (instructions naming an exact path that no longer exists). Found the gap live in this repo on audit: root `AGENTS.md` was a 9-line lean-ctx stub while `CLAUDE.md` carried the real project rules — any AGENTS.md-only tool would see almost nothing. Phase 3 scoring template and Phase 6 summary table updated to report both file types.
+
+**Rejected:** new `/kiro:agents-md-init` scaffold command (the source itself warns against auto-generating AGENTS.md via init scripts; would also duplicate `steering-agent`'s existing project-context bootstrap); symlinking `AGENTS.md` → `CLAUDE.md` (real fix but a one-off local file edit, not a reusable harness capability, and risks conflicting with lean-ctx's marker block in AGENTS.md); dashboard widget for instruction-file SNR/line-count trend (no existing hook instrumentation, disproportionate build cost vs. the audit skill already reporting the same info textually every 2 weeks).
+
+---
+
+## Specula: Scaling Formal Specifications
+**URL:** https://muratbuffalo.blogspot.com/2026/08/specula-scaling-formal-specifications.html | **Added:** 2026-08-16 | **Source:** Murat Demirbas (muratbuffalo.blogspot.com), reviewing arXiv 2607.25333 / github.com/specula-org/Specula
+
+**What it's about:** Specula is an agentic system (built on Claude Code) that auto-derives TLA+ formal specifications from real codebases and validates them via trace replay against actual execution, then runs a model checker to find concurrency bugs. The core novelty is a "self-evolving loop": trace validation pulls the spec toward reality, while model checking pushes back against the agent gaming or weakening invariants just to make them pass — weaker models (Sonnet, Haiku) were shown to reward-hack this far more than Opus. The TLA+/model-checker toolchain itself doesn't port to this harness (different domain — concurrency bugs, not general feature specs), but the anti-gaming half of the loop is a portable, currently-missing primitive: this harness already does trace-validation-equivalent work (`validate-impl-agent` checks impl against requirements/design) but had no check for whether the spec itself gets quietly weakened post-approval to make implementation pass easier.
+
+**What we added:**
+- Augmentation: `agents/kiro/validate-impl.md` — new "Spec Integrity Check (anti-gaming)" step. Diffs `requirements.md`/`design.md` against the git commit where the spec was approved; flags weakening edits (MUST→SHOULD/MAY, deleted edge cases/acceptance criteria, widened tolerances) as Critical unless a fresh human-approval marker exists for the edit, per CLAUDE.md's existing "never skip the human review gate" rule. Non-weakening edits are reported as "Spec refined," not a violation. Falls back gracefully if no approval commit is found.
+- Augmentation: `agents/kiro/reflect-agent.md` — new `spec-drift` observation tag; when `validate-impl` flags spec integrity drift, `reflect-agent` now captures which feature/invariant drifted and promotes to a pattern in `meta/patterns.md` once 3+ observations share a theme (same feature repeatedly drifting, same invariant type weakened, same model tier implicated). This is the "progressive learning" half — recurring drift becomes a longitudinal signal the harness accumulates, not a one-off flag.
+- Doc sync: `docs/harness-documentation/SDD-USAGE.md` — `/kiro:validate-impl` entry now mentions the spec integrity check.
+
+**Rejected:** TLA+/model-checking pipeline in `specs/` (domain mismatch — harness produces natural-language EARS requirements, not TLA+; adopting a model-checker toolchain for general feature dev violates blast-radius/vertical-slice principles); model-weakness-correlates-with-reward-hacking as a model-selection config note (interesting but not a portable technique — it's an empirical finding specific to TLA+ bug-finding, would be a hollow "here's an interesting paper" addition on its own); bug reproduction via generated timing-sensitive integration tests (concurrency-bug-specific technique with no model-checker output to translate from — nothing concrete to port).
