@@ -269,7 +269,7 @@ sdd-harness/
 │   ├── CLAUDE.md.template        #   Project constitution (context paths, rules, quality gates)
 │   ├── settings.json.template    #   Claude Code permissions and hooks config (per-project installs) — strict JSON, no comments
 │   ├── settings.notes.md.template #  Sidecar notes for settings.json (copied to .claude/settings.notes.md on install/update)
-│   └── settings.harness.json.template # Same config for the harness repo itself ({{HARNESS_DIR}} paths)
+│   └── settings.harness.json.template # Same config for the harness repo itself (portable hook paths)
 │
 └── docs/                         # Reference documentation
     ├── SDD-USAGE.md              #   Quick command reference with examples

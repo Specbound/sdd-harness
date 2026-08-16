@@ -71,3 +71,32 @@ Then patched `scripts/setup/headroom-setup.sh` to include `--with uvicorn --with
 - Recovery: source `skills/` was intact (it's the truth); rebuilt `~/.claude/skills` by purging spillage (keeping symlinks + the scientific pack) and re-copying each source dir without a trailing slash.
 
 **Lesson:** Any `cp -r` of a globbed `*/` path on macOS must strip the trailing slash, or it content-dumps. Test installer changes on macOS, not just Linux. The harness must never be a `do_update` target of its own `update.sh`.
+
+---
+
+## 2026-08-16 — Scheduler dead for 4 days: TCC + three guards that were never wired
+
+**Symptom:** Dashboard showed `never` for most routines across the fleet. Repos other than the one being worked in received no scheduled runs at all. Presented as intermittent ("sometimes works on old machines, never on new ones").
+
+**Root cause (one trigger, four independent silent failures):**
+1. **TCC.** The harness lived under `~/Documents/GitHub/`. macOS protects `~/Documents`, `~/Desktop`, `~/Downloads` — a LaunchAgent has no Full Disk Access, so launchd was refused at *exec* time: `/bin/bash: .../daily-orchestrator.sh: Operation not permitted`, exit 126, four days running. `launchctl load` returned 0 and `launchctl list` showed the job present the whole time. The grant is per-machine and never travels with a clone, which is why every new machine looked broken and no config diff explained it.
+2. **`.claude/settings.json` held 23 absolute hook paths**, manufactured by a `{{HARNESS_DIR}}` substitution in `templates/settings.harness.json.template`. Moving the harness left 23 dead hook paths.
+3. **`check-no-hardcoded-paths.sh` could not see them.** It scanned only `*.sh`/`*.py` (settings.json is JSON) *and* excluded `^\.claude/`. Double-blind over exactly the file that broke. It also had 13 pre-existing violations from vendored `skills/`, so it was red anyway.
+4. **`hooks/git/pre-commit` was never installed anywhere.** It existed in the source tree; `install.sh`/`update.sh` copied only `post-commit`. Its own header documented a manual `cp` against a path (`git-hooks/`) that does not exist. So the guard in (3) had never run automatically — and both it and the hook advertised themselves as wired.
+
+Bonus: `~/.sdd-harness-root` (the cross-repo pointer) went stale on the move and both hooks reacted with `|| true` → `exit 0`, i.e. silently.
+
+**Fix:**
+- Moved the tree to `~/GitHub/` (unprotected). Verified with a throwaway probe LaunchAgent running `--dry-run`: exit 0, all repos enumerated.
+- Hook commands in both templates are now `bash "${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/x.sh"` — absolute when Claude Code exports it, CWD-relative otherwise, machine-specific never. `install.sh`/`update.sh` `cp` the template instead of `sed`-substituting it.
+- Single stored pointer consolidated into `scripts/lib/harness-pointer.sh`; hooks now print `[HARNESS-POINTER-STALE]` instead of exiting silently.
+- Guard extended to `*.json`/`*.template`, re-admits generated `.claude/settings.json`, excludes vendored `skills/`. Regression-tested in both directions.
+- `install_harness_pre_commit` installs the guard automatically (non-destructively — it will not clobber a pre-commit it does not own).
+- `setup-mac-orchestrator.sh` / `setup-linux-orchestrator.sh` now run a preflight and **exit 1** if the scheduler cannot actually execute; the macOS one names TCC explicitly when `$HARNESS_DIR` is under a protected folder.
+- Dashboard renders a full-width red banner above the routine cards when the scheduler is down, instead of small yellow text beside a page of calm `PENDING` badges.
+
+**Lessons:**
+- Never put anything a scheduler must execute under `~/Documents`, `~/Desktop`, or `~/Downloads` on macOS. Registration success ≠ execution success; always preflight by *running* the thing.
+- A guard that has never been observed to fail is not a guard. Regression-test guards in both directions, and verify the hook that runs them is actually installed — `.git/hooks/` is not version-controlled, so "wired into pre-commit" in a comment proves nothing.
+- Config counts as code. A path scanner that skips JSON and generated files will report green over the exact file that breaks.
+- `grep` through the Bash tool is rtk-proxied and respects `.gitignore`, so it silently skips `.claude/`. Use `ctx_shell` when auditing gitignored trees — the two disagreed and the discrepancy nearly hid finding (2).
