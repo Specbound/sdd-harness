@@ -67,6 +67,9 @@ Write to the specified output path using this format:
 ## Current State of Files
 {from git status/diff — list modified files with brief description of changes}
 
+## Suggested Skills
+- {Skill name}: {why the resuming agent should call it — e.g. "spec-tdd-impl" if mid-implementation, "debugging-strategies" if the last action was a failing test}
+
 ## Exact Next Step
 - Run: {specific command or action}
 - Expected: {what should happen}
@@ -79,6 +82,8 @@ Write to the specified output path using this format:
 - **Actionable next steps**: Must be specific enough to execute without additional context
 - **No opinion**: Report facts, not recommendations about approach changes
 - **Concise**: Each section should have 3-7 bullet points maximum
+- **No duplication**: Don't restate content already captured in specs, ADRs, commits, or diffs — reference them by path instead (e.g. `specs/checkout-flow/design.md`, not a copy of its contents)
+- **Redact secrets**: Strip API keys, tokens, passwords, or other sensitive values from evidence/errors before writing them to the session file
 
 ## Output Description
 

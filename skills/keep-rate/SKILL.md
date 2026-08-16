@@ -28,6 +28,20 @@ git log --all --format="%H %aI" --grep="Co-Authored-By: Claude" | head -100
 
 Collect: commit hash, date, author, subject.
 
+### Step 1b — AI Adoption % (volume, not durability)
+
+A second, distinct metric: what fraction of recent commits/lines are Claude-co-authored at all — not whether they survived. Keep Rate answers "how much of Claude's code stuck"; Adoption % answers "how much of the work was Claude's to begin with." Compute over the same 30-day window as Step 3's aggregate:
+
+```bash
+git log --all --since=30.days --format="%H" | wc -l
+# total commits in window
+
+git log --all --since=30.days --grep="Co-Authored-By: Claude" --format="%H" | wc -l
+# Claude-co-authored commits in window
+```
+
+**AI Adoption %** = `claude_commits / total_commits` (or line-count equivalent if commit-level granularity is too coarse for the repo). Record alongside Keep Rate in Step 5 — don't conflate the two numbers, a high adoption % with a low keep rate is a real (and different) signal than the reverse.
+
 ### Step 2 — For each commit older than 7 days, calculate line survival
 
 For each file touched in that commit:
@@ -64,6 +78,7 @@ Save to `.claude/memory/observations.md`:
 
 ```
 - YYYY-MM-DD [keep-rate]: Keep Rate = X% (N commits, M lines). Trend: ↑/↓/→ vs last period. [any notable pattern]
+- YYYY-MM-DD [ai-adoption]: AI Adoption = Y% (N of M commits in last 30d). Trend: ↑/↓/→ vs last period.
 ```
 
 If keep rate < 50%, add a `kaizen` note flagging the pattern for review.
@@ -71,10 +86,11 @@ If keep rate < 50%, add a `kaizen` note flagging the pattern for review.
 ### Step 6 — Surface findings
 
 Report:
-- Overall keep rate % 
+- Overall keep rate %
+- AI adoption % (volume) — distinct from keep rate (durability)
 - Number of Claude commits analyzed
 - Any files or feature areas with notably low keep rate (potential signal of prompt or context issues)
-- Trend direction vs last measurement
+- Trend direction vs last measurement, for both metrics
 
 ## Expected Churn Patterns (Anti-Patterns)
 

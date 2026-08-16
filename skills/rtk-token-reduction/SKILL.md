@@ -55,3 +55,16 @@ For an unfamiliar area of the codebase, prefer a structural/AST-aware index (Ser
 ## Subagent token caps
 
 For a bounded, well-scoped subtask, cap the subagent's reply length, right-size the model (e.g. `haiku` for narrow tasks), and restrict its tool allowlist — don't let it run on full default budget. Track cache-hit ratio and cost-per-task, not intuition, to confirm a technique is actually saving tokens.
+
+### Sizing the cap: TALE-EP (estimate, then constrain)
+
+A fixed cap is a guess — too tight and the model blows through it anyway (reverts to long-form reasoning when it can't fit, sometimes producing *more* output than an unconstrained call would have), too loose and it wastes nothing. TALE-EP (Token-Budget-Aware LLM rEasoning, estimation variant) fixes this with a two-phase pattern instead of a hand-picked number:
+
+1. **Estimate:** ask the model, zero-shot, for the minimum tokens it thinks the task needs.
+2. **Constrain:** feed that estimate back in as the explicit budget for the actual task.
+
+Reported result across seven benchmark datasets on GPT-4o-mini: ~67% average output-token reduction with under 3% accuracy drop — on one benchmark (GSM8K) accuracy *improved* (81.35% → 84.46%) as output fell from 318 to 77 tokens, likely because a tight budget suppresses overthinking on problems that didn't need it. (Source: [arxiv.org/html/2412.18547v5](https://arxiv.org/html/2412.18547v5), via [Redis: token-budget-aware LLM reasoning](https://redis.io/blog/token-budget-aware-llm-reasoning/).)
+
+**Caveat — task type matters more than the model:** the Chain-of-Draft finding (capping each reasoning step to ≤5 words) shows compression is not uniformly safe. On commonsense/symbolic tasks it lost nothing (Claude 3.5 Sonnet: 190→14 tokens, accuracy 93.2%→97.3%). On arithmetic (GSM8K) both GPT-4o and Claude 3.5 Sonnet traded ~4 accuracy points for an 80% token cut. **Don't apply a tight budget uniformly** — arithmetic/multi-step-math subtasks need more room than commonsense/lookup subtasks of similar apparent size.
+
+Claude's own newer models don't take a raw token-count budget parameter (`budget_tokens` 400s on Opus 4.7+ — thinking is adaptive/model-controlled there); use the `effort` parameter and the advisory task budget instead — see `model-tiers`' "Effort Level" section.

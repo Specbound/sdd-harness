@@ -372,6 +372,10 @@ git rebase -i main
 git reset --hard backup-branch
 ```
 
+## Resolving Merge Conflicts
+
+Don't pattern-match conflict markers — reconstruct why each side's change exists (commit messages, PR/issue context) before resolving, preserve both intents where compatible, run the project's checks before finishing, and never `--abort` as an escape hatch (that just defers the same conflict to whoever merges next with less context than you have now). Full discipline and a worked example: `references/git-conflict-resolution.md`.
+
 ## Common Pitfalls
 
 - **Rebasing Public Branches**: Causes history conflicts for collaborators

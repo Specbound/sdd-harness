@@ -499,6 +499,19 @@ Hook output is injected into Claude's context as system messages — Claude read
 
 ---
 
+### `ruff-quality-gate-hook.sh`
+**Event:** `PostToolUse` — **Matcher:** `Write|Edit|MultiEdit` — _(soft gate, never blocks)_
+
+**Purpose:** `CLAUDE.md`'s Quality Gates section states "`ruff check`: on every `.py` file write" as automated — but until this hook, nothing actually ran it. A `Bash(ruff check *)` permission entry only let Claude run it if it remembered to; there was no hook enforcing it. This hook runs `ruff check` on any `.py` file touched by a Write/Edit/MultiEdit and surfaces findings back into context. Silently no-ops if `ruff` isn't installed on the machine, or if the touched file isn't Python.
+
+**Why it's needed:** Closes a real gap between what the harness's own docs claimed was automated and what an audit found was actually wired — extracted while auditing `github.com/memcode-ai/memcode` for the same "quality gate on write" pattern.
+
+**Noise control:** Only fires on `.py` files with real `ruff check` findings — silent when clean, silent on non-Python files, silent when `ruff` isn't installed. Never blocks (exits 0 always).
+
+**Output:** `⚠  ruff-quality-gate — <filename>` banner with the raw `ruff check` findings. Silent on no findings.
+
+---
+
 ### `agent-trace-hook.sh`
 **Event:** `PostToolUse` — **Matcher:** `Agent`
 
@@ -595,6 +608,7 @@ PostToolUse    Write|Edit                                    → impeccable-dete
 PostToolUse    Write|Edit                                    → hook-added-notify.sh
 PostToolUse    Write|Edit  (*/skills/*/SKILL.md only)        → skill-permissions-gate.sh
 PostToolUse    Write|Edit|MultiEdit (test/CI config only)     → test-integrity-guard.sh
+PostToolUse    Write|Edit|MultiEdit (.py files only)          → ruff-quality-gate-hook.sh
 PostToolUse    Bash                                          → revert-detect-hook.sh
 PostToolUse    Bash                                          → setup-buffer-hook.sh
 PostToolUse    Bash                                          → action-capture.sh

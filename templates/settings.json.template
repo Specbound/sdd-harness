@@ -204,6 +204,10 @@
           {
             "type": "command",
             "command": "bash .claude/hooks/test-integrity-guard.sh"
+          },
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/ruff-quality-gate-hook.sh"
           }
         ]
       },

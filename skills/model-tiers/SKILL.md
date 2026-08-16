@@ -133,6 +133,16 @@ When uncertain, start with sonnet. Upgrade to opus only after observing consiste
 
 Before escalating to a higher tier, also check whether a better-curated skill would close the gap instead: SkillsBench (arXiv 2602.12670) found smaller model + curated skill ≥ larger model, no skill. Skill curation and model escalation are two competing levers — try tightening the skill first; it's usually cheaper than bumping the tier.
 
+### Cascade Escalation — Per-Call, Not Per-Session
+
+The guidance above is a *session-level* judgment call: you decide once, based on observed failures, that a whole class of work needs a higher tier. Cascade escalation is the *per-call* version — try the cheap tier first on every call, and escalate only the specific calls that fail a confidence/quality check, rather than upgrading the whole task class.
+
+Research on this pattern (cascade routers trying a cheap model first, escalating only on low confidence) reports savings up to 98% of the top-tier model's inference cost while matching its performance on the tested tasks (arXiv 2305.05176, via Redis's token-budget-aware-reasoning writeup). The mechanism: most calls in a class aren't actually hard — a cascade pays the escalation cost only on the ones that are.
+
+**Scope note:** that research (and RouteLLM-style pre-inference routers) is typically cross-provider — routing between different model *families*. This harness only routes across Claude's own tiers (haiku/sonnet/opus/fable) — apply the cascade *shape* (cheap-first, escalate-on-low-confidence), not the cross-provider trained-classifier machinery, which doesn't fit this harness's single-vendor setup.
+
+**When it's worth building:** a task class that's high-volume (worth automating the escalation decision) and has a cheap, reliable confidence signal (a self-reported confidence score, a verifier check, or a downstream failure signal) — not a one-off task where the session-level manual judgment above is simpler and cheaper to reason about.
+
 ## Effort Level — An Orthogonal Dial
 
 In Claude Code, reasoning **effort** is a separate lever from model choice. Levels: `low`, `medium`, `high`, `xhigh`, `max` (set via `/effort`, `CLAUDE_CODE_EFFORT_LEVEL`, or `effortLevel` in settings; this harness runs `high`). It governs how much the active model thinks per turn — independent of which tier you picked.

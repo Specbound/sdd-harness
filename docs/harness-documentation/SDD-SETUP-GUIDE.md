@@ -733,7 +733,7 @@ That stage is also **serialized at every profile level** on `.git/post-commit-do
 
 ## Skills (`skills/`)
 
-Skills live in the harness source tree at `skills/<name>/SKILL.md` (996 skills currently). `install_globals()` in `install.sh` syncs each one into `~/.claude/skills/<name>/`, so skills are **machine-global**, not per-project — one install serves every repo.
+Skills live in the harness source tree at `skills/<name>/SKILL.md` (999 skills currently). `install_globals()` in `install.sh` syncs each one into `~/.claude/skills/<name>/`, so skills are **machine-global**, not per-project — one install serves every repo.
 
 - Adding a skill: create `skills/<name>/SKILL.md` with kebab-case `name:` matching the directory and a `description:` of ≥25 chars (enforced by the `skill-validate` PreToolUse hook), then run `install.sh` / `update.sh`.
 - Every write to a `*/skills/*/SKILL.md` also trips the **skill-permissions-gate** PostToolUse hook — a soft reminder to run `agent-permissions-design` (tool access, irreversible-action gates, scope boundary, external access) before calling the skill done.

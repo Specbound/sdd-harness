@@ -95,6 +95,10 @@
           {
             "type": "command",
             "command": "bash {{HARNESS_DIR}}/.claude/hooks/test-integrity-guard.sh"
+          },
+          {
+            "type": "command",
+            "command": "bash {{HARNESS_DIR}}/.claude/hooks/ruff-quality-gate-hook.sh"
           }
         ]
       },

@@ -40,8 +40,9 @@
 ## Serena (Python code intelligence — mandatory, not optional)
 - After editing any `.py` file: call `mcp__serena__get_diagnostics_for_file(path)` — real type/lint errors, not just ruff
 - Before renaming or deleting any Python function/class: call `mcp__serena__find_referencing_symbols(symbol)` to confirm blast radius
-- Registered user-scope, so every project inherits it: `claude mcp add serena --scope user -- uvx --from git+https://github.com/oraios/serena serena start-mcp-server --context claude-code`
+- Registered user-scope, so every project inherits it: `claude mcp add serena --scope user -- uvx --from git+https://github.com/oraios/serena serena start-mcp-server --context claude-code --open-web-dashboard False`
 - The `claude-code` context excludes `initial_instructions` — Serena loads silently with zero session overhead. There is no `ide-assistant` context any more
+- `--open-web-dashboard False` is load-bearing: user scope means every agent spawn starts its own Serena process, and each one otherwise opens a browser tab. The dashboard still runs — reach it at http://localhost:24282/dashboard/ (port climbs per extra instance). The machine-local equivalent is `web_dashboard_open_on_launch: false` in `~/.serena/serena_config.yml`, which does not travel between machines
 
 ## Post-Task Convention
 After any coding task, end with:

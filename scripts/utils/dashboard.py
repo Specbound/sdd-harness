@@ -28,6 +28,7 @@ Options:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import html
 import json
 import math
@@ -83,6 +84,8 @@ SECTION_DEFS = [
 PRICING_HISTORY = DASHBOARD_DIR / "models-pricing-history.json"
 PRICING_MAX_AGE = 14 * 86400   # 14-day refresh cadence
 CLAUDE_PROJECTS = Path.home() / ".claude" / "projects"
+CLAUDE_CONFIG_DIR = Path(os.environ.get("CLAUDE_CONFIG_DIR") or (Path.home() / ".claude"))
+LIVE_CONTEXT_MAX_AGE = 15 * 60   # state older than this is a dead/closed session, not "live"
 
 _MODEL_LABEL = {
     "claude-opus-4-8":           ("Opus 4.8",   "#cba6f7"),
@@ -2546,6 +2549,7 @@ def render_session_quality(rd):
     sq  = obs.get("session-quality", [])
     kr  = obs.get("keep-rate", [])
     mg  = obs.get("memory-gap", [])
+    aa  = obs.get("ai-adoption", [])
 
     if not sq and not kr:
         return empty_state("No session quality data yet. Run daily-maintenance to start tracking.")
@@ -2553,8 +2557,9 @@ def render_session_quality(rd):
     score_re = re.compile(r'Score=(\d+)/5')
     keep_re  = re.compile(r'(\d+)%')
     gap_re   = re.compile(r'(\d+)\s+re-explanation')
+    adopt_re = re.compile(r'(\d+)%')
 
-    scores, keeps, gaps = [], [], []
+    scores, keeps, gaps, adopts = [], [], [], []
     for d, t in sq:
         m = score_re.search(t)
         if m:
@@ -2567,10 +2572,17 @@ def render_session_quality(rd):
         m = gap_re.search(t)
         if m:
             gaps.append((d, int(m.group(1))))
+    for d, t in aa:
+        m = adopt_re.search(t)
+        if m:
+            adopts.append((d, int(m.group(1))))
 
     avg_score  = sum(s for _, s in scores) / len(scores) if scores else None
     avg_keep   = sum(k for _, k in keeps)  / len(keeps)  if keeps  else None
     total_gaps = sum(g for _, g in gaps)
+    # Adoption is a volume metric (most recent reading, not averaged) — distinct
+    # from Keep Rate's durability signal. Averaging would smear a genuine trend.
+    latest_adopt = adopts[-1][1] if adopts else None
 
     sc  = ("#a6e3a1" if (avg_score or 0) >= 4 else
            "#f9e2af" if (avg_score or 0) >= 2.5 else "#f38ba8")
@@ -2578,8 +2590,15 @@ def render_session_quality(rd):
            "#f9e2af" if (avg_keep or 0) >= 40  else "#f38ba8")
     gc  = ("var(--red)"    if total_gaps > 5 else
            "var(--yellow)" if total_gaps > 0  else "var(--green)")
+    ac  = "var(--mauve)"
 
-    summary = f"""<div style="display:grid;grid-template-columns:repeat(3,1fr);
+    adopt_card = f"""
+    <div class="stat-card">
+      <div class="stat-val" style="color:{ac}">
+        {f"{latest_adopt}%" if latest_adopt is not None else "—"}</div>
+      <div class="stat-lbl">AI adoption (volume)</div></div>""" if adopts else ""
+
+    summary = f"""<div style="display:grid;grid-template-columns:repeat({4 if adopts else 3},1fr);
                        gap:12px;margin-bottom:20px">
     <div class="stat-card">
       <div class="stat-val" style="color:{sc}">
@@ -2591,7 +2610,7 @@ def render_session_quality(rd):
       <div class="stat-lbl">avg keep-rate</div></div>
     <div class="stat-card">
       <div class="stat-val" style="color:{gc}">{total_gaps}</div>
-      <div class="stat-lbl">memory gaps (total)</div></div>
+      <div class="stat-lbl">memory gaps (total)</div></div>{adopt_card}
   </div>"""
 
     timeline = ""
@@ -2623,7 +2642,17 @@ def render_session_quality(rd):
                   f'<ul style="padding-left:16px;margin:0;color:var(--subtext0);'
                   f'font-size:12px">{items}</ul>')
 
-    glossary = """<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:20px">
+    adopt_glossary = """
+    <div style="background:var(--surface0);border-radius:6px;padding:10px 12px;font-size:11px">
+      <div style="color:var(--mauve);font-weight:600;margin-bottom:4px">🌊 AI Adoption %</div>
+      <div style="color:var(--subtext0);line-height:1.55">
+        What fraction of recent commits were Claude-co-authored at all — a volume
+        signal, not durability. <strong style="color:var(--subtext1)">Different from Keep-Rate</strong> —
+        high adoption + low keep-rate means Claude is doing a lot of work that isn't sticking.
+      </div>
+    </div>""" if adopts else ""
+
+    glossary = f"""<div style="display:grid;grid-template-columns:repeat({4 if adopts else 3},1fr);gap:10px;margin-top:20px">
     <div style="background:var(--surface0);border-radius:6px;padding:10px 12px;font-size:11px">
       <div style="color:var(--blue);font-weight:600;margin-bottom:4px">📊 Session Score (0–5)</div>
       <div style="color:var(--subtext0);line-height:1.55">
@@ -2648,7 +2677,7 @@ def render_session_quality(rd):
         Detected by <code style="font-size:10px">memory-discipline-hook</code> at compaction.
         High gaps → add a memory entry for the repeated topic.
       </div>
-    </div>
+    </div>{adopt_glossary}
   </div>"""
     return f"""<div class="section-inner">
   <h2 class="section-title">Session Quality</h2>
@@ -2871,13 +2900,59 @@ def _startup_payload_card(repo_path):
 </div>"""
 
 
+def _live_context_state(repo_path: str):
+    """Read the last context-usage % the caveman-statusline hook observed for this repo.
+
+    Written by hooks/global/caveman-statusline.sh on every statusline render
+    while a Claude Code session is open for this repo — keyed by
+    sha256(repo_path)[:16] since CLAUDE_CONFIG_DIR is machine-global, not
+    per-repo. Returns None if no session has ever reported for this repo, or
+    if the last report is older than LIVE_CONTEXT_MAX_AGE (session likely
+    closed — showing a stale % as "live" would be misleading).
+    """
+    key = hashlib.sha256(repo_path.encode()).hexdigest()[:16]
+    state_file = CLAUDE_CONFIG_DIR / "dashboard-context" / f"{key}.json"
+    if not state_file.is_file() or state_file.is_symlink():
+        return None
+    try:
+        data = json.loads(state_file.read_text())
+        pct = int(data["pct"])
+        updated_at = int(data["updated_at"])
+    except Exception:
+        return None
+    age = NOW.timestamp() - updated_at
+    if age < 0 or age > LIVE_CONTEXT_MAX_AGE:
+        return None
+    return {"pct": pct, "age_seconds": int(age)}
+
+
+def _live_context_card(repo_path: str) -> str:
+    live = _live_context_state(repo_path)
+    if live is None:
+        return ""
+    pct = live["pct"]
+    color = "#f38ba8" if pct >= 90 else "#f9e2af" if pct >= 70 else "#a6e3a1"
+    age = live["age_seconds"]
+    age_label = f"{age}s ago" if age < 90 else f"{age // 60}m ago"
+    return f"""<div style="background:var(--surface0);border-radius:6px;padding:10px 12px;
+      margin-bottom:16px;display:flex;align-items:center;gap:12px">
+    <div style="font-size:22px;font-weight:700;color:{color}">{pct}%</div>
+    <div>
+      <div style="font-size:11px;color:var(--subtext1);font-weight:600">Live context usage</div>
+      <div style="font-size:10px;color:var(--overlay1)">from the open Claude Code session's statusline &middot; updated {age_label}</div>
+    </div>
+  </div>"""
+
+
 def render_context_health(rd):
     startup_html = _startup_payload_card(rd["path"])
+    live_html = _live_context_card(rd["path"])
     sessions = rd.get("session_history", [])
     if not sessions:
         return f"""<div class="section-inner">
   <h2 class="section-title">Context Health</h2>
   {startup_html}
+  {live_html}
   {empty_state("No session history yet. Sessions are logged at stop time once the stop hook has run at least once.")}
 </div>"""
 
@@ -2967,6 +3042,7 @@ def render_context_health(rd):
   <h2 class="section-title">Context Health</h2>
   {section_desc("Tracks session frequency as a proxy for context load. High session counts often indicate heavy contexts that benefit from <code>/compact</code> or subagent delegation.", icon="🧵", color="var(--teal)")}
   {startup_html}
+  {live_html}
   {summary}{status_line}{chart}{tips}
 </div>"""
 
