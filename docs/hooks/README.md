@@ -510,6 +510,8 @@ Hook output is injected into Claude's context as system messages — Claude read
 
 **Output:** `⚠  ruff-quality-gate — <filename>` banner with the raw `ruff check` findings. Silent on no findings.
 
+**Location:** ships in `hooks/claude/`, copied to each project's `.claude/hooks/`; wired via `PostToolUse` matcher `Write|Edit|MultiEdit` in both `templates/settings.json.template` and `templates/settings.harness.json.template`.
+
 ---
 
 ### `agent-trace-hook.sh`
@@ -640,5 +642,5 @@ The `tool-failure-*` pair plus the `tool-failure-review` routine are designed to
 3. Document it in this file (the `hook-added-notify.sh` hook will remind you if you forget).
 4. Update the Wiring Reference table above.
 
-_Last synced: 2026-08-12_
+_Last synced: 2026-08-16_
 

@@ -260,7 +260,7 @@ sdd-harness/
 │   │   ├── caveman-config.js     #     Shared config module for caveman hooks (mode, flag file path)
 │   │   ├── caveman-mode-tracker.js #   UserPromptSubmit: injects active caveman level into every prompt
 │   │   ├── caveman-stats.js      #     Tracks caveman usage metrics across sessions
-│   │   ├── caveman-statusline.sh #     Statusline command: emits [CAVEMAN] / [CAVEMAN:ULTRA] badge
+│   │   ├── caveman-statusline.sh #     Statusline command: emits [CAVEMAN] / [CAVEMAN:ULTRA] badge + live context-usage meter (color-coded %ctx)
 │   │   └── lean-ctx-rewrite.sh  #     PreToolUse(Bash): rewrites common shell commands to lean-ctx equivalents
 │   └── git/                      # Git lifecycle hooks (copied to .git/hooks/ on install/update)
 │       └── post-commit           #     On commit: detects doc-sync/harness-update work, then runs it in ONE detached job (log: .git/post-commit-docsync.log) that auto-commits/pushes only the .md files touched; serialized on .git/post-commit-docsync.lock so concurrent commits skip instead of racing the git index
@@ -765,7 +765,7 @@ Requires OPF (OpenAI privacy-filter — not on PyPI, install from source): `uv t
 
 ### Caveman Mode Hook (`hooks/global/caveman-activate.js`)
 
-Fires on every `SessionStart`. Reads the configured default mode from `caveman-config.js`, writes a flag file at `$CLAUDE_CONFIG_DIR/.caveman-active` (consumed by the statusline), and emits the full caveman ruleset as hidden session context. Reads `skills/caveman/SKILL.md` at runtime so edits to the skill propagate automatically without requiring hook changes. Falls back to a hardcoded minimal ruleset when the skill file isn't present (standalone installs). Companion hooks: `caveman-mode-tracker.js` injects the active level into every prompt; `caveman-stats.js` records usage. `caveman-statusline.sh` is a statusline command (not a lifecycle hook) that emits the `[CAVEMAN]` / `[CAVEMAN:ULTRA]` badge.
+Fires on every `SessionStart`. Reads the configured default mode from `caveman-config.js`, writes a flag file at `$CLAUDE_CONFIG_DIR/.caveman-active` (consumed by the statusline), and emits the full caveman ruleset as hidden session context. Reads `skills/caveman/SKILL.md` at runtime so edits to the skill propagate automatically without requiring hook changes. Falls back to a hardcoded minimal ruleset when the skill file isn't present (standalone installs). Companion hooks: `caveman-mode-tracker.js` injects the active level into every prompt; `caveman-stats.js` records usage. `caveman-statusline.sh` is a statusline command (not a lifecycle hook) that emits the `[CAVEMAN]` / `[CAVEMAN:ULTRA]` badge, plus a color-coded `%ctx` live context-usage meter parsed from `context_window.used_percentage` on stdin — renders regardless of whether caveman mode is active, and persists the last-seen % per repo to `dashboard-context/<hash>.json` so `scripts/utils/dashboard.py`'s Context Health tab can show a "live" reading (state older than 15 minutes is treated as a closed session and not shown).
 
 All caveman hooks are user-global — wired in `~/.claude/settings.json`, not installed per project.
 
@@ -964,4 +964,4 @@ The Model Cost section reads session data from `~/.claude/projects/*/`. Pricing 
 
 Private repository. Contact the maintainer for access.
 
-_Last synced: 2026-08-12_
+_Last synced: 2026-08-16_
