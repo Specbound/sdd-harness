@@ -12,7 +12,7 @@ version: 1.2.0
 
 ## Purpose
 
-Retrieve all open Security Hotspots **and** Code Quality Issues from SonarQube, investigate each one in the codebase, and produce a triage report (`docs/security/sonar-hotspot-review.md`) that explains:
+Retrieve all open Security Hotspots **and** Code Quality Issues from SonarQube, investigate each one in the codebase, and produce a triage report (`reports/sonar-hotspot-review.md`) that explains:
 - What each item is flagging
 - The actual code and its context
 - Whether it is a **real risk** that needs fixing or a **false positive / accepted risk** with justification
@@ -209,7 +209,7 @@ Assign one of these verdicts:
 
 ### Step 5 — Write the Triage Report
 
-Create (or overwrite) the file at: `docs/security/sonar-hotspot-review.md`
+Create (or overwrite) the file at: `reports/sonar-hotspot-review.md`
 
 Use this exact structure:
 
@@ -325,7 +325,7 @@ After writing the file and posting comments, print a concise summary:
 ```
 Sonar triage complete.
 
-Report written to: docs/security/sonar-hotspot-review.md
+Report written to: reports/sonar-hotspot-review.md
 
 Security Hotspots:
   ACTION REQUIRED      : N
@@ -378,6 +378,6 @@ Use these to guide your verdicts:
 
 ## Output Location
 
-Always write to: `docs/security/sonar-hotspot-review.md`
+Always write to: `reports/sonar-hotspot-review.md`
 
 If the `docs/security/` directory does not exist, create it. Never output the report only to the terminal — always write the file.

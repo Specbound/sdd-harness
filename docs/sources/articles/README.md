@@ -745,3 +745,18 @@ Two additional resources (OpenWiki — git, PACE — papers) are logged in their
 - Doc sync: `docs/harness-documentation/SDD-USAGE.md` — `/kiro:validate-impl` entry now mentions the spec integrity check.
 
 **Rejected:** TLA+/model-checking pipeline in `specs/` (domain mismatch — harness produces natural-language EARS requirements, not TLA+; adopting a model-checker toolchain for general feature dev violates blast-radius/vertical-slice principles); model-weakness-correlates-with-reward-hacking as a model-selection config note (interesting but not a portable technique — it's an empirical finding specific to TLA+ bug-finding, would be a hollow "here's an interesting paper" addition on its own); bug reproduction via generated timing-sensitive integration tests (concurrency-bug-specific technique with no model-checker output to translate from — nothing concrete to port).
+
+---
+
+## The Shapes of Agent Memory
+**URL:** https://www.pinglin.tw/blog/the-shapes-of-agent-memory/ | **Added:** 2026-08-18 | **Source:** pinglin.tw
+
+**What it's about:** Empirical comparison of agent-memory architectures on LongMemEval/LoCoMo benchmarks — file-based (Claude Code/Cline-style markdown + grep) vs structured/store-based (raw dated-fact stores vs LLM-distilled knowledge graphs like Zep/Graphiti) vs trained experience memory. Key numbers: structured beats files 73.6% vs 44.9% on LongMemEval-S at ~25x the token cost (665k vs 27k tokens/correct answer); files win on abstention (88.9% vs 77.8%); the structured/file gap widens 15pts further at 500-session scale; raw dated-fact stores beat LLM-distilled graphs at 6x less context and 400x less ingest cost — the win is specific to cross-session joins/temporal aggregation, not "structure beats files" in general.
+
+**What we added:**
+- Augmentation: `skills/agent-memory-systems/SKILL.md` — new "File-Based vs Structured Memory" section with the LongMemEval evidence table and a practical read for this harness's own file-based `.claude/memory/` design (fine for session-scoped recall and small fact counts; degrades specifically on cross-session joins/temporal aggregation at scale — the signal for when to add a structured layer, not before).
+- Augmentation: `skills/memory-systems/SKILL.md` — sharpened the existing "❌ Knowledge graphs for agent memory" anti-pattern with the article's nuance: the underperformance is specific to *LLM-distilled* graphs, not structured stores generally; raw dated-fact stores score ~78%, beating both files and distilled KGs at far lower cost.
+
+**Rejected:** standalone new "memory shapes" skill (would be a 5th+ memory skill in an already-saturated area — `agent-memory-systems`/`agent-memory-consolidation`/`agent-memory-discipline`/`memory-systems` already cover this territory; augment, don't fragment); reader/judge-model-sensitivity finding (already implicit in existing evaluation/judge-calibration skills); trained experience-memory finding (sufficiently adjacent to `agent-memory-consolidation`'s existing episodic-first stance, not a distinct enough mechanism).
+
+See also: [git/README.md](../git/README.md) — the `x74353/Amphetamine` scan run in the same batch surfaced an unrelated but real gap (LaunchAgent sleep interruption), fixed via native `caffeinate`, logged there.

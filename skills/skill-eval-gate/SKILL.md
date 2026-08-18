@@ -77,7 +77,7 @@ Report the verdict and the scenario table back to the calling skill (`skill-crea
 
 - This gate runs subagents that consume tokens; keep scenario prompts short and count (3–5) proportionate to the skill's stakes — do not run this for trivial one-line skill tweaks where the maintenance cost of gating exceeds the risk of a bad skill.
 - Do not skip straight to a PASS verdict without actually running both baseline and treatment — a gate that isn't run is not a gate.
-- If the calling skill overrides an INCONCLUSIVE/FAIL verdict and finalizes anyway, that override must be logged somewhere durable — append a line (skill name, verdict, reason, date) to `docs/skill-curation-report.md`'s history, not just mentioned in that turn's chat summary. An unlogged override is how a bypass path quietly becomes the default route.
+- If the calling skill overrides an INCONCLUSIVE/FAIL verdict and finalizes anyway, that override must be logged somewhere durable — append a line (skill name, verdict, reason, date) to `reports/skill-curation-report.md`'s history, not just mentioned in that turn's chat summary. An unlogged override is how a bypass path quietly becomes the default route.
 - Scenario sets are authored once at creation time and go stale; `skill-curator`'s weekly Continuous Eval-Gate Drift Check samples live traces to catch failure modes the original scenarios missed and proposes new ones — this gate should not be treated as a one-time checkpoint.
 
 ## Related Skills

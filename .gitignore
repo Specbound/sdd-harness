@@ -24,7 +24,11 @@ headroom_memory.db
 .superpowers/
 docs/workflow/superpowers/
 .last-drift-review
+.last-harness-sync
 .headroom/
+
+# Generated reports — local only, never push
+reports/
 
 # ── Installed harness output — NEVER commit ──────────────────────────────────
 # Single source of truth is the TOP-LEVEL source tree (agents/ commands/ hooks/

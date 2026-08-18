@@ -296,7 +296,7 @@ print((datetime.date.today() - datetime.date.fromisoformat(raw)).days)
     echo "$ts harness: starting drift review" >> "$LOG_FILE"
     drift_errbuf=$(mktemp)
     drift_outbuf=$(mktemp)
-    echo "Use the repo-drift-review skill to sweep the SDD harness for drift. Auto-fix what you can. Write the summary to $HARNESS_DIR/docs/drift-review-report.md" | \
+    echo "Use the repo-drift-review skill to sweep the SDD harness for drift. Auto-fix what you can. Write the summary to $HARNESS_DIR/reports/drift-review-report.md" | \
       claude --print --output-format text --permission-mode bypassPermissions > "$drift_outbuf" 2>"$drift_errbuf"
     drift_exit=$?
     echo "$ts harness: drift review exit=$drift_exit" >> "$LOG_FILE"

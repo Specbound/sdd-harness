@@ -54,7 +54,7 @@ cat > "$PLIST_PATH" <<PLIST
     <array>
         <string>/bin/bash</string>
         <string>-lc</string>
-        <string>${ORCHESTRATOR}</string>
+        <string>caffeinate -i ${ORCHESTRATOR}</string>
     </array>
     <key>StartCalendarInterval</key>
     <dict>

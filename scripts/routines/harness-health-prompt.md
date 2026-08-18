@@ -26,7 +26,7 @@ Steps:
       - Contradictions between root CLAUDE.md and project-level CLAUDE.md
 3. Rate each repo: `clean` | `minor` (cosmetic, low-urgency) | `needs-update` (stale/incorrect instructions)
 
-Write findings to `docs/claudemd-review-report.md`:
+Write findings to `reports/claudemd-review-report.md`:
 
 ```
 # CLAUDE.md Review Report — TODAY_PLACEHOLDER
@@ -53,7 +53,7 @@ Write findings to `docs/claudemd-review-report.md`:
 **Goal:** Apply a Review→Repair→Validate loop to skills flagged as low-quality in the most recent curation report.
 
 Steps:
-1. Read `docs/skill-curation-report.md`. Find skills listed under **Low-Quality Candidates**.
+1. Read `reports/skill-curation-report.md`. Find skills listed under **Low-Quality Candidates**.
 2. For each flagged skill (max 3 per run, prioritize lowest score first):
    a. **Review** — read the skill file at `~/.claude/skills/<name>/SKILL.md`
    b. **Repair** — rewrite to improve against the four SkillOS dimensions:
@@ -65,7 +65,7 @@ Steps:
    d. If score delta ≤ 1 after repair, mark as **stalled** (don't write)
 3. Apply approved repairs by writing the updated SKILL.md files directly.
 
-Append to `docs/skill-curation-report.md`:
+Append to `reports/skill-curation-report.md`:
 
 ```
 ## Iterative Repair Run — TODAY_PLACEHOLDER
@@ -76,7 +76,7 @@ Append to `docs/skill-curation-report.md`:
 | skill-name | 4/12 | 5/12 | stalled — delta too small |
 ```
 
-If `docs/skill-curation-report.md` does not exist, note it and skip Phase 2.
+If `reports/skill-curation-report.md` does not exist, note it and skip Phase 2.
 
 ---
 

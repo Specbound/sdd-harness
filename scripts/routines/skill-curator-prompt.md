@@ -106,7 +106,7 @@ For each failure mode, record: `ok`, `warn` (degraded but recoverable), or `crit
 
 ## Phase 4 — Write Report
 
-Write `docs/skill-curation-report.md` with this structure:
+Write `reports/skill-curation-report.md` with this structure:
 
 ```
 # Skill Curation Report — TODAY_PLACEHOLDER
@@ -168,7 +168,7 @@ Total: N skills | X chars | ~Y tokens
 | hot-memory.md recency | ok | last modified: DATE |
 ```
 
-If `docs/skill-curation-report.md` already exists, REPLACE it entirely (this is the canonical weekly snapshot).
+If `reports/skill-curation-report.md` already exists, REPLACE it entirely (this is the canonical weekly snapshot).
 
 ---
 
