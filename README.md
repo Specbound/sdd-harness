@@ -59,16 +59,24 @@ One harness, many projects. Install once, keep every repo in sync.
 ### Install into a new project
 
 ```bash
-~/.claude/sdd-harness/install.sh /path/to/project
+# Clone anywhere — $SDD_HARNESS is written to ~/.bashrc and ~/.zshrc automatically on first run.
+# On subsequent shells you can run from anywhere:
+$SDD_HARNESS/install.sh /path/to/project
 # defaults to current directory if no path given
 ```
 
-> **Windows:** `install.sh` is a bash script — it cannot be run directly from PowerShell or CMD (you'll get `Missing expression after unary operator '!'`, or `not recognized as the name of a cmdlet`). Easiest path: open a **Git Bash** terminal and run the plain `~/.claude/sdd-harness/install.sh …` commands. From **PowerShell**, invoke Git Bash with the call operator and a concrete script path (`bash` is usually not on PATH, and `~` isn't expanded as an argument):
+> **First run only:** `$SDD_HARNESS` isn't set yet, so bootstrap with a direct path:
+> ```bash
+> bash /path/to/your/sdd-harness-clone/install.sh /path/to/project
+> ```
+> After that, open a new shell and `$SDD_HARNESS` is available everywhere.
+
+> **Windows:** `install.sh` is a bash script — it cannot be run directly from PowerShell or CMD (you'll get `Missing expression after unary operator '!'`, or `not recognized as the name of a cmdlet`). Easiest path: open a **Git Bash** terminal, `cd` into the repo, and run the scripts directly. From **PowerShell**, invoke Git Bash with the call operator from inside the repo directory (`bash` is usually not on PATH):
 > ```powershell
-> # run from inside the sdd-harness repo directory:
+> # cd to the sdd-harness repo first, then:
 > & "C:\Program Files\Git\bin\bash.exe" install.sh --all --with-gitnexus
-> # or one-off from anywhere (let bash expand ~ via -c):
-> & "C:\Program Files\Git\bin\bash.exe" -c "~/.claude/sdd-harness/install.sh --all"
+> # with an explicit project path:
+> & "C:\Program Files\Git\bin\bash.exe" install.sh /c/dev/my-project
 > ```
 
 This will:
@@ -615,7 +623,7 @@ Once set up, **everything is automatic** — no extra commands in your daily wor
 
 Setup can also be done during harness installation:
 ```
-~/.claude/sdd-harness/install.sh /path/to/project --with-gitnexus
+$SDD_HARNESS/install.sh /path/to/project --with-gitnexus
 ```
 
 `install.sh --with-gitnexus` now wires the MCP server itself via `scripts/setup/gitnexus-reconcile.sh --wire` — writing the server into `.mcp.json` and adding it to `enabledMcpjsonServers` in `.claude/settings.json` — instead of printing a note telling you to paste the `mcpServers` JSON by hand. It then runs `gitnexus setup` **only** if `gitnexus-reconcile.sh --check` confirms both the index and the MCP server exist — otherwise the managed CLAUDE.md block was written with MUST/NEVER rules ordering the agent to call `gitnexus_*` tools that were never registered. When the check fails, install prints why and points at `/kiro:gitnexus-setup` to finish wiring. `update.sh` runs the same reconciler on every sync: the managed block is committed while `.gitnexus/` is gitignored and the MCP server lives in local config, so a fresh clone inherits rules for tools it cannot call — the reconciler strips the block when it's dead and repairs it when it's live, and no-ops for projects that never ran `gitnexus setup`.
@@ -796,7 +804,7 @@ The trigger for step 2 keys off the top-level source tree, not `.claude/` — `.
 
 ## Multi-Project Management
 
-The harness is installed once at `~/.claude/sdd-harness/` and shared across all your projects.
+The harness is installed at `$SDD_HARNESS` (wherever you cloned it) and shared across all your projects.
 
 ### Register projects
 
@@ -808,7 +816,7 @@ Run `install.sh --all` to install the harness into every project listed in `proj
 
 ```bash
 # Git Bash / WSL2 / macOS / Linux
-~/.claude/sdd-harness/install.sh --all
+$SDD_HARNESS/install.sh --all
 
 # From PowerShell (Windows), invoke Git Bash with the call operator,
 # run from inside the sdd-harness repo directory:
@@ -827,7 +835,7 @@ Missing directories and non-git paths are reported and skipped; one failing proj
 ### Update all projects
 
 ```bash
-~/.claude/sdd-harness/update.sh
+$SDD_HARNESS/update.sh
 ```
 
 Updates commands, agents, rules, templates, scripts, and docs in every registered project. Also regenerates `PROJECT_STACK.md` for each.
@@ -835,13 +843,13 @@ Updates commands, agents, rules, templates, scripts, and docs in every registere
 ### Update a single project
 
 ```bash
-~/.claude/sdd-harness/update.sh /path/to/project
+$SDD_HARNESS/update.sh /path/to/project
 ```
 
 ### Sync across machines
 
 ```bash
-cd ~/.claude/sdd-harness
+cd $SDD_HARNESS
 git remote add origin git@github.com:<you>/sdd-harness.git
 git push -u origin main
 ```
@@ -855,7 +863,7 @@ git push -u origin main
 A browser-based dashboard that shows trust battery, GitNexus stats, Raindrop Workshop traces, compression savings (RTK + headroom), hooks history, scheduled tasks, memory and skill changes, session quality, model spend, and an automation audit timeline across all registered repos.
 
 ```bash
-python3 ~/.claude/sdd-harness/scripts/utils/dashboard.py
+python3 $SDD_HARNESS/scripts/utils/dashboard.py
 ```
 
 This starts a local HTTP server on `http://localhost:4569` and opens the dashboard in your browser. On WSL it uses `wslview` or `explorer.exe` to open the URL.
@@ -866,14 +874,14 @@ This starts a local HTTP server on `http://localhost:4569` and opens the dashboa
 |---|---|
 | `--repo <name\|path>` | Pre-select a specific repo on load |
 | `--no-open` | Start the server without opening the browser |
-| `--static` | Write a static `~/.claude/sdd-harness/.dashboard/index.html` instead of starting a server |
+| `--static` | Write a static `$SDD_HARNESS/.dashboard/index.html` instead of starting a server |
 
 ```bash
 # Open dashboard scoped to a specific repo
-python3 ~/.claude/sdd-harness/scripts/utils/dashboard.py --repo aiq-zora-ai-engine
+python3 $SDD_HARNESS/scripts/utils/dashboard.py --repo aiq-zora-ai-engine
 
 # Generate a static file (no server, no browser)
-python3 ~/.claude/sdd-harness/scripts/utils/dashboard.py --static --no-open
+python3 $SDD_HARNESS/scripts/utils/dashboard.py --static --no-open
 ```
 
 Requires at least one project registered in `projects.txt` (added automatically by `install.sh`). The companion server on port 4569 stays alive until you press `Ctrl+C`.

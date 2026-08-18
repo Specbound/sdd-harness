@@ -137,7 +137,7 @@ The harness wires this automatically via `raindrop-setup.sh` during `install.sh`
 To run it manually (idempotent):
 
 ```bash
-bash ~/.claude/sdd-harness/scripts/raindrop-setup.sh
+bash $SDD_HARNESS/scripts/raindrop-setup.sh
 source ~/.bashrc
 ```
 
@@ -146,7 +146,7 @@ source ~/.bashrc
 # Workshop starts on port 5899
 raindrop workshop &
 # Open harness dashboard → Workshop tab
-python3 ~/.claude/sdd-harness/scripts/utils/dashboard.py
+python3 $SDD_HARNESS/scripts/utils/dashboard.py
 ```
 
 See `docs/raindrop/README.md` for full details on tracing, the eval loop, and troubleshooting.
@@ -180,7 +180,7 @@ GitNexus requires indexing each repo separately. Either:
 
 **Option A:** During `install.sh` (recommended for new projects):
 ```bash
-~/.claude/sdd-harness/install.sh /path/to/project --with-gitnexus
+$SDD_HARNESS/install.sh /path/to/project --with-gitnexus
 ```
 
 **Option B:** After `install.sh`, inside Claude Code:
@@ -331,22 +331,22 @@ Once global tools are in place, install the harness into each project:
 
 **Linux / macOS / WSL2:**
 ```bash
-~/.claude/sdd-harness/install.sh /path/to/project
+$SDD_HARNESS/install.sh /path/to/project
 # or with GitNexus in one shot:
-~/.claude/sdd-harness/install.sh /path/to/project --with-gitnexus
+$SDD_HARNESS/install.sh /path/to/project --with-gitnexus
 ```
 
 **Windows (native, no WSL2):** Run from Git Bash:
 ```bash
-~/.claude/sdd-harness/install.sh /c/dev/my-project
+$SDD_HARNESS/install.sh /c/dev/my-project
 ```
 Or use the WSL2 path if Claude Code is running inside WSL2. From PowerShell, invoke Git Bash with the call operator from inside the repo: `& "C:\Program Files\Git\bin\bash.exe" install.sh /c/dev/my-project` (running the `.sh` directly fails with a `#!`-shebang parser error, and `~/...install.sh` fails as "not recognized as a cmdlet").
 
 **Install into all registered projects at once:** use `--all` to walk `projects.txt`, skipping any project already installed (`.claude/kiro/` present):
 ```bash
-~/.claude/sdd-harness/install.sh --all                  # skip already-installed
-~/.claude/sdd-harness/install.sh --all --force          # re-sync every project (push updates)
-~/.claude/sdd-harness/install.sh --all --with-gitnexus  # batch install + GitNexus
+$SDD_HARNESS/install.sh --all                  # skip already-installed
+$SDD_HARNESS/install.sh --all --force          # re-sync every project (push updates)
+$SDD_HARNESS/install.sh --all --with-gitnexus  # batch install + GitNexus
 ```
 
 `install.sh` propagates **every** hook in the harness's `hooks/` directory into the project's `.claude/hooks/` (and `chmod +x`'s them), syncs `docs/` into `.claude/docs/`, and generates a project stack summary. The harness is the source of truth — which hooks actually fire is governed by the project's `.claude/settings.json` wiring, not by which files are present. Re-run `update.sh` to re-sync after the harness changes.
@@ -405,7 +405,7 @@ Run through this on a fresh machine:
 | `proof-sdk` | `ls ~/.claude/tools/proof-sdk/node_modules` | auto-installed on first spec phase run (requires Node.js) | automatic via skill |
 | `uv` | `which uv` | Linux/macOS/WSL2: `curl -LsSf https://astral.sh/uv/install.sh \| sh`; Windows: see Step 5 | nothing extra |
 | `opf` | `which opf` | `uv tool install --python 3.13 git+https://github.com/openai/privacy-filter.git` | wire pre-commit hook |
-| harness | `ls ~/.claude/sdd-harness/install.sh` | clone/copy harness | `install.sh /path/to/project` |
+| harness | `ls $SDD_HARNESS/install.sh` | clone/copy harness | `install.sh /path/to/project` |
 | caveman hooks | `ls ~/.claude/hooks/caveman-activate.js` | auto-installed from `hooks/global/` by `install.sh` (defaults to lite) | automatic via `install.sh` |
 | lean-ctx | `which lean-ctx` | auto-wired into `~/.claude/settings.json` by `install.sh` if CLI detected | install CLI first, then run `install.sh` |
 
@@ -418,7 +418,7 @@ Run through this on a fresh machine:
 | `rtk: command not found` in hook | RTK not installed or not in PATH | `brew install rtk` |
 | Workshop tab shows "not installed" | `raindrop` CLI missing | `curl -fsSL https://raindrop.sh/install \| bash` |
 | No traces appearing in Workshop | `RAINDROP_LOCAL_DEBUGGER` not in env | Run `source ~/.bashrc`; or re-run `raindrop-setup.sh` |
-| `raindrop-ai` import error at agent startup | SDK not installed in venv | `bash ~/.claude/sdd-harness/scripts/raindrop-setup.sh` |
+| `raindrop-ai` import error at agent startup | SDK not installed in venv | `bash $SDD_HARNESS/scripts/raindrop-setup.sh` |
 | Permission dialog on every Bash call | Stale legacy hook from a prior token-compression tool still present in `~/.claude/settings.json` | Remove the old hook entry and run `rtk init -g` to install the current `rtk hook claude` entry |
 | Hook not firing at all | `rtk init -g` not run | Run `rtk init -g --auto-patch` |
 | GitNexus context missing in Claude | MCP not in `settings.json` or repo not indexed | Run `/kiro:gitnexus-setup` |
@@ -429,7 +429,7 @@ Run through this on a fresh machine:
 | **Windows:** hooks fail with `bash: /bin/bash: No such file` | Claude Code running on native Windows; hook paths are Linux-style | Use WSL2 so Claude Code runs in Linux, or change hook commands from `/bin/bash` to the Git Bash path (`C:/Program Files/Git/bin/bash.exe`) |
 | **Windows:** `uv` not found after install | PowerShell PATH not reloaded | Restart terminal or run `. $env:USERPROFILE\.cargo\env` (or reopen shell) |
 | **Windows:** `install.sh` fails | Script requires bash | Run from Git Bash or WSL2, not PowerShell or CMD |
-| `Settings file failed to parse: .claude/settings.json — Invalid or malformed JSON` (permission rules and hooks silently inactive) | Comments or notes after the closing brace — JSON allows neither. Installs before 2026-08-12 copied a template that carried a `//` block | `python3 ~/.claude/sdd-harness/scripts/setup/repair-settings-json.py /path/to/project` moves the block to `.claude/settings.notes.md`; `update.sh` now does this automatically. Keep all notes in `settings.notes.md` |
-| `headroom` proxy exits with `FastAPI required` or `h2 package not installed` | Missing `uvicorn` or `httpx[http2]` in headroom's uv env | Re-run `install.sh` (patched) or manually: `uv tool install headroom-ai --python 3.12 --with-requirements ~/.claude/sdd-harness/scripts/setup/headroom-extras.txt` |
+| `Settings file failed to parse: .claude/settings.json — Invalid or malformed JSON` (permission rules and hooks silently inactive) | Comments or notes after the closing brace — JSON allows neither. Installs before 2026-08-12 copied a template that carried a `//` block | `python3 $SDD_HARNESS/scripts/setup/repair-settings-json.py /path/to/project` moves the block to `.claude/settings.notes.md`; `update.sh` now does this automatically. Keep all notes in `settings.notes.md` |
+| `headroom` proxy exits with `FastAPI required` or `h2 package not installed` | Missing `uvicorn` or `httpx[http2]` in headroom's uv env | Re-run `install.sh` (patched) or manually: `uv tool install headroom-ai --python 3.12 --with-requirements $SDD_HARNESS/scripts/setup/headroom-extras.txt` |
 
 _Last synced: 2026-08-12_

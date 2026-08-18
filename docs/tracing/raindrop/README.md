@@ -1,7 +1,7 @@
 # Raindrop Workshop
 
 > Reference doc for the Raindrop Workshop AI-agent tracing integration.
-> Source of truth: `~/.claude/sdd-harness/docs/raindrop/README.md`
+> Source of truth: `$SDD_HARNESS/docs/raindrop/README.md`
 
 Raindrop Workshop is a local AI-agent debugger that captures every LLM call, tool invocation, and latency trace from your agents and displays them in a browser UI at `localhost:5899`. The harness auto-instruments all registered repos and exposes Workshop as a dedicated tab in the harness dashboard.
 
@@ -43,7 +43,7 @@ raindrop --version
 
 ## Using the Workshop tab
 
-1. Open the harness dashboard (`python3 ~/.claude/sdd-harness/scripts/utils/dashboard.py`)
+1. Open the harness dashboard (`python3 $SDD_HARNESS/scripts/utils/dashboard.py`)
 2. Click **Workshop** in the sidebar
 3. Select a repo from the repo selector
 4. Click **Start raindrop workshop** to launch `raindrop workshop` on port 5899
@@ -139,7 +139,7 @@ Run the skill:
 Or manually:
 
 1. Add `"raindrop-ai"` to `pyproject.toml` dependencies or `requirements.txt`
-2. Run `bash ~/.claude/sdd-harness/scripts/raindrop-setup.sh` to install into the venv
+2. Run `bash $SDD_HARNESS/scripts/raindrop-setup.sh` to install into the venv
 3. Inject the try/except import block at the top of the agent entry file
 4. Wrap the outermost agent call with `begin()` / `finish()` / `flush()`
 5. Use `event="your-repo-name"` so the dashboard can filter per repo
@@ -151,7 +151,7 @@ Or manually:
 | Symptom | Cause | Fix |
 |---|---|---|
 | Workshop tab shows "not installed" | `raindrop` CLI not in PATH | `curl -fsSL https://raindrop.sh/install \| bash` |
-| Workshop tab shows "not instrumented" | `raindrop-ai` not in pyproject/requirements | `bash ~/.claude/sdd-harness/scripts/raindrop-setup.sh` |
+| Workshop tab shows "not instrumented" | `raindrop-ai` not in pyproject/requirements | `bash $SDD_HARNESS/scripts/raindrop-setup.sh` |
 | Traces not appearing | `RAINDROP_LOCAL_DEBUGGER` not set in process env | Restart shell (`.bashrc` was updated by setup); or re-run `raindrop-setup.sh` |
 | Traces appear under wrong repo | `event=` label mismatch | Verify the `event=` value matches the repo name in the dashboard |
 | Eval loop fails immediately | Workshop not running | Click "Start raindrop workshop" in the dashboard first |

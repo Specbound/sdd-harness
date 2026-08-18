@@ -34,7 +34,7 @@ with the URL can post to that channel.
 ### 1. Create the credentials file
 
 ```bash
-cp ~/.claude/sdd-harness/templates/.env.channels.template ~/.env.channels
+cp $SDD_HARNESS/templates/.env.channels.template ~/.env.channels
 chmod 600 ~/.env.channels
 # edit ~/.env.channels and paste in the webhook URLs you want
 ```

@@ -61,7 +61,7 @@ For **qualitative checks**: write explicit pass/fail criteria. "Looks good" is n
 
 ### Phase 4: Draft the Skill
 
-Generate `~/.claude/sdd-harness/skills/<domain>-verify/SKILL.md` using this template:
+Generate `$SDD_HARNESS/skills/<domain>-verify/SKILL.md` using this template:
 
 ```markdown
 ---
@@ -113,9 +113,9 @@ Run the standard quality checks:
 - Every step uses a real Claude Code tool or Bash command
 - Pass criteria are explicit
 
-Write to `~/.claude/sdd-harness/skills/<domain>-verify/SKILL.md`, then sync:
+Write to `$SDD_HARNESS/skills/<domain>-verify/SKILL.md`, then sync:
 ```bash
-cp -r ~/.claude/sdd-harness/skills/<domain>-verify ~/.claude/skills/
+cp -r $SDD_HARNESS/skills/<domain>-verify ~/.claude/skills/
 ```
 
 ### Phase 6: Wire as a Trigger

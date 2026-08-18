@@ -30,7 +30,7 @@ Framing note: per the taxonomy in *Self-Improvements in Modern Agentic Systems* 
 
 1. Read `docs/skill-curation-report.md` from the sdd-harness repo
 2. Run `git log -1 --format="%cr (%cd)" --date=short -- docs/skill-curation-report.md` to check freshness
-3. If the report is older than 14 days, warn: the local skill-curator runner may not have run — check orchestrator logs at `~/.claude/sdd-harness/logs/orchestrator.log`
+3. If the report is older than 14 days, warn: the local skill-curator runner may not have run — check orchestrator logs at `$SDD_HARNESS/logs/orchestrator.log`
 
 ### Phase 2: Description Budget Audit
 

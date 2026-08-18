@@ -1,10 +1,12 @@
 #!/bin/bash
 # ──────────────────────────────────────────────────────────
+# $SDD_HARNESS is set automatically by install.sh — no manual setup needed.
+#
 # Update all registered projects:
-#   ~/.claude/sdd-harness/update.sh 
+#   $SDD_HARNESS/update.sh
 #
 # Update a single project:
-#   ~/.claude/sdd-harness/update.sh /path/to/project
+#   $SDD_HARNESS/update.sh /path/to/project
 # ──────────────────────────────────────────────────────────
 # Syncs harness files to all registered projects (or just one).
 set -e
@@ -183,6 +185,19 @@ fi
 # --- Persist harness root so stop-hook.sh can locate it at runtime ---
 # stop-hook.sh reads this file instead of having the path baked in via sed substitution.
 echo "$HARNESS_DIR" > "$HOME/.sdd-harness-root"
+
+# --- Export SDD_HARNESS to shell rc files so users can run scripts from anywhere ---
+export SDD_HARNESS="$HARNESS_DIR"
+for rc in "$HOME/.zshrc" "$HOME/.bashrc"; do
+  if [ -f "$rc" ]; then
+    if grep -qF 'SDD_HARNESS=' "$rc"; then
+      sed -i.bak "s|export SDD_HARNESS=.*|export SDD_HARNESS=\"$HARNESS_DIR\"|" "$rc" && rm -f "$rc.bak"
+    else
+      printf '\n# SDD Harness — set by update.sh; re-run if you move the repo\nexport SDD_HARNESS="%s"\n' "$HARNESS_DIR" >> "$rc"
+    fi
+    echo "  SDD_HARNESS set in $rc  ($HARNESS_DIR)"
+  fi
+done
 
 # --- Sync harness's own .claude/ runtime from canonical sources ---
 # hooks/claude/, scripts/, commands/kiro/, agents/, kiro/, docs/, rules/ are the

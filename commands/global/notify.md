@@ -23,7 +23,7 @@ Send `$ARGUMENTS` as a notification to the channels configured in `~/.env.channe
 
 1. Resolve the notify script. Prefer the repo-local copy, fall back to the harness source:
    - `.claude/scripts/integrations/channels/notify.py` (inside a harness-installed repo)
-   - `~/.claude/sdd-harness/scripts/integrations/channels/notify.py` (harness source)
+   - `$SDD_HARNESS/scripts/integrations/channels/notify.py` (harness source)
 
 2. Run it, passing the arguments through verbatim:
    ```bash

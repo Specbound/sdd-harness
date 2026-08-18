@@ -1,6 +1,6 @@
 #!/bin/bash
 # Global daily maintenance orchestrator.
-# Reads ~/.claude/sdd-harness/projects.txt and dispatches each repo's
+# Reads $SDD_HARNESS/projects.txt and dispatches each repo's
 # .claude/scripts/orchestration/daily-runner.sh. Per-repo failures are isolated and logged;
 # the loop never aborts midway.
 #

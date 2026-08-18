@@ -60,7 +60,7 @@ Use soft gates when the action is sometimes legitimate. Use hard blocks only for
 
 ## Harness Hook Conventions
 
-- Hook source files live in `~/.claude/sdd-harness/hooks/` and get installed to `<project>/.claude/hooks/`
+- Hook source files live in `$SDD_HARNESS/hooks/` and get installed to `<project>/.claude/hooks/`
 - Parse tool input from stdin: `EVENT=$(cat)` then extract `tool_input` fields with python3
 - Use `set -euo pipefail` at the top
 - Register in `<project>/.claude/settings.json` under the appropriate event + matcher
