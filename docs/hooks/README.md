@@ -51,7 +51,7 @@ Hook output is injected into Claude's context as system messages — Claude read
 
 1. **Harness update check** — compares the harness repo’s latest commit timestamp to `.claude/.last-harness-check`. Prints a `Run: update.sh` nudge if the harness has changes since last install.
 2. **Memory health** — counts entries in `observations.md`. If >50, suggests `/kiro:housekeeping` to prune before the file bloats.
-3. **Session signal detection** — runs `scripts/session/detect_reexplanation.py` on the session transcript in two passes (Haiku-based LLM). Drain pass: phrases like "I already told you", "you’re doing it again" → appends a `[memory-gap]` observation. Charge pass: unambiguous approval like "that’s perfect", "great work" → appends a `[session-charge]` observation. Both are written at most once per calendar day.
+3. **Session signal detection** — runs `scripts/session/detect_reexplanation.py` on the session transcript in two passes (Haiku-based LLM). Drain pass: phrases like "I already told you", "you’re doing it again" → appends a `[memory-gap]` observation. Charge pass: unambiguous approval like "that’s perfect", "great work" → appends a `[session-charge]` observation. Both are written at most once per calendar day. The detector classifies through `claude --print` (the user's subscription), not the `anthropic` SDK, so it runs on `python3` and stdlib — the hook no longer routes it through `.venv-tools`. Because that is a nested headless session which fires this same `Stop` hook when it ends, the whole check is skipped when `SDD_HEADLESS=1` (set by the detector itself and by `scripts/routines/*-runner.sh`); that guard is what prevents recursion, and it also keeps routine sessions — which have no user in them to re-explain anything — out of the measurement. Failures are **not** swallowed: the detector emits a `[detector-down]` observation and exits 4, and the run is passed `--record-metric` so the drain count (including a measured zero) lands in `.claude/memory/metrics.jsonl`. The once-per-day idempotency guard matches either a `[memory-gap]` or a `[detector-down]` line for today, so a failed detector is not retried all day.
 4. **Agent failure pattern** — scans `trace.log` for 3+ consecutive failures for the same agent type. Surfaces a `/kiro:evolve` nudge to investigate the friction pattern.
 5. **Session depth tracking** — appends an ISO timestamp to `.claude/memory/.session-history`, keeping the last 30 entries. This file is read by the dashboard’s **Context Health** section to show sessions/week, a sessions/day trend chart, and tips for `/compact` and subagent delegation.
 6. **Setup sequence capture** — reads `.claude/memory/.setup-session-buffer.log` (populated during the session by `setup-buffer-hook.sh`). If ≥2 setup commands were accumulated, appends them as a dated `bash` code block under `## <project> — <date>` in `.claude/memory/setup-knowledge.md` (creating the file if needed), then clears the buffer. Threshold of 2 prevents trivial one-off installs from polluting the knowledge file.
@@ -63,7 +63,8 @@ Hook output is injected into Claude's context as system messages — Claude read
 
 **Output / side effect:**
 - Text nudges printed to Claude’s context (harness update, housekeeping)
-- Appends `[memory-gap]` drain entries to `observations.md` (async, non-blocking)
+- Appends `[memory-gap]` drain entries to `observations.md`, or a `[detector-down]` line when the detector could not run (skipped entirely under `SDD_HEADLESS=1`)
+- Appends one `memory-gap` record per day to `.claude/memory/metrics.jsonl` via `scripts/session/record_metric.py` — a measured zero, so the dashboard can tell it apart from "never measured"
 - Appends `[session-charge]` charge entries to `observations.md` (async, non-blocking)
 - Appends ISO timestamp to `.claude/memory/.session-history` (always, at session end)
 - Appends setup command block to `.claude/memory/setup-knowledge.md` and clears buffer (when ≥2 setup commands captured)
@@ -512,6 +513,8 @@ Hook output is injected into Claude's context as system messages — Claude read
 **Why it's needed:** Closes a real gap between what the harness's own docs claimed was automated and what an audit found was actually wired — extracted while auditing `github.com/memcode-ai/memcode` for the same "quality gate on write" pattern.
 
 **Noise control:** Only fires on `.py` files with real `ruff check` findings — silent when clean, silent on non-Python files, silent when `ruff` isn't installed. Never blocks (exits 0 always).
+
+**Repo config:** in the harness repo itself the rules come from `ruff.toml` at the root, which sets `line-length = 100` and — the one rule there that is not style — bans importing `re` or `regex` via `flake8-tidy-imports` `banned-api` (TID251). Added 2026-08-20 after a `(\d+)%` pattern read "24.5%" as 5 and the dashboard displayed 5% for weeks without erroring; every regex under `scripts/` was replaced with an explicit parser the same day. Values a program has to read back get emitted as structured data at the source instead — `scripts/session/record_metric.py` is the reference.
 
 **Output:** `⚠  ruff-quality-gate — <filename>` banner with the raw `ruff check` findings. Silent on no findings.
 

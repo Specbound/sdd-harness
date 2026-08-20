@@ -240,9 +240,10 @@ sdd-harness/
 │   │   ├── tool-failure-review-runner.sh
 │   │   └── security-report-runner.sh
 │   ├── session/                  #   Session signal processing
-│   │   ├── detect_reexplanation.py #   Haiku-based drain/charge classifier
+│   │   ├── detect_reexplanation.py #   Haiku-based drain/charge classifier (via `claude --print`, subscription auth)
+│   │   ├── record_metric.py        #   Writes one measurement per day to .claude/memory/metrics.jsonl
 │   │   ├── micro_reflect.py        #   Extracts durable facts → [auto-learn] in hot-memory.md
-│   │   └── trust_score.py          #   Applies Judge score delta to hot-memory.md
+│   │   └── trust_score.py          #   Applies Judge score delta to hot-memory.md (numbers read from metrics.jsonl)
 │   ├── setup/                    #   One-time project setup helpers
 │   │   ├── generate-project-stack.sh # Auto-detect tech stack
 │   │   ├── check-settings-json.sh    # Strict-JSON validation of settings files and templates
@@ -752,7 +753,7 @@ Fires before any Raindrop Workshop MCP tool call (`mcp__raindrop__` matcher). In
 Runs when a Claude Code session ends. Checks for:
 - Harness updates available (prompts to run `update.sh`)
 - Memory health (warns if observations exceed cap)
-- Re-explanation detection (scans transcript via `scripts/session/detect_reexplanation.py`; appends a `[memory-gap]` observation for drains, `[session-charge]` for approvals; both written at most once per calendar day)
+- Re-explanation detection (scans transcript via `scripts/session/detect_reexplanation.py`; appends a `[memory-gap]` observation for drains, `[session-charge]` for approvals; both written at most once per calendar day). Classification runs through `claude --print` on the user's subscription rather than the `anthropic` SDK, so no API key is involved. The check is skipped when `SDD_HEADLESS=1` — the detector sets it on its own child session, which is what stops this hook from recursing, and routine runners set it so unattended sessions are not measured. A detector that cannot run writes a `[detector-down]` observation and exits 4 instead of reporting zero gaps, and every run records its count (zero included) to `.claude/memory/metrics.jsonl`
 - Agent failure patterns (3+ consecutive failures for the same agent in `trace.log` — suggests running `/kiro:evolve`)
 
 Respects the `SDD_PROFILE` environment variable — skipped entirely when profile is `minimal`.
@@ -908,7 +909,7 @@ Requires at least one project registered in `projects.txt` (added automatically 
 | 6 | 📅 Scheduled Tasks | OS-scheduler health card + per-routine schedule, last run, next expected, artifact diff, overdue alerts. Includes the Daily Security Scan routine (`security-report-runner.sh`) which scans recent git changes for OWASP patterns, secrets, and injection sinks. |
 | 7 | 🧠 Memory Changes | Per-file cards for hot-memory, observations, and meta/patterns with day-over-day diffs ("since yesterday") computed from dated snapshots; full content expanded when a file is unchanged |
 | 8 | 🎯 Skill Changes | Rendered skill-curation-report with audit age; in companion mode, "🔍 Analyze & Propose" / "✅ Apply Approved" buttons run the skill-curator's propose/apply phases in a headless `claude --print` session, backing up `~/.claude/skills/` before any apply |
-| 9 | 📊 Session Quality | Score/keep-rate/memory-gap summary + 30-day chart |
+| 9 | 📊 Session Quality | Avg session score, avg keep-rate and memory-gap totals + recent-score chart, all read from `.claude/memory/metrics.jsonl` (never re-extracted from observation prose). Idle-routine days are recorded but excluded from the score average; an unmeasured memory-gap detector shows `—` rather than `0`, and each gap day expands to the topics that were re-explained. The "AI adoption" card was removed on 2026-08-20 — in a single-developer repo it measured `Co-Authored-By` trailer hygiene, not authorship |
 | 10 | 💰 Model Cost | All-time and 30-day spend; 90-day daily cost bar chart; sessions table with model/tokens/cost; cross-provider "What if?" cost switcher |
 | 11 | 🧵 Context Health | Sessions per day trend + `/compact` recommendations |
 | 12 | 🔧 Maintenance Status | Per-repo orchestrator log tail and last-run status |
