@@ -33,11 +33,10 @@ import html
 import json
 import math
 import os
-import re
 import subprocess
 import sys
 import threading
-from datetime import datetime, timezone, timedelta
+from datetime import date, datetime, timezone, timedelta
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -201,8 +200,19 @@ def _inner(section_html: str) -> str:
         idx = s.rfind('</div>')
         if idx != -1:
             s = s[:idx]
-    s = re.sub(r'^\s*<h2 class="section-title">.*?</h2>\s*', '', s, flags=re.DOTALL)
+    s = _strip_leading_section_title(s)
     return s.strip()
+
+def _strip_leading_section_title(s: str) -> str:
+    """Drop a leading `<h2 class="section-title">…</h2>`, if the string opens with one."""
+    open_tag, close_tag = '<h2 class="section-title">', '</h2>'
+    body = s.lstrip()
+    if not body.startswith(open_tag):
+        return s
+    end = body.find(close_tag, len(open_tag))
+    if end == -1:
+        return s
+    return body[end + len(close_tag):].lstrip()
 
 def _combined_section(title: str, prefix: str, subs: list) -> str:
     """Combine multiple render_* outputs into a single tabbed section.
@@ -233,17 +243,80 @@ def section_desc(text, *, icon="ℹ", color="var(--blue)"):
 
 # ── Minimal Markdown → HTML ────────────────────────────────────────────────────
 
+def _replace_spans(text, opener, closer, render, forbid=None):
+    """Rewrite every `opener…closer` span through `render(inner)`, left to right.
+
+    A span whose body is empty, unterminated, or contains `forbid` is left as
+    literal text and scanning resumes one character past the opener.
+    """
+    out = []
+    i = 0
+    while i < len(text):
+        start = text.find(opener, i)
+        if start == -1:
+            break
+        inner_start = start + len(opener)
+        end = text.find(closer, inner_start)
+        if end == -1:
+            break
+        inner = text[inner_start:end]
+        if not inner or (forbid is not None and forbid in inner):
+            out.append(text[i:start + 1])
+            i = start + 1
+            continue
+        out.append(text[i:start])
+        out.append(render(inner))
+        i = end + len(closer)
+    out.append(text[i:])
+    return "".join(out)
+
+def _render_md_links(text):
+    """Rewrite `[label](url)` into an anchor. Anything malformed stays literal."""
+    out = []
+    i = 0
+    while i < len(text):
+        start = text.find("[", i)
+        if start == -1:
+            break
+        label_end = text.find("]", start + 1)
+        if label_end == -1:
+            break
+        label = text[start + 1:label_end]
+        url_end = text.find(")", label_end + 2)
+        url = text[label_end + 2:url_end] if url_end != -1 else ""
+        if not label or not url or text[label_end + 1:label_end + 2] != "(":
+            out.append(text[i:start + 1])
+            i = start + 1
+            continue
+        out.append(text[i:start])
+        out.append(f'<a href="{url}" style="color:var(--mauve)">{label}</a>')
+        i = url_end + 1
+    out.append(text[i:])
+    return "".join(out)
+
 def inline_md(text):
-    text = re.sub(r'`([^`]+)`',
-        lambda m: (f'<code style="background:var(--surface0);padding:1px 5px;'
-                   f'border-radius:3px;font-family:monospace;font-size:11px">'
-                   f'{h(m.group(1))}</code>'),
-        text)
-    text = re.sub(r'\*\*([^*]+)\*\*', r'<strong style="color:var(--text)">\1</strong>', text)
-    text = re.sub(r'\*([^*]+)\*', r'<em>\1</em>', text)
-    text = re.sub(r'\[([^\]]+)\]\(([^)]+)\)',
-        r'<a href="\2" style="color:var(--mauve)">\1</a>', text)
-    return text
+    text = _replace_spans(
+        text, "`", "`",
+        lambda inner: (f'<code style="background:var(--surface0);padding:1px 5px;'
+                       f'border-radius:3px;font-family:monospace;font-size:11px">'
+                       f'{h(inner)}</code>'),
+        forbid="`",
+    )
+    # Bold before italic: the two-star span has to be consumed first, or the
+    # single-star pass would claim its opening delimiter.
+    text = _replace_spans(text, "**", "**",
+                          lambda inner: f'<strong style="color:var(--text)">{inner}</strong>',
+                          forbid="*")
+    text = _replace_spans(text, "*", "*", lambda inner: f'<em>{inner}</em>', forbid="*")
+    return _render_md_links(text)
+
+def _is_table_rule(line: str) -> bool:
+    """True for a markdown table separator row: `|---|:--:|` — pipes, dashes,
+    colons and spaces only, with at least one character between the outer pipes."""
+    return (len(line) >= 3
+            and line.startswith("|")
+            and line.endswith("|")
+            and set(line) <= set("|-: "))
 
 def mini_md(text):
     lines = text.split("\n")
@@ -285,7 +358,7 @@ def mini_md(text):
             flush_ul(); flush_table()
             out.append(f'<h1 style="color:var(--text);margin:0 0 12px;font-size:18px">'
                        f'{inline_md(stripped[2:])}</h1>')
-        elif re.match(r'^\|[-| :]+\|$', stripped):
+        elif _is_table_rule(stripped):
             # Table separator row — mark header as done
             table_header_done = True
         elif stripped.startswith("|") and stripped.endswith("|"):
@@ -352,18 +425,54 @@ def parse_trust_scores(repo):
     return records[-30:]
 
 def parse_observations(repo):
+    """Split `- YYYY-MM-DD [tag]: text` lines by structure, not by pattern match.
+
+    Prose is parsed only for *display*. Every number the dashboard computes comes
+    from metrics.jsonl instead — see parse_metrics.
+    """
     f = repo / ".claude" / "memory" / "observations.md"
     if not f.exists():
         return {}
-    pattern = re.compile(r'^- (\d{4}-\d{2}-\d{2}) \[([^\]]+)\]: (.+)$')
     result = {}
     for line in f.read_text().splitlines():
-        m = pattern.match(line.strip())
-        if not m:
+        line = line.strip()
+        if not line.startswith("- ") or "[" not in line or "]: " not in line:
             continue
-        date_str, tags_raw, text = m.group(1), m.group(2), m.group(3)
-        for tag in [t.strip() for t in tags_raw.split(",")]:
+        date_str, _, remainder = line[2:].partition(" [")
+        try:
+            date.fromisoformat(date_str)
+        except ValueError:
+            continue
+        tags_raw, _, text = remainder.partition("]: ")
+        if not text:
+            continue
+        for tag in (t.strip() for t in tags_raw.split(",")):
             result.setdefault(tag, []).append((date_str, text))
+    return result
+
+def parse_metrics(repo):
+    """Read .claude/memory/metrics.jsonl — the machine channel for measurements.
+
+    One JSON object per line, written by scripts/session/record_metric.py. A
+    malformed line raises rather than being skipped: a metrics file that is
+    quietly half-read produces a plausible-looking wrong number, which is the
+    exact failure this file exists to prevent.
+    """
+    f = repo / ".claude" / "memory" / "metrics.jsonl"
+    if not f.exists():
+        return {}
+    result = {}
+    for lineno, line in enumerate(f.read_text().splitlines(), 1):
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            rec = json.loads(line)
+        except json.JSONDecodeError as e:
+            raise ValueError(f"{f}:{lineno} is not valid JSON: {e}") from e
+        result.setdefault(rec["metric"], []).append(rec)
+    for records in result.values():
+        records.sort(key=lambda r: r["date"])
     return result
 
 def list_hooks(repo):
@@ -501,34 +610,46 @@ def parse_orchestrator_log():
     if not ORCH_LOG.exists():
         return []
     runs = []
-    main_re = re.compile(r'^(\S+)\s+(.+?)\s+exit=(\d+)\s+duration=(\d+)s\s*$')
-    drift_re = re.compile(r'^(\S+)\s+harness:\s+drift review\s+exit=(\d+)\s*$')
     for line in ORCH_LOG.read_text().splitlines():
-        line = line.strip()
-        m = main_re.match(line)
-        if m:
-            ts, mid, ex, dur = m.groups()
-            parts = mid.split()
-            if len(parts) >= 2:
-                # last token is runner name
-                runner = parts[-1]
-                path   = " ".join(parts[:-1])
-            else:
-                runner = "daily-maintenance"
-                path   = parts[0] if parts else ""
-            runs.append({
-                "ts": ts, "path": path, "runner": runner,
-                "exit": int(ex), "duration": int(dur),
-            })
+        fields = line.split()
+        if len(fields) < 3:
             continue
-        m = drift_re.match(line)
-        if m:
-            ts, ex = m.groups()
+
+        # Trailing shape is always `exit=<N> duration=<N>s`, or `exit=<N>` for drift.
+        duration = _log_int(fields[-1], "duration=", "s")
+        exit_code = _log_int(fields[-2] if duration is not None else fields[-1], "exit=")
+        if exit_code is None:
+            continue
+
+        ts = fields[0]
+        middle = fields[1:-2] if duration is not None else fields[1:-1]
+
+        if middle[:3] == ["harness:", "drift", "review"] and duration is None:
             runs.append({
                 "ts": ts, "path": str(HARNESS_DIR), "runner": "drift-review",
-                "exit": int(ex), "duration": 0,
+                "exit": exit_code, "duration": 0,
             })
+            continue
+
+        if duration is None or not middle:
+            continue
+        if len(middle) >= 2:
+            runner, path = middle[-1], " ".join(middle[:-1])
+        else:
+            runner, path = "daily-maintenance", middle[0]
+        runs.append({
+            "ts": ts, "path": path, "runner": runner,
+            "exit": exit_code, "duration": duration,
+        })
     return runs
+
+
+def _log_int(field: str, prefix: str, suffix: str = "") -> int | None:
+    """Read `<prefix><digits><suffix>` from one whitespace-delimited log field."""
+    if not field.startswith(prefix) or not field.endswith(suffix):
+        return None
+    digits = field[len(prefix):len(field) - len(suffix) if suffix else None]
+    return int(digits) if digits.isdigit() else None
 
 
 # ── Scheduled Tasks ───────────────────────────────────────────────────────────
@@ -665,11 +786,11 @@ def _read_state_ts(path):
     if not raw:
         return None
     # Drift state uses ISO week '2026-W22' — convert to that week's Wednesday
-    m = re.match(r'^(\d{4})-W(\d{2})$', raw)
-    if m:
-        yr, wk = int(m.group(1)), int(m.group(2))
+    year_part, sep, week_part = raw.partition("-W")
+    if sep and len(year_part) == 4 and len(week_part) == 2 \
+            and year_part.isdigit() and week_part.isdigit():
         try:
-            dt = datetime.fromisocalendar(yr, wk, 3)  # 3 = Wednesday
+            dt = datetime.fromisocalendar(int(year_part), int(week_part), 3)  # 3 = Wednesday
             return dt.replace(tzinfo=timezone.utc)
         except Exception:
             return None
@@ -695,6 +816,67 @@ def _newest_artifact(glob_pattern):
         return None
 
 
+_SUMMARY_HEADINGS = ("summary", "tldr", "tl;dr", "overview", "findings")
+
+def _is_summary_heading(line: str) -> bool:
+    """True for `## Summary`, `### TL;DR`, `## Findings` and friends (any depth ≥ 2)."""
+    stripped = line.lstrip()
+    depth = len(stripped) - len(stripped.lstrip("#"))
+    if depth < 2:
+        return False
+    rest = stripped[depth:]
+    if rest[:1] not in (" ", "\t"):
+        return False
+    first_word = rest.split(maxsplit=1)[0].lower() if rest.split() else ""
+    return first_word.rstrip(":") in _SUMMARY_HEADINGS
+
+def _escape_script_close(payload: str) -> str:
+    """Neutralise `</script>` in any casing so embedded JSON cannot close the tag.
+
+    Security-relevant: a repo name or observation containing `</script>` would
+    otherwise break out of the surrounding <script> block.
+    """
+    needle = "</script>"
+    haystack = payload.lower()
+    out = []
+    i = 0
+    while True:
+        found = haystack.find(needle, i)
+        if found == -1:
+            break
+        out.append(payload[i:found])
+        out.append("<\\/" + payload[found + 2:found + len(needle)])
+        i = found + len(needle)
+    out.append(payload[i:])
+    return "".join(out)
+
+def _split_sweep_sections(text):
+    """Yield (date, body) for each `## Sweep — YYYY-MM-DD` block of a learning report.
+
+    Any `## Sweep — ` line ends the previous body; only one carrying a valid date
+    opens a new section.
+    """
+    marker = "## Sweep — "
+    lines = text.splitlines(keepends=True)
+    starts = [i for i, ln in enumerate(lines) if ln.startswith(marker)]
+    for n, i in enumerate(starts):
+        day = lines[i][len(marker):].strip()
+        try:
+            date.fromisoformat(day)
+        except ValueError:
+            continue
+        end = starts[n + 1] if n + 1 < len(starts) else len(lines)
+        yield day, "".join(lines[i + 1:end])
+
+def _is_numbered_bullet(line: str) -> bool:
+    """`- #12` or `- 7` — a bullet naming a numbered item."""
+    if not line.startswith("-"):
+        return False
+    rest = line[1:].lstrip()
+    if rest.startswith("#"):
+        rest = rest[1:]
+    return rest[:1].isdigit()
+
 def _extract_headline(md_text, max_chars=600):
     """Pull a human-readable summary out of a routine's report markdown.
 
@@ -717,9 +899,8 @@ def _extract_headline(md_text, max_chars=600):
                 block.append(s)
         return " ".join(block).strip()
 
-    summary_re = re.compile(r'^\s*##+\s+(summary|tl;?dr|overview|findings)\b', re.IGNORECASE)
     for i, line in enumerate(lines):
-        if summary_re.match(line):
+        if _is_summary_heading(line):
             text = collect_block(i + 1)
             if text:
                 return text[:max_chars] + ("…" if len(text) > max_chars else "")
@@ -805,9 +986,12 @@ def _detect_os_scheduler():
         if out:
             result["installed"] = True
             for line in out.splitlines():
-                m = re.search(r'"LastExitStatus"\s*=\s*(\d+)', line)
-                if m:
-                    result["last_exit"] = int(m.group(1))
+                # launchctl prints `"LastExitStatus" = 0;`
+                key, sep, value = line.partition("=")
+                if sep and key.strip() == '"LastExitStatus"':
+                    digits = value.strip().rstrip(";").strip()
+                    if digits.isdigit():
+                        result["last_exit"] = int(digits)
     elif plat.startswith("linux"):
         # WSL has schtasks.exe; pure Linux uses cron
         out = run_cmd(["which", "schtasks.exe"])
@@ -2647,120 +2831,129 @@ def render_skill_changes(hd, companion=False):
   <div id="sc-panel">{action_html}</div>
 </div>"""
 
+def _render_gap_details(gap_records, gap_observations):
+    """Collapsible list of what was actually re-explained, newest day first.
+
+    A count on its own is not actionable — the point of the tile is to name the
+    topic so it can be written into memory. Topics come from the detector's own
+    structured output; the prose observation is shown underneath for context.
+    """
+    days = [r for r in gap_records if r.get("value")]
+    if not days:
+        return ""
+
+    prose_by_date = dict(gap_observations)
+    blocks = ""
+    for r in reversed(days[-10:]):
+        topics = r.get("meta", {}).get("topics") or []
+        items = "".join(
+            f'<li style="margin:4px 0">{h(str(t))}</li>' for t in topics
+        ) or '<li style="margin:4px 0;opacity:0.6">no topic recorded</li>'
+        prose = prose_by_date.get(r["date"], "")
+        note = (f'<div style="margin-top:6px;padding-top:6px;border-top:1px solid var(--surface1);'
+                f'opacity:0.75">{h(prose)}</div>' if prose else "")
+        blocks += (
+            f'<details style="background:var(--surface0);border-radius:6px;'
+            f'padding:8px 12px;margin-bottom:6px">'
+            f'<summary style="cursor:pointer;color:var(--subtext1);font-size:12px">'
+            f'{h(r["date"])} — {r["value"]:.0f} re-explanation'
+            f'{"" if r["value"] == 1 else "s"}</summary>'
+            f'<ul style="padding-left:18px;margin:8px 0 0;color:var(--subtext0);'
+            f'font-size:12px;line-height:1.5">{items}</ul>{note}</details>'
+        )
+
+    total = sum(r["value"] for r in days)
+    return (
+        f'<div class="label" style="margin-bottom:6px">What you had to re-explain '
+        f'({total:.0f} across {len(days)} day{"" if len(days) == 1 else "s"})</div>'
+        f'<div style="margin-bottom:16px">{blocks}</div>'
+    )
+
 def render_session_quality(rd):
-    obs = rd["observations"]
-    sq  = obs.get("session-quality", [])
-    kr  = obs.get("keep-rate", [])
-    mg  = obs.get("memory-gap", [])
-    aa  = obs.get("ai-adoption", [])
+    # Every number here comes from metrics.jsonl. Nothing is extracted from the
+    # prose in observations.md — that is what produced a 5% AI-adoption reading
+    # from a 24.5% measurement. Prose below is quoted for context only.
+    metrics = rd.get("metrics", {})
+    scores  = metrics.get("session-quality", [])
+    keeps   = metrics.get("keep-rate", [])
+    gaps    = metrics.get("memory-gap", [])
+    mg      = rd["observations"].get("memory-gap", [])
 
-    if not sq and not kr:
-        return empty_state("No session quality data yet. Run daily-maintenance to start tracking.")
+    if not scores and not keeps:
+        return empty_state(
+            "No session quality data yet. Run daily-maintenance to start tracking "
+            "(measurements land in .claude/memory/metrics.jsonl)."
+        )
 
-    score_re = re.compile(r'Score=(\d+)/5')
-    keep_re  = re.compile(r'(\d+)%')
-    gap_re   = re.compile(r'(\d+)\s+re-explanation')
-    adopt_re = re.compile(r'(\d+)%')
+    # Idle-routine windows have no user session to judge. The routine still writes
+    # a neutral 3/5 placeholder so the day is accounted for, but averaging those in
+    # drags the number toward mediocre by construction — so they are excluded.
+    live_scores = [r for r in scores if not r.get("idle")]
+    idle_count  = len(scores) - len(live_scores)
 
-    scores, keeps, gaps, adopts = [], [], [], []
-    for d, t in sq:
-        m = score_re.search(t)
-        if m:
-            scores.append((d, int(m.group(1))))
-    for d, t in kr:
-        m = keep_re.search(t)
-        if m:
-            keeps.append((d, int(m.group(1))))
-    for d, t in mg:
-        m = gap_re.search(t)
-        if m:
-            gaps.append((d, int(m.group(1))))
-    for d, t in aa:
-        m = adopt_re.search(t)
-        if m:
-            adopts.append((d, int(m.group(1))))
-
-    avg_score  = sum(s for _, s in scores) / len(scores) if scores else None
-    avg_keep   = sum(k for _, k in keeps)  / len(keeps)  if keeps  else None
-    total_gaps = sum(g for _, g in gaps)
-    # Adoption is a volume metric (most recent reading, not averaged) — distinct
-    # from Keep Rate's durability signal. Averaging would smear a genuine trend.
-    latest_adopt = adopts[-1][1] if adopts else None
+    avg_score  = sum(r["value"] for r in live_scores) / len(live_scores) if live_scores else None
+    avg_keep   = sum(r["value"] for r in keeps) / len(keeps) if keeps else None
+    total_gaps = sum(r["value"] for r in gaps)
+    gaps_measured = bool(gaps)
 
     sc  = ("#a6e3a1" if (avg_score or 0) >= 4 else
            "#f9e2af" if (avg_score or 0) >= 2.5 else "#f38ba8")
     kc  = ("#a6e3a1" if (avg_keep or 0) >= 70 else
            "#f9e2af" if (avg_keep or 0) >= 40  else "#f38ba8")
+    # No measurement is not the same as zero gaps. An unmeasured detector shows "—".
     gc  = ("var(--red)"    if total_gaps > 5 else
            "var(--yellow)" if total_gaps > 0  else "var(--green)")
-    ac  = "var(--mauve)"
 
-    adopt_card = f"""
-    <div class="stat-card">
-      <div class="stat-val" style="color:{ac}">
-        {f"{latest_adopt}%" if latest_adopt is not None else "—"}</div>
-      <div class="stat-lbl">AI adoption (volume)</div></div>""" if adopts else ""
+    score_note = (f'<div class="stat-lbl" style="font-size:9px;opacity:0.7">'
+                  f'{idle_count} idle day{"s" if idle_count != 1 else ""} excluded</div>'
+                  if idle_count else "")
 
-    summary = f"""<div style="display:grid;grid-template-columns:repeat({4 if adopts else 3},1fr);
+    summary = f"""<div style="display:grid;grid-template-columns:repeat(3,1fr);
                        gap:12px;margin-bottom:20px">
     <div class="stat-card">
       <div class="stat-val" style="color:{sc}">
         {f"{avg_score:.1f}/5" if avg_score is not None else "—"}</div>
-      <div class="stat-lbl">avg session score</div></div>
+      <div class="stat-lbl">avg session score</div>{score_note}</div>
     <div class="stat-card">
       <div class="stat-val" style="color:{kc}">
         {f"{avg_keep:.0f}%" if avg_keep is not None else "—"}</div>
       <div class="stat-lbl">avg keep-rate</div></div>
     <div class="stat-card">
-      <div class="stat-val" style="color:{gc}">{total_gaps}</div>
-      <div class="stat-lbl">memory gaps (total)</div></div>{adopt_card}
+      <div class="stat-val" style="color:{gc if gaps_measured else 'var(--overlay0)'}">
+        {f"{total_gaps:.0f}" if gaps_measured else "—"}</div>
+      <div class="stat-lbl">memory gaps{"" if gaps_measured else " (not measured)"}</div></div>
   </div>"""
 
     timeline = ""
-    if scores:
+    if live_scores:
         bars = ""
-        for d, s in scores[-20:]:
+        for r in live_scores[-20:]:
+            d, s = r["date"], r["value"]
             bh = int(s / 5 * 44)
             bc = ("#a6e3a1" if s >= 4 else "#f9e2af" if s >= 2.5 else "#f38ba8")
             bars += (
-                f'<div title="{h(d)}: {s}/5" style="flex:1;display:flex;flex-direction:column;'
+                f'<div title="{h(d)}: {s:.0f}/5" style="flex:1;display:flex;flex-direction:column;'
                 f'align-items:center;justify-content:flex-end;gap:2px;min-width:14px">'
-                f'<div style="font-size:8px;color:{bc};font-weight:600">{s}</div>'
+                f'<div style="font-size:8px;color:{bc};font-weight:600">{s:.0f}</div>'
                 f'<div style="background:{bc};height:{bh}px;width:100%;border-radius:2px 2px 0 0;'
                 f'opacity:0.85"></div></div>'
             )
         timeline = (
-            f'<div class="label" style="margin-bottom:6px">Session scores (recent, 0–5)</div>'
+            f'<div class="label" style="margin-bottom:6px">Session scores '
+            f'(recent, 0–5, idle days excluded)</div>'
             f'<div style="display:flex;align-items:flex-end;gap:3px;height:64px;'
             f'margin-bottom:16px">{bars}</div>'
         )
 
-    recent = ""
-    if mg:
-        items = "".join(
-            f'<li style="margin:3px 0">{h(d)}: {h(t[:120])}</li>'
-            for d, t in mg[-5:]
-        )
-        recent = (f'<div class="label" style="margin-bottom:6px">Recent memory gaps</div>'
-                  f'<ul style="padding-left:16px;margin:0;color:var(--subtext0);'
-                  f'font-size:12px">{items}</ul>')
+    recent = _render_gap_details(gaps, mg)
 
-    adopt_glossary = """
-    <div style="background:var(--surface0);border-radius:6px;padding:10px 12px;font-size:11px">
-      <div style="color:var(--mauve);font-weight:600;margin-bottom:4px">🌊 AI Adoption %</div>
-      <div style="color:var(--subtext0);line-height:1.55">
-        What fraction of recent commits were Claude-co-authored at all — a volume
-        signal, not durability. <strong style="color:var(--subtext1)">Different from Keep-Rate</strong> —
-        high adoption + low keep-rate means Claude is doing a lot of work that isn't sticking.
-      </div>
-    </div>""" if adopts else ""
-
-    glossary = f"""<div style="display:grid;grid-template-columns:repeat({4 if adopts else 3},1fr);gap:10px;margin-top:20px">
+    glossary = """<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:20px">
     <div style="background:var(--surface0);border-radius:6px;padding:10px 12px;font-size:11px">
       <div style="color:var(--blue);font-weight:600;margin-bottom:4px">📊 Session Score (0–5)</div>
       <div style="color:var(--subtext0);line-height:1.55">
-        Rated by <code style="font-size:10px">impeccable-detect-hook</code> after each session.
-        Measures tool discipline, instruction adherence, revert rate.
+        Judged by the <code style="font-size:10px">session-quality</code> skill during
+        daily-maintenance, from the day's git activity: reverts, files reworked, forward commits.
+        Days with no user session are recorded but excluded from the average.
         <strong style="color:var(--subtext1)">Different from trust battery</strong> —
         trust is cumulative long-term; session score is per-session behavior.
       </div>
@@ -2768,19 +2961,20 @@ def render_session_quality(rd):
     <div style="background:var(--surface0);border-radius:6px;padding:10px 12px;font-size:11px">
       <div style="color:var(--teal);font-weight:600;margin-bottom:4px">📌 Keep-Rate %</div>
       <div style="color:var(--subtext0);line-height:1.55">
-        Of all changes Claude made in a session, what % was actually kept.
-        100% = all work accepted. 50% = half was reverted.
-        Low keep-rate often means unclear instructions or scope creep.
+        Of the lines Claude committed in the last 30 days, what % is still in HEAD
+        (<code style="font-size:10px">git blame</code> against the commits that carry the
+        Co-Authored-By trailer). 100% = nothing rewritten. Doc-sync churn and Claude
+        rewriting its own earlier lines both count as loss.
       </div>
     </div>
     <div style="background:var(--surface0);border-radius:6px;padding:10px 12px;font-size:11px">
       <div style="color:var(--yellow);font-weight:600;margin-bottom:4px">🧠 Memory Gaps</div>
       <div style="color:var(--subtext0);line-height:1.55">
-        Times Claude re-explained something it should have remembered from memory.
-        Detected by <code style="font-size:10px">memory-discipline-hook</code> at compaction.
-        High gaps → add a memory entry for the repeated topic.
+        Times you had to re-explain something Claude should have remembered.
+        Detected at session end by <code style="font-size:10px">detect_reexplanation.py</code>.
+        A dash means the detector never ran — that is not the same as zero.
       </div>
-    </div>{adopt_glossary}
+    </div>
   </div>"""
     return f"""<div class="section-inner">
   <h2 class="section-title">Session Quality</h2>
@@ -3468,17 +3662,13 @@ def render_automation_audit(rd, hd):
             text = learning_report.read_text(encoding="utf-8", errors="replace")
         except Exception:
             text = ""
-        for m in re.finditer(
-            r"^## Sweep — (\d{4}-\d{2}-\d{2})\n(.*?)(?=^## Sweep — |\Z)",
-            text, re.M | re.S,
-        ):
-            date_str, body = m.group(1), m.group(2)
+        for date_str, body in _split_sweep_sections(text):
             pending_section = (
                 body.split("## Pending Approval", 1)[-1]
                 if "## Pending Approval" in body else ""
             )
-            pending_count = 0 if "None this sweep" in pending_section else len(
-                re.findall(r"^-\s*#?\d+", pending_section, re.M)
+            pending_count = 0 if "None this sweep" in pending_section else sum(
+                1 for ln in pending_section.splitlines() if _is_numbered_bullet(ln)
             )
             events.append({
                 "ts":      date_str + "T12:00:00+00:00",
@@ -4345,8 +4535,7 @@ def build_html(repos_data, harness_data, usage_sessions, pricing_snapshots, init
 
     sj  = json.dumps(sections_map, ensure_ascii=False)
     # Escape any </script> or </Script> etc. that would break the enclosing script tag
-    import re as _re
-    sj  = _re.sub(r'(?i)</script>', r'<\/script>', sj)
+    sj  = _escape_script_close(sj)
     ir  = json.dumps(repos[initial_idx] if repos else "")
 
     gn_funs = """
@@ -4740,13 +4929,16 @@ function mcWhatIf(modelKey) {{
 
 def _wsl_to_windows(path: str) -> str | None:
     """Convert /mnt/c/foo → C:\\foo. Returns None if not a /mnt/<drive>/ path."""
-    import re as _re
-    m = _re.match(r'^/mnt/([a-zA-Z])(/.*)?$', path)
-    if not m:
+    prefix = "/mnt/"
+    if not path.startswith(prefix) or len(path) < len(prefix) + 1:
         return None
-    drive   = m.group(1).upper()
-    rest    = (m.group(2) or "").replace("/", "\\")
-    return f"{drive}:{rest}"
+    drive = path[len(prefix)]
+    rest  = path[len(prefix) + 1:]
+    if not drive.isascii() or not drive.isalpha():
+        return None
+    if rest and not rest.startswith("/"):
+        return None
+    return f"{drive.upper()}:{rest.replace('/', chr(92))}"
 
 
 def _start_gitnexus_serve(repo_path: str) -> None:
@@ -5119,6 +5311,7 @@ def main():
             "path":             str(repo),
             "trust_scores":     parse_trust_scores(repo),
             "observations":     parse_observations(repo),
+            "metrics":          parse_metrics(repo),
             "hooks":            list_hooks(repo),
             "last_routine_run": read_last_routine_run(repo),
             "gitnexus":         gitnexus_stats(repo),

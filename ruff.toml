@@ -1,0 +1,24 @@
+# Ruff config for the sdd-harness source tree.
+#
+# The one rule here that is not style: `re` is banned. On 2026-08-20 the dashboard
+# read the AI-adoption metric out of prose with `(\d+)%`, which cannot cross a
+# decimal point — it captured 5 from "24.5%" and displayed 5% for weeks with no
+# error and no warning. Regex fails by producing a plausible wrong answer instead
+# of raising, and no amount of care at the call site changes that.
+#
+# Every regex in scripts/ was replaced with an explicit parser on the same day
+# (231k differential checks confirmed the rewrites agree with what they replaced).
+# The ban keeps them from coming back.
+#
+# If data needs to be read by a program, emit it as structured data at the source
+# — JSONL, a JSON field, a delimited record — and parse it with a real parser.
+# See scripts/session/record_metric.py for the pattern.
+
+line-length = 100
+
+[lint]
+extend-select = ["TID"]
+
+[lint.flake8-tidy-imports.banned-api]
+"re" = { msg = "regex is banned in this repo — write an explicit parser, or emit structured data at the source. See the note at the top of ruff.toml." }
+"regex" = { msg = "regex is banned in this repo — write an explicit parser, or emit structured data at the source. See the note at the top of ruff.toml." }

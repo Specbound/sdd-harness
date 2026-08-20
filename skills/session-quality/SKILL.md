@@ -52,11 +52,32 @@ Also assess:
 - **Spec quality**: Were requirements clear? (frequent scope changes suggest spec issue)
 - **Tool reliability**: Any tool errors or unexpected failures?
 
-### Step 4 — Record observation
+### Step 4 — Record the score twice: once for humans, once for the dashboard
+
+Prose observation (context, nuance, root-cause hint):
 
 ```
 - YYYY-MM-DD [session-quality]: Score=X/5. Signals: [reverts: N, rework files: N, forward commits: N]. Root cause hint: [context gap / spec ambiguity / tool issue / none]. 
 ```
+
+Structured measurement — the dashboard reads **only** this, never the prose:
+
+```bash
+.claude/scripts/session/record_metric.py --metric session-quality --value X \
+  --meta '{"reverts": N, "rework_files": N, "forward_commits": N}'
+```
+
+**Idle windows.** If there was no user session in the window (routine ran on a stale
+repo — no commits, no transcript), the score is a placeholder, not a judgement. Pass
+`--idle` so it is excluded from the average:
+
+```bash
+.claude/scripts/session/record_metric.py --metric session-quality --value 3 --idle
+```
+
+Averaging placeholders in is how a repo with one good session and two quiet days
+reports 3.3/5. Say "idle-routine window" in the prose too, but the `--idle` flag is
+what the dashboard acts on.
 
 If score ≤ 2, also add a `[kaizen]` flag: `Investigate: [specific pattern observed]`
 

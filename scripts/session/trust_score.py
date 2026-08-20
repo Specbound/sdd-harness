@@ -18,17 +18,16 @@ from __future__ import annotations  # PEP 604 (`X | None`) on Python 3.9 hosts
 
 import argparse
 import json
-import re
 import sys
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
-
 
 DEFAULT_START = 20.0
 DAILY_CAP = 4.5
 HISTORY = Path(".claude/memory/trust-score.jsonl")
 HOT_MEMORY = Path(".claude/memory/hot-memory.md")
 OBS_FILE = Path(".claude/memory/observations.md")
+METRICS_FILE = Path(".claude/memory/metrics.jsonl")
 SCORE_HEADER_PREFIX = "## Harness Trust Score:"
 
 
@@ -158,43 +157,83 @@ def cmd_apply(delta: float, summary: str) -> int:
     return 0
 
 
-def _tally_tags(tags: str, content: str, counts: dict) -> None:
+def _tally_tags(tags: str, counts: dict) -> None:
+    """Count tag occurrences. Scores are NOT read from here — see _tally_metrics_since."""
     if "session-charge" in tags:
         counts["session_charges"] += 1
     if "memory-gap" in tags:
         counts["memory_gaps"] += 1
-    if "session-quality" in tags:
-        sq = re.search(r"Score=(\d)/5", content)
-        if sq:
-            n = int(sq.group(1))
-            if n >= 4:
-                counts["sq_high"] += 1
-            elif n <= 2:
-                counts["sq_low"] += 1
-    if "keep-rate" in tags:
-        kr = re.search(r"(\d+)%", content)
-        if kr and int(kr.group(1)) >= 80:
-            counts["kr_high"] += 1
     if "loop-debt" in tags:
         counts["loop_debts"] += 1
+
+
+def _split_observation(line: str) -> tuple[str, str] | None:
+    """Split `- YYYY-MM-DD [tag,tag]: text` into (date, tags) by structure.
+
+    Returns None for any line that is not an observation entry.
+    """
+    if not line.startswith("- ") or "[" not in line or "]:" not in line:
+        return None
+    date_str, sep, remainder = line[2:].partition(" [")
+    if not sep:
+        return None
+    tags, sep, _ = remainder.partition("]:")
+    if not sep:
+        return None
+    return date_str, tags
+
+
+def _tally_metrics_since(since: date, counts: dict) -> None:
+    """Read session-quality and keep-rate from metrics.jsonl, never from prose.
+
+    These used to be pattern-matched out of the observation text, where
+    `(\\d+)%` read "84.5%" as 5 and silently mis-scored the trust battery.
+    Idle-routine windows carry no judgement and are skipped.
+    """
+    if not METRICS_FILE.is_file():
+        return
+    for line in METRICS_FILE.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            rec = json.loads(line)
+        except json.JSONDecodeError as e:
+            print(f"WARN: {METRICS_FILE}: {e}", file=sys.stderr)
+            continue
+        try:
+            if date.fromisoformat(rec["date"]) < since:
+                continue
+        except (KeyError, ValueError):
+            continue
+        if rec.get("idle"):
+            continue
+        value = rec.get("value")
+        if rec.get("metric") == "session-quality" and isinstance(value, (int, float)):
+            if value >= 4:
+                counts["sq_high"] += 1
+            elif value <= 2:
+                counts["sq_low"] += 1
+        elif rec.get("metric") == "keep-rate" and isinstance(value, (int, float)) and value >= 80:
+            counts["kr_high"] += 1
 
 
 def _parse_observations_since(since: date) -> dict:
     counts = {"session_charges": 0, "memory_gaps": 0,
               "sq_high": 0, "sq_low": 0, "kr_high": 0, "loop_debts": 0}
-    if not OBS_FILE.is_file():
-        return counts
-    pattern = re.compile(r"^- (\d{4}-\d{2}-\d{2}) \[([^\]]+)\]:(.*)")
-    for line in OBS_FILE.read_text(encoding="utf-8").splitlines():
-        m = pattern.match(line)
-        if not m:
-            continue
-        try:
-            entry_date = date.fromisoformat(m.group(1))
-        except ValueError:
-            continue
-        if entry_date >= since:
-            _tally_tags(m.group(2), m.group(3), counts)
+    if OBS_FILE.is_file():
+        for line in OBS_FILE.read_text(encoding="utf-8").splitlines():
+            parsed = _split_observation(line)
+            if parsed is None:
+                continue
+            date_str, tags = parsed
+            try:
+                entry_date = date.fromisoformat(date_str)
+            except ValueError:
+                continue
+            if entry_date >= since:
+                _tally_tags(tags, counts)
+    _tally_metrics_since(since, counts)
     return counts
 
 
