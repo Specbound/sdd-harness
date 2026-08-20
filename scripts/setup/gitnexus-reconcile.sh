@@ -3,18 +3,21 @@
 # gitnexus-reconcile.sh <project_dir> [--wire|--check]
 #
 # Keeps a project's GitNexus state self-consistent. `npx gitnexus setup` writes a
-# managed block into CLAUDE.md containing MUST/NEVER rules that call gitnexus_*
-# MCP tools. That block is committed; the .gitnexus/ index is gitignored and the
-# MCP server lives in local config — so on a fresh clone, after `gitnexus clean`,
-# or when the server was never wired, the block orders the agent to call tools
-# that do not exist. Every edit and commit then deadlocks.
+# managed block into CLAUDE.md or AGENTS.md containing MUST/NEVER rules that call
+# gitnexus_* MCP tools. That block is committed; the .gitnexus/ index is
+# gitignored and the MCP server lives in local config — so on a fresh clone,
+# after `gitnexus clean`, or when the server was never wired, the block orders
+# the agent to call tools that do not exist. Every edit and commit then
+# deadlocks.
 #
 # Modes:
 #   --check   quiet; exit 0 when index AND MCP server are both present
 #   --wire    write the MCP server config (idempotent), then report
-#   (none)    reconcile CLAUDE.md: strip the managed block when the tools are
-#             not callable, or repair its skill paths when they are
+#   (none)    reconcile the block: strip it when the tools are not callable,
+#             or repair its skill paths and bare tool names when they are
 #
+# The block is looked for in CLAUDE.md first, then AGENTS.md (a project may
+# keep its conventions in AGENTS.md and have CLAUDE.md just `@`-import it).
 # Only bytes between <!-- gitnexus:start --> and <!-- gitnexus:end --> are ever
 # rewritten, plus the blank lines that surround the block when it is removed.
 # Always exits 0 in reconcile mode — never blocks an install or update.
@@ -31,8 +34,18 @@ fi
 
 SCRIPT_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 MCP_HELPER="$SCRIPT_DIR/gitnexus-mcp.py"
-CLAUDE_MD="$PROJ/CLAUDE.md"
 START_MARKER='<!-- gitnexus:start -->'
+
+# Resolve which file actually holds the managed block. CLAUDE.md wins on a tie
+# (matches `npx gitnexus setup`'s default target); AGENTS.md is the fallback
+# for projects that relocated their conventions there.
+if grep -qF "$START_MARKER" "$PROJ/CLAUDE.md" 2>/dev/null; then
+  TARGET_MD="$PROJ/CLAUDE.md"
+elif grep -qF "$START_MARKER" "$PROJ/AGENTS.md" 2>/dev/null; then
+  TARGET_MD="$PROJ/AGENTS.md"
+else
+  TARGET_MD="$PROJ/CLAUDE.md"
+fi
 
 has_index() { [ -d "$PROJ/.gitnexus" ]; }
 
@@ -46,11 +59,11 @@ has_mcp() {
     "$PROJ/.mcp.json" "$PROJ/.claude/settings.json" 2>/dev/null
 }
 
-has_block() { grep -qF "$START_MARKER" "$CLAUDE_MD" 2>/dev/null; }
+has_block() { grep -qF "$START_MARKER" "$TARGET_MD" 2>/dev/null; }
 
 # ── Remove the managed block, collapsing the surrounding blank lines to one ───
 strip_block() {
-  local tmp="$CLAUDE_MD.gitnexus.tmp"
+  local tmp="$TARGET_MD.gitnexus.tmp"
   awk '
     { lines[NR] = $0 }
     index($0, "<!-- gitnexus:start -->") && !s { s = NR }
@@ -63,7 +76,7 @@ strip_block() {
       if (b >= 1 && a <= NR) print ""
       for (i = a; i <= NR; i++) print lines[i]
     }
-  ' "$CLAUDE_MD" > "$tmp" && mv "$tmp" "$CLAUDE_MD"
+  ' "$TARGET_MD" > "$tmp" && mv "$tmp" "$TARGET_MD"
 }
 
 # ── Repair skill paths inside the block ───────────────────────────────────────
@@ -71,7 +84,7 @@ strip_block() {
 # installs its skills to ~/.claude/skills/. Rewrite is confined to the block and
 # is idempotent (already-correct paths are parked behind a sentinel first).
 fix_skill_paths() {
-  local tmp="$CLAUDE_MD.gitnexus.tmp"
+  local tmp="$TARGET_MD.gitnexus.tmp"
   awk '
     index($0, "<!-- gitnexus:start -->") { inblock = 1 }
     inblock {
@@ -86,11 +99,55 @@ fix_skill_paths() {
     index($0, "<!-- gitnexus:end -->") { inblock = 0 }
     { print }
     END { exit (changed ? 0 : 1) }
-  ' "$CLAUDE_MD" > "$tmp"
+  ' "$TARGET_MD" > "$tmp"
   local rewrote=$?
   if [ $rewrote -eq 0 ]; then
-    mv "$tmp" "$CLAUDE_MD"
-    echo "  GitNexus skill paths in CLAUDE.md repointed to ~/.claude/skills/"
+    mv "$tmp" "$TARGET_MD"
+    echo "  GitNexus skill paths in $(basename "$TARGET_MD") repointed to ~/.claude/skills/"
+  else
+    rm -f "$tmp"
+  fi
+}
+
+# ── Rewrite bare gitnexus_* tool names inside the block ───────────────────────
+# GitNexus writes MUST/NEVER rules that call bare `gitnexus_*` names; those do
+# not resolve as MCP tools, which are exposed prefixed as `mcp__gitnexus__*`.
+# Rewrite is confined to the block and is idempotent: already-prefixed calls
+# are parked behind a sentinel first, so a second pass never yields
+# mcp__gitnexus__mcp__gitnexus__*. Longer names are matched before the shorter
+# names they contain (e.g. gitnexus_api_impact before gitnexus_impact).
+fix_tool_names() {
+  local tmp="$TARGET_MD.gitnexus.tmp"
+  awk '
+    index($0, "<!-- gitnexus:start -->") { inblock = 1 }
+    inblock {
+      line = $0
+      gsub(/mcp__gitnexus__/, "@@GNPREFIX@@", line)
+      gsub(/gitnexus_detect_changes/, "@@GNPREFIX@@detect_changes", line)
+      gsub(/gitnexus_shape_check/,    "@@GNPREFIX@@shape_check",    line)
+      gsub(/gitnexus_api_impact/,     "@@GNPREFIX@@api_impact",     line)
+      gsub(/gitnexus_list_repos/,     "@@GNPREFIX@@list_repos",     line)
+      gsub(/gitnexus_group_list/,     "@@GNPREFIX@@group_list",     line)
+      gsub(/gitnexus_group_sync/,     "@@GNPREFIX@@group_sync",     line)
+      gsub(/gitnexus_route_map/,      "@@GNPREFIX@@route_map",      line)
+      gsub(/gitnexus_tool_map/,       "@@GNPREFIX@@tool_map",       line)
+      gsub(/gitnexus_context/,        "@@GNPREFIX@@context",        line)
+      gsub(/gitnexus_impact/,         "@@GNPREFIX@@impact",         line)
+      gsub(/gitnexus_rename/,         "@@GNPREFIX@@rename",         line)
+      gsub(/gitnexus_cypher/,         "@@GNPREFIX@@cypher",         line)
+      gsub(/gitnexus_query/,          "@@GNPREFIX@@query",          line)
+      gsub(/@@GNPREFIX@@/, "mcp__gitnexus__", line)
+      if (line != $0) changed = 1
+      $0 = line
+    }
+    index($0, "<!-- gitnexus:end -->") { inblock = 0 }
+    { print }
+    END { exit (changed ? 0 : 1) }
+  ' "$TARGET_MD" > "$tmp"
+  local rewrote=$?
+  if [ $rewrote -eq 0 ]; then
+    mv "$tmp" "$TARGET_MD"
+    echo "  GitNexus tool names in $(basename "$TARGET_MD") repointed to mcp__gitnexus__*"
   else
     rm -f "$tmp"
   fi
@@ -100,11 +157,11 @@ fix_skill_paths() {
 warn_missing_skills() {
   local missing=""
   local name
-  for name in $(grep -o '~/\.claude/skills/[A-Za-z0-9_-]*' "$CLAUDE_MD" 2>/dev/null \
+  for name in $(grep -o '~/\.claude/skills/[A-Za-z0-9_-]*' "$TARGET_MD" 2>/dev/null \
                 | sed 's|~/\.claude/skills/||' | sort -u); do
     [ -d "$HOME/.claude/skills/$name" ] || missing="$missing $name"
   done
-  [ -n "$missing" ] && echo "  WARNING: CLAUDE.md references uninstalled skills:$missing"
+  [ -n "$missing" ] && echo "  WARNING: $(basename "$TARGET_MD") references uninstalled skills:$missing"
   return 0
 }
 
@@ -157,6 +214,7 @@ elif ! has_mcp; then
   echo "  Removed dead GitNexus block from CLAUDE.md (MCP server could not be wired)."
 else
   fix_skill_paths
+  fix_tool_names
   warn_missing_skills
 fi
 

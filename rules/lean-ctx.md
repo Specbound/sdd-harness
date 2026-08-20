@@ -7,7 +7,17 @@
 | Read/cat/head/tail | `ctx_read(path, mode)` | `ctx_read("src/main.rs", "full")` |
 | Grep/rg/find | `ctx_search(pattern, path)` | `ctx_search("fn handle", "src/")` |
 | Shell/bash | `ctx_shell(command)` | `ctx_shell("cargo test")` |
-| Edit (when Read unavailable) | `ctx_edit(path, old, new)` | `ctx_edit("f.rs", "old", "new")` |
+| Edit | `ctx_patch` after `ctx_read(mode="anchored")` | `ctx_read("f.rs","anchored")` → `ctx_patch` |
+
+## Profile: `standard` (17 advertised tools)
+Advertised: ctx_callgraph, ctx_compose, ctx_delta, ctx_execute, ctx_expand, ctx_explore,
+ctx_glob, ctx_graph, ctx_knowledge, ctx_overview, ctx_patch, ctx_read, ctx_search,
+ctx_session, ctx_shell, ctx_tree, ctx_url_read.
+The other ~66 tools are trimmed from the schema but still exist. Reach them via `ctx_call`:
+`ctx_call {"name":"ctx_impact","arguments":{"action":"analyze"}}`
+Find names with `ctx_call {"name":"ctx_discover_tools","arguments":{"query":"keyword"}}`.
+Deprecated — do not use: `ctx_semantic_search`, `ctx_symbol`, `ctx_multi_read`, `ctx_smart_read`.
+The bare `shell` alias was removed — use `ctx_shell`.
 
 ## ctx_read Mode Selection
 | Goal | Mode | When |
@@ -21,25 +31,26 @@
 
 ## Workflow (follow this order)
 1. **Orient:** `ctx_overview(task)` or `ctx_compose(task, path)` for unfamiliar tasks
-2. **Locate:** `ctx_search(pattern, path)` for exact text; `ctx_semantic_search(query)` for concepts
+2. **Locate:** `ctx_search(pattern, path)` for exact text; `ctx_search(action="semantic", query=...)` for concepts
 3. **Read:** `ctx_read(path, mode)` with appropriate mode from table above
-4. **Edit:** `ctx_edit(path, old_string, new_string)` or native Edit if available
+4. **Edit:** `ctx_patch` after `ctx_read(mode="anchored")`, or native Edit if available
 5. **Verify:** `ctx_read(path, "diff")` + `ctx_shell("test command")`
    - `.py` files: also run `mcp__serena__get_diagnostics_for_file(path)` — catches type errors and lint issues the shell won't
 6. **Record:** `ctx_knowledge(action="remember", content="...")` for non-obvious findings
 
 ## Proactive (use without being asked)
 - `ctx_overview(task)` — at session start for orientation
-- `ctx_compress` — when context grows large (at phase boundaries)
 - `ctx_knowledge(action="wakeup")` — at session start to surface prior findings
+- `ctx_call {"name":"ctx_compress","arguments":{}}` — when context grows large (at phase boundaries)
 
 ## Compression Bypass (only when compressed output hides needed detail)
 `ctx_read(path, "lines:N-M")` → `ctx_read(path, "full")` → `ctx_shell(cmd, raw=true)`
 Return to compressed defaults after one expanded retrieval.
 
 ## Risk Gate (before high-impact edits)
-Before editing exported symbols, auth, DB schemas, or 3+ files: run `ctx_impact(action="analyze")`
-and `ctx_callgraph(action="callers")` to confirm blast radius.
+Before editing exported symbols, auth, DB schemas, or 3+ files: run `ctx_callgraph(action="callers")`
+and `ctx_graph` for file-level deps — for a wider blast radius
+`ctx_call {"name":"ctx_impact","arguments":{"action":"analyze"}}`.
 Python symbols: before renaming or deleting any `.py` function/class, run `mcp__serena__find_referencing_symbols(symbol)` to confirm blast radius — LSP-accurate, not grep-based.
 
 ## Session
@@ -47,5 +58,6 @@ Python symbols: before renaming or deleting any `.py` function/class, run `mcp__
 - **End:** `ctx_session(action="decision", content="what was done + next steps")`
 - **On [CHECKPOINT]:** `ctx_session(action="task", value="current status")`
 
-NEVER use native Read/Grep/Shell when ctx_* equivalents are available.
+Prefer ctx_* over native Read/Grep/Shell/Glob. Exceptions: native Read for the edit gate
+(read-before-write) and for `~/.claude/projects/<slug>/memory/` files.
 <!-- /lean-ctx -->

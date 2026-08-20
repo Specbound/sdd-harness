@@ -11,16 +11,15 @@
 - `.claude/memory/` — read when you need cross-session context or past decisions
 - `specs/` — read when working on or near a feature that has a spec
 - `.claude/behaviors/` — read when reviewing agent conduct or grading a trace, not upfront; kept blind from the agent whose trajectory it grades
-- `.claude/docs/SDD-USAGE.md` — read when you need SDD command reference
+- `.claude/docs/harness-documentation/SDD-USAGE.md` — read when you need SDD command reference
 - `ERRORS.md` — check before suggesting solutions to problems; log approaches that took 2+ attempts
 
 ## Rules
-- Always plan before coding — use Plan mode for back-and-forth
-- Every feature needs an approved spec in `specs/` before implementation
+- Plan before multi-file or design-affecting changes — use Plan mode for back-and-forth. Sketch 2-3 approaches when the design is genuinely open; otherwise pick one and say why.
+- Features with clear correctness criteria need an approved spec in `specs/` before implementation — prefer an executable spec (failing test suite) or reference implementation over plain markdown. Markdown stays the default for open-ended/UX work. Bugfixes, perf work, and tooling do not need a spec.
 - Atomic commits per task (one task = one commit, code only)
 - Never skip the human review gate between spec phases
 - Never commit installed harness output — `.claude/`, `specs/`, `CLAUDE.md`, `AGENTS.md` and `ERRORS.md` are local (see `.gitignore`; the list is `SDD_GITIGNORE_ENTRIES` in `scripts/lib/project-gitignore.sh`). In this repo the top-level source tree (`agents/ commands/ hooks/ kiro/ scripts/ docs/ rules/ skills/ templates/`) IS the product and is committed normally
-- Before any significant task, show 2-3 approaches and wait for confirmation before proceeding
 - Maintain `ERRORS.md`: when an approach takes 2+ attempts, log what failed, what worked, and why
 
 ## AI-Legible Code
