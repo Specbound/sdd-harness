@@ -17,6 +17,8 @@ set -e
 __here="$(cd -P "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 . "$__here/scripts/lib/resolve-harness-dir.sh"
 . "$__here/scripts/lib/harness-pointer.sh"
+# The local-only entry list written into each project's .gitignore.
+. "$__here/scripts/lib/project-gitignore.sh"
 TARGET="${1:-}"
 
 # ---------------------------------------------------------------------------
@@ -131,6 +133,10 @@ do_update() {
   if [ -d "$proj/.git" ]; then
     cp "$HARNESS_DIR/hooks/git/post-commit" "$proj/.git/hooks/"
     chmod +x "$proj/.git/hooks/post-commit"
+    # Entries added since this project was installed (e.g. AGENTS.md, ERRORS.md)
+    # land here — install.sh only runs once, update.sh runs every sync. Git repos
+    # only: a non-repo has nothing to ignore and shouldn't grow a .gitignore.
+    ensure_gitignore "$proj"
   fi
   # --- Sync harness skills + global commands (runs once per update, not per project) ---
   if [ "${_SDD_GLOBAL_SYNCED:-0}" != "1" ]; then

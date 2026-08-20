@@ -40,7 +40,7 @@ import threading
 from datetime import datetime, timezone, timedelta
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, urlencode, urlparse
+from urllib.parse import parse_qs, urlparse
 from urllib.request import urlopen, Request as UrlRequest
 from urllib.error import URLError
 
@@ -70,6 +70,10 @@ ORCH_LOG       = HARNESS_DIR / "logs" / "orchestrator.log"
 COMPANION_PORT   = 4569
 WORKSHOP_PORT    = 5899
 HEADROOM_PORT    = 8787
+GN_PORT          = 4747
+# `gitnexus serve` ships no web UI — it is the API backend for the hosted app.
+GN_WEB_UI        = "https://gitnexus.vercel.app"
+GN_PROBE_URL     = f"http://localhost:{GN_PORT}/api/repos"
 HEADROOM_SAVINGS = Path.home() / ".headroom" / "proxy_savings.json"
 
 SECTION_DEFS = [
@@ -1275,12 +1279,13 @@ def render_gitnexus(rd, companion=False):
       <div class="label">indexed</div></div>
   </div>"""
 
-    # In companion mode use the proxy so we can inject auto-select script
-    iframe_src = ""
-    if companion:
-        from urllib.parse import quote as _quote
-        rp_js  = html.escape(json.dumps(repo_path))  # &quot; inside onclick attr
-        iframe_src = f"http://localhost:4569/gn/?autoRepo={_quote(Path(repo_path).name)}"
+    # `gitnexus serve` is an API-only backend — it serves /api/* and 404s on /.
+    # The web UI is the hosted app, which talks to http://localhost:4747 by
+    # default and auto-selects a repo from its own ?repo= query param.
+    from urllib.parse import quote as _quote
+    iframe_src = f"{GN_WEB_UI}/?repo={_quote(Path(repo_path).name)}"
+
+    rp_js = html.escape(json.dumps(repo_path))  # &quot; inside onclick attr
 
     serve_btn = ""
     if companion:
@@ -1297,6 +1302,7 @@ def render_gitnexus(rd, companion=False):
     iframe_html = f"""<div style="position:relative;overflow:hidden;background:var(--crust);
                           flex:1;min-height:0">
     <iframe id="gn-frame" data-src="{html.escape(iframe_src)}"
+            allow="local-network-access"
             style="width:100%;height:{iframe_height};border:none;display:none">
     </iframe>
     <div id="gn-fallback" style="display:flex;height:{iframe_height};
@@ -3643,6 +3649,9 @@ const SD = __SECTIONS_JSON__;
 let repo = __INIT_REPO__;
 let sec  = 'session_health';
 
+const GN_WEB_UI    = '__GN_WEB_UI__';
+const GN_PROBE_URL = '__GN_PROBE_URL__';
+
 function show(sectionKey) {
   // Release gitnexus WebGL context before destroying the iframe element
   var oldFrame = document.getElementById('gn-frame');
@@ -3669,29 +3678,36 @@ function probeGitnexus() {
   _gnProbing = true;
   var ctrl  = new AbortController();
   var timer = setTimeout(function() { ctrl.abort(); }, 2500);
-  fetch('http://localhost:4747', { mode: 'no-cors', signal: ctrl.signal })
-    .then(function() {
+  // Probe /api/repos, not '/': gitnexus serve is API-only and 404s at the root.
+  // Real CORS mode (not no-cors) so an error status is visible instead of opaque.
+  fetch(GN_PROBE_URL, { signal: ctrl.signal })
+    .then(function(res) {
       clearTimeout(timer);
       _gnProbing = false;
+      if (!res.ok) { gnOffline('GitNexus API returned HTTP ' + res.status); return; }
       var f  = document.getElementById('gn-frame');
       var fb = document.getElementById('gn-fallback');
-      if (f)  { f.src = f.dataset.src || 'http://localhost:4747'; f.style.display = 'block'; }
+      if (f)  { f.src = f.dataset.src || GN_WEB_UI; f.style.display = 'block'; }
       if (fb) fb.style.display = 'none';
     })
     .catch(function() {
       clearTimeout(timer);
       _gnProbing = false;
-      var st    = document.getElementById('gn-status');
-      var btn   = document.getElementById('gn-copy-btn');
-      var hint  = document.getElementById('gn-copy-hint');
-      var sbtn  = document.getElementById('gn-start-btn');
-      var rbtn  = document.getElementById('gn-retry-btn');
-      if (st)   st.textContent = 'GitNexus not running';
-      if (btn)  btn.style.display  = 'block';
-      if (hint) hint.style.display = 'block';
-      if (sbtn) sbtn.style.display = 'block';
-      if (rbtn) rbtn.style.display = 'block';
+      gnOffline('GitNexus not running');
     });
+}
+
+function gnOffline(message) {
+  var st    = document.getElementById('gn-status');
+  var btn   = document.getElementById('gn-copy-btn');
+  var hint  = document.getElementById('gn-copy-hint');
+  var sbtn  = document.getElementById('gn-start-btn');
+  var rbtn  = document.getElementById('gn-retry-btn');
+  if (st)   st.textContent = message;
+  if (btn)  btn.style.display  = 'block';
+  if (hint) hint.style.display = 'block';
+  if (sbtn) sbtn.style.display = 'block';
+  if (rbtn) rbtn.style.display = 'block';
 }
 
 __GN_SERVE_FUNS__
@@ -4358,11 +4374,12 @@ function pollGitnexus(n) {
   if (st) st.textContent = 'Waiting for gitnexus… (' + (n + 1) + '/20)';
   var ctrl = new AbortController();
   setTimeout(function() { ctrl.abort(); }, 1500);
-  fetch('http://localhost:4747', { mode: 'no-cors', signal: ctrl.signal })
-    .then(function() {
+  fetch(GN_PROBE_URL, { signal: ctrl.signal })
+    .then(function(res) {
+      if (!res.ok) { setTimeout(function() { pollGitnexus(n + 1); }, 1000); return; }
       var f  = document.getElementById('gn-frame');
       var fb = document.getElementById('gn-fallback');
-      if (f)  { f.src = f.dataset.src || 'http://localhost:4747'; f.style.display = 'block'; }
+      if (f)  { f.src = f.dataset.src || GN_WEB_UI; f.style.display = 'block'; }
       if (fb) { fb.style.display = 'none'; }
     })
     .catch(function() {
@@ -4683,6 +4700,8 @@ function mcWhatIf(modelKey) {{
     js  = (JS_TEMPLATE
            .replace("__SECTIONS_JSON__", sj)
            .replace("__INIT_REPO__", ir)
+           .replace("__GN_WEB_UI__", GN_WEB_UI)
+           .replace("__GN_PROBE_URL__", GN_PROBE_URL)
            .replace("__GN_SERVE_FUNS__", gn_funs)
            .replace("__WORKSHOP_FUNS__", workshop_funs)
            .replace("__HEADROOM_FUNS__", headroom_funs)
@@ -4882,7 +4901,6 @@ def _run_skill_curator_apply(instruction: str) -> None:
 class _DashboardHandler(BaseHTTPRequestHandler):
     _html: bytes = b""
 
-    GN_PORT = 4747  # gitnexus serve default port
     WS_PORT = 5899  # raindrop workshop default port
 
     def do_GET(self):
@@ -4893,8 +4911,6 @@ class _DashboardHandler(BaseHTTPRequestHandler):
             self.send_header("Content-Length", str(len(self._html)))
             self.end_headers()
             self.wfile.write(self._html)
-        elif parsed.path.startswith("/gn/") or parsed.path == "/gn":
-            self._proxy_gitnexus(parsed)
         elif parsed.path == "/api/headroom-stats":
             try:
                 body = HEADROOM_SAVINGS.read_bytes() if HEADROOM_SAVINGS.exists() else b'{}'
@@ -4941,68 +4957,6 @@ class _DashboardHandler(BaseHTTPRequestHandler):
             self._proxy_workshop(parsed)
         else:
             self.send_error(404)
-
-    def _proxy_gitnexus(self, parsed):
-        """Proxy to gitnexus serve, injecting auto-repo-select script into HTML."""
-        qs_params = parse_qs(parsed.query)
-        auto_repo = qs_params.pop("autoRepo", [None])[0]
-
-        # Build target path (strip /gn prefix)
-        gn_path = parsed.path[3:] or "/"
-        target_qs = urlencode({k: v[0] for k, v in qs_params.items()})
-        # Use "localhost" not "127.0.0.1": gitnexus serve binds to the IPv6
-        # loopback (::1) on macOS, which 127.0.0.1 (IPv4-only) cannot reach.
-        target_url = f"http://localhost:{self.GN_PORT}{gn_path}"
-        if target_qs:
-            target_url += f"?{target_qs}"
-
-        try:
-            req = UrlRequest(target_url, headers={"Accept": self.headers.get("Accept", "*/*")})
-            with urlopen(req, timeout=8) as resp:
-                content     = resp.read()
-                content_type = resp.headers.get("Content-Type", "application/octet-stream")
-                status       = resp.status
-        except URLError:
-            self.send_error(502, "gitnexus serve not reachable at port 4747")
-            return
-        except Exception as e:
-            self.send_error(502, str(e))
-            return
-
-        # For HTML: rewrite absolute /assets/ and /api/ URLs to point at gitnexus,
-        # then inject the auto-repo-select script.
-        if b"text/html" in content_type.encode() and b"</head>" in content:
-            gn_origin = f"http://localhost:{self.GN_PORT}"
-            # Rewrite absolute-path references so browser fetches from gitnexus, not 4569
-            content = content.replace(b'href="/', f'href="{gn_origin}/'.encode())
-            content = content.replace(b'src="/',  f'src="{gn_origin}/'.encode())
-
-            if auto_repo:
-                inject = f"""<script>
-(function(){{
-  var want = {json.dumps(auto_repo)};
-  function tryClick(){{
-    var cards = document.querySelectorAll('[data-testid="landing-repo-card"]');
-    for(var i=0;i<cards.length;i++){{
-      if(cards[i].textContent.indexOf(want) !== -1){{ cards[i].click(); return true; }}
-    }}
-    return false;
-  }}
-  var n=0;
-  function poll(){{ if(n++>40||tryClick()) return; setTimeout(poll,250); }}
-  if(document.readyState==='loading')
-    document.addEventListener('DOMContentLoaded', function(){{ setTimeout(poll,100); }});
-  else setTimeout(poll,100);
-}})();
-</script>
-</head>""".encode()
-                content = content.replace(b"</head>", inject, 1)
-
-        self.send_response(status)
-        self.send_header("Content-Type", content_type)
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.end_headers()
-        self.wfile.write(content)
 
     def _proxy_workshop(self, parsed):
         """Proxy to raindrop workshop UI at port 5899."""

@@ -54,6 +54,8 @@ __here="$(cd -P "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 . "$__here/scripts/lib/harness-pointer.sh"
 # Where globally-installed CLIs actually live — asked of uv/pipx/brew, never guessed.
 . "$__here/scripts/lib/tool-paths.sh"
+# The local-only entry list written into each project's .gitignore.
+. "$__here/scripts/lib/project-gitignore.sh"
 
 # ── Flags ──────────────────────────────────────────────────────────────────────
 YES=false
@@ -150,30 +152,8 @@ sync_dir() {
   cp -r "$src" "$dst_parent/"
 }
 
-# ── ensure_gitignore <project_dir> ─────────────────────────────────────────────
-# Append the harness-local entries to the project's .gitignore, idempotently.
-# Harness files are local-only (see CLAUDE.md "Never commit SDD files"), so the
-# whole .claude/ tree, specs/, and CLAUDE.md stay untracked. Each entry is added
-# only if absent, so re-runs and pre-existing .gitignores are safe.
-ensure_gitignore() {
-  local project_dir="$1"
-  local gitignore="$project_dir/.gitignore"
-  local entry added=false
-  touch "$gitignore"
-  for entry in ".claude/" "specs/" "CLAUDE.md"; do
-    # Match the exact line to avoid false positives (e.g. ".claude/" vs ".claudeignore").
-    if ! grep -qxF "$entry" "$gitignore" 2>/dev/null; then
-      if [ "$added" = false ]; then
-        # Separate from prior content with a blank line + header, once.
-        [ -s "$gitignore" ] && printf '\n' >> "$gitignore"
-        echo "# SDD harness — local-only, never committed" >> "$gitignore"
-        added=true
-      fi
-      echo "$entry" >> "$gitignore"
-    fi
-  done
-  [ "$added" = true ] && echo "  Added harness entries to .gitignore (.claude/ specs/ CLAUDE.md)."
-}
+# ensure_gitignore() lives in scripts/lib/project-gitignore.sh — shared with
+# update.sh so installed projects pick up new entries on their next sync.
 
 # ── pkg_install <name> <brew_formula> <apt_pkg> <winget_id> ──────────────────
 # Pass "-" for any slot a manager genuinely can't satisfy.
@@ -1095,7 +1075,7 @@ echo ""
 echo "SDD harness installed successfully."
 echo ""
 echo "Done automatically:"
-echo "  ✓ .gitignore updated (.claude/ specs/ CLAUDE.md — local-only)"
+echo "  ✓ .gitignore updated (.claude/ specs/ CLAUDE.md AGENTS.md ERRORS.md — local-only)"
 echo "  ✓ CLAUDE.md created with the project name filled in"
 echo "  ✓ /kiro:steering queued — you'll be prompted to run it on your first Claude session"
 echo ""
