@@ -58,7 +58,7 @@ cat << MSG
 MSG
 
 # REGISTRATION
-# Add to PostToolUse Write|Edit in ~/.claude/sdd-harness/.claude/settings.json:
+# Add to PostToolUse Write|Edit in $SDD_HARNESS/.claude/settings.json:
 # {
 #   "type": "command",
 #   "command": "bash .claude/hooks/skill-permissions-gate.sh"

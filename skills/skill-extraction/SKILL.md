@@ -62,9 +62,9 @@ Before proposing anything, understand what the harness already has. Read in para
 
 1. **Existing skills** — scan `~/.claude/skills/` for related skills to avoid duplication
 2. **Hooks** — read `~/.claude/settings.json` and `.claude/settings.json` for existing hooks
-3. **Harness docs** — check `~/.claude/sdd-harness/docs/` and `CLAUDE.md` for architecture context
+3. **Harness docs** — check `$SDD_HARNESS/docs/` and `CLAUDE.md` for architecture context
 4. **Memory** — check `~/.claude/projects/*/memory/MEMORY.md` for relevant project context
-5. **Dashboard** — read `~/.claude/sdd-harness/.dashboard/` to understand what widgets/panels already exist and what data they surface
+5. **Dashboard** — read `$SDD_HARNESS/.dashboard/` to understand what widgets/panels already exist and what data they surface
 
 The goal: understand gaps the resource could fill, identify what already exists and could be augmented instead of duplicated, and avoid adding anything that merely adds noise.
 
@@ -83,7 +83,7 @@ Map the resource's capabilities to integration types, then ruthlessly filter the
 | **Command** | `~/.claude/commands/<name>.md` | User-invokable `/slash-command` with arguments and an interactive workflow |
 | **Routine** | `~/.claude/commands/<name>.md` + cron note | Recurring/scheduled operation (nightly maintenance, monitoring, reports) |
 | **Config Change** | `~/.claude/settings.json` or `.claude/settings.json` | Settings, env vars, permissions, or MCP server entries |
-| **Dashboard widget** | `~/.claude/sdd-harness/.dashboard/` | New panel or metric visible in the harness dashboard |
+| **Dashboard widget** | `$SDD_HARNESS/.dashboard/` | New panel or metric visible in the harness dashboard |
 
 A single resource can map to multiple integration types. Before creating anything new, check whether the capability belongs in an existing artifact.
 
@@ -200,7 +200,7 @@ Present the full integration plan to the user. Format:
 
 After approval, implement each approved item.
 
-**Write to HARNESS SOURCE, not the installed copies.** Anything created here must propagate to every machine and every repo via `install.sh`/`update.sh`. Those installers copy *from the harness source tree* (`~/.claude/sdd-harness/` — a symlink to the harness repo), not from the live `~/.claude/` install. So author each artifact in the source tree below, then sync once for immediate use this session. Never create a harness artifact only in `~/.claude/skills`, `~/.claude/commands`, or a single project's `.claude/` — it will be invisible to other repos and lost on the next update.
+**Write to HARNESS SOURCE, not the installed copies.** Anything created here must propagate to every machine and every repo via `install.sh`/`update.sh`. Those installers copy *from the harness source tree* (`$SDD_HARNESS/` — a symlink to the harness repo), not from the live `~/.claude/` install. So author each artifact in the source tree below, then sync once for immediate use this session. Never create a harness artifact only in `~/.claude/skills`, `~/.claude/commands`, or a single project's `.claude/` — it will be invisible to other repos and lost on the next update.
 
 `HARNESS="$HOME/.claude/sdd-harness"` (resolve once; it symlinks to the repo).
 
@@ -236,10 +236,10 @@ After approval, implement each approved item.
 - If augmenting a skill, re-run the SkillOS Quality Gate (Phase 5b) on the modified skill.
 
 **For Dashboard widgets:**
-- Read `~/.claude/sdd-harness/.dashboard/` structure first to understand the existing widget contract.
+- Read `$SDD_HARNESS/.dashboard/` structure first to understand the existing widget contract.
 - Augment an existing widget if the data fits. Create a new one only if no existing widget is a logical home for it.
 
-After creating source artifacts, remind the user to run `bash ~/.claude/sdd-harness/update.sh` to roll them out to all registered repos (or `update.sh <repo>` for one).
+After creating source artifacts, remind the user to run `bash $SDD_HARNESS/update.sh` to roll them out to all registered repos (or `update.sh <repo>` for one).
 
 ### Phase 5b: SkillOS Quality Gate (for new and augmented skills)
 

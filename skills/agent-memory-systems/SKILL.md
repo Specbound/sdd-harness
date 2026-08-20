@@ -155,6 +155,21 @@ How major shipping harnesses implement external memory (2026):
 
 **Only published real-world metric:** Copilot A/B (p<0.00001) — PR merge rate 83% → 90% with memory on; code-review precision +3%, recall +4%.
 
+## File-Based vs Structured Memory: When Files Lose (LongMemEval-S)
+
+Files (this harness's default: markdown + grep) vs structured stores (embedded atomic facts) trade accuracy for cost:
+
+| Metric | File-based | Structured | Gap |
+|---|---|---|---|
+| Accuracy (LongMemEval-S) | 44.9% | 73.6% | 29pts |
+| Tokens per correct answer | 665k | 27k | ~25x |
+| Abstention accuracy | 88.9% | 77.8% | files win |
+| Accuracy at 500-session scale | — | — | gap widens to 15pts further |
+
+Raw dated-fact stores beat LLM-distilled knowledge graphs (Zep 74.6%, Graphiti 53.4%) at 6x less context and 400x less ingest cost — the win isn't "structure beats files," it's "structure beats files on cross-session joins/temporal aggregation specifically."
+
+**Practical read for this harness:** file-based memory (`.claude/memory/`) is fine for the cases it's used for here — session-scoped recall, small fact counts, human-readable audit trail. It degrades specifically on cross-session joins over long history and temporal aggregation across many sessions. If a future harness need requires querying "what changed across N sessions" at scale, that's the signal to add a structured layer — not before. (Source: pinglin.tw, "The Shapes of Agent Memory", benchmarked on LongMemEval/LoCoMo.)
+
 ## Related Skills
 
 Works well with: `autonomous-agents`, `multi-agent-orchestration`, `llm-architect`, `agent-tool-builder`

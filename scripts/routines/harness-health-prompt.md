@@ -1,6 +1,6 @@
 You are running the bi-weekly HARNESS HEALTH SWEEP. This invocation runs LOCALLY (not in Anthropic cloud), so you have full access to:
 
-- The full file system, including all registered repos listed in `~/.claude/sdd-harness/projects.txt`
+- The full file system, including all registered repos listed in `$SDD_HARNESS/projects.txt`
 - `~/.claude/skills/` via the Skill tool
 - The full repo file tree (you are already in the sdd-harness working directory)
 
@@ -15,7 +15,7 @@ Execute Phase 1 and Phase 2 in order. Each is error-isolated — if one phase fa
 **Goal:** Audit all CLAUDE.md files across registered repos for stale instructions, over-constraining rules from pre-Claude-4.x habits, and model-assumption drift.
 
 Steps:
-1. Read `~/.claude/sdd-harness/projects.txt` (skip blank lines and lines starting with `#`)
+1. Read `$SDD_HARNESS/projects.txt` (skip blank lines and lines starting with `#`)
 2. For each repo path:
    a. If the path does not exist on disk or has no `.claude/` dir, mark as **inaccessible** and note it
    b. Read `CLAUDE.md` (root) and `.claude/CLAUDE.md` if present
@@ -26,7 +26,7 @@ Steps:
       - Contradictions between root CLAUDE.md and project-level CLAUDE.md
 3. Rate each repo: `clean` | `minor` (cosmetic, low-urgency) | `needs-update` (stale/incorrect instructions)
 
-Write findings to `docs/claudemd-review-report.md`:
+Write findings to `reports/claudemd-review-report.md`:
 
 ```
 # CLAUDE.md Review Report — TODAY_PLACEHOLDER
@@ -53,7 +53,7 @@ Write findings to `docs/claudemd-review-report.md`:
 **Goal:** Apply a Review→Repair→Validate loop to skills flagged as low-quality in the most recent curation report.
 
 Steps:
-1. Read `docs/skill-curation-report.md`. Find skills listed under **Low-Quality Candidates**.
+1. Read `reports/skill-curation-report.md`. Find skills listed under **Low-Quality Candidates**.
 2. For each flagged skill (max 3 per run, prioritize lowest score first):
    a. **Review** — read the skill file at `~/.claude/skills/<name>/SKILL.md`
    b. **Repair** — rewrite to improve against the four SkillOS dimensions:
@@ -65,7 +65,7 @@ Steps:
    d. If score delta ≤ 1 after repair, mark as **stalled** (don't write)
 3. Apply approved repairs by writing the updated SKILL.md files directly.
 
-Append to `docs/skill-curation-report.md`:
+Append to `reports/skill-curation-report.md`:
 
 ```
 ## Iterative Repair Run — TODAY_PLACEHOLDER
@@ -76,7 +76,7 @@ Append to `docs/skill-curation-report.md`:
 | skill-name | 4/12 | 5/12 | stalled — delta too small |
 ```
 
-If `docs/skill-curation-report.md` does not exist, note it and skip Phase 2.
+If `reports/skill-curation-report.md` does not exist, note it and skip Phase 2.
 
 ---
 

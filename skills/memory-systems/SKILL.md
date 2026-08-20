@@ -190,6 +190,8 @@ def query_address_at_time(user_id, query_time):
 ### ❌ Knowledge graphs for agent memory
 Despite benchmark appeal, KGs consistently underperform simpler structures in practice. The core reason: LLM weights don't know your KG's schema, so traversal requires prompt engineering that breaks down at scale. Prefer files + vector search unless relationship reasoning is the explicit product requirement. (source: Kellogg, 2026)
 
+Nuance: the loss is specific to *LLM-distilled* graphs (Zep 74.6%, Graphiti 53.4% on LongMemEval), not structured stores in general — raw dated-fact stores (no distillation step) score ~78%, beating both files and distilled KGs, at 6x less context and 400x less ingest cost than a graph pipeline. The failure mode is the distillation step's information loss, not structure itself. (source: pinglin.tw, "The Shapes of Agent Memory")
+
 ### ❌ SQL-backed memory stores
 Same problem as KGs. SQL schemas are arbitrary — the model has no prior knowledge of your tables. Every query becomes prompt engineering against an opaque structure. Files with hierarchical paths give the model explorable, self-documenting structure for free.
 

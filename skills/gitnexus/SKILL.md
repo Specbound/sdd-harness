@@ -23,7 +23,7 @@ date: 2026-05-06
 
 GitNexus is the code intelligence layer wired into this harness. It builds a knowledge graph from your codebase — symbols, dependencies, call chains, execution flows — and exposes them via 16 MCP tools. It runs entirely on-device; no data leaves your machine.
 
-**Full docs:** `~/.claude/sdd-harness/docs/gitnexus/README.md`
+**Full docs:** `$SDD_HARNESS/docs/gitnexus/README.md`
 
 ---
 

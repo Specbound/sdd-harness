@@ -113,7 +113,7 @@ For each extracted path: resolve relative to the file's directory and check exis
 
 ### Phase 4: Summary Report
 
-Write to `/home/dalesser/.claude/sdd-harness/docs/drift-review-report.md`:
+Write to `$SDD_HARNESS/reports/drift-review-report.md`:
 
 ```markdown
 ## Harness Drift Review — [YYYY-MM-DD]

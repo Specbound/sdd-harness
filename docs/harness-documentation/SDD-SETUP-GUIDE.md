@@ -644,7 +644,7 @@ Conventions are defined in `.claude/kiro/settings/rules/memory-conventions.md`:
 | PostToolUse (revert detector) | Every git revert/reset/restore Bash call | Immediately appends `[revert]` drain observation to `observations.md` — gives trust-battery Judge concrete evidence. Script: `.claude/hooks/revert-detect-hook.sh`. |
 | PostToolUseFailure (tool-failure capture) | Every failing Bash/MCP tool call | Records the failure into a per-repo ledger `.claude/memory/tool-failures.jsonl`, keyed by a normalized command signature so the same failure shape clusters and its `count` climbs. Capture half of the tool-failure-memory loop. Script: `.claude/hooks/tool-failure-capture.sh`; see the `tool-failure-memory` skill. |
 | PreToolUse (tool-failure recall) | Every Bash/MCP tool call | Soft advisory (never blocks): if this command shape has failed ≥2× and is still open, injects the failure count, last error, and any recorded remedy so Claude reconsiders before repeating it. Once-per-session-per-signature dedupe + 45-day recency gate. Script: `.claude/hooks/tool-failure-recall.sh`. |
-| daily-orchestrator (fleet harness sync) | Once per calendar day, harness-level, **before** the per-repo runners (gated by `~/.claude/sdd-harness/.last-harness-sync` using a portable day-string compare, not GNU-only `date -d`) | Runs `$HARNESS_DIR/update.sh` so every registered project picks up harness changes with no human step. Nothing else ever ran `update.sh` — `stop-hook.sh` only prints a `Run: update.sh` nudge and then waits for a human, so a harness fix could sit unapplied in an installed project indefinitely (this is how a `settings.json` broken by an old template survived for months in an installed repo). `bash -n update.sh` must pass first, so a half-written `update.sh` is never run across the whole fleet; a parse failure is logged to `logs/orchestrator.log` and `logs/orchestrator-errors.log` and the sync is skipped. `--repo <path>` is forwarded to `update.sh`; `--dry-run` prints a `[would-sync]` line only. The state file is written only on exit 0, so a failed sync retries the next run instead of consuming the day. Opt out with `SDD_SKIP_HARNESS_SYNC=1`. |
+| daily-orchestrator (fleet harness sync) | Once per calendar day, harness-level, **before** the per-repo runners (gated by `$SDD_HARNESS/.last-harness-sync` using a portable day-string compare, not GNU-only `date -d`) | Runs `$HARNESS_DIR/update.sh` so every registered project picks up harness changes with no human step. Nothing else ever ran `update.sh` — `stop-hook.sh` only prints a `Run: update.sh` nudge and then waits for a human, so a harness fix could sit unapplied in an installed project indefinitely (this is how a `settings.json` broken by an old template survived for months in an installed repo). `bash -n update.sh` must pass first, so a half-written `update.sh` is never run across the whole fleet; a parse failure is logged to `logs/orchestrator.log` and `logs/orchestrator-errors.log` and the sync is skipped. `--repo <path>` is forwarded to `update.sh`; `--dry-run` prints a `[would-sync]` line only. The state file is written only on exit 0, so a failed sync retries the next run instead of consuming the day. Opt out with `SDD_SKIP_HARNESS_SYNC=1`. |
 | daily-orchestrator (tool-failure review) | Once per day per repo via the daily orchestrator (self-paces to ~2×/week via `MIN_GAP_DAYS=3`; no-ops unless a promotable ledger entry exists) | Runs `.claude/scripts/tool-failure-review-runner.sh`, which invokes `/kiro:tool-failure-review` headlessly: diagnoses recurring failures (`count ≥ 3`, open, unpromoted) and promotes the understood, reusable ones into memory files + `ERRORS.md`, then marks them resolved on the ledger. Review (promotion) half of the tool-failure-memory loop. Opt out with `SDD_SKIP_TOOL_FAILURE_REVIEW=1`. |
 | daily-orchestrator (code-review learning) | Once per day per repo via the daily orchestrator (self-paces to weekly via `CODE_REVIEW_LEARNING_GAP_DAYS=7`; no-ops unless a merged PR has a pr-babysit review log not yet processed) | Runs `.claude/scripts/routines/code-review-learning-runner.sh`: diffs pr-babysit's logged review (`.claude/memory/pr-reviews/pr-<n>.md`) against real human review activity (`gh api` comments/reviews) on merged PRs. Low-risk findings (conventions, dismissed-flag patterns) are promoted straight into memory; higher-risk methodology changes are only reported to `docs/code-review-learning-report.md` for human approval. Opt out with `SDD_SKIP_CODE_REVIEW_LEARNING=1`. |
 | daily-orchestrator (security report) | Once per day per repo via the daily orchestrator (self-paces to daily via `MIN_GAP_DAYS=1`; applies to every repo) | Runs `.claude/scripts/routines/security-report-runner.sh`: static security scan of recent git changes using the `ai-security-workflow` skill — checks for OWASP patterns, secrets, injection sinks. Writes `.claude/reports/security/<date>-security-report.md`. Visible in the dashboard Scheduled Tasks section. Retries automatically on failure — the state file is only written after a successful run (exit 0), so a failed scan doesn't consume the gap-days window; stdout is also tee'd to `.claude/memory/.last-security-report-output.log` since the orchestrator wrapper redirects stdout to `/dev/null` and only captures stderr. Opt out with `SDD_SKIP_SECURITY_REPORT=1`. |
@@ -1016,7 +1016,7 @@ Once set up, **everything is automatic** — no extra commands needed in your da
 /kiro:gitnexus-setup                    # Install, index, configure everything
 
 # Option 2: During harness installation
-~/.claude/sdd-harness/install.sh /path/to/project --with-gitnexus
+$SDD_HARNESS/install.sh /path/to/project --with-gitnexus
 
 # Option 3: Manual
 npm install -g gitnexus
@@ -1115,7 +1115,7 @@ source ~/.bashrc
 
 ```bash
 # Start the harness dashboard
-python3 ~/.claude/sdd-harness/scripts/utils/dashboard.py
+python3 $SDD_HARNESS/scripts/utils/dashboard.py
 
 # In the browser: click Workshop → select repo → Start raindrop workshop
 # Traces appear in real-time as agents run
@@ -1136,7 +1136,7 @@ All instrumentation uses graceful fallback — if `raindrop-ai` is not installed
 
 ```bash
 # Install harness into the new repo (wires raindrop automatically)
-~/.claude/sdd-harness/install.sh /path/to/new-repo
+$SDD_HARNESS/install.sh /path/to/new-repo
 
 # Or instrument an existing registered repo
 /raindrop-instrument-agent
@@ -1213,9 +1213,9 @@ Add to your project's `CLAUDE.md` Quality Gates section:
 `install.sh` and `update.sh` propagate **every** hook in the harness's `hooks/claude/` directory to each project's `.claude/hooks/` unconditionally — including `impeccable-detect-hook.sh` — and sync `kiro/settings/rules/frontend-anti-patterns.md` and `docs/` automatically. The skill lives at `~/.claude/skills/impeccable-audit/` (global, not per-project). No manual copy step is needed:
 
 ```bash
-~/.claude/sdd-harness/update.sh        # re-syncs hooks + rules + docs to every registered repo
+$SDD_HARNESS/update.sh        # re-syncs hooks + rules + docs to every registered repo
 # or, for a brand-new repo:
-~/.claude/sdd-harness/install.sh /path/to/project
+$SDD_HARNESS/install.sh /path/to/project
 ```
 
 The PostToolUse wiring ships in `templates/settings.json.template` and is installed automatically (see Step 6 above for the equivalent manual entry).
@@ -1240,7 +1240,7 @@ The harness uses [Proof](https://github.com/EveryInc/proof-sdk) (by Every Inc.) 
 The skill ships with the harness — no separate installation needed:
 
 ```
-~/.claude/sdd-harness/skills/proof-collaborative-review/SKILL.md   ← harness repo (replicated to all machines)
+$SDD_HARNESS/skills/proof-collaborative-review/SKILL.md   ← harness repo (replicated to all machines)
 ~/.claude/skills/proof-collaborative-review/SKILL.md               ← global (symlinked by install.sh)
 ```
 
@@ -1422,7 +1422,7 @@ Each harness subsystem has a detailed reference doc:
 | Context Hub | [github.com/andrewyng/context-hub](https://github.com/andrewyng/context-hub) | MCP server for third-party API docs (external) |
 | Design Quality | `docs/design/README.md` | Visual design quality integrations index |
 | Impeccable | `docs/design/impeccable/impeccable.md` | 27 anti-pattern rules, skill usage, hook setup, transfer instructions |
-| Proof Collaborative Review | `~/.claude/sdd-harness/skills/proof-collaborative-review/SKILL.md` | Spec phase-gate review sessions — Proof SDK setup, server lifecycle, API reference |
+| Proof Collaborative Review | `$SDD_HARNESS/skills/proof-collaborative-review/SKILL.md` | Spec phase-gate review sessions — Proof SDK setup, server lifecycle, API reference |
 | Raindrop Workshop | `docs/raindrop/README.md` | AI-agent tracing — instrumented repos, eval loop, dashboard tab, troubleshooting |
 | Headroom | `.claude/scripts/README.md` (Utilities) | Prompt/context compression proxy — install (global + per-repo venv), persistent service (launchd/systemd), durable Claude Code routing, `sync-memories-to-headroom.py` |
 | Scheduled Tasks | `docs/scheduled-tasks/README.md` | All scheduled routines (daily maintenance, macro-eval, skill-curator, harness health, drift review); OS scheduler setup; dashboard **Scheduled Tasks** tab. The weekly skill-curator runs a Usage Evidence audit (Phase 1.5) over `logs/skill-usage.jsonl`, reporting deprecate candidates (no use in 30d) and archive candidates (90d); `pinned: true` skills are never flagged. A new Phase 1.6 — Dependency Cross-Reference — runs `scripts/utils/skill-dependency-scan.sh` *before* the prompt fires (deterministic `grep -rn -w` over other skills' SKILL.md bodies, hooks, agents, commands, CLAUDE.md, kiro rules, and routine scripts, capped at 8 referrers per skill), and `skill-curator-runner.sh` splices its output into the prompt's `DEPENDENCY_MAP_PLACEHOLDER` via a temp-file `sed` `r`/`d` insert (not a variable substitution, since referrer paths can contain `&`/`\`). Any skill that is BOTH a low-quality/cold candidate AND cross-referenced is surfaced in the report's mandatory `## Dependency Flags` section instead of being folded into a plain deletion candidate — the human-invoked `/skill-curator` skill treats that section as ground truth and requires **Delete + migrate references** (referrers updated first) rather than a bare delete. |

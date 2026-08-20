@@ -3,8 +3,8 @@
 #
 # Fires after each assistant turn. Reads the latest session transcript, finds the
 # last assistant message, and checks for "husband" (case-insensitive). If absent,
-# exits 2 to block the stop and injects a correction prompt that tells Claude to
-# /compact, re-read CLAUDE.md, and re-respond correctly.
+# prints a notice to stdout and exits 0 — mechanical log only, not fed back to
+# Claude and does not block the stop (no forced extra turn, no token cost).
 #
 # REGISTRATION (in ~/.claude/settings.json under "Stop"):
 # {
@@ -83,10 +83,6 @@ if [ -z "$LAST_ASSISTANT" ] || echo "$LAST_ASSISTANT" | grep -qi "husband"; then
     exit 0
 fi
 
-# "Husband" missing from entire turn — block stop and inject correction
-printf '[address-check] CLAUDE.md rule violation: no response in this turn addressed the user as "Husband".\n'
-printf 'Context may be degraded. Please:\n'
-printf '  1. Run /compact to refresh context\n'
-printf '  2. Re-read CLAUDE.md\n'
-printf '  3. Re-respond to the user'"'"'s last message, addressing them as "Husband"\n'
-exit 2
+# "Husband" missing from entire turn — log only, do not block or feed back to Claude
+printf '[address-check] husband not found — compact needed\n'
+exit 0

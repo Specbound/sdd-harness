@@ -400,7 +400,7 @@ Starts at 20% on fresh install. Daily cap ±4.5%. History lives in `.claude/memo
 ### Opt out
 
 ```
-SDD_SKIP_ROUTINE=1 ~/.claude/sdd-harness/install.sh /path/to/project
+SDD_SKIP_ROUTINE=1 $SDD_HARNESS/install.sh /path/to/project
 ```
 
 Or after install: `schtasks.exe /Delete /TN "SDD Daily Orchestrator"` (global) or `rm .claude/scripts/orchestration/daily-runner.sh` (per-repo). To keep daily maintenance but stop the once-a-day fleet-wide `update.sh` sync, set `SDD_SKIP_HARNESS_SYNC=1` instead.
@@ -570,7 +570,7 @@ See `docs/gitnexus/README.md` for full details.
 A browser-based dashboard (`scripts/utils/dashboard.py`, stdlib only) that surfaces harness telemetry for all registered repos.
 
 ```bash
-python3 ~/.claude/sdd-harness/scripts/utils/dashboard.py
+python3 $SDD_HARNESS/scripts/utils/dashboard.py
 ```
 
 Starts a local HTTP server at `http://localhost:4569` and opens the browser automatically. Use `--repo <name|path>` to pre-select a repo, `--no-open` to suppress browser launch, `--port <PORT>` to set a custom port, or `--static` to write a static `.dashboard/index.html` instead.
@@ -612,7 +612,7 @@ All registered repos emit traces automatically whenever agents run. No commands 
 ### Dashboard Workshop tab
 
 ```bash
-python3 ~/.claude/sdd-harness/scripts/utils/dashboard.py
+python3 $SDD_HARNESS/scripts/utils/dashboard.py
 # → Workshop tab in the sidebar
 ```
 
@@ -712,7 +712,7 @@ Set `PROOF_SERVER_URL=http://your-host:4000` to point at a shared instance inste
 ### Skill location
 
 ```
-~/.claude/sdd-harness/skills/proof-collaborative-review/SKILL.md
+$SDD_HARNESS/skills/proof-collaborative-review/SKILL.md
 ```
 
 Bundled in the harness — replicated to every machine via `install.sh`. No per-machine manual copy needed.

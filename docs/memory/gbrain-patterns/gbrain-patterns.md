@@ -102,7 +102,7 @@ Every living memory observation has two zones:
 
 ### Via Hooks (shell-level enforcement)
 
-Three hooks fire automatically from `~/.claude/sdd-harness/.claude/settings.json`:
+Three hooks fire automatically from `$SDD_HARNESS/.claude/settings.json`:
 
 ```
 gbrain-agent-spawn.sh     → PreToolUse on Agent

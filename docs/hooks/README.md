@@ -148,7 +148,7 @@ Hook output is injected into Claude's context as system messages — Claude read
 ### `skill-usage-tracker.sh`
 **Event:** `PostToolUse` — **Matcher:** `Skill` — _(silent, never blocks, zero tokens)_
 
-**Purpose:** Appends one JSON line (`{"ts","skill"}`) per Skill-tool invocation to the global log `~/.claude/sdd-harness/logs/skill-usage.jsonl`. Every repo's copy writes to the same absolute path, so usage is aggregated across all projects.
+**Purpose:** Appends one JSON line (`{"ts","skill"}`) per Skill-tool invocation to the global log `$SDD_HARNESS/logs/skill-usage.jsonl`. Every repo's copy writes to the same absolute path, so usage is aggregated across all projects.
 
 **Why it's needed:** The weekly `skill-curator` claims to prune "unused" skills but previously had no usage data — it guessed from file mtime (edit time, not use). This is the evidence layer: real fire counts + last-seen timestamps let the curator deprecate cold skills (no use in 30d) and archive dead ones (90d) on evidence, not guesswork. Pattern lifted from the Hermes agent's curator usage log.
 
@@ -380,7 +380,7 @@ Hook output is injected into Claude's context as system messages — Claude read
 
 **Output:** `╔══ Skill Permissions Gate ══╗` reminder banner listing the four review dimensions. Silent on no match.
 
-**Location:** `~/.claude/sdd-harness/.claude/hooks/skill-permissions-gate.sh`
+**Location:** `$SDD_HARNESS/.claude/hooks/skill-permissions-gate.sh`
 
 ---
 

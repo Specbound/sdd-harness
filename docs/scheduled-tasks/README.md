@@ -16,7 +16,7 @@ The orchestrator itself is fail-loud: every non-dry-run invocation logs a `run s
 
 ### Fleet Harness Sync
 **Mechanism:** Inline in `scripts/orchestration/daily-orchestrator.sh` (harness-level section, runs **before** the per-repo runners)
-**Cadence:** Once per calendar day. State tracked as a timestamp in `~/.claude/sdd-harness/.last-harness-sync`; the gate compares day strings (`cut -dT -f1`) rather than using GNU-only `date -d`.
+**Cadence:** Once per calendar day. State tracked as a timestamp in `$SDD_HARNESS/.last-harness-sync`; the gate compares day strings (`cut -dT -f1`) rather than using GNU-only `date -d`.
 **Scope:** Harness-level — syncs into every registered project (or just `--repo <path>`, which is forwarded to `update.sh`)
 
 **What it does:** Runs `update.sh` so registered projects pick up harness changes with no human step. Nothing else ever ran `update.sh`: `stop-hook.sh` only prints a `Run: update.sh` nudge and then waits for someone to act on it, so a harness fix could sit unapplied in an installed project indefinitely — which is how a `settings.json` broken by an old template survived for months in an installed repo.
@@ -162,7 +162,7 @@ This is the **review** stage of the tool-failure-memory loop (capture → recall
 **Scope:** Harness repo only (exits 0 in non-harness repos via `docs/scheduled-tasks/` guard)
 
 **What it does:**
-1. **CLAUDE.md review** — reads all repos in `~/.claude/sdd-harness/projects.txt`; audits for stale instructions, model-assumption drift, and over-constraining rules from pre-Claude-4.x habits; rates each repo `clean` / `minor` / `needs-update`; writes `docs/claudemd-review-report.md`. This is the *harness-wide* pass. Its *per-repo* counterpart is the `/claudemd-review` global command (`commands/global/claudemd-review.md`), which `session-start-hook.sh` fires when a single repo's `.claude/memory/.last-claudemd-review` is >14 days stale; that command audits only the current repo (adding a 200-line size budget, an "inferable from the manifest" filter, and an `@AGENTS.md` import/dedup check) and writes `.claude/memory/claudemd-review-report.md` — do not confuse the two report paths.
+1. **CLAUDE.md review** — reads all repos in `$SDD_HARNESS/projects.txt`; audits for stale instructions, model-assumption drift, and over-constraining rules from pre-Claude-4.x habits; rates each repo `clean` / `minor` / `needs-update`; writes `docs/claudemd-review-report.md`. This is the *harness-wide* pass. Its *per-repo* counterpart is the `/claudemd-review` global command (`commands/global/claudemd-review.md`), which `session-start-hook.sh` fires when a single repo's `.claude/memory/.last-claudemd-review` is >14 days stale; that command audits only the current repo (adding a 200-line size budget, an "inferable from the manifest" filter, and an `@AGENTS.md` import/dedup check) and writes `.claude/memory/claudemd-review-report.md` — do not confuse the two report paths.
 2. **Iterative skill repair** — reads `docs/skill-curation-report.md` for low-quality flags; applies a Review→Repair→Validate loop (up to 3 skills per run, max 3 repair iterations per skill); writes repaired `SKILL.md` files directly; appends a `## Iterative Repair Run — [date]` section to the curation report
 - Race-safe via `mkdir` lock; a lock older than 2h (left by a killed run) is auto-removed on the next run
 
@@ -174,10 +174,10 @@ This is the **review** stage of the tool-failure-memory loop (capture → recall
 
 ### Drift Review
 **Mechanism:** Inline in `scripts/orchestration/daily-orchestrator.sh` (harness-level section)
-**Cadence:** Gated on elapsed days since the last **successful** run (`DRIFT_REVIEW_GAP_DAYS`, default 7), not day-of-week — a day-of-week gate can only ever fire on Wednesday, so a machine asleep/logged-out through every trigger window that day silently loses the whole week; an elapsed-days gate is self-healing, firing on whichever day the orchestrator next actually runs, if due. State tracked as a timestamp in `~/.claude/sdd-harness/.last-drift-review`. The elapsed-days math is done with `python3` (`datetime.date.fromisoformat`), not `date -d` — `date -d` is GNU-only, so on macOS the epoch lookup always failed, the comparison was skipped, and this "weekly" review fired a full `claude --print` session on **every** orchestrator run.
+**Cadence:** Gated on elapsed days since the last **successful** run (`DRIFT_REVIEW_GAP_DAYS`, default 7), not day-of-week — a day-of-week gate can only ever fire on Wednesday, so a machine asleep/logged-out through every trigger window that day silently loses the whole week; an elapsed-days gate is self-healing, firing on whichever day the orchestrator next actually runs, if due. State tracked as a timestamp in `$SDD_HARNESS/.last-drift-review`. The elapsed-days math is done with `python3` (`datetime.date.fromisoformat`), not `date -d` — `date -d` is GNU-only, so on macOS the epoch lookup always failed, the comparison was skipped, and this "weekly" review fired a full `claude --print` session on **every** orchestrator run.
 **Scope:** Harness-level (not per-repo)
 
-**What it does:** Invokes the `repo-drift-review` skill to sweep the SDD harness for drift. Auto-fixes what it can. Writes `~/.claude/sdd-harness/docs/drift-review-report.md`. The state file is only updated on a successful run (exit 0); both stdout and stderr are captured and, on failure, appended to `logs/orchestrator-errors.log`.
+**What it does:** Invokes the `repo-drift-review` skill to sweep the SDD harness for drift. Auto-fixes what it can. Writes `$SDD_HARNESS/docs/drift-review-report.md`. The state file is only updated on a successful run (exit 0); both stdout and stderr are captured and, on failure, appended to `logs/orchestrator-errors.log`.
 
 ---
 

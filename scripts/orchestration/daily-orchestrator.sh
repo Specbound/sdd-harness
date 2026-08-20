@@ -1,6 +1,6 @@
 #!/bin/bash
 # Global daily maintenance orchestrator.
-# Reads ~/.claude/sdd-harness/projects.txt and dispatches each repo's
+# Reads $SDD_HARNESS/projects.txt and dispatches each repo's
 # .claude/scripts/orchestration/daily-runner.sh. Per-repo failures are isolated and logged;
 # the loop never aborts midway.
 #
@@ -310,7 +310,7 @@ print((datetime.date.today() - datetime.date.fromisoformat(raw)).days)
     echo "$ts harness: starting drift review" >> "$LOG_FILE"
     drift_errbuf=$(mktemp)
     drift_outbuf=$(mktemp)
-    echo "Use the repo-drift-review skill to sweep the SDD harness for drift. Auto-fix what you can. Write the summary to $HARNESS_DIR/docs/drift-review-report.md" | \
+    echo "Use the repo-drift-review skill to sweep the SDD harness for drift. Auto-fix what you can. Write the summary to $HARNESS_DIR/reports/drift-review-report.md" | \
       claude --print --output-format text --permission-mode bypassPermissions > "$drift_outbuf" 2>"$drift_errbuf"
     drift_exit=$?
     echo "$ts harness: drift review exit=$drift_exit" >> "$LOG_FILE"

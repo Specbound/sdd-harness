@@ -199,7 +199,7 @@ gitnexus setup
 ### With install.sh
 
 ```bash
-~/.claude/sdd-harness/install.sh /path/to/project --with-gitnexus
+$SDD_HARNESS/install.sh /path/to/project --with-gitnexus
 ```
 
 The `--with-gitnexus` flag adds GitNexus configuration during harness installation. It performs step 3 for you rather than telling you to do it: `install.sh` calls `scripts/setup/gitnexus-reconcile.sh <project> --wire`, which writes the `mcpServers.gitnexus` entry into `.mcp.json` and adds `gitnexus` to `enabledMcpjsonServers` in `.claude/settings.json` (a no-op if `enableAllProjectMcpServers` is already true, or if any config scope already provides the server). Previously it only printed a `NOTE:` with the JSON to paste by hand, while `gitnexus setup` still wrote its managed MUST/NEVER `CLAUDE.md` block — so every install where nobody pasted the JSON left the agent under orders to call `gitnexus_*` tools that were never registered.

@@ -13,14 +13,14 @@ Framing note: per the taxonomy in *Self-Improvements in Modern Agentic Systems* 
 
 ## Use this skill when
 
-- The weekly skill-curator local runner has written `docs/skill-curation-report.md`
+- The weekly skill-curator local runner has written `reports/skill-curation-report.md`
 - You want to act on quality findings (merge, compress, delete)
 - You want to audit system-reminder pressure from skill descriptions
 
 ## Do not use this skill when
 
 - Creating a new skill — use `skill-extraction` or `kiro:spec-quick` instead
-- The weekly report hasn't run yet (check `git log -- docs/skill-curation-report.md`)
+- The weekly report hasn't run yet (check `git log -- reports/skill-curation-report.md`)
 
 ---
 
@@ -28,9 +28,9 @@ Framing note: per the taxonomy in *Self-Improvements in Modern Agentic Systems* 
 
 ### Phase 1: Load & Orient
 
-1. Read `docs/skill-curation-report.md` from the sdd-harness repo
-2. Run `git log -1 --format="%cr (%cd)" --date=short -- docs/skill-curation-report.md` to check freshness
-3. If the report is older than 14 days, warn: the local skill-curator runner may not have run — check orchestrator logs at `~/.claude/sdd-harness/logs/orchestrator.log`
+1. Read `reports/skill-curation-report.md` from the sdd-harness repo
+2. Run `git log -1 --format="%cr (%cd)" --date=short -- reports/skill-curation-report.md` to check freshness
+3. If the report is older than 14 days, warn: the local skill-curator runner may not have run — check orchestrator logs at `$SDD_HARNESS/logs/orchestrator.log`
 
 ### Phase 2: Description Budget Audit
 
@@ -90,7 +90,7 @@ For each finding, determine the action type:
 
 `skill-eval-gate` scenarios are authored once, at skill-creation time, and never revisited — a skill can drift out of sync with how it's actually used without anyone noticing. This phase closes that loop, borrowed from the "continuous evaluation" stage of a prompt-eval maturity model (source: `docs/sources/articles/README.md`, "Eval Gates for Prompts").
 
-1. Identify skills with a logged `skill-eval-gate` PASS verdict (check `docs/skill-curation-report.md` history / commit messages referencing the gate).
+1. Identify skills with a logged `skill-eval-gate` PASS verdict (check `reports/skill-curation-report.md` history / commit messages referencing the gate).
 2. If Raindrop Workshop traces are available (`mcp__raindrop__query_traces`), pull recent invocations of those skills.
 3. Run `active-observability`'s facet-clustering over the sampled traces to surface recurring failure patterns — a skill firing on the wrong trigger, an agent ignoring its steps, a task the skill claims to cover but visibly fails at.
 4. For each new failure pattern not already represented in that skill's original scenario table, draft one concrete new scenario (realistic prompt + deterministic pass/fail check, matching `skill-eval-gate` Phase 1's format) and flag it as an **Add eval scenario** finding.
@@ -156,4 +156,4 @@ Description budget: 3,140 chars → 2,890 chars (−250, −63 tokens)
 
 ### Phase 6: Update Source Log
 
-Append a curation entry to `docs/skill-curation-report.md` under a new `## Local Curation — [date]` section noting what was merged/compressed/deleted and the description budget before/after.
+Append a curation entry to `reports/skill-curation-report.md` under a new `## Local Curation — [date]` section noting what was merged/compressed/deleted and the description budget before/after.

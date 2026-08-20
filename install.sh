@@ -4,23 +4,23 @@
 # then syncs harness files into one project or all registered projects.
 # For subsequent updates use update.sh.
 #
-# USAGE
+# USAGE  ($SDD_HARNESS is written to ~/.bashrc / ~/.zshrc automatically on first run)
 #   First-time setup (one project):
-#     ~/.claude/sdd-harness/install.sh /path/to/project
-#     ~/.claude/sdd-harness/install.sh                      # cur dir
+#     $SDD_HARNESS/install.sh /path/to/project
+#     $SDD_HARNESS/install.sh                      # cur dir
 #
 #   First-time setup (all registered projects):
-#     ~/.claude/sdd-harness/install.sh --all
-#     ~/.claude/sdd-harness/install.sh --all --force        # re-sync every project
+#     $SDD_HARNESS/install.sh --all
+#     $SDD_HARNESS/install.sh --all --force        # re-sync every project
 #
 #   Skip global tool installs (harness file sync only):
-#     ~/.claude/sdd-harness/install.sh --skip-tools /path/to/project
+#     $SDD_HARNESS/install.sh --skip-tools /path/to/project
 #
 #   Non-interactive (auto-yes all install prompts):
-#     ~/.claude/sdd-harness/install.sh --yes /path/to/project
+#     $SDD_HARNESS/install.sh --yes /path/to/project
 #
 #   GitNexus code intelligence:
-#     ~/.claude/sdd-harness/install.sh --with-gitnexus /path/to/project
+#     $SDD_HARNESS/install.sh --with-gitnexus /path/to/project
 #
 # FLAGS
 #   --yes / -y          Non-interactive: answer "yes" to every install prompt
@@ -45,7 +45,7 @@
 #   # or with an explicit project (note /c/... style path for bash):
 #   & "C:\Program Files\Git\bin\bash.exe" install.sh /c/dev/my-project
 #   # one-off from anywhere (let bash expand ~ via -c):
-#   & "C:\Program Files\Git\bin\bash.exe" -c "~/.claude/sdd-harness/install.sh --all"
+#   & "C:\Program Files\Git\bin\bash.exe" install.sh --all     # from inside the repo dir
 
 # Self-locate the harness root via the shared resolver — symlink/junction-safe,
 # resolves to the real physical path, works on any machine/OS/clone location.
@@ -876,6 +876,20 @@ install_globals() {
   # the harness and re-running either command is enough to heal every consumer.
   write_harness_pointer "$HARNESS_DIR"
   install_harness_pre_commit "$HARNESS_DIR"
+
+  # --- Export SDD_HARNESS to shell rc files so users can run scripts from anywhere ---
+  export SDD_HARNESS="$HARNESS_DIR"
+  for rc in "$HOME/.zshrc" "$HOME/.bashrc"; do
+    if [ -f "$rc" ]; then
+      if grep -qF 'SDD_HARNESS=' "$rc"; then
+        # Already present — update the path in case the repo moved
+        sed -i.bak "s|export SDD_HARNESS=.*|export SDD_HARNESS=\"$HARNESS_DIR\"|" "$rc" && rm -f "$rc.bak"
+      else
+        printf '\n# SDD Harness — set by install.sh; update by re-running install.sh if you move the repo\nexport SDD_HARNESS="%s"\n' "$HARNESS_DIR" >> "$rc"
+      fi
+      info "SDD_HARNESS set in $rc  ($HARNESS_DIR)"
+    fi
+  done
 
   # --- Regenerate harness's own settings.json ---
   # Hook commands are project-relative (`bash .claude/hooks/x.sh`), matching

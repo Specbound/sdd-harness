@@ -8,7 +8,7 @@ argument-hint: "[--apply]  (default: propose only)"
 
 Audit the **current repository's** always-loaded instruction files against a lean-context rubric, rate them, write a findings report, and stamp the review date so the bi-weekly `session-start-hook.sh` reminder resets.
 
-This command is fired automatically by `session-start-hook.sh` when `.claude/memory/.last-claudemd-review` is >14 days stale (the `[CLAUDEMD-REVIEW-DUE]` reminder). It also runs on demand. It is the **per-repo** counterpart to the harness-health-runner routine, which audits *all* registered repos into `docs/claudemd-review-report.md` — do not confuse the two or write to that file.
+This command is fired automatically by `session-start-hook.sh` when `.claude/memory/.last-claudemd-review` is >14 days stale (the `[CLAUDEMD-REVIEW-DUE]` reminder). It also runs on demand. It is the **per-repo** counterpart to the harness-health-runner routine, which audits *all* registered repos into `reports/claudemd-review-report.md` — do not confuse the two or write to that file.
 
 ## Invocation context
 
