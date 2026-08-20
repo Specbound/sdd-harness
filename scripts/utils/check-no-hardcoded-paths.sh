@@ -20,6 +20,11 @@
 #   - scripts/lib/resolve-harness-dir.sh  (the one allowed depth marker)
 #   - scripts/lib/harness-pointer.sh      (the one allowed namer of the pointer file
 #                                          and its convenience symlink)
+#   - scripts/lib/tool-paths.sh           (the one allowed namer of package-manager
+#                                          layouts — it exists to ask uv/pipx/brew
+#                                          where they install, and holds the XDG
+#                                          spec defaults used only when a tool
+#                                          cannot be asked)
 #   - this script itself   (it names the very patterns it bans)
 #
 # ...plus GENERATED_SCANNED below, which re-admits the specific gitignored files
@@ -57,6 +62,18 @@ PATTERNS=(
   'C:\\\\Users\\\\[A-Za-z]	hardcoded Windows user path (use self-location or $HOME)'
   '\$HOME/\.claude/sdd-harness	hardcoded harness root (source lib/resolve-harness-dir.sh instead)'
   'cd "\$\(dirname	logical-cd self-location resolves symlinks/junctions to the wrong path — use "cd -P" and/or source lib/resolve-harness-dir.sh'
+  # --- Tool-layout literals ------------------------------------------------
+  # A path can be $HOME-relative and still be a guess. `~/.local/share/uv/tools`,
+  # `~/.local/bin` and `~/.raindrop/bin` are DEFAULTS, not facts: uv honours
+  # UV_TOOL_DIR / UV_TOOL_BIN_DIR / XDG_*, pipx honours PIPX_HOME, raindrop honours
+  # RAINDROP_HOME. Naming them works on the machine it was written on and breaks on
+  # a clone that set any of those. Ask the tool instead — lib/tool-paths.sh does.
+  # /opt/homebrew is worse: it is Apple-Silicon-only, so hardcoding it breaks every
+  # Intel Mac (and /usr/local breaks every Apple Silicon one). Ask `brew --prefix`.
+  '/opt/homebrew	Apple-Silicon-only Homebrew prefix (use brew_bin_dir / `brew --prefix`)'
+  '\$HOME/\.local/(bin|share/uv|pipx)	guessed tool layout (use lib/tool-paths.sh: uv_tool_bin_dir / uv_tool_dir / find_tool)'
+  '\$HOME/\.raindrop	guessed raindrop home (use lib/tool-paths.sh: raindrop_bin_dir, honours RAINDROP_HOME)'
+  '\$HOME/\.cargo	guessed cargo home (use lib/tool-paths.sh: cargo_bin_dir, honours CARGO_HOME)'
 )
 
 # Gitignored files that are generated per-machine and still must not contain a
@@ -81,6 +98,7 @@ done < <(
     | grep -Ev '^skills/' \
     | grep -Ev '^scripts/lib/resolve-harness-dir\.sh$' \
     | grep -Ev '^scripts/lib/harness-pointer\.sh$' \
+    | grep -Ev '^scripts/lib/tool-paths\.sh$' \
     | grep -Ev '^scripts/utils/check-no-hardcoded-paths\.sh$'
 )
 
@@ -96,6 +114,7 @@ if [ "${#FILES[@]}" -eq 0 ]; then
       -not -path './node_modules/*' \
       -not -path './scripts/lib/resolve-harness-dir.sh' \
       -not -path './scripts/lib/harness-pointer.sh' \
+      -not -path './scripts/lib/tool-paths.sh' \
       -not -path './scripts/check-no-hardcoded-paths.sh' \
       -not -path './.git/*' | sed 's|^\./||'
   )
@@ -112,9 +131,13 @@ for entry in "${PATTERNS[@]}"; do
   for f in "${FILES[@]}"; do
     [ -f "$f" ] || continue
     # Skip comment-only matches? No — a hardcoded path in a comment still rots.
-    # But DO skip overridable env defaults (${SDD_HARNESS_HOME:-...}) — the
-    # literal there is a portable fallback, not a machine-locked path.
-    matches="$(grep -nE "$regex" "$f" 2>/dev/null | grep -v 'SDD_HARNESS_HOME')" || continue
+    # But DO skip overridable env defaults (${RAINDROP_HOME:-$HOME/.raindrop}) —
+    # the literal there is the documented fallback of a variable any install can
+    # set, so it is portable by construction. Listed explicitly rather than
+    # matching `${VAR:-` generally, so a genuine machine path smuggled in as some
+    # unrelated variable's default is still caught.
+    OVERRIDABLE='SDD_HARNESS_HOME|RAINDROP_HOME|CARGO_HOME|PIPX_HOME|PIPX_BIN_DIR|UV_TOOL_DIR|UV_TOOL_BIN_DIR|XDG_DATA_HOME|XDG_BIN_HOME'
+    matches="$(grep -nE "$regex" "$f" 2>/dev/null | grep -Ev "$OVERRIDABLE")" || continue
     if [ -n "$matches" ]; then
       while IFS= read -r line; do
         echo "HARDCODED PATH: $f:$line"

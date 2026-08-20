@@ -18,7 +18,10 @@ set -e
 
 __here="$(cd -P "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 . "$__here/../lib/resolve-harness-dir.sh"
-PROJECTS_FILE="$HARNESS_DIR/projects.txt"
+# No lib/repo-venv.sh and no projects.txt: headroom is machine-level only (see § 3).
+# tool-paths.sh resolves the headroom binary without depending on the caller's PATH.
+. "$__here/../lib/tool-paths.sh"
+ensure_tool_bin_on_path
 BASHRC="$HOME/.bashrc"
 HEADROOM_PKG="headroom-ai"
 MARKER="# headroom wrap (added by sdd-harness headroom-setup.sh)"
@@ -54,6 +57,29 @@ if [ "$INSTALLED_GLOBALLY" -eq 0 ]; then
     fi
 fi
 
+# ── 1b. Resolve the headroom binary WITHOUT relying on PATH ────────────────
+# `uv tool install` drops its shim in the directory uv reports as its tool-bin dir,
+# which is routinely absent from PATH in non-login shells and in the environment
+# install.sh/update.sh run under. Section 4 below used to gate the persistent service
+# AND the Claude routing on a bare `command -v headroom`, so on such a machine the
+# whole block was skipped in silence — headroom stayed unrouted and nothing said so.
+#
+# lib/tool-paths.sh asks uv/pipx where they put things instead of naming directories,
+# so this resolves correctly on any clone regardless of how the user configured
+# UV_TOOL_DIR / XDG_BIN_HOME / PIPX_HOME.
+HEADROOM_BIN="$(find_tool headroom || true)"
+if [ -n "$HEADROOM_BIN" ] && ! command -v headroom >/dev/null 2>&1; then
+    # Reported, not fixed here: install.sh/update.sh own the one durable PATH repair
+    # (persist_tool_bin_on_path), so it happens once per run instead of as a side
+    # effect buried in a headroom-specific script.
+    echo "  headroom resolved at $HEADROOM_BIN (its directory is not on PATH)."
+fi
+
+if [ "$INSTALLED_GLOBALLY" -eq 0 ] && [ -n "$HEADROOM_BIN" ]; then
+    # Reinstall failed but a working binary is already there — not a problem.
+    INSTALLED_GLOBALLY=1
+fi
+
 if [ "$INSTALLED_GLOBALLY" -eq 0 ]; then
     echo "  WARNING: could not install headroom-ai globally. Install manually:"
     echo "    uv tool install headroom-ai   OR   pip install --user headroom-ai"
@@ -71,68 +97,34 @@ for RC in "$HOME/.bashrc" "$HOME/.zshrc"; do
     fi
 done
 
-# ── 3. Install headroom-ai in each registered repo's virtualenv ─────────────
-install_headroom_in_repo() {
-    local repo="$1"
-
-    if [ ! -d "$repo" ]; then
-        echo "  SKIP: $repo (directory not found)"
-        return
-    fi
-
-    # Strategy A: uv + pyproject.toml
-    if [ -f "$repo/pyproject.toml" ] && command -v uv >/dev/null 2>&1; then
-        if (cd "$repo" && uv pip install "$HEADROOM_PKG" -q 2>/dev/null); then
-            echo "  $(basename "$repo"): installed via uv."
-            return
-        fi
-    fi
-
-    # Strategy B: venv in subdirs
-    for subdir in "" "/backend" "/app" "/src"; do
-        local subpath="$repo$subdir"
-        if [ -f "$subpath/requirements.txt" ]; then
-            for venv_candidate in \
-                "$subpath/.venv" "$subpath/venv" \
-                "$repo/.venv"   "$repo/venv"; do
-                if [ -f "$venv_candidate/bin/pip" ]; then
-                    if "$venv_candidate/bin/pip" install "$HEADROOM_PKG" -q 2>/dev/null; then
-                        echo "  $(basename "$repo"): installed via venv $venv_candidate."
-                        return
-                    fi
-                fi
-            done
-        fi
-    done
-
-    # Strategy C: repo root venv regardless of requirements
-    for venv_candidate in "$repo/.venv" "$repo/venv"; do
-        if [ -f "$venv_candidate/bin/pip" ]; then
-            if "$venv_candidate/bin/pip" install "$HEADROOM_PKG" -q 2>/dev/null; then
-                echo "  $(basename "$repo"): installed via venv $venv_candidate."
-                return
-            fi
-        fi
-    done
-
-    echo "  $(basename "$repo"): no virtualenv detected — skipping repo venv install"
-}
-
-if [ ! -s "$PROJECTS_FILE" ]; then
-    echo "  No registered projects found — skipping venv installs."
-else
-    echo "  Installing headroom-ai in registered repo virtualenvs..."
-    while IFS= read -r project || [ -n "$project" ]; do
-        [ -n "$project" ] && install_headroom_in_repo "$project"
-    done < "$PROJECTS_FILE"
-fi
+# ── 3. Per-repo venv install — removed deliberately ────────────────────────
+# This script used to pip-install headroom-ai into every registered repo's venv.
+# Two measurements retired it:
+#
+#   1. It never once succeeded. Across all four registered repos, zero had
+#      headroom-ai in site-packages — the install was hidden behind
+#      `-q 2>/dev/null` and had been failing silently since it was written.
+#   2. Nothing needed it to. headroom works entirely at machine level:
+#      ANTHROPIC_BASE_URL in the user's shell rc plus the launchd/systemd proxy
+#      service. The harness's only Python consumer, utils/sync-memories-to-headroom.py,
+#      runs under headroom's OWN interpreter, never a repo's.
+#
+# So the feature was dead code that happened to be harmless — until the venv
+# discovery in lib/repo-venv.sh started working, at which point it would have begun
+# installing a maturin-built package plus its dependency tree into repos that never
+# import it, undeclared and therefore prunable. Bloat with no consumer.
+#
+# If a repo ever genuinely needs `import headroom` in its own source, add headroom-ai
+# to scripts/setup/repo-requirements.txt — that path installs AND declares it.
+# Machine-level health (binary resolvable, proxy listening, routing wired) is
+# reported by scripts/setup/check-harness-deps.sh.
 
 # ── 4. Install headroom as a persistent service ─────────────────────────────
 # Keeps the proxy warm between sessions — eliminates cold-start delay (~10s → ~1s).
 # Only runs when headroom is installed and a service supervisor is available.
 # Idempotent: skips if service already installed and healthy.
-if command -v headroom >/dev/null 2>&1; then
-    if headroom install status >/dev/null 2>&1; then
+if [ -n "$HEADROOM_BIN" ]; then
+    if "$HEADROOM_BIN" install status >/dev/null 2>&1; then
         echo "  Headroom persistent service already installed."
     else
         # `headroom install apply` auto-detects the supervisor:
@@ -142,13 +134,17 @@ if command -v headroom >/dev/null 2>&1; then
         case "$(uname -s)" in
             Darwin|Linux)
                 echo "  Installing headroom persistent service ($(uname -s))..."
-                if headroom install apply --preset persistent-service --memory \
-                   || { echo "  First start missed readiness (model warm-up) — retrying..."; sleep 3; headroom install apply --preset persistent-service --memory; }; then
+                if "$HEADROOM_BIN" install apply --preset persistent-service --memory \
+                   || { echo "  First start missed readiness (model warm-up) — retrying..."; sleep 3; "$HEADROOM_BIN" install apply --preset persistent-service --memory; }; then
                     echo "  Headroom persistent service installed and started (auto-starts on login)."
                     # Route Claude Code through the proxy ONLY after it is confirmed
                     # healthy, so ANTHROPIC_BASE_URL never points at a dead proxy.
-                    if curl -fsS -m 8 "http://127.0.0.1:${HEADROOM_PORT:-8787}/readyz" >/dev/null 2>&1; then
-                        if headroom init --global --memory claude >/dev/null 2>&1; then
+                    # Generous limit plus one retry: /readyz answers instantly when
+                    # warm but can exceed 8s while the compression model loads, and a
+                    # false negative here silently leaves routing unwired.
+                    if curl -fsS --connect-timeout 3 -m 25 "http://127.0.0.1:${HEADROOM_PORT:-8787}/readyz" >/dev/null 2>&1 \
+                       || { sleep 3; curl -fsS --connect-timeout 3 -m 25 "http://127.0.0.1:${HEADROOM_PORT:-8787}/readyz" >/dev/null 2>&1; }; then
+                        if "$HEADROOM_BIN" init --global --memory claude >/dev/null 2>&1; then
                             echo "  Claude Code routed through headroom (durable, all shells + GUI)."
                         else
                             echo "  WARNING: routing not wired. Run manually: headroom init --global --memory claude"
@@ -166,7 +162,7 @@ if command -v headroom >/dev/null 2>&1; then
         esac
     fi
 else
-    echo "  Skipping persistent service (headroom not installed)."
+    echo "  Skipping persistent service (headroom binary not found — see WARNING above)."
 fi
 
 echo ""

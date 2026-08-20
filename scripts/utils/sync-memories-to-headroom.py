@@ -1,8 +1,14 @@
 #!/usr/bin/env python3
 """Bidirectional sync: harness markdown memories ↔ headroom SQLite DB.
 
-Run with headroom's Python:
-    ~/.local/share/uv/tools/headroom-ai/bin/python scripts/utils/sync-memories-to-headroom.py
+Run with headroom's own Python — the only interpreter that can import headroom.
+Ask uv where that is rather than naming its tool directory, which is relocatable
+via UV_TOOL_DIR / XDG_DATA_HOME and differs under a pipx install:
+
+    "$(uv tool dir)/headroom-ai/bin/python" scripts/utils/sync-memories-to-headroom.py
+
+hooks/claude/session-start-hook.sh resolves it the same way, through
+scripts/lib/tool-paths.sh's find_tool_python.
 
 Import direction:  ~/.claude/projects/<harness>/memory/*.md  →  headroom SQLite
 Export direction:  headroom SQLite new memories  →  MEMORY.md (Headroom section)

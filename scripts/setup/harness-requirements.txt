@@ -1,0 +1,17 @@
+# harness-requirements.txt — Python packages the HARNESS ITSELF imports.
+#
+# These are installed into the harness-owned venv (<harness root>/.venv-tools),
+# NEVER into a target repo. A repo's dependency prune, lockfile regen, or
+# `uv sync` cannot touch them, because the repo never declared or contained them.
+#
+# Consumed by: scripts/setup/check-harness-deps.sh
+# Format: <pip-spec> [import-name]
+#   import-name defaults to <pip-spec> with '-' → '_' and any version spec stripped.
+#   Give it explicitly whenever the distribution name != the module name.
+#
+# NOT listed here (owned elsewhere on purpose):
+#   liteparse   — scripts/setup/liteparse-setup.sh (same venv, own fallback logic)
+#   headroom-ai — scripts/setup/headroom-setup.sh (global uv tool; hooks call its
+#                 own interpreter, so it is already prune-immune)
+
+anthropic    anthropic

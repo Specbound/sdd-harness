@@ -273,6 +273,25 @@ if [ "${SDD_SKIP_ROUTINE:-0}" != "1" ]; then
   esac
 fi
 
+# Keep the package-manager tool-bin directory reachable in future shells. See
+# install.sh for the reasoning; `uv tool update-shell` is idempotent and no-ops
+# once the directory is already on PATH.
+. "$HARNESS_DIR/scripts/lib/tool-paths.sh"
+if persist_tool_bin_on_path; then
+  echo ""
+  echo "  Tool bin dir ($(uv_tool_bin_dir)) wired onto PATH for future shells."
+  echo "  Open a new shell (or source your profile) for it to take effect."
+fi
+
+# Verify/heal/declare harness dependencies across every registered repo.
+# This is the guard against a repo pruning packages the harness relies on: it
+# reinstalls what is missing and declares repo-facing packages in the repo's own
+# manifest so the next prune leaves them alone. Runs before raindrop-setup.sh,
+# whose auto-instrument pass needs the SDK already installed.
+echo ""
+bash "$HARNESS_DIR/scripts/setup/check-harness-deps.sh" || \
+  echo "  WARNING: some harness dependencies are missing — see the table above."
+
 # Refresh Raindrop Workshop wiring (env vars + venv installs) for all repos.
 echo ""
 echo "Refreshing Raindrop Workshop setup..."

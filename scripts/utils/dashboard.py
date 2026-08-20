@@ -413,19 +413,68 @@ def gitnexus_stats(repo):
             pass
     return result
 
+def _tool_bin_dirs():
+    """Directories a globally-installed CLI may live in, discovered not guessed.
+
+    The Python twin of scripts/lib/tool-paths.sh. This used to list the two
+    Homebrew bin directories literally — one is Apple-Silicon-only, the other
+    Intel-only, so the list was right on one Mac and wrong on the other, and wrong
+    on any machine with a custom prefix. Ask each package manager where it actually
+    installs instead; every remaining path is $HOME- or env-derived.
+    """
+    import subprocess
+
+    dirs = []
+    for argv in (["uv", "tool", "dir", "--bin"], ["brew", "--prefix"]):
+        try:
+            out = subprocess.run(
+                argv, capture_output=True, text=True, timeout=5
+            )
+        except (OSError, subprocess.SubprocessError):
+            continue
+        if out.returncode != 0:
+            continue
+        value = out.stdout.strip()
+        if not value:
+            continue
+        # `brew --prefix` reports the prefix; binaries live under its bin/.
+        dirs.append(os.path.join(value, "bin") if argv[0] == "brew" else value)
+
+    home = os.path.expanduser("~")
+    dirs.append(os.path.join(os.environ.get("RAINDROP_HOME", os.path.join(home, ".raindrop")), "bin"))
+    dirs.append(os.path.join(os.environ.get("CARGO_HOME", os.path.join(home, ".cargo")), "bin"))
+    dirs.append(os.environ.get("XDG_BIN_HOME", os.path.join(home, ".local", "bin")))
+
+    seen, unique = set(), []
+    for d in dirs:
+        if d and d not in seen:
+            seen.add(d)
+            unique.append(d)
+    return unique
+
+
+def find_global_tool(name):
+    """Absolute path to a globally-installed CLI, or None.
+
+    shutil.which only searches $PATH, and the PATH a hook or IDE hands us is not
+    the PATH of an interactive login shell — an installed, running tool reads as
+    absent. Fall back to the discovered install directories.
+    """
+    import shutil
+
+    hit = shutil.which(name)
+    if hit:
+        return hit
+    for d in _tool_bin_dirs():
+        cand = os.path.join(d, name)
+        if os.path.isfile(cand) and os.access(cand, os.X_OK):
+            return cand
+    return None
+
+
 def workshop_stats(repo):
-    import shutil, subprocess
-    # shutil.which only searches $PATH, which omits ~/.raindrop/bin in non-login
-    # shells (e.g. when dashboard.py is launched by a hook or IDE).
-    # Also probe known install locations directly.
-    _known = [
-        os.path.expanduser("~/.raindrop/bin/raindrop"),
-        "/usr/local/bin/raindrop",
-        "/opt/homebrew/bin/raindrop",
-    ]
-    installed = shutil.which("raindrop") is not None or any(
-        os.path.isfile(p) and os.access(p, os.X_OK) for p in _known
-    )
+    import subprocess
+    installed = find_global_tool("raindrop") is not None
     try:
         result = subprocess.run(
             ["grep", "-rq", "raindrop.begin", str(repo),

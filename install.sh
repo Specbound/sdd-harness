@@ -52,6 +52,8 @@
 __here="$(cd -P "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 . "$__here/scripts/lib/resolve-harness-dir.sh"
 . "$__here/scripts/lib/harness-pointer.sh"
+# Where globally-installed CLIs actually live — asked of uv/pipx/brew, never guessed.
+. "$__here/scripts/lib/tool-paths.sh"
 
 # ── Flags ──────────────────────────────────────────────────────────────────────
 YES=false
@@ -207,10 +209,13 @@ refresh_tool_path() {
       local links npmbin
       links="$(cygpath -u "${LOCALAPPDATA:-}" 2>/dev/null)/Microsoft/WinGet/Links"
       npmbin="$(cygpath -u "${APPDATA:-}" 2>/dev/null)/npm"
-      export PATH="/c/Program Files/nodejs:$npmbin:$links:$HOME/.raindrop/bin:$PATH"
+      export PATH="/c/Program Files/nodejs:$npmbin:$links:$(raindrop_bin_dir):$PATH"
       ;;
     macos|linux|wsl)
-      export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$HOME/.raindrop/bin:$PATH"
+      # Directories come from lib/tool-paths.sh, which asks uv/pipx/brew where they
+      # install rather than naming ~/.local/bin and friends — those are defaults,
+      # not facts, and every one of them is relocatable by env var.
+      ensure_tool_bin_on_path
       ;;
   esac
   hash -r 2>/dev/null || true
@@ -302,9 +307,10 @@ install_global_tools() {
         done
         # fd-find installs as 'fdfind' on Ubuntu; expose as 'fd'
         if command -v fdfind >/dev/null 2>&1 && ! command -v fd >/dev/null 2>&1; then
-          mkdir -p "$HOME/.local/bin"
-          ln -sf "$(command -v fdfind)" "$HOME/.local/bin/fd"
-          ok "fd symlinked from fdfind"
+          _bindir="$(uv_tool_bin_dir)"   # honours UV_TOOL_BIN_DIR / XDG_BIN_HOME
+          mkdir -p "$_bindir"
+          ln -sf "$(command -v fdfind)" "$_bindir/fd"
+          ok "fd symlinked from fdfind into $_bindir"
         fi
         refresh_tool_path
       else
@@ -403,7 +409,7 @@ install_global_tools() {
   section "Raindrop Workshop"
   if [ "$SKIP_WORKSHOP" = true ]; then
     warn "Skipping Raindrop Workshop  (--skip-workshop)"
-  elif command -v raindrop >/dev/null 2>&1 || [ -x "$HOME/.raindrop/bin/raindrop" ]; then
+  elif [ -n "$(find_tool raindrop || true)" ]; then
     ok "Raindrop Workshop CLI already installed"
   else
     if confirm "Install Raindrop Workshop?"; then
@@ -429,16 +435,23 @@ install_global_tools() {
         curl -fsSL https://raindrop.sh/install -o "$_tmp"
         bash "$_tmp"
         rm -f "$_tmp"
-        export PATH="$HOME/.raindrop/bin:$PATH"
+        # raindrop's installer ships no "where did you put me" command, so its own
+        # documented home is the source of truth — via RAINDROP_HOME when the user
+        # relocated it. The rc line stays $HOME-relative so it survives being read
+        # on a machine with a different home.
+        _rdbin="$(raindrop_bin_dir)"
+        export PATH="$_rdbin:$PATH"
         for rc in "$HOME/.zshrc" "$HOME/.bashrc"; do
           if [ -f "$rc" ] && ! grep -qF '.raindrop/bin' "$rc"; then
-            echo 'export PATH="$HOME/.raindrop/bin:$PATH"' >> "$rc"
-            info "Added ~/.raindrop/bin to PATH in $rc"
+            echo 'export PATH="${RAINDROP_HOME:-$HOME/.raindrop}/bin:$PATH"' >> "$rc"
+            info "Added $_rdbin to PATH in $rc"
           fi
         done
-        command -v raindrop >/dev/null 2>&1 \
-          && ok "Raindrop Workshop installed  ($(raindrop --version 2>&1))" \
-          || warn "raindrop binary not found after install — check ~/.raindrop/bin"
+        if [ -n "$(find_tool raindrop || true)" ]; then
+          ok "Raindrop Workshop installed  ($(raindrop --version 2>&1))"
+        else
+          warn "raindrop binary not found after install — check $_rdbin"
+        fi
       fi
     else
       warn "Skipped Raindrop Workshop"
@@ -472,10 +485,11 @@ install_global_tools() {
       case "$SDD_OS" in
         macos|linux|wsl)
           curl -LsSf https://astral.sh/uv/install.sh | sh
-          for env_file in "$HOME/.cargo/env" "$HOME/.local/bin/env"; do
+          # uv's installer drops an `env` script in whichever bin dir it chose.
+          for env_file in "$(cargo_bin_dir)/env" "$(uv_tool_bin_dir)/env"; do
             [ -f "$env_file" ] && . "$env_file" && break
           done
-          export PATH="$HOME/.local/bin:$PATH"
+          ensure_tool_bin_on_path
           ok "uv installed" ;;
         gitbash)
           pkg_install "uv" - - astral-sh.uv || true
@@ -902,6 +916,27 @@ install_globals() {
     "$HARNESS_DIR/.claude/settings.json"
   echo "  Harness settings.json generated (project-relative hook paths)."
 
+  # --- Make the tool-bin directory reachable in future shells ---
+  # `uv tool install` puts its shims in a directory that is frequently off PATH in
+  # non-login shells, which is how an installed, running, healthy tool reads as
+  # "not installed" and features skip themselves in silence. Delegated to
+  # `uv tool update-shell`, which edits whichever profile the user's shell really
+  # reads — the harness does not guess between .zshrc/.zprofile/.bashrc itself.
+  if persist_tool_bin_on_path; then
+    echo ""
+    echo "  Tool bin dir ($(uv_tool_bin_dir)) wired onto PATH for future shells."
+    echo "  Open a new shell (or source your profile) for it to take effect."
+  fi
+
+  # --- Harness dependency check (install + declare + report) ---
+  # Stocks the harness-owned .venv-tools from harness-requirements.txt, then
+  # installs AND declares repo-requirements.txt in every registered repo, so a
+  # dependency prune there no longer silently deletes what the harness needs.
+  # Runs before raindrop-setup.sh, whose auto-instrument pass needs the SDK present.
+  echo ""
+  bash "$HARNESS_DIR/scripts/setup/check-harness-deps.sh" || \
+    echo "  WARNING: some harness dependencies are missing — see the table above."
+
   # --- Raindrop Workshop wiring (env vars + venv installs) ---
   echo ""
   echo "Setting up Raindrop Workshop tracing..."
@@ -1074,7 +1109,7 @@ if [ "$WITH_GITNEXUS" = false ]; then
 fi
 
 # Check for raindrop CLI (may have just been installed above)
-if command -v raindrop >/dev/null 2>&1 || [ -x "$HOME/.raindrop/bin/raindrop" ]; then
+if [ -n "$(find_tool raindrop || true)" ]; then
   echo "  Raindrop Workshop CLI: installed."
 else
   echo ""

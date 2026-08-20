@@ -7,7 +7,9 @@
 # What this does:
 #   1. Adds RAINDROP_LOCAL_DEBUGGER to ~/.claude/settings.json (Claude env)
 #   2. Adds RAINDROP_LOCAL_DEBUGGER export to ~/.bashrc (user shell processes)
-#   3. Installs raindrop-ai in each registered repo's detected virtualenv
+#   3. (raindrop-ai repo installs moved to scripts/setup/check-harness-deps.sh,
+#       which also declares it in each repo's manifest so prunes stop deleting it)
+#   4. Auto-instruments repos that have the SDK but no raindrop.begin calls
 #
 # Nothing in any repo's .env file is touched.
 
@@ -18,6 +20,10 @@ set -e
 # Single source of truth: lib/resolve-harness-dir.sh. No hardcoded paths.
 __here="$(cd -P "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 . "$__here/../lib/resolve-harness-dir.sh"
+# repo_has_module / _rv_timeout — the auto-instrument gate below depends on both.
+. "$__here/../lib/repo-venv.sh"
+# find_tool — locates the raindrop CLI without depending on the caller's PATH.
+. "$__here/../lib/tool-paths.sh"
 PROJECTS_FILE="$HARNESS_DIR/projects.txt"
 GLOBAL_SETTINGS="$HOME/.claude/settings.json"
 RAINDROP_URL="http://localhost:5899/v1/"
@@ -53,67 +59,22 @@ if [ -f "$BASHRC" ]; then
     fi
 fi
 
-# ── 3. Install raindrop-ai in each registered repo's virtualenv ─────────────
+# ── 3. raindrop-ai repo installs — owned by check-harness-deps.sh ───────────
+# This script used to pip-install raindrop-ai into every registered repo's venv
+# and write nothing to that repo's manifest. Undeclared, the package looked like
+# an orphan to the repo's own tooling, so any `uv sync` / lockfile regen /
+# dependency prune deleted it — and every install failure was hidden behind
+# `-q 2>/dev/null`, so the script printed "Done." either way.
+#
+# raindrop-ai now lives in scripts/setup/repo-requirements.txt, and
+# check-harness-deps.sh both installs AND declares it, reporting each outcome.
+# install.sh and update.sh run that check *before* this script, so the SDK is
+# already in place for the auto-instrument pass below.
 if [ ! -s "$PROJECTS_FILE" ]; then
-    echo "  No registered projects found — skipping venv installs."
+    echo "  No registered projects found — skipping venv checks."
     exit 0
 fi
-
-install_raindrop_in_repo() {
-    local repo="$1"
-
-    if [ ! -d "$repo" ]; then
-        echo "  SKIP: $repo (directory not found)"
-        return
-    fi
-
-    # Strategy A: uv + pyproject.toml
-    if [ -f "$repo/pyproject.toml" ] && command -v uv >/dev/null 2>&1; then
-        echo "  Installing raindrop-ai in $(basename "$repo") (uv)..."
-        if (cd "$repo" && uv pip install raindrop-ai -q 2>/dev/null); then
-            echo "    Done."
-            return
-        fi
-    fi
-
-    # Strategy B: subdirectory with requirements.txt (e.g. backend/)
-    for subdir in "" "/backend" "/app" "/src"; do
-        local subpath="$repo$subdir"
-        if [ -f "$subpath/requirements.txt" ]; then
-            # Find the venv — check subdir first, then repo root
-            for venv_candidate in \
-                "$subpath/.venv" "$subpath/venv" \
-                "$repo/.venv"   "$repo/venv"; do
-                if [ -f "$venv_candidate/bin/pip" ]; then
-                    echo "  Installing raindrop-ai in $(basename "$repo")${subdir} (venv: $venv_candidate)..."
-                    if "$venv_candidate/bin/pip" install raindrop-ai -q 2>/dev/null; then
-                        echo "    Done."
-                        return
-                    fi
-                fi
-            done
-        fi
-    done
-
-    # Strategy C: fallback — try repo root venv regardless of requirements file
-    for venv_candidate in "$repo/.venv" "$repo/venv"; do
-        if [ -f "$venv_candidate/bin/pip" ]; then
-            echo "  Installing raindrop-ai in $(basename "$repo") (venv: $venv_candidate)..."
-            if "$venv_candidate/bin/pip" install raindrop-ai -q 2>/dev/null; then
-                echo "    Done."
-                return
-            fi
-        fi
-    done
-
-    echo "  WARNING: Could not detect a virtualenv for $repo"
-    echo "    Manually run: pip install raindrop-ai  (inside the project's active venv)"
-}
-
-echo "  Installing raindrop-ai in registered repos..."
-while IFS= read -r project || [ -n "$project" ]; do
-    [ -n "$project" ] && install_raindrop_in_repo "$project"
-done < "$PROJECTS_FILE"
+echo "  raindrop-ai repo installs handled by check-harness-deps.sh (installed + declared)."
 
 # ── 4. Auto-instrument repos that have the SDK but no raindrop.begin calls ───
 maybe_auto_instrument() {
@@ -121,9 +82,13 @@ maybe_auto_instrument() {
 
     if [ ! -d "$repo" ]; then return; fi
 
-    # Skip if already instrumented (timeout avoids slow WSL2/Windows filesystem greps)
+    # Skip if already instrumented (time limit avoids slow WSL2/Windows filesystem greps).
+    # _rv_timeout, not bare `timeout`: macOS ships no `timeout` at all, so every probe
+    # in this function used to exit 127 there — read as "not instrumented" by the grep
+    # and as "SDK missing" by the import checks, which meant auto-instrument silently
+    # never ran on a Mac. See lib/repo-venv.sh.
     local grep_rc=0
-    timeout 20 grep -rq "raindrop.begin" "$repo" --include="*.py" --include="*.ts" 2>/dev/null || grep_rc=$?
+    _rv_timeout 20 grep -rq "raindrop.begin" "$repo" --include="*.py" --include="*.ts" 2>/dev/null || grep_rc=$?
     if [ "$grep_rc" -eq 0 ]; then
         echo "  $(basename "$repo"): already instrumented — skipping auto-instrument"
         return
@@ -133,23 +98,8 @@ maybe_auto_instrument() {
         return
     fi
 
-    # Only proceed if SDK is available in the repo's venv
-    local has_sdk=0
-    for venv_candidate in "$repo/.venv" "$repo/venv" "$repo/backend/.venv" "$repo/backend/venv"; do
-        if [ -f "$venv_candidate/bin/python" ]; then
-            if timeout 10 "$venv_candidate/bin/python" -c "import raindrop.analytics" 2>/dev/null; then
-                has_sdk=1
-                break
-            fi
-        fi
-    done
-    if [ "$has_sdk" -eq 0 ] && command -v uv >/dev/null 2>&1 && [ -f "$repo/pyproject.toml" ]; then
-        if (cd "$repo" && timeout 10 uv run python -c "import raindrop.analytics" 2>/dev/null); then
-            has_sdk=1
-        fi
-    fi
-
-    if [ "$has_sdk" -eq 0 ]; then
+    # Only proceed if the SDK is importable in the repo's own environment.
+    if ! repo_has_module "$repo" "raindrop.analytics"; then
         echo "  $(basename "$repo"): SDK not importable — skipping auto-instrument"
         return
     fi
@@ -173,15 +123,25 @@ Rules:
 }
 
 echo ""
-echo "  Checking repos for auto-instrumentation..."
-while IFS= read -r project || [ -n "$project" ]; do
-    [ -n "$project" ] && maybe_auto_instrument "$project"
-done < "$PROJECTS_FILE"
+# This pass spawns background `claude --print --permission-mode bypassPermissions`
+# agents that edit repo source unattended. It was dead on macOS until the timeout
+# shim above; opt out with SDD_SKIP_AUTO_INSTRUMENT=1 if you would rather instrument
+# by hand.
+if [ "${SDD_SKIP_AUTO_INSTRUMENT:-0}" = "1" ]; then
+    echo "  Auto-instrumentation skipped (SDD_SKIP_AUTO_INSTRUMENT=1)."
+elif ! command -v claude >/dev/null 2>&1; then
+    echo "  Auto-instrumentation skipped — claude CLI not on PATH."
+else
+    echo "  Checking repos for auto-instrumentation..."
+    while IFS= read -r project || [ -n "$project" ]; do
+        [ -n "$project" ] && maybe_auto_instrument "$project"
+    done < "$PROJECTS_FILE"
+fi
 
 echo ""
 echo "Raindrop setup complete."
 echo "  Reload your shell or run: source ~/.bashrc"
-if ! command -v raindrop >/dev/null 2>&1 && [ ! -x "$HOME/.raindrop/bin/raindrop" ]; then
+if [ -z "$(find_tool raindrop || true)" ]; then
   echo "  Raindrop CLI not found — install via bootstrap.sh or:"
   echo "    curl -fsSL https://raindrop.sh/install | bash"
 fi

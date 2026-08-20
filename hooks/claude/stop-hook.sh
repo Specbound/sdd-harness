@@ -70,13 +70,25 @@ fi
 # Scan the current session's transcript for phrases indicating the user had to
 # re-explain context — each hit = a memory the harness should have saved.
 # Runs in background; failures are silent (detector is best-effort).
+#
+# Interpreter choice matters here: the detector imports `anthropic`. Bare `python3`
+# resolves to whatever the *target repo* provides, and that environment belongs to
+# the repo's owner — one dependency prune or lockfile regen there and this detector
+# goes quiet forever with no symptom. Prefer the harness-owned .venv-tools, which
+# check-harness-deps.sh keeps stocked from scripts/setup/harness-requirements.txt.
 DETECTOR=".claude/scripts/session/detect_reexplanation.py"
+DETECTOR_PY="python3"
+if [ -x "$HARNESS_DIR/.venv-tools/bin/python" ]; then
+  DETECTOR_PY="$HARNESS_DIR/.venv-tools/bin/python"
+elif [ -x "$HARNESS_DIR/.venv-tools/Scripts/python.exe" ]; then
+  DETECTOR_PY="$HARNESS_DIR/.venv-tools/Scripts/python.exe"
+fi
 if [ -f "$DETECTOR" ] && [ -f "$OBS_FILE" ]; then
   (
     today=$(date +%Y-%m-%d)
     # Skip if today's [memory-gap] already exists (idempotency guard)
     if ! grep -q "^- $today \[memory-gap\]:" "$OBS_FILE" 2>/dev/null; then
-      python3 "$DETECTOR" --auto-transcript --emit observation 2>/dev/null >> "$OBS_FILE" || true
+      "$DETECTOR_PY" "$DETECTOR" --auto-transcript --emit observation 2>/dev/null >> "$OBS_FILE" || true
     fi
   ) &
 fi

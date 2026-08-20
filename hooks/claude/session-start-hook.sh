@@ -179,7 +179,16 @@ fi
 # Harness root is read from the pointer install/update records (~/.sdd-harness-root),
 # never hardcoded — the harness may live anywhere (see stop-hook.sh for the same pattern).
 HARNESS_ROOT="$(cat "$HOME/.sdd-harness-root" 2>/dev/null || true)"
-HEADROOM_PYTHON="$HOME/.local/share/uv/tools/headroom-ai/bin/python"
+# headroom's interpreter, not the repo's — sync-memories-to-headroom.py imports
+# `headroom`, which only that environment has. This used to name uv's tool directory
+# literally, so it broke on a pipx install (headroom-setup.sh's documented fallback)
+# and on any clone whose user set UV_TOOL_DIR or XDG_DATA_HOME. lib/tool-paths.sh
+# asks uv/pipx where they actually put it. ~7ms, measured.
+HEADROOM_PYTHON=""
+if [ -n "$HARNESS_ROOT" ] && [ -f "$HARNESS_ROOT/scripts/lib/tool-paths.sh" ]; then
+  . "$HARNESS_ROOT/scripts/lib/tool-paths.sh"
+  HEADROOM_PYTHON="$(find_tool_python headroom-ai 2>/dev/null || true)"
+fi
 HARNESS_SYNC="${HARNESS_ROOT:+$HARNESS_ROOT/scripts/utils/sync-memories-to-headroom.py}"
 if [ -n "$HARNESS_SYNC" ] && [ -f "$HEADROOM_PYTHON" ] && [ -f "$HARNESS_SYNC" ]; then
   "$HEADROOM_PYTHON" "$HARNESS_SYNC" > /dev/null 2>&1 &
