@@ -88,6 +88,7 @@ This will:
 - Run `scripts/setup/repair-settings-json.py` to self-heal any existing `settings.json` broken by a trailing `//` comment block, moving it into the notes sidecar (`update.sh` does this too)
 - Register the project in `projects.txt`
 - Install the git post-commit hook
+- Append the harness-local entries to the project's `.gitignore` (`.claude/`, `specs/`, `CLAUDE.md`, `AGENTS.md`, `ERRORS.md`) — all regenerable output, not source. The list lives in `scripts/lib/project-gitignore.sh` and `update.sh` re-applies it on every sync, so projects installed before an entry existed backfill it automatically
 
 ### Bootstrap project knowledge
 
@@ -863,7 +864,7 @@ git remote add origin git@github.com:<you>/sdd-harness.git
 git push -u origin main
 ```
 
-`projects.txt` and `VERSION` are gitignored — they contain machine-local state. So are the scheduler state files (`.last-harness-sync`, `.last-drift-review`) and `reports/`, the directory generated routines write into (the drift-review sweep among them), so a generated report is never pushed.
+`projects.txt` and `VERSION` are gitignored — they contain machine-local state. So are `CLAUDE.md`, `AGENTS.md` (written by `lean-ctx setup`) and `ERRORS.md` (the 2+-attempts failure log), which are regenerated per machine rather than authored. So are the scheduler state files (`.last-harness-sync`, `.last-drift-review`) and `reports/`, the directory generated routines write into (the drift-review sweep among them), so a generated report is never pushed.
 
 ---
 
@@ -900,7 +901,7 @@ Requires at least one project registered in `projects.txt` (added automatically 
 | # | Section | What it shows |
 |---|---|---|
 | 1 | ⚡ Trust Battery | Arc gauge + 30-day bar chart of daily trust deltas |
-| 2 | 🕸 GitNexus | Stats strip + embedded visual explorer (localhost:4567) |
+| 2 | 🕸 GitNexus | Stats strip + embedded visual explorer. `gitnexus serve` is API-only (it answers `/api/*` and 404s at `/`), so the tab iframes the hosted app `https://gitnexus.vercel.app/?repo=<name>` — which talks to `http://localhost:4747` — and probes `http://localhost:4747/api/repos` in real CORS mode to detect whether the backend is up. A non-OK status now reports the HTTP code instead of reading as "not running" |
 | 3 | 🔬 Workshop | Raindrop Workshop trace browser; filter by repo, run eval loop, view agent traces |
 | 4 | 🗜 Headroom | Compression savings totals for RTK + lean-ctx + Caveman (response-style, sampled once/day via `caveman-savings-hook.sh`) + headroom proxy, folded into a combined-savings total; per-session block history with checkpoint-level token savings |
 | 5 | 🪝 Hooks History | Hook name, event type, last activity, active/inactive badge |

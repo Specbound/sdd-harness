@@ -19,7 +19,7 @@
 - Every feature needs an approved spec in `specs/` before implementation
 - Atomic commits per task (one task = one commit, code only)
 - Never skip the human review gate between spec phases
-- Never commit installed harness output — `.claude/` and `specs/` are local (see `.gitignore`). In this repo the top-level source tree (`agents/ commands/ hooks/ kiro/ scripts/ docs/ rules/ skills/ templates/`) IS the product and is committed normally
+- Never commit installed harness output — `.claude/`, `specs/`, `CLAUDE.md`, `AGENTS.md` and `ERRORS.md` are local (see `.gitignore`; the list is `SDD_GITIGNORE_ENTRIES` in `scripts/lib/project-gitignore.sh`). In this repo the top-level source tree (`agents/ commands/ hooks/ kiro/ scripts/ docs/ rules/ skills/ templates/`) IS the product and is committed normally
 - Before any significant task, show 2-3 approaches and wait for confirmation before proceeding
 - Maintain `ERRORS.md`: when an approach takes 2+ attempts, log what failed, what worked, and why
 

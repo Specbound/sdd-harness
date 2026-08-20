@@ -39,6 +39,10 @@ scripts/remap-ccsdd-paths.sh
 
 # SDD harness — local-only, never committed
 CLAUDE.md
+# Generated per machine: AGENTS.md by `lean-ctx setup`, ERRORS.md by the
+# 2+-attempts logging rule. Same class as CLAUDE.md — regenerated, not source.
+AGENTS.md
+ERRORS.md
 
 # Serena symbol index — regenerable per machine via `serena project index`
 .serena/
@@ -46,7 +50,13 @@ CLAUDE.md
 
 One `.claude/` line replaces the previous per-subdirectory list (`.claude/hooks/`, `.claude/commands/`, `.claude/agents/`, `.claude/kiro/`, `.claude/steering/`, `.claude/settings.json`, `.claude/memory/**` + its `!` re-includes). Already-tracked `.claude/memory/**/.gitkeep` files persist as clone scaffolding — the broad ignore does not untrack them.
 
-`CLAUDE.md` is ignored again in the harness repo (under a `# SDD harness — local-only, never committed` header), matching the core three entries `install.sh` writes into every project's `.gitignore` (`.claude/`, `specs/`, `CLAUDE.md`). Note that the git post-commit hook still lists `^CLAUDE\.md$` among the harness-updater triggers — that trigger simply never fires while the file is ignored.
+`CLAUDE.md` is ignored again in the harness repo (under a `# SDD harness — local-only, never committed` header), matching the entries the harness writes into every project's `.gitignore` (`.claude/`, `specs/`, `CLAUDE.md`, `AGENTS.md`, `ERRORS.md`). Note that the git post-commit hook still lists `^CLAUDE\.md$` among the harness-updater triggers — that trigger simply never fires while the file is ignored.
+
+That list lives in one place, `scripts/lib/project-gitignore.sh` (`SDD_GITIGNORE_ENTRIES`), sourced by both `install.sh` and `update.sh`. `install.sh` runs once per project, so an entry added later would never reach an already-installed project; `update.sh` calls the same `ensure_gitignore` on every sync (git repos only), so new entries backfill automatically. Appending is idempotent — each entry is added only if an exact matching line is absent, and the `# SDD harness — local-only, never committed` header is written at most once.
+
+`AGENTS.md` and `ERRORS.md` joined the list because both are generated per machine rather than authored: `AGENTS.md` is written by `lean-ctx setup`, `ERRORS.md` by the 2+-attempts logging rule. They are the same class of file as `CLAUDE.md` — regenerated output, not source.
+
+This library has its own test, `scripts/lib/project-gitignore.test.sh` — run it with `bash scripts/lib/project-gitignore.test.sh` (no framework, exits non-zero on failure). It builds throwaway project trees under `mktemp -d` and asserts three cases: a project with an existing `.gitignore` keeps its content and gains each entry exactly once; a project with no `.gitignore` gets one created whose first line is the header; a partial (legacy) `.gitignore` already listing `.claude/`, `specs/`, `CLAUDE.md` gains only the missing `AGENTS.md` and `ERRORS.md`, with no duplicates. The re-run case is the one that matters operationally: `update.sh` runs under `set -e` and calls `ensure_gitignore` on every sync, so `ensure_gitignore` always returns 0 — a non-zero "nothing to add" would abort every update of an already-configured project.
 
 `.serena/` is ignored for the same reason as `.claude/`: it is Serena's symbol index, regenerable per machine with `serena project index`, so it is machine-local state rather than source.
 
@@ -1057,6 +1067,8 @@ bash .claude/scripts/setup/gitnexus-reconcile.sh . --check \
 # Or manually:
 gitnexus serve                          # http://localhost:4567
 ```
+
+The harness dashboard's **🕸 GitNexus** tab reaches the same UI differently: `gitnexus serve` answers only `/api/*` and 404s at `/`, so it is the API backend, not a web server for the UI. The tab therefore iframes the hosted app (`https://gitnexus.vercel.app/?repo=<name>`, which talks to `http://localhost:4747` by default) and probes `http://localhost:4747/api/repos` in real CORS mode to decide whether the backend is up — a `no-cors` probe of `/` returns an opaque response, so a 404 from a live server read as success. The iframe carries `allow="local-network-access"` because the hosted (https) app has to reach a `localhost` backend. The dashboard no longer proxies GitNexus through its own `/gn/` endpoint — the `_proxy_gitnexus` handler, its `/gn/` route, and the auto-repo-select script it injected are gone; the ports and URLs now live in one place at the top of `scripts/utils/dashboard.py` (`GN_PORT`, `GN_WEB_UI`, `GN_PROBE_URL`) and are substituted into the page JS as `__GN_WEB_UI__` / `__GN_PROBE_URL__`. Probe failures share one `gnOffline(message)` path, so an HTTP error surfaces as `GitNexus API returned HTTP <status>` instead of the generic "not running" text.
 
 The Web UI lets you:
 - Browse symbols (functions, classes, methods) in an interactive graph

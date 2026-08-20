@@ -230,6 +230,8 @@ gitnexus serve        # starts HTTP server on localhost:4567
 # open http://localhost:4567 in your browser
 ```
 
+**From the harness dashboard (🕸 GitNexus tab):** the tab does not iframe `gitnexus serve` — that process answers `/api/*` and returns `Cannot GET /` at the root, so it is the API backend, not a web server for the UI. The tab loads the hosted app instead (`https://gitnexus.vercel.app/?repo=<name>`, which points at `http://localhost:4747` by default and auto-selects the repo from its own `?repo=` param), and decides whether to show it by probing `http://localhost:4747/api/repos` in real CORS mode. The earlier `no-cors` probe of `/` returned an opaque response, so a running server's 404 read as success and the panel sat on a blank iframe; a non-OK status now reports the HTTP code. The dashboard's own `/gn/` proxy endpoint was removed along with it.
+
 ### Browser mode (no backend)
 The Web UI also works standalone — drag-and-drop a ZIP of your repo into the browser UI at the GitNexus web app. Limited to ~5k files in pure browser mode.
 
@@ -311,10 +313,11 @@ gitnexus clean --all --force  # delete all indexes
 | MCP tools not appearing in Claude | MCP server not configured | Run `/kiro:gitnexus-setup` or add `mcpServers` config manually |
 | Stale index (changes not reflected) | Index not updated after code changes | `gitnexus analyze` or enable post-commit hook |
 | Web UI won't load | Port 4567 in use | Kill other process or use `gitnexus serve --port 4568` |
+| Dashboard GitNexus tab says "GitNexus not running" or "GitNexus API returned HTTP 404" | `gitnexus serve` is down, or is up on a port other than 4747 | Start `gitnexus serve` (the tab's ▶ button does this) and confirm `curl http://localhost:4747/api/repos` answers — the tab probes that endpoint, not `/` |
 | `detect_changes` returns empty | No uncommitted changes | Make changes first, or use `gitnexus impact --from HEAD~1` |
 | Stage 0 skipped in verify | GitNexus MCP not available | Expected behavior — Stage 0 is opt-in |
 | Slow initial index | Large repo with embeddings | Use `gitnexus analyze --skip-embeddings` for faster indexing |
 
 ---
 
-_Last synced: 2026-08-12_
+_Last synced: 2026-08-20_

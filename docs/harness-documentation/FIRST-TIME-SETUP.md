@@ -364,9 +364,13 @@ Then, inside Claude Code in the project directory, run these once:
 
 Daily maintenance runs automatically via the local OS scheduler (registered by `install.sh` / `update.sh`). No per-project setup is required. Registration is followed by a **preflight** that runs the orchestrator once under the scheduler's own environment — on macOS and Linux the install fails (exit 1) if that comes back non-zero, so a job that registers but cannot execute is reported at setup instead of doing nothing nightly. On macOS the most common cause is a harness under a TCC-protected folder (`~/Documents`, `~/Desktop`, `~/Downloads`), which launchd is refused access to; the preflight names it and gives both fixes.
 
-Update `.gitignore` to exclude harness files. `install.sh` automatically adds the core three entries (`.claude/`, `specs/`, `CLAUDE.md`) under a `# SDD harness` header — skip those below if already present. For the full recommended exclusion set:
+Update `.gitignore` to exclude harness files. `install.sh` automatically adds the harness-local entries (`.claude/`, `specs/`, `CLAUDE.md`, `AGENTS.md`, `ERRORS.md`) under a `# SDD harness` header — skip those below if already present. The list is defined once as `SDD_GITIGNORE_ENTRIES` in `scripts/lib/project-gitignore.sh`, and `update.sh` calls the same `ensure_gitignore` on every sync (git repos only), so a project installed before an entry existed picks it up on its next update instead of needing a re-install. For the full recommended exclusion set:
 ```gitignore
 CLAUDE.md
+# Generated per machine, same class as CLAUDE.md: AGENTS.md by `lean-ctx setup`,
+# ERRORS.md by the 2+-attempts logging rule
+AGENTS.md
+ERRORS.md
 specs/
 .claude/settings.json
 .claude/.last-harness-check
