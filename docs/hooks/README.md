@@ -406,15 +406,17 @@ Hook output is injected into Claude's context as system messages — Claude read
 ---
 
 ### `address-check-hook.sh`
-**Event:** `Stop` — **Matcher:** _(all turns)_
+**Event:** `Stop` — **Matcher:** _(all turns)_ — _(log only, never blocks)_
 
 **Purpose:** Verifies that every assistant response addressed the user as "Husband". Fires after each turn. Reads the latest session transcript, extracts the last assistant message, and checks for the word "husband" (case-insensitive).
 
 **Outputs:**
 - Nothing, if "Husband" present — exit 0, stop proceeds normally
-- `[address-check]` correction banner — exit 2 (blocks stop) if "Husband" absent, injecting a prompt that instructs Claude to run `/compact`, re-read CLAUDE.md, and re-respond correctly
+- `[address-check] husband not found — compact needed` on stdout if "Husband" is absent — exit 0. This is a **mechanical log line only**: it is not fed back to Claude and does not block the stop, so there is no forced extra turn and no token cost.
 
-**Why a hook and not a prompt:** CLAUDE.md instructions are subject to context degradation — Claude eventually stops following them as context fills. A Stop hook fires unconditionally after every turn regardless of context state. The exit 2 path creates a self-correcting loop: the injected message reaches Claude as its next input, and the next response is forced to include "Husband". Absence of the term is also a reliable early signal that CLAUDE.md is being ignored, triggering `/compact` before other rules degrade too.
+**Why a hook and not a prompt:** CLAUDE.md instructions are subject to context degradation — Claude eventually stops following them as context fills. A Stop hook fires unconditionally after every turn regardless of context state. Absence of the term is a reliable early signal that CLAUDE.md is being ignored — the log line surfaces that signal so a human can decide to `/compact` before other rules degrade too.
+
+**Why it no longer blocks:** the hook previously exited 2 to block the stop and inject a correction prompt telling Claude to `/compact`, re-read CLAUDE.md, and re-respond. That self-correcting loop cost a full extra turn every time it fired, so the hook was demoted to a passive log.
 
 **Location:** `~/.claude/hooks/address-check-hook.sh` (global, all projects)
 
@@ -645,5 +647,5 @@ The `tool-failure-*` pair plus the `tool-failure-review` routine are designed to
 3. Document it in this file (the `hook-added-notify.sh` hook will remind you if you forget).
 4. Update the Wiring Reference table above.
 
-_Last synced: 2026-08-16_
+_Last synced: 2026-08-20_
 

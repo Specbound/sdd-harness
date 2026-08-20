@@ -329,6 +329,8 @@ Add-Content $hookPath 'bash "$(git rev-parse --show-toplevel)/.claude/hooks/scan
 
 Once global tools are in place, install the harness into each project:
 
+> **`$SDD_HARNESS` on the very first run.** Every command below is written against `$SDD_HARNESS`, which `install.sh` and `update.sh` export and write into `~/.zshrc` / `~/.bashrc` (whichever exist) — appended on first run, rewritten in place afterwards, so it follows the clone if you move it. On the *first* invocation the variable does not exist yet, so bootstrap with a direct path to the clone (`bash /path/to/sdd-harness/install.sh /path/to/project`); open a new shell after that and `$SDD_HARNESS` resolves everywhere.
+
 **Linux / macOS / WSL2:**
 ```bash
 $SDD_HARNESS/install.sh /path/to/project
@@ -424,9 +426,9 @@ Run through this on a fresh machine:
 | GitNexus context missing in Claude | MCP not in `settings.json` or repo not indexed | Run `/kiro:gitnexus-setup` |
 | impeccable scans not appearing | Binary not in PATH | `npm install -g impeccable` |
 | Local daily maintenance not running (macOS) | LaunchAgent not loaded | `launchctl list com.sdd.daily-orchestrator` to check; re-run `install.sh` or `update.sh` to re-register |
-| Local daily maintenance not running (macOS) **while the LaunchAgent is loaded** | launchd holds no Full Disk Access, so it is refused at exec time (`Operation not permitted`, exit 126) when the harness lives under a TCC-protected folder — `~/Documents`, `~/Desktop`, `~/Downloads`. `launchctl list` shows the job as present the whole time | Run `bash ~/.claude/sdd-harness/scripts/orchestration/setup-mac-orchestrator.sh --force`; its preflight reproduces the failure and names the cause. Fix by moving the harness somewhere unprotected (e.g. `~/GitHub/`) and re-running `install.sh`, or by granting Full Disk Access to `/bin/bash` in System Settings → Privacy & Security. The grant is per-machine and never travels with a clone |
+| Local daily maintenance not running (macOS) **while the LaunchAgent is loaded** | launchd holds no Full Disk Access, so it is refused at exec time (`Operation not permitted`, exit 126) when the harness lives under a TCC-protected folder — `~/Documents`, `~/Desktop`, `~/Downloads`. `launchctl list` shows the job as present the whole time | Run `bash $SDD_HARNESS/scripts/orchestration/setup-mac-orchestrator.sh --force`; its preflight reproduces the failure and names the cause. Fix by moving the harness somewhere unprotected (e.g. `~/GitHub/`) and re-running `install.sh`, or by granting Full Disk Access to `/bin/bash` in System Settings → Privacy & Security. The grant is per-machine and never travels with a clone |
 | Harness cross-repo hooks stopped firing everywhere | `~/.sdd-harness-root` points at a directory that no longer exists — the harness was moved or renamed | Session start and session end now print `[HARNESS-POINTER-STALE]` naming the dead path. Re-run `bash <harness>/update.sh` from the new location to rewrite the pointer |
-| A repo gets no scheduled routines and appears on no dashboard | It carries a harness install but was never added to `projects.txt`, and the dashboard only renders repos it is told about | `bash ~/.claude/sdd-harness/scripts/utils/check-fleet-registration.sh` lists every such repo; add it to `projects.txt` or uninstall the harness there |
+| A repo gets no scheduled routines and appears on no dashboard | It carries a harness install but was never added to `projects.txt`, and the dashboard only renders repos it is told about | `bash $SDD_HARNESS/scripts/utils/check-fleet-registration.sh` lists every such repo; add it to `projects.txt` or uninstall the harness there |
 | Local daily maintenance not running (Linux) | Cron entry missing | `crontab -l \| grep sdd-daily` to check; re-run `install.sh` or `update.sh` to re-register |
 | Local daily maintenance not running (WSL) | Task Scheduler entry missing | `schtasks.exe /Query /TN "SDD Daily Orchestrator"` to check; re-run `install.sh` to re-register |
 | **Windows:** hooks fail with `bash: /bin/bash: No such file` | Claude Code running on native Windows; hook paths are Linux-style | Use WSL2 so Claude Code runs in Linux, or change hook commands from `/bin/bash` to the Git Bash path (`C:/Program Files/Git/bin/bash.exe`) |
@@ -435,4 +437,4 @@ Run through this on a fresh machine:
 | `Settings file failed to parse: .claude/settings.json — Invalid or malformed JSON` (permission rules and hooks silently inactive) | Comments or notes after the closing brace — JSON allows neither. Installs before 2026-08-12 copied a template that carried a `//` block | `python3 $SDD_HARNESS/scripts/setup/repair-settings-json.py /path/to/project` moves the block to `.claude/settings.notes.md`; `update.sh` now does this automatically. Keep all notes in `settings.notes.md` |
 | `headroom` proxy exits with `FastAPI required` or `h2 package not installed` | Missing `uvicorn` or `httpx[http2]` in headroom's uv env | Re-run `install.sh` (patched) or manually: `uv tool install headroom-ai --python 3.12 --with-requirements $SDD_HARNESS/scripts/setup/headroom-extras.txt` |
 
-_Last synced: 2026-08-16_
+_Last synced: 2026-08-20_

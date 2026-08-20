@@ -177,7 +177,7 @@ This is the **review** stage of the tool-failure-memory loop (capture → recall
 **Cadence:** Gated on elapsed days since the last **successful** run (`DRIFT_REVIEW_GAP_DAYS`, default 7), not day-of-week — a day-of-week gate can only ever fire on Wednesday, so a machine asleep/logged-out through every trigger window that day silently loses the whole week; an elapsed-days gate is self-healing, firing on whichever day the orchestrator next actually runs, if due. State tracked as a timestamp in `$SDD_HARNESS/.last-drift-review`. The elapsed-days math is done with `python3` (`datetime.date.fromisoformat`), not `date -d` — `date -d` is GNU-only, so on macOS the epoch lookup always failed, the comparison was skipped, and this "weekly" review fired a full `claude --print` session on **every** orchestrator run.
 **Scope:** Harness-level (not per-repo)
 
-**What it does:** Invokes the `repo-drift-review` skill to sweep the SDD harness for drift. Auto-fixes what it can. Writes `$SDD_HARNESS/docs/drift-review-report.md`. The state file is only updated on a successful run (exit 0); both stdout and stderr are captured and, on failure, appended to `logs/orchestrator-errors.log`.
+**What it does:** Invokes the `repo-drift-review` skill to sweep the SDD harness for drift. Auto-fixes what it can. Writes `$SDD_HARNESS/reports/drift-review-report.md` — the report moved out of `docs/` into the harness's git-ignored `reports/` directory, so a generated sweep no longer lands in tracked documentation or gets picked up by doc-sync. The state file is only updated on a successful run (exit 0); both stdout and stderr are captured and, on failure, appended to `logs/orchestrator-errors.log`.
 
 ---
 
@@ -203,6 +203,8 @@ Scan roots are **derived** from `projects.txt` (the parent directory of each reg
 | **Linux** | crontab | `install.sh` / `update.sh` | `crontab -l \| grep -vF sdd-daily-orchestrator \| crontab -` |
 
 Registration is automatic and idempotent — re-running `install.sh` or `update.sh` is safe.
+
+**macOS — sleep guard.** The LaunchAgent's `ProgramArguments` wraps the orchestrator in `caffeinate -i` (`/bin/bash -lc "caffeinate -i <orchestrator>"`), so the unattended 18:00 fire is not cut short by idle or display sleep partway through the run. `caffeinate` is a built-in macOS binary — no third-party app and no `sudo`.
 
 ### Preflight — registration is not execution
 
@@ -234,5 +236,5 @@ The dashboard's **Scheduled Tasks** tab shows live status for each task, scoped 
 
 ---
 
-_Last synced: 2026-08-16_
+_Last synced: 2026-08-20_
 

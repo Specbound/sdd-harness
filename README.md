@@ -813,6 +813,8 @@ The trigger for step 2 keys off the top-level source tree, not `.claude/` — `.
 
 The harness is installed at `$SDD_HARNESS` (wherever you cloned it) and shared across all your projects.
 
+Both `install.sh` and `update.sh` write `export SDD_HARNESS="<clone path>"` into `~/.zshrc` and `~/.bashrc` (whichever exist) — appended under a comment on first run, rewritten in place on later runs. Moving the clone therefore needs no manual edit: re-run either script from the new location and the exported path follows it.
+
 ### Register projects
 
 Projects are automatically registered in `projects.txt` when you run `install.sh`. One absolute path per line.
@@ -861,7 +863,7 @@ git remote add origin git@github.com:<you>/sdd-harness.git
 git push -u origin main
 ```
 
-`projects.txt` and `VERSION` are gitignored — they contain machine-local state.
+`projects.txt` and `VERSION` are gitignored — they contain machine-local state. So are the scheduler state files (`.last-harness-sync`, `.last-drift-review`) and `reports/`, the directory generated routines write into (the drift-review sweep among them), so a generated report is never pushed.
 
 ---
 
@@ -979,4 +981,4 @@ The Model Cost section reads session data from `~/.claude/projects/*/`. Pricing 
 
 Private repository. Contact the maintainer for access.
 
-_Last synced: 2026-08-16_
+_Last synced: 2026-08-20_

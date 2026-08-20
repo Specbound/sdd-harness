@@ -4,6 +4,47 @@ Approaches that took 2+ attempts — what failed, what worked, and why.
 
 ---
 
+## 2026-08-16 — `$HOME`-relative is not the same as portable (tool-layout guesses)
+
+**Symptom:** `command -v headroom` failed while headroom was installed, running, and serving a healthy proxy — because `~/.local/bin` was not on PATH in the environment `install.sh`/`update.sh` run under. The first repair guessed the directory instead of discovering it.
+
+**Root cause:** The harness's portability rule had been read as "no `/Users/<name>/…` literals", and `check-no-hardcoded-paths.sh` enforced exactly that much. But `$HOME/.local/share/uv/tools`, `$HOME/.local/bin`, `$HOME/.raindrop/bin` and `$HOME/.cargo/bin` are **defaults, not facts** — uv honours `UV_TOOL_DIR`/`UV_TOOL_BIN_DIR`/`XDG_*`, pipx honours `PIPX_HOME`, raindrop honours `RAINDROP_HOME`, cargo honours `CARGO_HOME`. Naming them passes the guard and still breaks on a clone whose user set any of them. Worse, `dashboard.py` listed `/opt/homebrew/bin` and `/usr/local/bin` literally: the first is Apple-Silicon-only and the second Intel-only, so the raindrop-installed check was guaranteed wrong on one Mac architecture or the other.
+
+**Fix:** `scripts/lib/tool-paths.sh` — the one allowed namer of package-manager layouts, in the same role `resolve-harness-dir.sh` holds for the harness root. It *asks* (`uv tool dir`, `uv tool dir --bin`, `pipx environment`, `brew --prefix`), falls back to each tool's documented env var, and only then to XDG spec defaults. `dashboard.py` carries a Python twin (`_tool_bin_dirs` / `find_global_tool`). PATH is repaired for the current process by `ensure_tool_bin_on_path` and for future shells by `uv tool update-shell` — uv's own command, which edits whichever profile the user's shell actually reads, so the harness never guesses between `.zshrc`/`.zprofile`/`.bashrc`. `check-no-hardcoded-paths.sh` now bans the tool-layout literals so this cannot regress, exempting only documented-override fallbacks by variable name.
+
+**Verification that matters:** `lib/tool-paths.test.sh` asserts the *relocation* cases — with `uv` forced off PATH, all four env overrides must win, and XDG must be honoured as last resort. A happy-path test proves nothing here: a hardcoded default passes it.
+
+**Lesson:** "Contains no `/Users/<name>/`" is a much weaker property than "works on any machine". The question to ask of a path is not whether it is absolute but whether it is *discovered* — if the tool can be asked where it lives, asking is the only portable answer, and every convention it replaces is somebody's overridable default.
+
+## 2026-08-16 — three harness features were dead on macOS/off-PATH and reported nothing
+
+**Symptom:** None. That was the problem. Every affected feature printed success or said nothing at all.
+
+**Root cause (three instances of the same shape — a probe that cannot fail loudly):**
+1. `raindrop-setup.sh`'s auto-instrument pass gated on bare `timeout`, which **macOS does not ship**. Every probe exited 127, read as "not instrumented" by the grep and "SDK missing" by the import check, so the pass never ran on a Mac — while printing a plausible "SDK not importable — skipping" for each repo.
+2. `headroom-setup.sh` gated its persistent-service install *and* the Claude routing on `command -v headroom`. `uv tool install` puts its shim in `~/.local/bin`, which is **off PATH** in the environment `install.sh`/`update.sh` run under, so the entire block was skipped silently on a machine where headroom was installed and running.
+3. `headroom-setup.sh` also pip-installed `headroom-ai` into every repo venv behind `-q 2>/dev/null`. Measured across four registered repos: **zero** had it. It had never once worked, and nothing noticed because nothing needs it — headroom is machine-level (shell-rc `ANTHROPIC_BASE_URL` + proxy service), and the only Python consumer runs under headroom's own interpreter.
+
+**Fix:** `lib/repo-venv.sh` carries a `timeout`/`gtimeout`/no-op shim used by every timed probe. headroom is resolved through `~/.local/bin` and the uv-tool/pipx layouts, not `command -v`. The per-repo headroom install was deleted rather than repaired — once `lib/repo-venv.sh` made venv discovery actually work, it would have started installing a maturin package plus its dependency tree into repos that never import it. `check-harness-deps.sh` now reports headroom binary / proxy / routing state so all three failures are visible.
+
+**Second attempt needed:** the first `/readyz` health probe reported "routed but not responding" on a proxy with four days of uptime. `curl -m 8` returned exit 28 while the very next identical request returned HTTP 200 — the endpoint is slow while the compression model loads. Raised to `--connect-timeout 3 -m 25` with one retry, and split curl exit 7 (nothing listening — real failure) from 28 (listening but slow — fine).
+
+**Lesson:** A probe whose failure mode is indistinguishable from its negative result is not a check, it is decoration — `timeout` missing, a binary off PATH, and an install failing all rendered as the same calm skip line. Assert the tool exists before trusting what its absence "means", and when a health check fails against something you have other evidence is alive, debug the check before believing it.
+
+## 2026-08-16 — harness packages kept vanishing from installed repos (installed but never declared)
+
+**Symptom:** A registered repo pruned its dependencies and lost packages the harness relies on. `raindrop-ai` was gone from `daa-llm-evaluation` and `whisper-pipeline`; `anthropic` was importable nowhere the harness could reach it. Nothing reported a problem — `install.sh`/`update.sh` printed "Done." on every run.
+
+**Root cause (two halves):**
+1. `raindrop-setup.sh` and `headroom-setup.sh` ran `pip install <pkg> -q 2>/dev/null` into each target repo's venv and wrote **nothing** to that repo's manifest. Undeclared, the package is an orphan to the repo's own tooling, so `uv sync` / lockfile regen / a dependency prune deletes it — then the next harness update silently reinstalls it, and the next prune deletes it again. An unbreakable loop.
+2. `-q 2>/dev/null` plus `|| return` meant a failed install was indistinguishable from a successful one. `detect_reexplanation.py` imports `anthropic` under bare `python3`, i.e. whatever interpreter the *target repo* provides — an environment the harness does not own and cannot keep stocked.
+
+**Fix:** Split dependencies by who owns the environment. `scripts/setup/harness-requirements.txt` → the harness-owned `.venv-tools` (no repo has these, so no repo can prune them); `scripts/setup/repo-requirements.txt` → installed into the repo venv **and** declared in the repo's own manifest by `setup/declare-repo-deps.py` (PEP 735 `[dependency-groups] harness`, or `requirements-harness.txt` + a `-r` line). `setup/check-harness-deps.sh` runs both passes on every install/update and reports every package as ok/healed/FAILED/skipped. `stop-hook.sh` now calls `.venv-tools`'s python for the detector.
+
+**Second attempt needed:** the first heal run reported `daa-llm-evaluation/.venv/bin/python: No module named pip` — `uv venv` seeds no pip unless asked, so a perfectly healthy uv-managed venv rejects `python -m pip`. Added a `uv pip install --python <venv-python>` fallback in `lib/repo-venv.sh`.
+
+**Lesson:** Installing a package into someone else's environment without declaring it there is not an install — it is a countdown. The declaration is what survives; the install is just the fast path. And the reason this ran undetected for months is the swallowed output: `-q 2>/dev/null` on an install turns "broken" and "fine" into the same terminal line. Report the outcome of every package, including the healthy ones — drift is only actionable if it is visible.
+
 ## 2026-08-12 — "weekly" drift review ran on every orchestrator run (macOS `date -d`)
 
 **Symptom:** A test of `daily-orchestrator.sh` in a throwaway harness tree hung past 300s with a same-day `.last-drift-review` in place — the gate that should have said "not due" let the review through, and it spawned a real `claude --print` session.

@@ -2,7 +2,7 @@
 
 ## Address
 - Always call the user "Husband" in every reply — no exceptions.
-- If you stop doing this, it signals CLAUDE.md is being ignored; a Stop hook will automatically prompt you to /compact and re-read CLAUDE.md.
+- If you stop doing this, it signals CLAUDE.md is being ignored. A Stop hook (`address-check-hook.sh`) logs `[address-check] husband not found — compact needed` when the term is missing, but it no longer blocks the stop or feeds anything back to you — it is a passive signal for a human to act on, so /compact and re-read CLAUDE.md on your own.
 
 ## Context Resources (read on demand, not upfront)
 - `.claude/memory/hot-memory.md` — read at session start (current state, priorities)
