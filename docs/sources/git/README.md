@@ -660,3 +660,23 @@ See also: [github.com/mattpocock/skills — `wayfinder` skill](#githubcommattpoc
 **Rejected:** any skill/hook derived from the Amphetamine/PowerProtect repo itself — wrong tool for the gap (targets a display-mode/adapter bug, not general sleep prevention), and would introduce a paid third-party app + sudoers.d modification where a one-line native `caffeinate -i` already solves the actual orchestrator failure mode.
 
 See also: [articles/README.md](../articles/README.md) — "The Shapes of Agent Memory" entry, extracted in the same batch.
+
+---
+
+## onecli/onecli
+**URL:** https://github.com/onecli/onecli
+**Added:** 2026-08-25
+**Source / Author:** onecli — TypeScript/Rust pnpm-turbo monorepo, Apache-2.0 with an `ee/` enterprise carve-out, ~3,376★
+
+**What it's about:** "Open-source sandboxed agent harness for teams" — one sandboxed agent per employee, provisioned off the corporate IdP, reachable via dashboard or Slack. Mature and heavily engineered (`apps/{gateway,runner,sandbox-supervisor,api-server,channel-adapter,web}`, ~70 Prisma migrations, live-gated conformance suites). Architecturally a *server product*, not a CLI installed alongside Claude Code — so nothing here is a dependency to adopt.
+
+**What we added:**
+- **Hook:** `hooks/claude/agent-commit-attribution-hook.sh` — PreToolUse(Bash), advisory. Warns when a `git commit` supplies an inline message with no `Co-Authored-By` trailer. Registered in `templates/settings.json.template` and the local `.claude/settings.json`; tests in `hooks/claude/agent-commit-attribution-hook.test.sh` (22 cases).
+
+  What transferred is not the trailer format but onecli's chokepoint argument. Its gateway rewrites the `message` field on GitHub content/commit endpoints in-flight, appending `On-Behalf-Of: <agent>[onecli] (<workspace_id>)`, because App-installation-token commits have "no natural author identity" — attribution is injected where identity is known rather than requested of the agent. The local analogue: a `.git/hooks/commit-msg` hook sees a commit but not an author and can only nag on all commits or none, whereas a PreToolUse Bash hook knows Claude issued the command.
+
+  The justification is a measured local defect, not tidiness. `skills/keep-rate/SKILL.md` selects agent commits with `git log --grep="Co-Authored-By: Claude"` and the keep-rate dashboard widget blames against the same set, so an untrailered agent commit leaves the denominator and the metric reads **high** — invisible, and biased flatteringly. Verified at time of extraction: only 10 of the last 30 commits in this repo carried the trailer; `.git/hooks/commit-msg` was a zero-byte file. Also ported: onecli's idempotence check and its explicit exclusion list (it skips merge endpoints because they use different append semantics — here that maps to `--amend --no-edit`, `--squash`, `--fixup`, `-C`/`-c` reuse forms, and editor-driven commits).
+
+**Rejected:** onecli as an installed dependency — Postgres + Rust MITM gateway + Docker sandbox runner + Next.js control plane for *teams*; this harness is single-user and local; semantic action catalog (`provider/tool` → host/path/method policy targeting) — hollow without a proxy intercepting every egress request, and the design principles are >70% covered by `agent-permissions-design`; **vendor-neutral harness interface + conformance suite** — the most interesting artifact in the repo and still a skip: sdd-harness is single-vendor with no second adapter and no prospect of one, so writing it up is speculative architecture with zero call sites, which the repo's own Rule of Three forbids; capability-profile discipline ("declared up front, never probed") — a real principle with no enforcement point here; skill-loading-mechanic guidance — conditioned on the native Skill tool being *disabled*, which it is not, and the project CLAUDE.md's GitNexus table already lists literal skill-file paths; vault/60s-TTL credential injection — needs the gateway; the achievable local subset is already `protected-path-hook` + `scan-pii`; fail-closed policy resolution on partial load — a property of a stateful policy server, nothing here resolves cached policy over a network.
+
+See also: [articles/README.md](../articles/README.md) — 14-source sweep batch note, and the Google ADK entry, which prompted the guard-normalization rewrite in the same session.

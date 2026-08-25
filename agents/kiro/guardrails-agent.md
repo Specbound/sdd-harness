@@ -98,7 +98,16 @@ Guardrails Audit
 
   Coverage: {X}/{Y} recommended rules configured
   Gaps:     {list of missing rules with recommended values}
+
+  Message Quality: {N}/{M} custom rules carry an actionable message
+  Bare messages:   {rule → current message, for each custom rule whose message
+                    is missing, or states only what is wrong without why + fix}
 ```
+
+For **Message Quality**, inspect only rules the project authored — `no-restricted-imports`,
+`no-restricted-syntax`, `banned-api`, and any custom plugin rule. Stock linter rules are
+out of scope. Flag a message as bare when it has no `message` field at all, or names the
+violation without naming a fix. Report it as a WARN-level gap, never a hard failure.
 
 #### Action: `scaffold`
 
@@ -106,6 +115,40 @@ Guardrails Audit
 2. If config exists but incomplete: propose specific additions (use Edit tool)
 3. Ensure lint script has `--max-warnings=0` or equivalent
 4. For JS/TS: check if SonarJS plugin is installed; if not, recommend it
+5. Give every custom rule an **actionable message** (see below)
+
+##### Rule messages must be actionable
+
+The primary reader of a lint violation is now an agent, not a human. A bare assertion
+gives it nothing to act on, so it guesses — and a wrong guess costs a full edit/lint
+cycle. Every rule *you author* (custom rules, `no-restricted-imports`, architectural
+boundary rules, `no-restricted-syntax`) must carry three things:
+
+| Part | Question it answers |
+|---|---|
+| **What** | which construct, at which path |
+| **Why** | the constraint being enforced, in one clause |
+| **Fix** | the concrete replacement — a real path, symbol, or call, not "use the correct approach" |
+
+```
+✗ "Direct filesystem access in renderer"
+✓ "direct 'fs' import in src/renderer/App.tsx:12 — the renderer has no Node API
+   access; move the call to src/preload/file-ops.ts and invoke it via
+   window.api.readFile()"
+```
+
+Concretely: ESLint `no-restricted-imports` takes a per-path `message`; `no-restricted-syntax`
+takes a `message` per selector; ruff custom rules and `flake8-tidy-imports`
+`banned-api` take a message string. Fill them in — an empty message field is the
+default and the default is a bare assertion.
+
+This does not apply to stock rules from the linter's own ruleset (`complexity`,
+`max-depth`) — those have upstream messages and documentation URLs already.
+
+An actionable message turns a violation into a self-correcting loop; a bare one turns
+it into a retry loop. Same principle as `skills/tool-design` ("error messages must be
+actionable"), applied at the one place the harness *authors* error text rather than
+consuming it.
 
 **Recommended Baselines**:
 

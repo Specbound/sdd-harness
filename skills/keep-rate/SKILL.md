@@ -18,12 +18,12 @@ The Keep Rate is a lagging quality signal: if code Claude wrote is still in the 
 ### Step 1 — Find Claude-co-authored commits
 
 ```bash
-git log --all --format="%H %ae %s" | grep -i "co-authored-by.*claude\|noreply@anthropic"
+git log --format="%H %ae %s" --no-merges | grep -i "co-authored-by.*claude\|noreply@anthropic"
 ```
 
 Alternatively scan for the Co-Authored-By trailer:
 ```bash
-git log --all --format="%H %aI" --grep="Co-Authored-By: Claude" | head -100
+git log --format="%H %aI" --grep="Co-Authored-By: Claude" --no-merges | head -100
 ```
 
 Collect: commit hash, date, author, subject.
@@ -97,3 +97,15 @@ Not all low keep-rate signals indicate code quality issues:
 - **Iterative patch commits** (fixup, revert cycles): naturally 0–20% survival; expected in active refactor.
 - **Infra/reorg commits**: wholesale rewrites inflate denominator with pure renames (0% lines remain); not a code-quality signal.
 When keep-rate drops, separately analyze feature-code survival from infra-churn to avoid false regression. (source: 2026-06-22 observations)
+
+### ❌ Using `--all` in Step 1
+`git log --all` enumerates all branches (233 commits vs 111 on dev), inflating denominator. Enumerate on the working branch. (source: 2026-08-25 [keep-rate])
+
+### ❌ Merge commits in Step 1
+Add `--no-merges` to exclude; without it, 3 merges worth 8505 phantom lines inflate count. (source: 2026-08-25 [keep-rate])
+
+### ❌ Binary files in Step 2 diffs
+.mp3/.wav files inflate by 1141% on one file. Skip `--numstat` rows with `-`. (source: 2026-08-25 [keep-rate])
+
+### ❌ Blame field filtering in Step 2
+`git blame | grep <hash>` misses continuations; use `--line-porcelain` headers. (source: 2026-08-25 [keep-rate])

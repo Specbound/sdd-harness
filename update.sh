@@ -119,6 +119,8 @@ do_update() {
   for hook in "$HARNESS_DIR/hooks/claude/"*.sh; do
     [ -f "$hook" ] || continue
     name="$(basename "$hook")"
+    # *.test.sh are harness-repo test suites, not runtime hooks — don't ship them
+    case "$name" in *.test.sh) continue ;; esac
     cp "$hook" "$proj/.claude/hooks/$name"
     chmod +x "$proj/.claude/hooks/$name"
   done
@@ -221,6 +223,7 @@ done
 for hook in "$HARNESS_DIR/hooks/claude/"*.sh; do
   [ -f "$hook" ] || continue
   name="$(basename "$hook")"
+  case "$name" in *.test.sh) continue ;; esac
   cp "$hook" "$HARNESS_DIR/.claude/hooks/$name"
   chmod +x "$HARNESS_DIR/.claude/hooks/$name"
 done

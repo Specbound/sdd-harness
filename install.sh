@@ -557,6 +557,8 @@ install_project() {
   for hook in "$HARNESS_DIR/hooks/claude/"*.sh; do
     [ -f "$hook" ] || continue
     name="$(basename "$hook")"
+    # *.test.sh are harness-repo test suites, not runtime hooks — don't ship them
+    case "$name" in *.test.sh) continue ;; esac
     cp "$hook" "$PROJECT_DIR/.claude/hooks/$name"
     chmod +x "$PROJECT_DIR/.claude/hooks/$name"
   done

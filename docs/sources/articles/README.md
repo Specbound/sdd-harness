@@ -760,3 +760,96 @@ Two additional resources (OpenWiki — git, PACE — papers) are logged in their
 **Rejected:** standalone new "memory shapes" skill (would be a 5th+ memory skill in an already-saturated area — `agent-memory-systems`/`agent-memory-consolidation`/`agent-memory-discipline`/`memory-systems` already cover this territory; augment, don't fragment); reader/judge-model-sensitivity finding (already implicit in existing evaluation/judge-calibration skills); trained experience-memory finding (sufficiently adjacent to `agent-memory-consolidation`'s existing episodic-first stance, not a distinct enough mechanism).
 
 See also: [git/README.md](../git/README.md) — the `x74353/Amphetamine` scan run in the same batch surfaced an unrelated but real gap (LaunchAgent sleep interruption), fixed via native `caffeinate`, logged there.
+
+---
+
+## 14-source sweep, 2026-08-25 — batch note
+
+One `/skill-extraction` run over 14 links (newsletter archives, two GitHub repos, three YouTube talks, one arXiv paper, three essays), one sub-agent per source. **8 of 14 yielded nothing.** The 6 that did are logged individually below and in `git/`, `papers/`. Recording the rejects here so sibling links from the same newsletters are not re-litigated:
+
+- **archive.codenewsletter.ai/2089475434903953561** — archived X post, Magnitude CLI "model catalog" product copy. Covered by `llm-inference-async-batching` / `local-llm-eval`, and irrelevant: this harness is subscription-only with no local-inference path.
+- **youtube.com/watch?v=iqRcGCah0Kw** — freeCodeCamp multi-agent PR reviewer course. Transcript unobtainable; syllabus-only. Ideas already implemented end-to-end by `multi-agent-patterns` + the `pr-auto-create-hook` → `gitnexus-pr-review` → `code-review-learning-runner` pipeline.
+- **archive.codenewsletter.ai/2090245922685063634** — single X post announcing the `"outputStyle": "Concise"` config key. One vendor toggle; verbosity already governed by CLAUDE.md conventions + the lean-ctx directive.
+- **archive.codenewsletter.ai/2090141955695198633** — @poteto "1000 PRs" thread. Its only technical link (`cursor/plugins/pstack`) was already mined 2026-07-28, see [git/README.md](../git/README.md). `/goal`, `/loop`, `/swarm` map 1:1 onto `goal-mode`, `commands/kiro/loop.md`, `dispatching-parallel-agents`.
+- **github.com/mukul975/Anthropic-Cybersecurity-Skills** — 817 genuinely high-quality skills, Apache-2.0, ~30.7k★. ~99% redundant against the ~50 security skills already installed. Three real gaps exist and were **deliberately deferred**, not missed: honeytokens/canarytokens (harness has zero deception coverage), Sigma detection-rule authoring, threat-hunt hypothesis framework. Deferred on context-budget grounds — `skill-curator` + `skill-usage-tracker` exist to fight description bloat, and these target a discipline this harness may never invoke. Revisit if defensive security becomes an active domain.
+- **seangoedecke.com/good-api-design** — 26 of its 29 rules already covered with file:line citations across `api-design-principles`, `api-patterns`, `backend-architect`, and 5 more. The 3 uncovered (per-customer killswitch, accidental-abuse shapes, "version only as a last resort") are ~15 lines of declarative prose, none mechanizable. Maximally saturated model-strong domain — per SkillsBench (arXiv 2602.12670) ~4.5pt lift here vs ~51.9pt in model-weak domains.
+- **youtube.com/watch?v=AQ_Iqo3UYMk** — Jan Marshal dev-stack tour. Full transcript read. Its "cap skills at 50–60" heuristic is strictly worse than existing `skill-curator` (measured char budgets + git-tracked usage evidence vs a vibes number). Sole novel idea — pick a stack by LLM training-data density — is a 4-line heuristic, not skill #1000.
+
+**Method note (fed into `skills/skill-extraction` Phase 1):** WebFetch failed or degraded on 5 of 14 sources. `yt-dlp` is absent, and YouTube `timedtext`/InnerTube are now gated behind a PO token with transcript mirrors returning 403 — the rung that works is `uvx --from youtube-transcript-api youtube_transcript_api <ID> --languages en`. Three of four `archive.codenewsletter.ai` IDs turned out to be single X posts, not roundups, so the `articles` classification was wrong for those (category `x` would have been correct).
+
+---
+
+## Learn Harness Engineering (Walking Labs) — lectures 06, 09–11, 13–14
+**URL:** https://walkinglabs.github.io/learn-harness-engineering/en/
+**Added:** 2026-08-25
+**Source / Author:** Walking Labs (second pass; first pass logged 2026-05-31 above, covering lectures 03–05, 07–08, 12)
+
+**What it's about:** Second extraction pass targeting the lectures the 2026-05-31 pass did not cover. L09 premature completion, L10 end-to-end verification, L11 observability and the sprint contract, L13 loop engineering, L14 graph engineering. Core argument of the uncovered half: completion judgment must be externalized to the harness and based on runtime signals, not agent confidence.
+
+**What we added:**
+- Augmentation: `agents/kiro/verify-agent.md` — new conditional **Stage 7 (System/runtime)** plus an explicit three-layer model (L1 static → L2 unit → L3 system) with strict layer gating, a new `UNPROVEN` verdict, and a completion-priority constraint (no refactor/perf/style findings until functional verification passes). The gap was concrete: stages 1–6 all inspect *artifacts* — files, exit codes, output text — and none observes the software running, so `verify-agent` could return READY for code that had never been executed. `verification-before-completion` did not close this; it demands fresh evidence but is agnostic about which layer supplies it, so a green unit test satisfied it.
+- Augmentation: `commands/kiro/verify.md` — mode resolution for the conditional system stage (`full`/`pre-pr` only), plus `UNPROVEN` next-steps guidance.
+- Augmentation: `agents/kiro/guardrails-agent.md` — scaffolded rules must carry **what / why / how-to-fix** in their violation message, and `audit` now reports a Message Quality line for project-authored rules. Agents are the primary reader of lint output; a bare assertion produces a retry loop instead of a self-correcting one. `skills/tool-design` already stated the principle but scoped it to agent-facing APIs, never reaching the lint rules the harness itself generates.
+
+**Rejected:** loop engineering (six primitives, `/goal` vs `/loop`, generator-evaluator separation, maturity ladder) — already covered by `goal-mode`, `loop-patterns`, `iterative-repair-loop`, `commands/kiro/loop.md`, `scripts/routines/*`; four silent costs — already in `multi-agent-patterns` `[loop-debt]`; orchestration tax — already extracted; **graph engineering** — a prior pass explicitly decided *not* to create a standalone graph skill (`x/README.md`, >70% subsumed by `multi-agent-patterns`), and this lecture adds nothing that decision did not weigh; sprint contract (only novel part is a binding Exclusions section; the SDD spec flow with human gates is already a heavier version); evaluator rubric thresholds — already in `guardrails-agent` Risk Telescope; review-feedback promotion — already `code-review-learning-runner`; OTel sprint traces — no consumer in a bash/markdown harness; L06 initialization-as-a-phase — already `spec-init` + `adapt-to-repo` + `steering`.
+
+---
+
+## AI agents can't read social media (Corey Haines / Maker Skills)
+**URL:** https://archive.codenewsletter.ai/2089027423774048326
+**Added:** 2026-08-25
+**Source / Author:** Corey Haines — archived X post marketing the "Maker Skills" plugin marketplace
+
+**What it's about:** Marketing post for a 20-skill founder/operator plugin marketplace, hooked on the observation that agents get stopped cold by login walls and bot blocks. Its `/social-fetch` skill walks a free-first strategy ladder (native oEmbed → agent-browser → paid scrapers), accumulates a *reason* for each rung's failure, and uses the Wayback Machine both mid-chain and as last resort.
+
+**What we added:**
+- Augmentation: `skills/skill-extraction/SKILL.md` Phase 1 — a **retrieval recourse ladder**. Phase 1 previously read, in full, "Use WebFetch or WebSearch to retrieve the content at the provided link," with no guidance for degraded retrieval. Now: name the failure mode, walk 7 rungs (direct → redirect → no-auth provider JSON → `uvx youtube-transcript-api` → archive mirrors → Wayback → WebSearch-for-writeup), report which rung succeeded, and on total failure report *which rungs were tried and why each failed* rather than a vague "unavailable". Carries the source's null-vs-zero rule (a field the source never mentioned is unknown, not `0`) into `docs/sources/` entries, and adds a hard rule: if no rung returns real content, propose nothing — an extraction built on a title and a guess is fabrication wearing a citation.
+
+The gap was demonstrated four times in the same batch that surfaced it: this source resolved only via an incidental archive mirror; the Harrison Chase talk initially fell back to a secondhand recap; the freeCodeCamp video yielded syllabus-only; and one video succeeded solely through `uvx youtube-transcript-api` after five other methods failed. The harness's own Phase 0 table had already conceded the gap structurally by routing pasted X content to category `x` — i.e. the documented path for X was "the user pastes it manually."
+
+**Rejected:** `social-fetch` itself as a harness skill — domain mismatch (founder marketing tooling in an SDD coding harness), and hollow in practice since the load-bearing `references/strategies.md` was not retrievable; Maker Skills marketplace structure (`skillify`/`toolify`, per-skill semver) — `skill-extraction` + `commands/kiro/skill-extract*` + `skill-curator-runner` already cover this more deeply; social-post output schema — no harness consumer; 24h TTL caching — textbook, and `ctx_read` already caches at the real retrieval layer; the other 19 Maker Skills — business/operator domain, and `second-brain` overlaps the existing memory system.
+
+---
+
+## Practical Loop Engineering (Addy Osmani)
+**URL:** https://addyo.substack.com/p/practical-loop-engineering
+**Added:** 2026-08-25
+**Source / Author:** Addy Osmani (fourth Osmani piece logged; see agentic-code-review and own-the-outer-loop above, plus agentic-autonomy-levels in `x/README.md`)
+
+**What it's about:** A four-rung autonomy ladder (agentic → goal-based → time-based → proactive) with the anatomy of a well-formed `/goal` condition and six loop failure modes drawn from maintaining the Agent Skills repo at 80–90 PRs/day. Near-total prior absorption — an explicit overlap map put 15 of its 17 ideas against existing harness artifacts.
+
+**What we added:**
+- Augmentation: `skills/goal-mode/SKILL.md` Phase 1 — the condition formula went from three parts to five, adding **(4) an invariant** the run must not violate ("do not change the public API of any exported hook", "do not edit or delete an existing test to make it pass") and **(5) a per-turn progress requirement** with an abort clause. Also: name the tool that produces the evidence in part 2. The gap is precise — the evaluator reads the *transcript* and is not a quality reviewer, so a condition guarded only by a metric and a turn cap is silent on the two ways a run fails while technically succeeding: satisfying the metric by breaking something out of scope, and burning every turn making zero progress. Cross-referenced to `loop-patterns` circuit breakers so the two thresholds stay one concept.
+
+**Rejected:** a new loop-engineering skill — `loop-patterns` (11 named loops, contract format, loop→graph gut-check) plus its routing table already covers the ladder; `verify-frontend-change` as a skill — >70% overlap with `ui-visual-validator`, and the residual delta (console-error hard gate, CWV trace) has no frontend call site in this repo, so Rule of Three fails; the failure-mode catalogue — five of six map onto existing artifacts and the harness's thresholds are *stricter* (2-pass breakers vs his 3× rule), so importing would weaken it; parallelism numbers (5–10/day) — personal telemetry, not a mechanism; `/loop` fine print (7-day expiry, session scope) — volatile product detail, and this harness schedules via `daily-orchestrator.sh`; "first loop = your morning manual check" — already implemented seven times over in `scripts/routines/`.
+
+---
+
+## When to Build Your Own Agent Harness (Harrison Chase, LangChain)
+**URL:** https://www.youtube.com/watch?v=HI2q3ci3Iuc
+**Added:** 2026-08-25
+**Source / Author:** Harrison Chase, LangChain — Sequoia/Sovereign-AI talk, ~23 min
+
+**What it's about:** Decomposes an agent into model / context / harness and argues the harness — "bring context to the model at the right point in time" — is the part most teams buy without thinking. Contributes a buy-vs-build rule for harnesses and an argument that private evals replace gradient descent at the harness layer.
+
+**What we added:**
+- Augmentation: `skills/agent-harness-design/SKILL.md` — new **Distribution Test** section under the Improvement Layer Decision block. The existing block routes *which layer to fix*; this routes *whether to own the layer at all*. The rule: the closer work sits to what frontier models were trained on, the better an off-the-shelf harness performs — and critically, **distribution is per-subtask, not per-mission**. A legal-AI mission is far out of distribution while *editing a file* is not, so the right shape is a custom harness that still delegates in-distribution subtasks to the model-native tool. Concrete mechanism from the talk: LangChain's Deep Agents uses **model profiles**, swapping the edit-file implementation per model, because OpenAI and Anthropic models were RL'd on different edit formats and each is best at its own. Includes an applies-to-this-harness note: sdd-harness replaces model-native Read/Grep/Glob wholesale with `ctx_*` wrappers, and file reading and repo search are maximally in-distribution subtasks — defensible on token-compression grounds, but a trade of accuracy-the-model-already-had for context budget that should be re-justified rather than assumed.
+
+**Verification note:** the sub-agent's first pass reached only a secondhand recap and flagged its own conclusion as unverified. The claim was then confirmed against the primary transcript before writing, which also yielded the model-profiles mechanism the recap omitted. This is the recourse-ladder rule from the Maker Skills entry working as intended.
+
+**Rejected:** the context-is-the-usual-failure thesis — already in `agent-harness-design` near-verbatim; Harbor eval-case format — `skills/evaluation`, `macro-eval-sweep`, `learn-eval`, `macro-eval-runner` saturate this, and a 4-field naming convention is hollow without the runner; trace→feedback→experiment flywheel — fully covered by `agent-trace-hook`, `reject-feedback-hook`, `code-review-learning-runner`; hooks around a plain loop — this repo has 35+ hooks plus lean-ctx compression doing exactly this; LLM-judge cost → fine-tune small models — no local capability (subscription-only, no API key), so the automation verdict would be dishonest.
+
+---
+
+## Five design patterns for a long-horizon agent harness (Google ADK)
+**URL:** https://archive.codenewsletter.ai/2090248297214525569
+**Added:** 2026-08-25
+**Source / Author:** Google ADK team — long-form engineering post with an Apache-2.0 reference implementation (`google/adk-samples`, `core/python/long-horizon-harness`)
+
+**What it's about:** Not a roundup — a real engineering post. Organizing claim: long-horizon agents fail *silently*. The team dogfooded for weeks while "nothing ever threw an error" and five distinct defects accumulated. Five patterns follow, each anchored to a named source file: stable prefix, background learning, persistent workspace, explicit failure, guard chain.
+
+**What we added:**
+- **Hook rewrite:** `hooks/claude/git-destructive-guard-hook.sh` — replaced string matching with structural parsing. The hook previously regex-stripped quoted segments then `grep -E`'d the remaining raw text; it is the harness's only hard refusal point, and every one of `F=--force; git push $F`, `bash -c 'git push --force'`, `git push --fo""rce`, and `cd sub && git push --force` defeated it while remaining a real force-push. Now tokenized with `shlex`, split on shell operators, compared token-by-token against exact flag names, recursing into `bash -c` and resolving `git -C`/`git -c` prefixes; fails closed on unparseable input and on unresolved `$VAR`/`$(...)` in a destructive verb. The ADK isomorph: blocking the literal string `169.254.169.254` does nothing about `curl http://2852039166/`. New test suite `hooks/claude/git-destructive-guard-hook.test.sh`, 46 cases, all four historical bypasses pinned as regression tests.
+- Augmentation: `skills/agent-permissions-design/SKILL.md` — new "Verdict Computation and Context-Dependence" section: normalize-before-compare as a stated rule, fail-closed on unresolvable values, tiered grant matching so an approval for one command shape cannot be replayed by a rewrapped variant (labelled design-guidance-only, since Claude Code exposes no grant store a harness controls), and **an `ask` verdict degrades to `deny` under headless execution** — `daily-orchestrator.sh` and `scripts/routines/*` have no interactive user, so a prompt-the-human verdict there silently becomes a hang or an implicit allow. Two new anti-pattern rows.
+
+**Rejected:** stable prefix / prompt ordering — Claude Code owns prompt assembly and hook `additionalContext` already lands at the tail; its recommended diagnostic (read cached-token count on turn two) is unavailable on a subscription with no usage object, so any hook claiming to measure cache hit rate would be fabricated; background learning / write-behind memory — asyncio- and ADK-bound (task GC, 4s-vs-5s drain), and the transferable residue (throttle, isolate the writer) is already `startup-payload-audit` day-guard + `daily-orchestrator` single tick + `gbrain-memory-write`; persistent workspace — assumes a managed cloud sandbox, this harness runs on one local filesystem; egress/exfil guard as a hook — threat model doesn't transfer, the agent already has the user's full shell, so a metadata-IP blocker here is theater (the *reasoning* inside it is what was kept); loop caps (200 tool calls/iteration) — arbitrary constants for a different runtime, and nothing in `hooks/` can strip tools from an in-flight request; **typed terminal state for sub-agent handoffs** — real gap (grep of `subagent-driven-development` + `agent-trace-hook` returns zero hits for timeout/truncation) and deliberately deferred, not missed: it touches every agent template and a marker-presence hook cannot catch a hallucinated `STATUS: completed`, so blast radius outweighs enforcement strength. Revisit if a parent agent is observed laundering a truncated child's report.

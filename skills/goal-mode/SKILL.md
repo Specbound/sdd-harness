@@ -23,7 +23,8 @@ Use this when you want to hand off a well-defined task and walk away.
 
 Before doing anything else, translate the task into a verifiable `/goal` condition.
 
-A good condition has three parts:
+A good condition has five parts — three that define success, and two that constrain how
+it may be reached:
 
 **1. One measurable end state** — a test result, build exit code, file state, or empty queue.
 Examples:
@@ -41,6 +42,36 @@ Examples:
 - Simple bug fix / small feature: `or stop after 10 turns`
 - Medium feature with TDD: `or stop after 20 turns`
 - Large refactor / multi-file: `or stop after 35 turns`
+
+**4. An invariant** — what the run must *not* do, even to satisfy part 1.
+
+A metric plus a turn cap constrains only the destination. Without an invariant, the
+cheapest path to a green metric often runs straight through something you cared about,
+and the evaluator will not object: it checks whether the stated condition was met, not
+whether the result is *good*. Name the blast radius you are refusing.
+- `do not change the public API of any exported hook`
+- `do not modify files outside src/auth/`
+- `do not edit or delete any existing test to make it pass`
+- `do not add a dependency`
+
+Name the tool that produces the evidence in part 2, too — `Lighthouse >= 92 as shown by
+the Lighthouse CLI output` is checkable; `Lighthouse >= 92` invites a self-report.
+
+**5. A progress requirement** — an abort clause for spinning in place.
+
+A turn cap bounds the damage but does not detect futility: a run can burn all 35 turns
+producing nothing and still look like it was working. Require forward motion per turn.
+- `each turn must improve at least one reported metric; abort if two consecutive turns show no improvement`
+- `abort if the same command produces the same failure twice`
+
+This is the authoring-time form of the circuit breakers in `loop-patterns` — same
+concept, stated where you write the `/goal` string rather than where the loop runs.
+Keep the two thresholds aligned; `loop-patterns` breaks at 2 no-progress passes.
+
+> The evaluator reads the **transcript**, not your files, and it is not a quality
+> reviewer. Anything you want enforced has to be visible as text in the run and stated
+> in the condition. Parts 4 and 5 exist because parts 1–3 are silent on the two ways a
+> run fails while technically succeeding.
 
 **Announce the condition** before starting work. Format:
 ```

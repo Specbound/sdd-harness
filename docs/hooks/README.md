@@ -561,9 +561,44 @@ Hook output is injected into Claude's context as system messages — Claude read
 
 **Why it's needed:** Soft nudges (`protected-path-hook.sh`) only warn — this is the one place in the harness that actually refuses to run a destructive git/gh command.
 
-**Matching detail:** all checks run against the command with quoted segments stripped, not the raw string, so a commit message or PR body containing the text `-f` or "force" inside quotes cannot false-trip the block. (Ported from claude-codex-settings' `ultralytics-dev` plugin, github.com/fcakyon/claude-codex-settings, which also added the `git rebase` check.)
+**Matching detail (rewritten 2026-08-25 — was a bypassable string match):** the command is tokenized with `shlex` (a real shell lexer), split on shell operators into individual commands, and compared **token-by-token against exact flag names**. It recurses into `bash -c '...'` wrappers, skips `git` global options so `git -C dir push --force` and `git -c k=v push --force` still resolve to the `push` verb, strips leading `VAR=value` assignments, and rejects `git -c alias.*` outright (an alias hides the real verb).
+
+The previous implementation regex-stripped quoted segments and then `grep -E`'d the remaining raw text. That is a string match over a rendered value, and every one of these defeated it while remaining a real force-push: `F=--force; git push $F`, `bash -c 'git push --force'`, `git push --fo""rce`, `cd sub && git push --force`. Guard rules must normalize before comparing — the same class of bug as blocking the literal string `169.254.169.254` while `curl http://2852039166/` reaches the same address. See `skills/agent-permissions-design/SKILL.md` § "Verdict Computation and Context-Dependence".
+
+**Fail-closed behavior:** if the command cannot be parsed (unbalanced quotes) or a destructive-capable verb carries an unresolved expansion (`$VAR`, `$(...)`, backtick) that could expand to a flag, the hook blocks and asks for the literal value. This deliberately over-blocks on a narrow set of high-stakes verbs — `git push`, `git branch`, `git rebase`, `gh repo` — and nowhere else.
+
+**No `ask` verdict, by design:** the hook only ever allows or hard-blocks. The harness's routine runners (`scripts/orchestration/daily-orchestrator.sh`, `scripts/routines/*`) run headless, where a prompt-the-human verdict is unanswerable and silently degrades to a hang or an implicit allow.
+
+**Quoted text still safe:** `git commit -m "document git push --force risks"` is not blocked — `shlex` keeps the message as a single token and the verb resolves to `commit`, which is not checked.
+
+(Original checks ported from claude-codex-settings' `ultralytics-dev` plugin, github.com/fcakyon/claude-codex-settings, which also added the `git rebase` check. Normalization rewrite prompted by Google ADK's `long-horizon-harness/horizon/guardrails/exfil_guard.py`, 2026-08.)
 
 **Output / side effect:** `BLOCKED: ...` to stderr with reason and the offending command, exit 2. Silent (exit 0) on anything else.
+
+**Tests:** `hooks/claude/git-destructive-guard-hook.test.sh` — 46 cases covering baseline blocks, the four regex-era bypasses above, and a false-positive guard block (normal pushes, commit messages that mention `--force`, `git status`, `gh repo view`). Run `bash hooks/claude/git-destructive-guard-hook.test.sh`.
+
+---
+
+### `agent-commit-attribution-hook.sh`
+**Event:** `PreToolUse` — **Matcher:** `Bash` — _(soft, never blocks)_
+
+**Purpose:** Warns before a `git commit` whose inline message carries no `Co-Authored-By` trailer.
+
+1. Extracts the commit message from `-m`, `--message`, `--message=`, `-mmsg`, and short bundles such as `-am`
+2. Checks the assembled message for a `Co-Authored-By:` trailer (case-insensitive)
+3. Prints the trailer to append, then exits 0 — the commit is never blocked
+
+**Why it's needed:** this is a measurement repair, not a style nag. `skills/keep-rate/SKILL.md` selects agent-authored commits with `git log --all --grep="Co-Authored-By: Claude"`, and the keep-rate widget in `scripts/utils/dashboard.py` blames against the same set. An agent commit that ships without the trailer drops silently out of the denominator, so keep-rate reads **high** — the failure is invisible and biased in the flattering direction. As of 2026-08 only 10 of the last 30 commits in this repo carried the trailer.
+
+**Why `PreToolUse` and not `.git/hooks/commit-msg`:** a git hook sees a commit, not an author, so it can only nag on every commit or none. A PreToolUse Bash hook can tell the difference — if Claude issued the command, it is an agent commit by definition. Enforce identity at the chokepoint that knows who acted. (Framing from onecli's gateway, which rewrites commit payloads in-flight because GitHub App tokens have "no natural author identity" — github.com/onecli/onecli.)
+
+**Why soft:** matches `address-check-hook.sh`, the harness's existing precedent for "did a CLAUDE.md instruction survive compaction" — a passive signal for a human to act on, not a gate.
+
+**Exclusions (silent, no warning):** `--amend --no-edit`, `--squash`, `--fixup`, `-C`/`--reuse-message`, `-c`/`--reedit-message`, and any `git commit` with no inline message (an editor session, whose content the hook cannot see). These are commits whose message is generated or inherited rather than authored — the same reason onecli's gateway skips merge endpoints.
+
+**Output / side effect:** `[attribution] ...` block to stdout naming the trailer to append, exit 0. Silent on trailered commits, excluded forms, and non-commit commands.
+
+**Tests:** `hooks/claude/agent-commit-attribution-hook.test.sh` — 22 cases. Run `bash hooks/claude/agent-commit-attribution-hook.test.sh`.
 
 ---
 
@@ -605,6 +640,7 @@ UserPromptSubmit (matcher: "")                                → doc-parse-nudg
 UserPromptSubmit (matcher: "")                                → reject-feedback-hook.sh
 PreToolUse     Bash                                          → rtk hook claude  [global, ~/.claude/settings.json — token compression]
 PreToolUse     Bash                                          → git-destructive-guard-hook.sh
+PreToolUse     Bash                                          → agent-commit-attribution-hook.sh
 PreToolUse     Write|Edit                                    → memory-discipline-hook.sh
 PreToolUse     Write|Edit                                    → protected-path-hook.sh
 PreToolUse     Write|Edit                                    → skill-validate-hook.sh
@@ -645,10 +681,13 @@ The `tool-failure-*` pair plus the `tool-failure-review` routine are designed to
 
 ## Adding a New Hook
 
-1. Write the script to `.claude/hooks/<name>.sh` and `chmod +x` it.
-2. Add the wiring entry to `.claude/settings.json` under the appropriate event.
+1. Write the script to the harness source at `hooks/claude/<name>.sh` — **not** to an installed `.claude/hooks/` copy, which `update.sh` overwrites. `install.sh`/`update.sh` propagate every `hooks/claude/*.sh` to every project automatically and `chmod +x` it; no per-hook edit to the installers is needed.
+2. Add the wiring entry to `templates/settings.json.template` so the hook ships everywhere, and to the local `.claude/settings.json` so it fires this session.
 3. Document it in this file (the `hook-added-notify.sh` hook will remind you if you forget).
 4. Update the Wiring Reference table above.
+5. For any hook that blocks, or whose matching logic is non-trivial, add `hooks/claude/<name>.test.sh` with both block *and* allow cases. Files matching `*.test.sh` are skipped by the installers' copy loop, so they stay in the harness repo and never ship as runtime hooks. Run them with `bash hooks/claude/<name>.test.sh`.
 
-_Last synced: 2026-08-20_
+**Matching rule for any guard hook:** parse the command into its structure (argv via `shlex`, URLs via a URL parser) and compare tokens exactly. Do not substring- or regex-match the rendered command text — that is defeated by re-rendering the same value, and `git-destructive-guard-hook.sh` shipped with exactly that bug until 2026-08-25.
+
+_Last synced: 2026-08-25_
 
