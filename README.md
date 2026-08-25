@@ -258,7 +258,7 @@ sdd-harness/
 │       └── check-fleet-registration.sh  # Find harness-installed repos missing from projects.txt (they get no routines and appear on no dashboard)
 │
 ├── hooks/                        # Claude Code and Git lifecycle hooks
-│   ├── claude/                   # Claude Code session hooks (synced to .claude/hooks/ on install/update)
+│   ├── claude/                   # Claude Code session hooks (synced to .claude/hooks/ on install/update; *.test.sh suites stay here, never shipped)
 │   │   ├── session-start-hook.sh #     On session start: maintenance check, CLAUDE.md review, headroom sync (background)
 │   │   ├── stop-hook.sh          #     On session exit: check updates, memory health, re-explanation detection, agent failure patterns
 │   │   ├── prompt-hook.sh        #     On prompt submit: inject hot-memory context
@@ -983,4 +983,4 @@ The Model Cost section reads session data from `~/.claude/projects/*/`. Pricing 
 
 Private repository. Contact the maintainer for access.
 
-_Last synced: 2026-08-20_
+_Last synced: 2026-08-25_

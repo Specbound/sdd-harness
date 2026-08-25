@@ -250,7 +250,7 @@ After approval, implement each approved item.
 - Keep SKILL.md focused; move extended reference content to a `resources/` subfolder.
 
 **For Hooks:**
-- Write `$HARNESS/hooks/<name>.sh` as a standalone bash script. install.sh/update.sh copy harness hooks into each project's `.claude/hooks/` and chmod them — add the new hook to those copy+chmod lists so it propagates.
+- Write `$HARNESS/hooks/claude/<name>.sh` as a standalone bash script. install.sh/update.sh copy every `hooks/claude/*.sh` into each project's `.claude/hooks/` and chmod them, so a new hook propagates with no installer edit. Files matching `*.test.sh` are skipped by that copy loop — put the hook's test suite in `$HARNESS/hooks/claude/<name>.test.sh` and it stays in the harness repo instead of shipping as a runtime hook.
 - Include a `# REGISTRATION` comment block at the end of the file with the exact settings.json JSON to add. Register it in `templates/settings.json.template` (shipped to projects) so the hook is wired everywhere, not just locally.
 - Use the `update-config` skill to write the local settings.json entry after confirming with the user.
 
