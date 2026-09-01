@@ -410,7 +410,7 @@ Each spec phase ends with a **[Proof](https://github.com/anthropics/proof) colla
 | `/kiro:gitnexus-impact` | Query blast radius of current changes via knowledge graph |
 | `/kiro:macro-eval-sweep` | Twice-weekly macro-eval sweep over Raindrop Workshop traces — clusters failure patterns, ranks by impact, backward-traces suspects, writes report and posts annotations |
 
-For usage examples, see [docs/SDD-USAGE.md](docs/SDD-USAGE.md).
+For usage examples, see [docs/SDD-USAGE.md](docs/harness-documentation/SDD-USAGE.md).
 
 ---
 
@@ -507,7 +507,7 @@ The agent fetches the ticket, classifies it, and routes to the appropriate workf
 
 On `git push`, an auto-comment is posted to the ticket with a summary of changes (single-fire, no duplicates).
 
-**Setup**: Create `~/.env.jira` with your credentials (PAT or Basic Auth). See [docs/jira/README.md](docs/jira/README.md).
+**Setup**: Create `~/.env.jira` with your credentials (PAT or Basic Auth). See [docs/jira/README.md](docs/integrations/jira/README.md).
 
 ---
 
@@ -549,7 +549,7 @@ Based on the methodology from ["Automating Skill Acquisition through Large-Scale
 | `pr-babysit` | Compound Engineering v3.20 | Monitor-tool background watch of a PR's CI/reviews after auto-create; branch-currency check; explicit authority boundary (fix/commit/push only — never merge/rebase/force-push/CI-approve). Merged with incumbent `iterate-pr` |
 | `diff-teach` | Compound Engineering v3.20 | Two-turn predict-then-reveal drill for diffs/commits/time-windows — closes comprehension debt on agent-written code the user never read line-by-line. Merged with incumbent `code-documentation-code-explain` |
 
-See [docs/skill-extraction/README.md](docs/skill-extraction/README.md) for the full extracted skills index.
+See [docs/skill-extraction/README.md](docs/skills/skill-extraction/README.md) for the full extracted skills index.
 
 ---
 
@@ -596,7 +596,7 @@ If you write your request as a JSON object, the skill maps keys to intent dimens
 
 **Pre-installed at:** `~/.claude/skills/prompt-master/`
 
-See [docs/prompt-master/README.md](docs/prompt-master/README.md).
+See [docs/prompt-master/README.md](docs/prompts/prompt-master/README.md).
 
 ---
 
@@ -613,7 +613,7 @@ Requires [uv](https://docs.astral.sh/uv/) (Astral's fast Python package manager)
 
 Each iteration: hypothesize → modify code → train (5-minute bounded) → evaluate → keep improvements / revert failures.
 
-See [docs/autoresearch/README.md](docs/autoresearch/README.md).
+See [docs/autoresearch/README.md](docs/research/autoresearch/README.md).
 
 ---
 
@@ -644,7 +644,7 @@ $SDD_HARNESS/install.sh /path/to/project --with-gitnexus
 
 `install.sh --with-gitnexus` now wires the MCP server itself via `scripts/setup/gitnexus-reconcile.sh --wire` — writing the server into `.mcp.json` and adding it to `enabledMcpjsonServers` in `.claude/settings.json` — instead of printing a note telling you to paste the `mcpServers` JSON by hand. It then runs `gitnexus setup` **only** if `gitnexus-reconcile.sh --check` confirms both the index and the MCP server exist — otherwise the managed block (written into `CLAUDE.md`, or `AGENTS.md` for projects that relocated their conventions there) was written with MUST/NEVER rules ordering the agent to call `gitnexus_*` tools that were never registered. When the check fails, install prints why and points at `/kiro:gitnexus-setup` to finish wiring. `update.sh` runs the same reconciler on every sync: the managed block is committed while `.gitnexus/` is gitignored and the MCP server lives in local config, so a fresh clone inherits rules for tools it cannot call — the reconciler strips the block when it's dead and, when it's live, repairs its skill paths and rewrites any bare `gitnexus_*` tool names to the `mcp__gitnexus__*` form the MCP server exposes; it no-ops for projects that never ran `gitnexus setup`.
 
-See [docs/gitnexus/README.md](docs/gitnexus/README.md).
+See [docs/gitnexus/README.md](docs/integrations/gitnexus/README.md).
 
 ---
 
@@ -676,7 +676,7 @@ echo 'bash "$(git rev-parse --show-toplevel)/.claude/hooks/scan-pii.sh" --staged
 
 > **In the harness repo itself**, `.git/hooks/pre-commit` is owned by `hooks/git/pre-commit` (the hardcoded-path guard), which `install.sh` / `update.sh` rewrite on every run — a line appended there is lost at the next install or update. Add the scan-pii line to `hooks/git/pre-commit` in the source tree instead. In any other project the slot is free: the harness guard is deliberately not propagated downstream, and the installer leaves a pre-commit it doesn't recognise alone.
 
-See [docs/privacy-filter/README.md](docs/privacy-filter/README.md).
+See [docs/privacy-filter/README.md](docs/security/privacy-filter/README.md).
 
 ---
 
@@ -712,7 +712,7 @@ Integrates [andrewyng/context-hub](https://github.com/andrewyng/context-hub) —
 
 Runs as an MCP server via `npx -y @aisuite/chub-mcp` and is configured in the project's `.claude/settings.json`. Exposes tools like `chub_search`, `chub_get`, and `chub_list` that Claude Code can call during any workflow.
 
-See the Context Hub section in [docs/SDD-SETUP-GUIDE.md](docs/SDD-SETUP-GUIDE.md) for configuration.
+See the Context Hub section in [docs/SDD-SETUP-GUIDE.md](docs/harness-documentation/SDD-SETUP-GUIDE.md) for configuration.
 
 ---
 
@@ -731,7 +731,7 @@ rtk gain --graph      # ASCII graph of daily savings
 rtk discover          # scan Claude Code history for missed opportunities
 ```
 
-Install once with Homebrew (`brew install rtk && rtk init -g`) and the global hook covers every project and every session — see [docs/context-management/rtk/README.md](docs/context-management/rtk/README.md) for full filter coverage, config, and troubleshooting.
+Install once with Homebrew (`brew install rtk && rtk init -g`) and the global hook covers every project and every session — see [docs/context-management/rtk/README.md](docs/context/rtk/README.md) for full filter coverage, config, and troubleshooting.
 
 ---
 
@@ -948,22 +948,22 @@ The Model Cost section reads session data from `~/.claude/projects/*/`. Pricing 
 
 | Document | Description |
 |---|---|
-| [SDD-USAGE.md](docs/SDD-USAGE.md) | Quick command reference with examples |
-| [SDD-SETUP-GUIDE.md](docs/SDD-SETUP-GUIDE.md) | Comprehensive setup and configuration walkthrough |
-| [Kiro Engine](docs/kiro/README.md) | Spec engine components, rules, and templates |
+| [SDD-USAGE.md](docs/harness-documentation/SDD-USAGE.md) | Quick command reference with examples |
+| [SDD-SETUP-GUIDE.md](docs/harness-documentation/SDD-SETUP-GUIDE.md) | Comprehensive setup and configuration walkthrough |
+| [Kiro Engine](docs/workflow/kiro/README.md) | Spec engine components, rules, and templates |
 | [Memory Architecture](docs/memory/README.md) | Temperature-tiered memory system guide |
-| [Jira Integration](docs/jira/README.md) | Jira setup, credentials, and troubleshooting |
-| [AutoResearch](docs/autoresearch/README.md) | ML experiment loop methodology |
-| [GitNexus](docs/gitnexus/README.md) | Code intelligence, visual explorer, and blast radius analysis |
-| [RTK Token Compression](docs/context-management/rtk/README.md) | Token compression proxy — filter coverage, install, config, upgrading |
-| [Privacy Filter](docs/privacy-filter/README.md) | PII scanning setup, CLI usage, integration checkpoints, and troubleshooting |
-| [Skill Extraction](docs/skill-extraction/README.md) | Skill extraction pipeline and scoring |
-| [Prompt Master](docs/prompt-master/README.md) | Prompt engineering skill with JSON prompting, 30+ tool profiles, 14 templates |
-| [Sonar Integration](docs/security/sonar-hotspot-review.md) | SonarQube security hotspot review |
+| [Jira Integration](docs/integrations/jira/README.md) | Jira setup, credentials, and troubleshooting |
+| [AutoResearch](docs/research/autoresearch/README.md) | ML experiment loop methodology |
+| [GitNexus](docs/integrations/gitnexus/README.md) | Code intelligence, visual explorer, and blast radius analysis |
+| [RTK Token Compression](docs/context/rtk/README.md) | Token compression proxy — filter coverage, install, config, upgrading |
+| [Privacy Filter](docs/security/privacy-filter/README.md) | PII scanning setup, CLI usage, integration checkpoints, and troubleshooting |
+| [Skill Extraction](docs/skills/skill-extraction/README.md) | Skill extraction pipeline and scoring |
+| [Prompt Master](docs/prompts/prompt-master/README.md) | Prompt engineering skill with JSON prompting, 30+ tool profiles, 14 templates |
+| [Sonar Integration](reports/sonar-hotspot-review.md) | SonarQube security hotspot review |
 | [Design Quality](docs/design/README.md) | Visual design quality integrations index |
 | [Impeccable](docs/design/impeccable/impeccable.md) | Anti-pattern rules, skill usage, CLI setup for frontend design quality |
-| [Local LLM Eval](docs/local-llm-eval/README.md) | Offline prompt evaluation with Ollama via OMT — multi-model comparison, variance testing |
-| [Structured Web Dataset](docs/structured-web-dataset/README.md) | Building tabular datasets from NL descriptions — web research mode and synthetic mode |
+| [Local LLM Eval](docs/evaluation/local-llm-eval/README.md) | Offline prompt evaluation with Ollama via OMT — multi-model comparison, variance testing |
+| [Structured Web Dataset](docs/research/structured-web-dataset/README.md) | Building tabular datasets from NL descriptions — web research mode and synthetic mode |
 | [Hooks Reference](docs/hooks/README.md) | Complete hook documentation — event types, purpose, wiring reference |
 
 ---
