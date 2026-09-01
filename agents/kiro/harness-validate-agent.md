@@ -57,6 +57,19 @@ Non-zero exit is a blocker: Claude Code drops every permission rule and hook in 
 malformed settings.json without warning, and a broken template propagates that to
 every project installed from it. Notes belong in `settings.notes.md`, not in JSON.
 
+Then check the two settings templates against each other (harness repo only):
+
+```
+python3 scripts/setup/reconcile-settings-templates.py --check
+```
+
+This asserts `hooks(harness template) == hooks(project template) + HARNESS_ONLY`.
+Non-zero exit is also a blocker: drift here means a hook fires in every installed
+repo but not in the one where it is written and tested, or the reverse. Permissions
+are excluded on purpose — the two templates *should* differ there. Fix by adding the
+shared hook to `templates/settings.json.template` and running `--sync`, never by
+editing the harness template directly.
+
 ### Step 4: Check Memory Caps
 
 If `.claude/memory/` exists:

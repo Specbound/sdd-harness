@@ -830,5 +830,5 @@ denies `git push*` outright where projects only deny force-push.
 
 **Matching rule for any guard hook:** parse the command into its structure (argv via `shlex`, URLs via a URL parser) and compare tokens exactly. Do not substring- or regex-match the rendered command text — that is defeated by re-rendering the same value, and `git-destructive-guard-hook.sh` shipped with exactly that bug until 2026-08-25.
 
-_Last synced: 2026-08-26_
+_Last synced: 2026-09-01_
 

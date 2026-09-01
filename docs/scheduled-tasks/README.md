@@ -248,5 +248,5 @@ The dashboard's **Scheduled Tasks** tab shows live status for each task, scoped 
 
 ---
 
-_Last synced: 2026-08-20_
+_Last synced: 2026-09-01_
 

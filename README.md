@@ -86,6 +86,7 @@ This will:
 - Create `.claude/settings.json` from the template — but only after `scripts/setup/check-settings-json.sh` confirms the template is strict JSON, since Claude Code silently drops every permission rule and hook in a settings file it cannot parse
 - Create `.claude/settings.notes.md` for notes that cannot live inside `settings.json` (JSON allows no comments and no trailing content)
 - Run `scripts/setup/repair-settings-json.py` to self-heal any existing `settings.json` broken by a trailing `//` comment block, moving it into the notes sidecar (`update.sh` does this too)
+- Run `scripts/setup/reconcile-settings-templates.py --sync` **before** generating the harness's own `.claude/settings.json`, so the harness template is derived from the project template plus an explicit harness-only allowlist rather than drifting from it (`update.sh` does this too). The two had silently diverged, and in the harmful direction: hooks were firing in every installed repo while not firing in the repo where they are written and tested. A failure here warns and continues rather than aborting the install
 - Register the project in `projects.txt`
 - Install the git post-commit hook
 - Append the harness-local entries to the project's `.gitignore` (`.claude/`, `specs/`, `CLAUDE.md`, `AGENTS.md`, `ERRORS.md`) — all regenerable output, not source. The list lives in `scripts/lib/project-gitignore.sh` and `update.sh` re-applies it on every sync, so projects installed before an entry existed backfill it automatically
@@ -248,10 +249,14 @@ sdd-harness/
 │   │   ├── generate-project-stack.sh # Auto-detect tech stack
 │   │   ├── check-settings-json.sh    # Strict-JSON validation of settings files and templates
 │   │   ├── repair-settings-json.py   # Moves a trailing // comment block out of settings.json into settings.notes.md
+│   │   ├── reconcile-settings-templates.py # Keeps the two settings templates from drifting: hooks(harness) == hooks(project) + HARNESS_ONLY. --check blocks in /kiro:harness-validate; --sync is run by install.sh and update.sh before either copies a template
 │   │   ├── headroom-setup.sh         # Install headroom memory proxy
 │   │   └── raindrop-setup.sh         # Auto-installs raindrop-ai in virtualenvs
+│   ├── skill-listing-budget.py   #   Measures the aggregate skill-listing cost (every skill's name + description, paid on every session) against a 1%-of-context-window ceiling
 │   └── utils/                    #   Standalone utilities
-│       ├── dashboard.py          #     Local harness dashboard (13 sections, Workshop + Headroom tabs)
+│       ├── dashboard.py          #     Local harness dashboard (13 sections, Workshop + Headroom tabs); token totals deduplicated on requestId before summing
+│       ├── token-forensics.py    #     Where the tokens actually went, from ~/.claude/projects/**/*.jsonl — dedup, per-tool amplification, peak rolling 5h window, session shape, automation split
+│       ├── dashboard-usage-dedup.test.sh # Tests dashboard.py's usage dedup + a format-drift canary that fails if real transcripts stop showing duplicates
 │       ├── ollama_model_test.py  #     Zero-dependency Ollama model test runner
 │       ├── sync-memories-to-headroom.py # Bidirectional harness memory ↔ headroom sync
 │       ├── check-no-hardcoded-paths.sh  # Verify no machine-specific paths in harness sources (*.sh, *.py, *.json, *.template + the generated .claude/settings.json); installed as the harness repo's .git/hooks/pre-commit
@@ -266,6 +271,10 @@ sdd-harness/
 │   │   ├── test-integrity-guard.sh #   PostToolUse(Write/Edit/MultiEdit): soft gate flagging "gradient descent to green" — weakened test assertions, added skips, lowered coverage thresholds
 │   │   ├── setup-buffer-hook.sh  #     PostToolUse(Bash): buffers setup-pattern commands to .claude/memory/.setup-session-buffer.log (flushed by stop-hook)
 │   │   ├── skill-permissions-gate.sh # PostToolUse(Write/Edit): soft gate on */skills/*/SKILL.md — prompts agent-permissions-design review
+│   │   ├── js-quality-gate-hook.sh #   PostToolUse(Write/Edit/MultiEdit): runs oxlint (or eslint) on .ts/.tsx/.js/.jsx writes — the JS half of the ruff gate; no-ops when neither linter is installed
+│   │   ├── todo-focus-hook.sh    #     PostToolUse(TodoWrite): names competing in_progress items when more than one is active (soft, exit 2)
+│   │   ├── headless-envelope-hook.sh # SessionStart: injects a stricter operating envelope, but only when SDD_HEADLESS=1 (unattended `claude --print` routine runs)
+│   │   ├── subagent-context-hook.sh #  SubagentStart: injects harness conventions into the child via JSON hookSpecificOutput.additionalContext
 │   │   ├── doc-parse-nudge.sh    #     UserPromptSubmit: nudges document-parsing skill on PDF/RAG/OCR prompts
 │   │   ├── pre-tool-use-gitnexus.sh #  On file read/edit: enrich with GitNexus symbol graph context (callers, deps, processes)
 │   │   └── scan-pii.sh           #     PII scanner: scan staged files or a path with OPF (exits 1 on secrets/account numbers)
@@ -748,6 +757,22 @@ Runs before every user prompt (UserPromptSubmit). When the prompt combines build
 
 Fires before any Raindrop Workshop MCP tool call (`mcp__raindrop__` matcher). Injects five active-observability patterns: batch facets (multiple dimensions → one LLM call), facet-first summarization before clustering, 128K token cap on input, no-LLM nearest-summary classification, and long-tail sampling with HDBSCAN. Ensures trace analysis runs at a fraction of the naïve cost.
 
+### Headless Envelope (`hooks/claude/headless-envelope-hook.sh`)
+
+Fires on `SessionStart`, but produces zero bytes unless `SDD_HEADLESS=1` — that is, unless the session is an unattended `claude --print` routine run. The seven unattended entry points (the `scripts/routines/*-runner.sh` set and `daily-orchestrator.sh`'s drift review) all run with `--permission-mode bypassPermissions`, so the least-supervised sessions had the widest permissions and no human backstop. The injected envelope is stricter than the interactive rules and overrides anything looser: one unit of work, no history-rewriting or publishing git, writes confined to the routine's own lane, a two-strike loop guard that escalates instead of retrying a third time, honest reporting of partial completion, and no new dependencies. Advisory — `SessionStart` output becomes context and cannot block. Opt out per-runner with `SDD_SKIP_HEADLESS_ENVELOPE=1` (never globally).
+
+### Subagent Context (`hooks/claude/subagent-context-hook.sh`)
+
+Fires on `SubagentStart` — inside the child — and injects harness conventions via JSON `hookSpecificOutput.additionalContext` (plain stdout is not injected for this event). `CLAUDE.md`, `.claude/rules/` and `SessionStart` output are all parent-thread only, so before this a subagent started without them and re-derived or violated conventions the main thread already knew. The older `gbrain-agent-spawn.sh` can only ask the *parent* to brief the child; this is the guarantee. Kept deliberately short — the text is prepended to every spawn. Requires `jq`; opt out with `SDD_SKIP_SUBAGENT_CONTEXT=1`.
+
+### JS Quality Gate (`hooks/claude/js-quality-gate-hook.sh`)
+
+The sibling of `ruff-quality-gate-hook.sh` for the other half of the languages the harness installs into. Fires on `PostToolUse` Write/Edit/MultiEdit to `.ts/.tsx/.js/.jsx` (and `.mts/.cts/.mjs/.cjs`), preferring `oxlint` and falling back to `eslint`, skipping `.d.ts` and `node_modules`/`dist`/`build` paths. Advisory only — the write already happened. A finding naming an anti-slop low-evidence rule (`no-unknown-parameters`, `no-unsafe-dictionary-type`, `no-chained-type-assertions`, …) gets an extra callout: that means type evidence was thrown away, and the fix is to recover the real type rather than silence the rule. Silent no-op when neither linter is installed.
+
+### Todo Focus (`hooks/claude/todo-focus-hook.sh`)
+
+Fires on `PostToolUse` with matcher `TodoWrite`. `TodoWrite` accepts any number of concurrent `in_progress` entries and enforces nothing, which lets an agent start four items at once and finish none cleanly. When more than one is active the hook names the competing items and asks for one to be picked. Soft — the write already happened and the hook does not undo it — but it exits 2, because `PostToolUse` stdout is not injected into context at exit 0. Reads `.tool_input.todos[].status` as structured JSON via `jq`; it does not pattern-match free text. Requires `jq`; opt out with `SDD_SKIP_TODO_FOCUS=1`.
+
 ### Session Exit Hook (`hooks/claude/stop-hook.sh`)
 
 Runs when a Claude Code session ends. Checks for:
@@ -983,4 +1008,4 @@ The Model Cost section reads session data from `~/.claude/projects/*/`. Pricing 
 
 Private repository. Contact the maintainer for access.
 
-_Last synced: 2026-08-25_
+_Last synced: 2026-09-01_

@@ -814,9 +814,9 @@ Four protocols extracted from [garrytan/gbrain](https://github.com/garrytan/gbra
 **Memory-First Lookup** (`~/.claude/skills/memory-first-lookup/`) — Always run `mcp__plugin_claude-mem_mcp-search__search` before reaching for external APIs. The lookup chain: keyword search → semantic search → get_observations → external only if memory is empty.
 
 **Model Tiers** (`~/.claude/skills/model-tiers/`) — Match model to task type:
-- `haiku-4-5` for classification, validation, dedup (utility)
-- `sonnet-4-6` for generation, synthesis, agent work (default)
-- `opus-4-8` only for deep multi-step reasoning (upgrade when sonnet consistently fails)
+- `haiku-4-5` (`claude-haiku-4-5-20251001`) for classification, validation, dedup (utility)
+- `sonnet-5` (`claude-sonnet-5`) for generation, synthesis, agent work (default)
+- `opus-5` (`claude-opus-5`) only for deep multi-step reasoning (upgrade when sonnet consistently fails)
 - `fable-5` for long, multi-sitting autonomous sessions (`/model fable`)
 - Subagents always use `sonnet`, not opus — latency compounds in tool loops
 
@@ -826,4 +826,4 @@ Four protocols extracted from [garrytan/gbrain](https://github.com/garrytan/gbra
 
 Full reference: `docs/gbrain-patterns/gbrain-patterns.md`
 
-_Last synced: 2026-08-16_
+_Last synced: 2026-09-01_
