@@ -100,3 +100,9 @@ Not all metric signals indicate real problems. **Idle-routine artifacts** fire o
 - Repeating signal with same anchor date (not escalating)? Likely artifact.
 - Signal fires only in zero-charge judge windows? Filter before alerting.
 Example: loop-debt on 2026-06-21 was recognized as idle-routine artifact, not regression. (source: 2026-06-21 insight, pattern)
+
+### ❌ Marking `--idle` on zero commits alone
+Do not use `--idle` on zero commits alone; prior-run output lands post-judge in this window. (source: 2026-08-26 [session-quality])
+
+### ❌ Assuming routine idleness on zero observations
+Check routine transcripts for hard-failure signature (~15 lines means died at auth); zero observations can hide outages indistinguishable from idle. (source: 2026-08-31 [routine-error])

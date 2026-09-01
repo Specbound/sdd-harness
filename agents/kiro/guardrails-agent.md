@@ -1,6 +1,6 @@
 ---
 name: guardrails-agent
-description: Audit and scaffold linter complexity rules for deterministic code quality enforcement
+description: Audit and scaffold linter complexity and type-evidence rules for deterministic code quality enforcement
 tools: Read, Write, Edit, Bash, Glob, Grep
 model: haiku
 color: cyan
@@ -38,7 +38,7 @@ Search for linter configuration files:
 
 | Ecosystem | Config Files |
 |-----------|-------------|
-| JS/TS | `.eslintrc.*`, `eslint.config.*`, `.eslintrc` in `package.json` |
+| JS/TS | `.eslintrc.*`, `eslint.config.*`, `.eslintrc` in `package.json`, `oxlint.config.*`, `.oxlintrc.json` |
 | Python | `pyproject.toml` (ruff/flake8 sections), `ruff.toml`, `.flake8`, `setup.cfg` |
 | Rust | `clippy.toml`, `.clippy.toml` |
 | Go | `.golangci.yml`, `.golangci.yaml`, `.golangci.toml` |
@@ -55,6 +55,26 @@ Read the linter config and check for these complexity rules:
 - `max-statements` (statement count)
 - `@sonarjs/cognitive-complexity` (if SonarJS plugin present)
 - `--max-warnings=0` in lint script
+
+**JS/TS (type evidence — a second, independent dimension)**:
+
+Complexity rules cap how tangled code is; they say nothing about whether it kept its
+type information. Agent-written TypeScript fails on the second axis far more often than
+the first — it reaches for a cast or `unknown` to make the compiler stop complaining,
+and the type evidence is gone. Audit for a rule set covering:
+
+| Concern | Rule (dmmulroy/anti-slop naming) |
+|---|---|
+| Stacked casts — `x as object as User` | `no-chained-type-assertions` |
+| `unknown` in contracts | `no-unknown-parameters`, `no-unknown-returns`, `no-unknown-type-aliases` |
+| Untyped bags — `Record<string, unknown>` | `no-unsafe-dictionary-type` |
+| Losing inferred evidence; prefer `satisfies` | `no-known-value-widening`, `no-widen-then-assert` |
+| Casts without a stated invariant | `require-safety-comment-for-type-assertion` |
+| `typeof` checks instead of boundary parsing | `no-runtime-typeof` |
+| Mocking modules instead of real seams | `no-module-mocking` |
+
+Report presence/absence as its own coverage line — a project can be fully compliant on
+complexity and score zero here. Do not fold these into the complexity count.
 
 **Python (ruff/flake8)**:
 - `max-complexity` or `C901` rule enabled
@@ -94,6 +114,10 @@ Guardrails Audit
     max-statements:           {value or "MISSING"}
     cognitive-complexity:     {value or "MISSING"}
 
+  Type-Evidence Rules (JS/TS only):
+    low-evidence rule set:    {CONFIGURED / MISSING / N-A (not a JS/TS project)}
+    rules present:            {N}/10 core (upstream ships 15 generic + an Effect group)
+
   Zero-Warning Tolerance:     {YES/NO/N/A}
 
   Coverage: {X}/{Y} recommended rules configured
@@ -115,7 +139,35 @@ violation without naming a fix. Report it as a WARN-level gap, never a hard fail
 2. If config exists but incomplete: propose specific additions (use Edit tool)
 3. Ensure lint script has `--max-warnings=0` or equivalent
 4. For JS/TS: check if SonarJS plugin is installed; if not, recommend it
-5. Give every custom rule an **actionable message** (see below)
+5. For JS/TS with no type-evidence rules: recommend anti-slop (see below)
+6. Give every custom rule an **actionable message** (see below)
+
+##### Scaffolding type-evidence rules (JS/TS)
+
+Recommend, do not vendor. The rules live in `dmmulroy/anti-slop` and are **designed to
+be copied into the repo and edited**, not pinned as a dependency — so the repo owner
+must run the install and then own the result:
+
+```bash
+npx skills add dmmulroy/anti-slop --skill install-anti-slop
+# then ask the coding agent in that repo to run the skill
+```
+
+It installs `oxlint` + `@oxlint/plugins`, drops the rule source under something like
+`tools/oxlint/anti-slop/`, registers it in `oxlint.config.ts` under `jsPlugins`, and
+adds ignore patterns for agent tool directories (`.claude/**`, `.cursor/**`) plus the
+vendored plugin path. Effect codebases get the opt-in Effect group as well.
+
+Per the "Don't install packages" constraint below: surface the command and what it will
+change, let the human run it. Once `oxlint` is on PATH, `js-quality-gate-hook.sh` picks
+the rules up automatically on every `.ts`/`.js` write — no further wiring.
+
+Two rules are judgement calls worth naming when you propose the set:
+- `require-safety-comment-for-type-assertion` makes every non-const cast need a
+  `// SAFETY:` note. High friction, high value — flag it explicitly rather than
+  enabling it silently.
+- `no-runtime-typeof` has `allowInTypeGuards` (default off). Turn it on for codebases
+  that write real type guards, or the rule fights legitimate code.
 
 ##### Rule messages must be actionable
 

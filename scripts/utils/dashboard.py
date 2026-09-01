@@ -1820,12 +1820,29 @@ def get_pricing_at(snapshots, date_str):
     return (best or snapshots[0]).get("models", {})
 
 
+USAGE_FIELDS = (
+    ("input",        "input_tokens"),
+    ("output",       "output_tokens"),
+    ("cache_read",   "cache_read_input_tokens"),
+    ("cache_create", "cache_creation_input_tokens"),
+)
+
+
 def _parse_session_file(path, project_name):
-    input_t = output_t = cache_read_t = cache_create_t = 0
+    # One API response is written to the transcript as one JSONL line PER CONTENT
+    # BLOCK, and every one of those lines repeats the SAME message.usage object.
+    # Summing line-by-line double-counts multi-block responses — measured at ~83%
+    # inflation across this machine's transcripts. Collapse on the response id
+    # first, then sum. Keep the max per field rather than the first seen: a
+    # streamed response's later blocks can carry the final (larger) output count.
+    by_request = {}
     model = None
     first_ts = None
+    collapsed = 0
 
-    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+    for lineno, line in enumerate(
+        path.read_text(encoding="utf-8", errors="replace").splitlines()
+    ):
         try:
             obj = json.loads(line)
         except Exception:
@@ -1840,10 +1857,25 @@ def _parse_session_file(path, project_name):
         if first_ts is None:
             first_ts = obj.get("timestamp")
         usage = msg.get("usage", {})
-        input_t        += usage.get("input_tokens",                0)
-        output_t       += usage.get("output_tokens",               0)
-        cache_read_t   += usage.get("cache_read_input_tokens",     0)
-        cache_create_t += usage.get("cache_creation_input_tokens", 0)
+        if not isinstance(usage, dict):
+            continue
+
+        # Fall back to file:lineno so an id-less line is never merged into another.
+        key = obj.get("requestId") or msg.get("id") or f"{path}:{lineno}"
+        prev = by_request.get(key)
+        if prev is None:
+            by_request[key] = {
+                field: usage.get(raw, 0) or 0 for field, raw in USAGE_FIELDS
+            }
+        else:
+            collapsed += 1
+            for field, raw in USAGE_FIELDS:
+                prev[field] = max(prev[field], usage.get(raw, 0) or 0)
+
+    input_t        = sum(u["input"]        for u in by_request.values())
+    output_t       = sum(u["output"]       for u in by_request.values())
+    cache_read_t   = sum(u["cache_read"]   for u in by_request.values())
+    cache_create_t = sum(u["cache_create"] for u in by_request.values())
 
     if model is None or (input_t == 0 and output_t == 0 and cache_read_t == 0):
         return None
@@ -1864,6 +1896,10 @@ def _parse_session_file(path, project_name):
         "output":       output_t,
         "cache_read":   cache_read_t,
         "cache_create": cache_create_t,
+        # Format-drift canary: if this is 0 across every session, the transcript
+        # no longer repeats usage per content block (or requestId went away) and
+        # the dedup above has silently become a no-op. See the usage-dedup test.
+        "collapsed":    collapsed,
     }
 
 

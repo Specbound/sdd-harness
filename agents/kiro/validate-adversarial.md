@@ -28,9 +28,27 @@ You will receive:
 
 ### Step 0: Load Context
 
-- Read all spec files: `specs/{feature}/spec.json`, `requirements.md`, `design.md`, `tasks.md`
-- Read `.claude/steering/*.md` for project context
-- If validating implementation: scan source files referenced in design.md
+**Read in this order. The order is the point — do not batch these reads.**
+
+1. `specs/{feature}/spec.json` and `requirements.md` **only**. From requirements alone,
+   write down the acceptance criteria you will judge against. Commit to that list
+   before you know how anyone chose to satisfy it.
+2. `.claude/steering/*.md` for project context.
+3. Now read `design.md` and `tasks.md`.
+4. If validating implementation: scan source files referenced in design.md.
+
+**Plan-blindness rule:** the builder's plan is evidence about *what was attempted*,
+never about *what counts as correct*. If a criterion from step 3 or 4 does not trace
+back to something in requirements.md, it is the builder's framing leaking into the
+review — flag it rather than adopting it:
+
+> Criterion drift: implementation satisfies "<X>" which appears only in design.md/tasks.md
+> and is not derivable from requirements.md.
+
+Report criterion drift as a Concern in Step 1. This is distinct from `validate-impl`'s
+spec-integrity check, which catches the spec being *weakened in git* after approval;
+this catches the reviewer silently inheriting the builder's definition of done from a
+spec that was never edited at all.
 
 ### Step 1: Initial Assessment (Neutral Pass)
 

@@ -894,6 +894,13 @@ install_globals() {
   # harness or cloning onto a new machine left 23 dead hook paths that failed silently.
   # For the harness repo $HARNESS_DIR *is* the project root, so relative and absolute
   # resolved to the same file anyway — the substitution bought nothing.
+  # Reconcile before generating: the harness template is derived from the project
+  # template plus an explicit harness-only allowlist. Without this the two drift,
+  # and the direction the drift takes is the harmful one — hooks end up firing in
+  # every installed repo while not firing in the repo where they are developed.
+  python3 "$HARNESS_DIR/scripts/setup/reconcile-settings-templates.py" --sync || \
+    echo "  WARNING: settings template reconciliation failed — templates may be drifted."
+
   cp "$HARNESS_DIR/templates/settings.harness.json.template" \
     "$HARNESS_DIR/.claude/settings.json"
   echo "  Harness settings.json generated (project-relative hook paths)."

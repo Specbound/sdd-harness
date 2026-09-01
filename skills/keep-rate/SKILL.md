@@ -36,14 +36,25 @@ Collect: commit hash, date, author, subject.
 
 ### Step 2 — For each commit older than 7 days, calculate line survival
 
-For each file touched in that commit:
+For each text file touched in that commit (skip binaries per anti-pattern above), first detect if the commit is a root commit (has no parent):
 ```bash
-git diff <commit>^..<commit> --unified=0 -- <file> | grep "^+" | grep -v "^+++" | wc -l
-# lines added by Claude in that commit
-
-git blame HEAD -- <file> 2>/dev/null | grep <commit_hash> | wc -l
-# lines from that commit still present in HEAD
+if git rev-parse --verify -q "<commit>^" >/dev/null 2>&1; then
+  base_commit="<commit>^"
+else
+  base_commit="4b825dc642cb6eb9a060e54bf8d69288fbee4904"  # empty-tree for root commits
+fi
 ```
+
+Then calculate lines added (--numstat handles renames; skip binary rows marked with -):
+```bash
+git diff $base_commit..<commit> --numstat -M -C -- <file> | awk '$1 != "-" {print $1}'
+# lines added by Claude
+
+git blame --line-porcelain HEAD -- <file> 2>/dev/null | grep "^<commit_hash>" | wc -l
+# lines from that commit still present (--line-porcelain handles continuations)
+```
+
+For best results per anti-patterns, build a blame map once over all text files in HEAD (keyed by commit) rather than blaming per-commit diff paths, to capture files renamed after the commit.
 
 **Keep Rate for commit** = `lines_still_in_HEAD / lines_added_by_Claude`
 
@@ -63,6 +74,8 @@ git blame HEAD -- <file> 2>/dev/null | grep <commit_hash> | wc -l
 | < 40% | Alert — agent output is being rejected or heavily rewritten |
 
 **Window Artifact Check:** Before flagging a sharp drop in keep-rate, verify whether a large durable commit just aged past 30 days (removed from denominator) or a large low-survival commit entered the 7-30d window. Recompute keeping only feature code, excluding infra/revert/churn commits. High feature-code survival with low aggregate = window shift, not a quality drain. (source: 2026-07-29 patterns)
+
+**Baseline Recording Note:** When comparing trends, record which git-blame flags produced the baseline; pinning `-M -C` shifts ~0.2pp vs unpinned method, pure drift not decay. (source: 2026-08-31 observation)
 
 ### Step 5 — Record as observation
 
@@ -99,7 +112,7 @@ Not all low keep-rate signals indicate code quality issues:
 When keep-rate drops, separately analyze feature-code survival from infra-churn to avoid false regression. (source: 2026-06-22 observations)
 
 ### ❌ Using `--all` in Step 1
-`git log --all` enumerates all branches (233 commits vs 111 on dev), inflating denominator. Enumerate on the working branch. (source: 2026-08-25 [keep-rate])
+`git log --all` enumerates all branches, inflating denominator. Enumerate on the working branch. (source: 2026-08-25 [keep-rate])
 
 ### ❌ Merge commits in Step 1
 Add `--no-merges` to exclude; without it, 3 merges worth 8505 phantom lines inflate count. (source: 2026-08-25 [keep-rate])
@@ -109,3 +122,12 @@ Add `--no-merges` to exclude; without it, 3 merges worth 8505 phantom lines infl
 
 ### ❌ Blame field filtering in Step 2
 `git blame | grep <hash>` misses continuations; use `--line-porcelain` headers. (source: 2026-08-25 [keep-rate])
+
+### ❌ Blaming only each commit's own paths in Step 2
+Blaming only commit's own paths loses renamed files. Build blame map over all text files in HEAD keyed by commit. (source: 2026-08-27 [keep-rate])
+
+### ❌ Unpinned blame flags in Step 2
+`git blame` without `-M -C` causes 0.5pp variance (89.9% vs 90.4%). Pin flags consistently. (source: 2026-08-27 [keep-rate])
+
+### ❌ Root commit diffs without empty-tree fallback
+`git diff <commit>^..<commit>` fails on root commits; detect via `git rev-parse --verify "<commit>^"` and use empty-tree 4b825dc642cb6eb9a060e54bf8d69288fbee4904. (source: 2026-08-27 [seed-target: keep-rate])

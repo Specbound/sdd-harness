@@ -128,6 +128,24 @@ Executes tasks via TDD (test first, then code, then verify). After each task's V
 /kiro:spec-impl revenue-trend-chart
 ```
 
+Two gates bracket the delegation. **Before**: Phase -1 adds a Decision-Budget check to the existing simplicity / anti-abstraction / integration-first trio — the first three catch *too much* (over-engineering), this one catches *too little* (under-specification), asking whether every task leaves the implementer inheriting decisions rather than making them, and whether every deliberately-open freedom is named as delegated. **After**: `/kiro:audit-choices` runs automatically on each pass.
+
+### `/kiro:audit-choices` — Record decisions the spec never made
+Reconstructs the choices the implementation made where the spec said nothing, verdicts each as `sound` / `unsound` / `needs-user`, and appends them to `specs/<feature>/choices.md`.
+
+This closes a gap the other reviews leave open. `validate-impl` and `validate-adversarial` check the artifact; `session-quality` and `.claude/behaviors/` check conduct. Neither catches an implementation that is correct, tested, and passes every gate while quietly embedding an architecture nobody chose — because a diff shows what was built and says nothing about what was silently discarded.
+
+It **changes no code** and **never blocks**: every `needs-user` entry carries a reversible provisional call, so an unattended run finishes with an open ledger rather than stalling. An irreversible provisional is reported as irreversible, not dressed up.
+
+Runs per pass, not once at the end — waiting means auditing a session trace that has been compacted away and subagent reports that no longer exist.
+
+```
+/kiro:audit-choices revenue-trend-chart           # audit the pass just finished
+/kiro:audit-choices revenue-trend-chart --close   # resolve open calls, consolidate
+```
+
+Read the ledger as a signal, not just a record: entries clustering on one slice mean that slice was under-specified and should be resliced; a pass heavy with `needs-user` means the Decision-Budget Gate should have failed first.
+
 ### `/kiro:spec-status` — Check spec progress
 Shows current phase, approvals, and open tasks.
 
@@ -726,11 +744,12 @@ Bundled in the harness — replicated to every machine via `install.sh`. No per-
 2. /kiro:idea-refine "rough idea"        ← (optional) refine vague ideas
 3. /kiro:spec-quick "Add feature X"      ← fast: requirements → design → tasks
    (review and approve each phase)
-4. /kiro:spec-impl feature-x             ← implement via TDD
+4. /kiro:spec-impl feature-x             ← implement via TDD (audits choices per pass)
 5. /kiro:verify                          ← confirm build, tests, lint all pass
 6. /kiro:validate-impl feature-x         ← confirm spec alignment
-7. /kiro:ship feature-x                  ← (optional) launch readiness check
-8. /kiro:reflect                         ← capture what you learned
+7. /kiro:audit-choices feature-x --close ← resolve open needs-user calls before shipping
+8. /kiro:ship feature-x                  ← (optional) launch readiness check
+9. /kiro:reflect                         ← capture what you learned
 ```
 
 For larger features, use the individual spec phases (`spec-requirements` → `spec-design` → `spec-grill` → `spec-tasks`) instead of `spec-quick` to review each phase separately.

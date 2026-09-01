@@ -131,6 +131,30 @@ While running in goal mode:
 
 6. **If genuinely blocked** (dependency missing, impossible requirement, permission error) → state the blocker clearly in one message and stop. Don't loop on something that cannot be resolved without user input.
 
+7. **Non-blocking checkpoints.** Some decisions genuinely want a human, and rule 1
+   ("don't stop to ask") would otherwise mean either stopping anyway or pretending
+   the decision was obvious. Neither is right. Use a bounded checkpoint instead:
+
+   1. **Open the evidence** — the diff, the screenshot, the failing output, the two
+      options. Put it where a watching human can see it without asking.
+   2. **Wait a bounded window** — about five minutes. Not indefinitely.
+   3. **On silence, decide on the evidence.** Silence is not a blocker; the whole
+      point of goal mode is that nobody may be watching.
+   4. **Record the call and its reasoning** in the transcript — what was chosen,
+      what else was viable, and specifically **how to reverse it**.
+   5. **Clean up and continue** — close what you opened, keep going.
+
+   The reversibility note is the load-bearing part. A provisional call the user can
+   overturn cheaply costs a few minutes to undo; one that cannot be undone is not a
+   provisional call at all, and if you are about to make an irreversible decision
+   with no answer, that is a genuine blocker under rule 6 — stop.
+
+   A checkpoint is a course-correction opportunity, never a gate. If it can halt the
+   run, it will halt the run at 3am and the goal will not be met.
+
+   Log these calls to `specs/<feature>/choices.md` when the run is spec-backed —
+   `/kiro:audit-choices` reads that ledger and is built for exactly these entries.
+
 ---
 
 ## Phase 5: Completion

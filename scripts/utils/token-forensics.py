@@ -1,0 +1,434 @@
+#!/usr/bin/env python3
+"""token-forensics.py — where the tokens actually went, from the transcripts.
+
+Every skill in this harness that touches tokens (`context-optimization`,
+`context-window-management`, `rtk-token-reduction`, `cost-optimization`) is
+*prescriptive*: advice about reducing context. None of them measure what was
+actually spent, so there is no way to tell which advice would have paid.
+
+This measures. Five analyses, all read-only, all from `~/.claude/projects/**/*.jsonl`:
+
+1. **Deduplicated totals.** One API response is written as one JSONL line per
+   content block, each repeating the identical `message.usage`. Summing naively
+   overstates by ~80% here. Collapse on `requestId` first.
+
+2. **Amplification.** Context injected at request *i* is re-sent on every later
+   request in that session, so a tool result's true cost is its size times the
+   number of requests that followed it. A 20k-char read on turn 3 of a 200-turn
+   session is not 20k, it is ~4M cache-read tokens. Ranking tools by what they
+   *returned* hides this completely; ranking by what they *caused* is the point.
+
+3. **Rolling 5h window.** Two-pointer sum over time-ordered requests, giving the
+   peak — what a usage limit actually measures, rather than a daily total.
+
+4. **Session shape.** Peak concurrency and the count of short sessions. Many
+   short parallel sessions means scripted `claude -p` invocations, not a human,
+   and every fresh session pays full cache-creation cost on its first turn.
+
+5. **Automation split.** For a harness that spawns agents and runs nightly
+   routines, the share of spend that is *not* interactive is the number that
+   matters. Two ways to get it, and the distinction is load-bearing:
+
+   - `isSidechain` would tag subagent turns directly. **Measured 2026-08-30: it
+     is present on every assistant line and `True` on none of them** — 0 of 6,423
+     across 150 transcripts, in sessions that demonstrably spawned agents. So
+     subagent turns are not tagged in this transcript format; each agent appears
+     to get its own session file, indistinguishable from a short human session.
+   - Therefore the reported split uses a **short-session proxy** (spend in
+     sessions under 5 minutes), which is explicitly labelled as a proxy. If a
+     future Claude Code version starts populating `isSidechain`, the script
+     detects that and switches to the exact split automatically.
+
+   This is deliberately not reported as "subagents used 0 tokens." A field that
+   is never populated means *unknown*, not zero, and printing 0% there would be
+   a confident false negative on the exact question the analysis exists to answer.
+
+Usage:
+    python3 scripts/utils/token-forensics.py                  # last 30 days
+    python3 scripts/utils/token-forensics.py --days 7
+    python3 scripts/utils/token-forensics.py --project sdd-harness
+    python3 scripts/utils/token-forensics.py --json
+    python3 scripts/utils/token-forensics.py --limit 200      # cap files scanned
+
+Token figures are estimates (chars/4 for tool output). The *ranking* is the
+product, not the absolute — read it to find which tool is worth bounding.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import statistics
+import sys
+from collections import defaultdict
+from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+
+CLAUDE_PROJECTS = Path.home() / ".claude" / "projects"
+USAGE_FIELDS = (
+    ("input", "input_tokens"),
+    ("output", "output_tokens"),
+    ("cache_read", "cache_read_input_tokens"),
+    ("cache_create", "cache_creation_input_tokens"),
+)
+WINDOW = timedelta(hours=5)
+SHORT_SESSION = timedelta(minutes=5)
+CHARS_PER_TOKEN = 4
+
+
+def parse_ts(value):
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def block_size(content) -> int:
+    """Character size of a tool_result payload, whatever shape it arrived in."""
+    if isinstance(content, str):
+        return len(content)
+    if isinstance(content, list):
+        total = 0
+        for blk in content:
+            if isinstance(blk, dict):
+                total += len(blk.get("text") or "")
+                if blk.get("type") == "image":
+                    total += 4000  # rough, images are not free
+            elif isinstance(blk, str):
+                total += len(blk)
+        return total
+    if isinstance(content, dict):
+        return len(json.dumps(content))
+    return 0
+
+
+@dataclass
+class SessionSpan:
+    """First and last request time for one session, plus its request count.
+
+    A dataclass rather than a dict: with a plain dict literal the value type is
+    inferred as `int | None` across all three keys, so `n += 1` and
+    `end - start` are both type errors even though they are correct at runtime.
+    """
+
+    start: datetime | None = None
+    end: datetime | None = None
+    n: int = 0
+
+    def observe(self, ts: datetime | None) -> None:
+        self.n += 1
+        if ts is None:
+            return
+        self.start = ts if self.start is None else min(self.start, ts)
+        self.end = ts if self.end is None else max(self.end, ts)
+
+    def duration(self) -> timedelta | None:
+        if self.start is None or self.end is None:
+            return None
+        return self.end - self.start
+
+    def is_short(self) -> bool:
+        d = self.duration()
+        return d is not None and d < SHORT_SESSION
+
+
+class Analysis:
+    def __init__(self):
+        self.requests = []          # (timestamp, tokens, is_sidechain)
+        self.sessions: defaultdict[str, SessionSpan] = defaultdict(SessionSpan)
+        self.tool_returned = defaultdict(int)   # tool -> chars returned
+        self.tool_amplified = defaultdict(int)  # tool -> chars * requests_after
+        self.tool_calls = defaultdict(int)
+        self.totals = defaultdict(int)
+        self.naive_total = 0
+        self.collapsed = 0
+        self.files = 0
+        self.sidechain_seen = False   # did isSidechain=True EVER appear?
+        self.session_tokens = defaultdict(int)
+
+    # ── ingest ────────────────────────────────────────────────────────────────
+
+    def add_file(self, path: Path, cutoff):
+        try:
+            lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+        except OSError:
+            return
+
+        by_request = {}
+        order = []          # request keys in timestamp order
+        pending_results = []  # (tool_name, chars, position_at_time_of_result)
+        pending_tool_names = {}  # tool_use_id -> tool name
+
+        for lineno, line in enumerate(lines):
+            try:
+                obj = json.loads(line)
+            except ValueError:
+                continue
+
+            msg = obj.get("message")
+            if not isinstance(msg, dict):
+                continue
+            ts = parse_ts(obj.get("timestamp"))
+            if cutoff and ts and ts < cutoff:
+                continue
+
+            content = msg.get("content")
+            if isinstance(content, list):
+                for blk in content:
+                    if not isinstance(blk, dict):
+                        continue
+                    if blk.get("type") == "tool_use":
+                        pending_tool_names[blk.get("id")] = blk.get("name") or "?"
+                    elif blk.get("type") == "tool_result":
+                        name = pending_tool_names.get(blk.get("tool_use_id"), "?")
+                        chars = block_size(blk.get("content"))
+                        self.tool_returned[name] += chars
+                        self.tool_calls[name] += 1
+                        pending_results.append((name, chars, len(order)))
+
+            if obj.get("type") != "assistant":
+                continue
+
+            usage = msg.get("usage")
+            if not isinstance(usage, dict):
+                continue
+
+            for _field, raw in USAGE_FIELDS:
+                self.naive_total += usage.get(raw, 0) or 0
+
+            key = obj.get("requestId") or msg.get("id") or f"{path}:{lineno}"
+            if obj.get("isSidechain") is True:
+                self.sidechain_seen = True
+
+            prev = by_request.get(key)
+            if prev is None:
+                by_request[key] = {
+                    "ts": ts,
+                    "sidechain": obj.get("isSidechain") is True,
+                    "session": obj.get("sessionId") or path.stem,
+                    **{f: (usage.get(r, 0) or 0) for f, r in USAGE_FIELDS},
+                }
+                order.append(key)
+            else:
+                self.collapsed += 1
+                for f, r in USAGE_FIELDS:
+                    prev[f] = max(prev[f], usage.get(r, 0) or 0)
+
+        if not by_request:
+            return
+        self.files += 1
+
+        total_requests = len(order)
+        for name, chars, position in pending_results:
+            requests_after = max(total_requests - position, 0)
+            self.tool_amplified[name] += chars * requests_after
+
+        for key in order:
+            rec = by_request[key]
+            tokens = sum(rec[f] for f, _ in USAGE_FIELDS)
+            for f, _ in USAGE_FIELDS:
+                self.totals[f] += rec[f]
+            self.totals["sidechain" if rec["sidechain"] else "main"] += tokens
+            self.session_tokens[rec["session"]] += tokens
+            if rec["ts"]:
+                self.requests.append((rec["ts"], tokens, rec["sidechain"]))
+            self.sessions[rec["session"]].observe(rec["ts"])
+
+    # ── derived ───────────────────────────────────────────────────────────────
+
+    def peak_window(self):
+        """Peak token load in any rolling 5h window (two-pointer over sorted time)."""
+        pts = sorted((t, n) for t, n, _ in self.requests)
+        if not pts:
+            return 0, None
+        left = 0
+        running = 0
+        best = 0
+        best_at = None
+        for right, (ts, tokens) in enumerate(pts):
+            running += tokens
+            while pts[left][0] < ts - WINDOW:
+                running -= pts[left][1]
+                left += 1
+            if running > best:
+                best, best_at = running, ts
+        return best, best_at
+
+    def shape(self):
+        """Peak concurrent sessions, plus how many were short."""
+        events = []
+        durations = []
+        counts = []
+        for s in self.sessions.values():
+            span = s.duration()
+            if span is not None and s.start is not None and s.end is not None:
+                events.append((s.start, 1))
+                events.append((s.end, -1))
+                durations.append(span.total_seconds())
+            counts.append(s.n)
+        events.sort(key=lambda e: (e[0], -e[1]))
+        cur = peak = 0
+        for _ts, delta in events:
+            cur += delta
+            peak = max(peak, cur)
+        short = sum(1 for s in self.sessions.values() if s.is_short())
+        return {
+            "sessions": len(self.sessions),
+            "peak_concurrent": peak,
+            "short_sessions": short,
+            "median_requests": statistics.median(counts) if counts else 0,
+            "median_duration_min": round(statistics.median(durations) / 60, 1) if durations else 0,
+        }
+
+    def automation_split(self):
+        """Non-interactive share of spend.
+
+        Exact when `isSidechain` is populated. When it is not — which is the
+        current reality, measured — fall back to a short-session proxy and SAY
+        that it is a proxy. Reporting an unpopulated field as 0% would be a
+        confident false negative, not a measurement.
+        """
+        total = self.total()
+        if self.sidechain_seen:
+            return {
+                "method": "exact (isSidechain)",
+                "automated": self.totals["sidechain"],
+                "interactive": self.totals["main"],
+                "pct": round(self.totals["sidechain"] / total * 100, 1) if total else 0.0,
+                "measurable": True,
+            }
+        short_spend = sum(
+            self.session_tokens[sid]
+            for sid, s in self.sessions.items()
+            if s.is_short()
+        )
+        return {
+            "method": "proxy (sessions under 5min)",
+            "automated": short_spend,
+            "interactive": total - short_spend,
+            "pct": round(short_spend / total * 100, 1) if total else 0.0,
+            "measurable": False,
+        }
+
+    def total(self):
+        return sum(self.totals[f] for f, _ in USAGE_FIELDS)
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--days", type=int, default=30, help="lookback window (default 30, 0 = all)")
+    ap.add_argument("--project", help="only scan project dirs whose name contains this")
+    ap.add_argument("--limit", type=int, default=0, help="cap files scanned (newest first)")
+    ap.add_argument("--top", type=int, default=12, help="tools to list (default 12)")
+    ap.add_argument("--json", action="store_true")
+    args = ap.parse_args()
+
+    if not CLAUDE_PROJECTS.is_dir():
+        print(f"no transcripts at {CLAUDE_PROJECTS}", file=sys.stderr)
+        return 2
+
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=args.days)) if args.days else None
+    files = [
+        p for p in CLAUDE_PROJECTS.glob("*/*.jsonl")
+        if not args.project or args.project in p.parent.name
+    ]
+    files.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+    if args.limit:
+        files = files[:args.limit]
+
+    a = Analysis()
+    for path in files:
+        a.add_file(path, cutoff)
+
+    total = a.total()
+    if total == 0:
+        print("No usage found in the selected window.", file=sys.stderr)
+        return 2
+
+    peak, peak_at = a.peak_window()
+    shape = a.shape()
+    inflation = ((a.naive_total / total) - 1) * 100 if total else 0
+    split = a.automation_split()
+
+    amplified = sorted(a.tool_amplified.items(), key=lambda kv: -kv[1])[:args.top]
+
+    if args.json:
+        print(json.dumps({
+            "files": a.files,
+            "window_days": args.days,
+            "totals": {f: a.totals[f] for f, _ in USAGE_FIELDS},
+            "total_tokens": total,
+            "naive_total": a.naive_total,
+            "duplicate_inflation_pct": round(inflation, 1),
+            "collapsed_lines": a.collapsed,
+            "peak_5h_tokens": peak,
+            "peak_5h_at": peak_at.isoformat() if peak_at else None,
+            "automation_split": split,
+            "sidechain_field_populated": a.sidechain_seen,
+            "shape": shape,
+            "tools_by_amplified_chars": [
+                {"tool": t, "amplified_chars": c,
+                 "returned_chars": a.tool_returned[t], "calls": a.tool_calls[t]}
+                for t, c in amplified
+            ],
+        }, indent=2))
+        return 0
+
+    span = f"last {args.days}d" if args.days else "all time"
+    print(f"## Token Forensics — {span}, {a.files} transcripts\n")
+    print(f"Total (deduplicated):  {total:>15,} tokens")
+    print(f"  input                {a.totals['input']:>15,}")
+    print(f"  output               {a.totals['output']:>15,}")
+    print(f"  cache read           {a.totals['cache_read']:>15,}")
+    print(f"  cache create         {a.totals['cache_create']:>15,}")
+    print(f"Naive (undeduplicated) {a.naive_total:>15,}  → +{inflation:.0f}% "
+          f"({a.collapsed:,} repeated blocks collapsed)")
+    print()
+    print(f"Peak 5h window:        {peak:>15,} tokens"
+          + (f"   at {peak_at:%Y-%m-%d %H:%M UTC}" if peak_at else ""))
+    print("  This is what a usage limit measures. A large daily total spread evenly")
+    print("  is fine; a small one concentrated in five hours is what locks you out.")
+    print()
+    print(f"Automated / non-interactive spend  ({split['method']})")
+    print(f"  automated            {split['automated']:>15,} tokens  ({split['pct']:.0f}%)")
+    print(f"  interactive          {split['interactive']:>15,} tokens")
+    if not split["measurable"]:
+        print("  NOTE: `isSidechain` is present on assistant lines but never True in")
+        print("  this transcript format, so subagent turns cannot be identified")
+        print("  directly — each agent gets its own session file. The figure above is")
+        print("  a PROXY (spend in sessions under 5 minutes), not a measurement of")
+        print("  subagent cost. It is not 0% and it is not exact; it is unknown, and")
+        print("  this is the closest available stand-in.")
+    if split["pct"] > 50:
+        print("  ⚠️  Most spend is non-interactive. Every fresh session pays full")
+        print("     cache-creation cost on its first turn, so spawn COUNT and routine")
+        print("     cadence matter more than the length of any individual run.")
+    print()
+    print(f"Sessions: {shape['sessions']}  |  peak concurrent: {shape['peak_concurrent']}"
+          f"  |  short (<5min): {shape['short_sessions']}"
+          f"  |  median {shape['median_requests']:.0f} req / {shape['median_duration_min']}min")
+    if shape["peak_concurrent"] >= 3 or shape["short_sessions"] > shape["sessions"] * 0.4:
+        print("  ⚠️  Session shape looks scripted (many short and/or parallel sessions).")
+        print("     Headless runners pay full cache-creation on every invocation —")
+        print("     check routine cadence before blaming interactive use.")
+    print()
+    print(f"### Tools by AMPLIFIED cost (top {len(amplified)})")
+    print()
+    print("Amplified = chars returned x requests that followed it in the same session.")
+    print("This ranks what a tool CAUSED, not what it returned — an early large read")
+    print("is re-sent on every later turn, so its true cost is orders of magnitude")
+    print("above its size. Bound the top rows first.")
+    print()
+    print("| Tool | Calls | Returned (chars) | Amplified (~tokens) |")
+    print("|---|---:|---:|---:|")
+    for tool, chars in amplified:
+        print(f"| {tool} | {a.tool_calls[tool]:,} | {a.tool_returned[tool]:,} "
+              f"| {chars // CHARS_PER_TOKEN:,} |")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

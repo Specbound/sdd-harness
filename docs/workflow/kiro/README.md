@@ -26,7 +26,8 @@ Based on [cc-sdd](https://www.npmjs.com/package/cc-sdd) (`npx cc-sdd@latest`), a
 | `spec-design` | 3. Design | Research codebase + produce technical design |
 | `spec-grill` | 3.5 Grill | Interactive domain-expert grilling session; aligns terminology, updates requirements + design inline, writes ADRs |
 | `spec-tasks` | 4. Tasks | Break design into parallelizable task list; `--sequential` disables `(P)` markers; output includes Parallel Execution Groups section listing safe concurrent invocation groups |
-| `spec-impl` | 5. Implement | TDD implementation with self-review after each task; runs Phase -1 Pre-Implementation Gates (simplicity, anti-abstraction, integration-first) before delegating |
+| `spec-impl` | 5. Implement | TDD implementation with self-review after each task; runs Phase -1 Pre-Implementation Gates (simplicity, anti-abstraction, integration-first, **decision-budget**) before delegating, and `audit-choices` after each pass |
+| `audit-choices` | 5.5 Audit | Record decisions made where the spec was **silent** into `specs/<f>/choices.md` as sound/unsound/needs-user, each with a reversible provisional call. Changes no code, never blocks. `--close` consolidates at spec close |
 | `spec-quick` | 2-5 (fast) | Requirements → Design → Grill → Tasks in one command; grill skipped with `--auto` |
 | `spec-status` | Any | Show current phase, approvals, open tasks |
 | `validate-gap` | Review | Requirements vs. existing code gap analysis |

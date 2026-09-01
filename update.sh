@@ -244,6 +244,14 @@ find "$HARNESS_DIR/.claude/scripts" -name "*.sh" -exec chmod +x {} \;
 # install-time location into a generated file: moving the harness left 23 dead hook
 # paths that failed silently, and check-no-hardcoded-paths.sh could not see them
 # because it scanned neither JSON nor .claude/. Copy verbatim instead.
+# Keep the two templates from drifting BEFORE regenerating from one of them.
+# They had silently diverged: the harness template was missing 14 hooks the
+# project template shipped, so those hooks fired in every installed repo and not
+# in the one where they are written and tested. --sync derives the harness
+# template from the project template plus an explicit harness-only allowlist.
+python3 "$HARNESS_DIR/scripts/setup/reconcile-settings-templates.py" --sync || \
+  echo "  WARNING: settings template reconciliation failed — templates may be drifted."
+
 cp "$HARNESS_DIR/templates/settings.harness.json.template" \
   "$HARNESS_DIR/.claude/settings.json"
 echo "  Harness settings.json regenerated (portable hook paths)."

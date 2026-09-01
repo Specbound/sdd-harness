@@ -50,6 +50,7 @@ Check the SDD harness installation in this project for structural integrity:
 
 1. Verify all command → agent references are valid
 2. Verify all agent → template references exist, and validate the settings templates and the live `.claude/settings.json` as strict JSON via `scripts/setup/check-settings-json.sh` (non-zero exit is a blocker — Claude Code drops every permission rule and hook in a malformed settings file without warning)
+2b. Run `python3 scripts/setup/reconcile-settings-templates.py --check` (harness repo only). It asserts `hooks(harness template) == hooks(project template) + HARNESS_ONLY`. Non-zero exit is a blocker: drift here means a hook fires in every installed repo but not in the one where it is written and tested, or the reverse. Permissions are excluded on purpose — the two templates *should* differ there. Fix by adding shared hooks to `templates/settings.json.template` and running `--sync`, never by editing the harness template directly.
 3. Check memory file caps (hot-memory <50 lines, patterns <70 lines, observations <50 entries)
 4. Verify L0 headers on all steering and memory files
 5. Check rule file consistency

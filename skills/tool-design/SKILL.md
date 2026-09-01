@@ -109,6 +109,47 @@ What does it return? Output format and structure. Include examples of successful
 **Default Parameter Selection**
 Defaults should reflect common use cases. They reduce agent burden by eliminating unnecessary parameter specification. They prevent errors from omitted parameters.
 
+**The Six-Section Skeleton**
+
+The four questions above say what to cover. This is the order and shape to cover it in:
+
+1. **Opening line** — the job, and what it returns. One sentence.
+2. **WHEN TO USE** — direct triggers and indirect signals.
+3. **WHEN NOT TO USE** — the soft boundary: "prefer `<other tool>` for X."
+4. **DO NOT USE FOR** — the hard boundary: "never use this for Y."
+5. **USAGE** — parameters, constraints, defaults.
+6. **EXAMPLES** — two or three, including at least one near-miss the tool should decline.
+
+**State the negative twice, on purpose.** Sections 3 and 4 overlap and that is the
+design, not redundancy to be edited out. A soft handoff tells the model where to go
+instead; a hard prohibition holds when the request is ambiguous and the soft version
+bends. The repetition is tier-sensitive in a way worth knowing: smaller models
+register the soft boundary and drop it under ambiguity, mid-tier models honor it and
+measurably gain from the restatement, and the largest models are unaffected either
+way — and, critically, not *harmed* by the repetition. So the restatement costs
+nothing where it is unnecessary and rescues routing where it is.
+
+Long descriptions are cheap. They live in the cached system prompt and are paid once
+per session, not per call. Optimizing description length is optimizing the wrong
+axis; optimize whether the boundary is unmissable.
+
+**Bash gravity** — the named failure mode these boundaries exist to counter. As a
+tool collection grows, routing collapses toward the most general tool available:
+whatever can technically do anything gets used for everything, because it is never
+*wrong*, only worse. Specific tools lose to the general one unless their descriptions
+say outright that the general one should not be used here. This is why section 4 is
+phrased as a prohibition on *this* tool rather than a recommendation of another —
+"prefer X" loses to gravity, "never use this for Y" does not.
+
+**Verify by per-section ablation, not by reading.** A description you wrote always
+reads as clear to you. Hold three fixed probe prompts — one clearly search-shaped,
+one clearly file-shaped, one shell-shaped — and strip one section at a time
+(EXAMPLES, then DO NOT USE FOR, then USAGE), re-running all three after each removal.
+The section whose removal first collapses routing is the one carrying the weight;
+sections you can remove with no effect are dead text. This tells you *which part*
+works, which reading never will. See `skill-eval-gate` for the same technique applied
+to whole skills.
+
 ### Response Format Optimization
 
 Tool response size significantly impacts context usage. Implementing response format options gives agents control over verbosity.
@@ -116,6 +157,39 @@ Tool response size significantly impacts context usage. Implementing response fo
 Concise format returns essential fields only, appropriate for confirmation or basic information. Detailed format returns complete objects with all fields, appropriate when full context is needed for decisions.
 
 Include guidance in tool descriptions about when to use each format. Agents learn to select appropriate formats based on task requirements.
+
+**Output Caps: cap, announce, paginate**
+
+Format options control verbosity when the agent chooses well. Caps are what protect
+the context window when it does not — an unbounded tool result is one bad call away
+from evicting everything else in the session.
+
+Three parts, all required:
+
+1. **Cap the output.** Concrete working defaults: ~500 lines for a file read, ~50
+   matches for a search, ~5000 characters for command output.
+2. **Announce the cut and its size.** `showing first 50 of 1,284 matches`, not a
+   quietly shortened list. **Silent truncation is worse than no truncation**, because
+   the model believes it has the full picture and acts on incomplete data — it will
+   confidently conclude "there are no other call sites" from a list that was cut at
+   50. A visible cut is a fact the model can reason about; an invisible one is a
+   false premise.
+3. **Offer the continuation.** Say how to get the rest — offset, page, filter. A cap
+   with no way past it turns a bounded result into a dead end.
+
+**Keep the tail, not the head, for command output.** Failures put their signal last:
+the stack trace, the assertion, the exit line. `stdout[-MAX:]` preserves that;
+`stdout[:MAX]` preserves the build banner and throws away the reason the command
+failed. For structured listings the head is usually right; for anything that can
+fail, the tail is.
+
+**Report the true total, not the shown count.** The agent needs to know a search
+matched 1,284 times even when it can only see 50, because 1,284 and 50 imply
+different next actions.
+
+The tradeoff is deliberate and worth stating: four bounded reads cost more calls than
+one dump, and are still the better trade, because the dump's cost is not paid at the
+call — it is paid by every subsequent turn in the session that now carries it.
 
 ### Error Message Design
 

@@ -20,6 +20,7 @@
 
 ## Quality Gates (automated)
 - `ruff check`: on every `.py` file write
+- `oxlint` (or `eslint`): on every `.ts`/`.tsx`/`.js`/`.jsx` file write, when one is installed. A finding naming an anti-slop rule (`no-unknown-parameters`, `no-unsafe-dictionary-type`, `no-chained-type-assertions`, …) means type evidence was thrown away — recover the real type, never silence the rule
 - `pytest -x --ignore=tests/integration`: after each impl task, in projects that have a test suite
 - doc sync: automatically on every `git commit` via post-commit hook
 - lean-ctx enforces a shell allowlist: `bash`, `sh`, `zsh`, `uvx`, `claude` and `python3 -c` are refused by default. The "permanent restriction" wording is not a policy refusal — run `lean-ctx allow <cmd>` rather than abandoning the check
