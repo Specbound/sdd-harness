@@ -1,4 +1,7 @@
 {
+  "env": {
+    "BASH_MAX_OUTPUT_LENGTH": "15000"
+  },
   "permissions": {
     "allow": [
       "Bash(ruff check *)",
@@ -14,8 +17,7 @@
       "Edit(.claude/docs/**)",
       "Edit(.claude/steering/**)",
       "Edit(.claude/memory/**)",
-      "Edit(**/*.md)",
-      "Write(**/*.md)"
+      "Edit(**/*.md)"
     ],
     "deny": [
       "Bash(rm -rf*)",
@@ -170,6 +172,10 @@
           {
             "type": "command",
             "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/agent-commit-attribution-hook.sh\""
+          },
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/pr-evidence-hook.sh\""
           }
         ]
       },

@@ -64,6 +64,23 @@ Flag rules that limit more than intended:
 
 Flag pairs of lines — within one CLAUDE.md, or across CLAUDE.md/skills/system prompt — that pull in opposite directions on the same decision (e.g. "leave documentation as appropriate" vs. "never add comments"). These force the model to arbitrate every time instead of acting directly. Propose which should win, or how to scope them apart.
 
+**Hook-injected context is in scope for this check.** Any hook that emits
+`hookSpecificOutput.additionalContext` (`SubagentStart`, `SessionStart`, `UserPromptSubmit`)
+is a first-class instruction surface: always resident, and for a subagent it is the *only*
+one — CLAUDE.md and `.claude/rules/` never reach a spawned agent. Read those hook bodies in
+`hooks/claude/` and include their injected text alongside the CLAUDE.md files when hunting
+for conflicts and duplicates.
+
+Two failure modes live here and nowhere else:
+- **Duplicate statement.** A rule stated in both CLAUDE.md and an injected hook costs context
+  on every spawn and gives you two copies to keep in sync. Ask which surface actually reaches
+  the audience that needs it, and delete the other.
+- **Unsatisfiable MUST.** A rule naming a tool that currently errors trains the model to
+  discount every other MUST. Flag any absolute rule whose tool you cannot verify works.
+
+This does **not** relax the Phase 4 ablation fence — hooks are read as *inputs* here, never
+edited by an ablation experiment.
+
 ### Outdated Gotchas
 
 Flag gotchas that may no longer be true:

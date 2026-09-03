@@ -8,7 +8,10 @@ history and rewrites the "Harness Trust Score" line at the top of
 gates harness behavior (see docs/SDD-USAGE.md).
 
 Usage:
-    # Apply today's delta (from session-judge):
+    # Apply today's delta (from session-judge). Repeat --delta once per judge
+    # run; the median is applied and the spread gates it:
+    trust_score.py apply --delta -1.0 --delta -2.0 --delta -1.0 --summary "..."
+    # Single sample still works, and skips the spread gate:
     trust_score.py apply --delta -1.0 --summary "..."
     # Print current score + 7-day delta as JSON:
     trust_score.py show
@@ -18,12 +21,32 @@ from __future__ import annotations  # PEP 604 (`X | None`) on Python 3.9 hosts
 
 import argparse
 import json
+import statistics
 import sys
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 DEFAULT_START = 20.0
 DAILY_CAP = 4.5
+
+# Spread gate for multi-sample judge verdicts (pass^k, not pass@k).
+#
+# The judge is an LLM at temperature > 0. A single draw from it was, until
+# 2026-09-03, committed straight into a cumulative score that nothing ever
+# revisits — so "score fell 4 points" and "the judge sampled differently"
+# were the same observation. Running the judge k times and taking the median
+# removes the outlier draw; this threshold decides when the samples disagree
+# so much that no median is worth trusting.
+#
+# 2.0 on a [-4.5, +4.5] scale: three runs landing within 2 points of each
+# other are reading the same day. A wider spread means the reading depends on
+# which draw you looked at, and the honest delta for that day is 0.0, not
+# whichever number the middle sample happened to be.
+#
+# Sources: Perrone, "What is Agentic Testing?" (pass^k over pass@k — a gate
+# that greens on 1-of-3 is not a gate) and Visa's VVAH README (majority-vote
+# FP filtering at temperature > 0). See docs/sources/articles/README.md.
+JUDGE_SPREAD_LIMIT = 2.0
 HISTORY = Path(".claude/memory/trust-score.jsonl")
 HOT_MEMORY = Path(".claude/memory/hot-memory.md")
 OBS_FILE = Path(".claude/memory/observations.md")
@@ -111,9 +134,29 @@ def rewrite_hot_memory_header(new_line: str) -> bool:
     return True
 
 
-def cmd_apply(delta: float, summary: str) -> int:
+def consensus_delta(deltas: list[float]) -> tuple[float, float | None, bool]:
+    """Reduce k judge samples to one delta.
+
+    Returns (delta, spread, inconclusive).
+
+    A single sample carries no spread and is passed through unchanged — the
+    gate cannot fire on evidence that was never collected, and saying so is
+    more honest than inventing a spread of 0.0 for a sample size of one.
+    """
+    if not deltas:
+        raise ValueError("consensus_delta requires at least one sample")
+    if len(deltas) == 1:
+        return deltas[0], None, False
+    spread = max(deltas) - min(deltas)
+    if spread > JUDGE_SPREAD_LIMIT:
+        return 0.0, spread, True
+    return statistics.median(deltas), spread, False
+
+
+def cmd_apply(deltas: list[float], summary: str) -> int:
     history = load_history()
     base = current_score(history)
+    delta, spread, inconclusive = consensus_delta(deltas)
     capped = clamp_delta(delta)
     new_score = clamp_score(base + capped)
     ts = datetime.now(timezone.utc).isoformat(timespec="seconds")
@@ -136,6 +179,9 @@ def cmd_apply(delta: float, summary: str) -> int:
         "delta_applied": capped,
         "score": new_score,
         "summary": summary,
+        "samples": deltas,
+        "spread": spread,
+        "inconclusive": inconclusive,
     }
     HISTORY.parent.mkdir(parents=True, exist_ok=True)
     with HISTORY.open("a", encoding="utf-8") as f:
@@ -147,10 +193,12 @@ def cmd_apply(delta: float, summary: str) -> int:
     rewrite_hot_memory_header(header)
 
     print(json.dumps({
-        "status": "applied",
+        "status": "inconclusive" if inconclusive else "applied",
         "score": new_score,
         "delta_applied": capped,
         "delta_raw": delta,
+        "samples": deltas,
+        "spread": spread,
         "seven_day_delta": seven,
         "header": header,
     }))
@@ -277,7 +325,11 @@ def cmd_auto_score() -> int:
         parts.append(f"{loop_debts} loop-debt(s)")
     summary = "auto-score: " + (", ".join(parts) if parts else "no signals detected")
 
-    return cmd_apply(delta, summary)
+    # One sample by construction, and correctly so: auto-score counts tags in
+    # observations.md and metrics.jsonl. It is deterministic — re-running it on
+    # the same inputs cannot produce a different number, so there is nothing for
+    # the spread gate to measure. Only the LLM-judged `apply` path samples.
+    return cmd_apply([delta], summary)
 
 
 def cmd_show() -> int:
@@ -300,7 +352,16 @@ def main() -> int:
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     p_apply = sub.add_parser("apply", help="Apply a daily delta")
-    p_apply.add_argument("--delta", type=float, required=True)
+    p_apply.add_argument(
+        "--delta",
+        type=float,
+        required=True,
+        action="append",
+        dest="deltas",
+        help=f"Judge score_delta. Repeat once per judge run; the median is "
+             f"applied and a spread above {JUDGE_SPREAD_LIMIT:.1f} is recorded "
+             f"as inconclusive (delta 0.0).",
+    )
     p_apply.add_argument("--summary", type=str, default="")
 
     sub.add_parser("show", help="Show current score")
@@ -308,7 +369,7 @@ def main() -> int:
 
     args = ap.parse_args()
     if args.cmd == "apply":
-        return cmd_apply(args.delta, args.summary)
+        return cmd_apply(args.deltas, args.summary)
     if args.cmd == "show":
         return cmd_show()
     if args.cmd == "auto-score":

@@ -75,7 +75,7 @@ For best results per anti-patterns, build a blame map once over all text files i
 
 **Window Artifact Check:** Before flagging a sharp drop in keep-rate, verify whether a large durable commit just aged past 30 days (removed from denominator) or a large low-survival commit entered the 7-30d window. Recompute keeping only feature code, excluding infra/revert/churn commits. High feature-code survival with low aggregate = window shift, not a quality drain. (source: 2026-07-29 patterns)
 
-**Baseline Recording Note:** When comparing trends, record which git-blame flags produced the baseline; pinning `-M -C` shifts ~0.2pp vs unpinned method, pure drift not decay. (source: 2026-08-31 observation)
+**Baseline Recording Note:** Record git-blame flags used; pinning `-M -C` reattributes lines that later commits moved within the codebase, causing per-commit variance up to 4.7pt (8df5ed3 93.6→98.3, 0a9946c 99.9→92.4). Blame-based keep rates are incomparable across different flag settings. (source: 2026-08-31 [keep-rate])
 
 ### Step 5 — Record as observation
 
@@ -120,8 +120,14 @@ Add `--no-merges` to exclude; without it, 3 merges worth 8505 phantom lines infl
 ### ❌ Binary files in Step 2 diffs
 .mp3/.wav files inflate by 1141% on one file. Skip `--numstat` rows with `-`. (source: 2026-08-25 [keep-rate])
 
+### ❌ Testing blob for binaries instead of worktree
+Detect binariness by testing the working-tree file, not the diff blob; git-LFS pointers appear as text in diffs but are binary in the worktree.
+
 ### ❌ Blame field filtering in Step 2
 `git blame | grep <hash>` misses continuations; use `--line-porcelain` headers. (source: 2026-08-25 [keep-rate])
+
+### ❌ Filtering --line-porcelain headers on field count alone
+Headers vary (3–4 fields); filtering on `len(parts) >= 4` counts first line only. Check fields 2–3 for digits.
 
 ### ❌ Blaming only each commit's own paths in Step 2
 Blaming only commit's own paths loses renamed files. Build blame map over all text files in HEAD keyed by commit. (source: 2026-08-27 [keep-rate])
@@ -129,5 +135,11 @@ Blaming only commit's own paths loses renamed files. Build blame map over all te
 ### ❌ Unpinned blame flags in Step 2
 `git blame` without `-M -C` causes 0.5pp variance (89.9% vs 90.4%). Pin flags consistently. (source: 2026-08-27 [keep-rate])
 
+### ❌ Changing blame flags mid-measurement
+Per-commit reattribution reaches 4.7pt under `-M -C` (e.g. 8df5ed3 93.6→98.3). Pin flags consistently and record choice per Step 2. (source: 2026-08-31 [keep-rate])
+
 ### ❌ Root commit diffs without empty-tree fallback
-`git diff <commit>^..<commit>` fails on root commits; detect via `git rev-parse --verify "<commit>^"` and use empty-tree 4b825dc642cb6eb9a060e54bf8d69288fbee4904. (source: 2026-08-27 [seed-target: keep-rate])
+`git diff <commit>^..<commit>` fails on root commits; detect via `git rev-parse --verify "<commit>^"` and use empty-tree 4b825dc642cb6eb9a060e54bf8d69288fbee4904.
+
+### ❌ Denominator spanning only surviving-HEAD paths
+The denominator must count all touched paths; deleted/renamed files are silently dropped from HEAD-only counts, yielding impossible keep-rate >100%.

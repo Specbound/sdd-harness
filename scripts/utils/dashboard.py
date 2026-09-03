@@ -33,6 +33,7 @@ import html
 import json
 import math
 import os
+import secrets
 import subprocess
 import sys
 import threading
@@ -77,12 +78,30 @@ HEADROOM_SAVINGS = Path.home() / ".headroom" / "proxy_savings.json"
 
 SECTION_DEFS = [
     ("session_health",    "⚡", "Session Health"),
+    ("herder",            "🐑", "Herder"),
     ("gitnexus",          "🕸", "GitNexus"),
     ("workshop",          "🔬", "Workshop"),
     ("budget_efficiency", "💰", "Budget & Efficiency"),
     ("automation",        "🤖", "Automation"),
     ("knowledge_base",    "🧠", "Knowledge Base"),
 ]
+
+# Herder backend. Imported lazily-tolerantly: the dashboard must still render on a
+# machine without Herdr installed, showing an install hint instead of a spawn form.
+try:
+    import herder
+    HERDER_IMPORT_ERROR = ""
+except Exception as _herder_exc:      # noqa: BLE001 - dashboard must never fail to render
+    herder = None
+    HERDER_IMPORT_ERROR = str(_herder_exc)
+
+# Per-process CSRF token for the herder endpoints. The dashboard binds 127.0.0.1,
+# but "local" is not "safe": any page in any open browser tab can POST to
+# localhost. That is tolerable for the fixed-prompt endpoints below and NOT
+# tolerable for an endpoint that starts an agent with a caller-supplied prompt.
+# The token is minted per process and embedded in the served HTML, so only a page
+# actually served by this process can call the herder API.
+HERDER_TOKEN = secrets.token_urlsafe(32)
 
 PRICING_HISTORY = DASHBOARD_DIR / "models-pricing-history.json"
 PRICING_MAX_AGE = 14 * 86400   # 14-day refresh cadence
@@ -1352,6 +1371,36 @@ def render_trust_battery(rd):
         delta_str   = "▬ 0.0"
         delta_color = "var(--overlay0)"
 
+    # Judge sampling state (pass^k). `samples`/`spread`/`inconclusive` are written
+    # by scripts/session/trust_score.py. Records predating 2026-09-03 have none of
+    # these keys — that is "unsampled", which is a different fact from "sampled and
+    # agreed", so it renders as nothing rather than as a reassuring badge.
+    samples      = cur.get("samples") or []
+    spread       = cur.get("spread")
+    inconclusive = bool(cur.get("inconclusive"))
+    sample_html  = ""
+    if inconclusive:
+        sample_html = (
+            f'<div style="margin-top:8px;text-align:center">'
+            f'<span style="display:inline-block;background:rgba(249,226,175,0.10);'
+            f'border:1px solid #f9e2af66;border-radius:20px;padding:4px 12px;'
+            f'font-size:12px;font-weight:600;color:#f9e2af" '
+            f'title="The judge was run {len(samples)}× and the verdicts spread by '
+            f'{spread:.1f} points. No delta was applied — a reading that depends on '
+            f'which draw you look at is not a reading.">'
+            f'⚠ judge split &nbsp;{h(", ".join(f"{s:+.1f}" for s in samples))}'
+            f'</span></div>'
+        )
+    elif len(samples) > 1:
+        sample_html = (
+            f'<div style="margin-top:8px;text-align:center">'
+            f'<span style="display:inline-block;color:var(--overlay0);font-size:11px" '
+            f'title="Median of {len(samples)} independent judge runs; spread '
+            f'{spread:.1f} points.">'
+            f'median of {len(samples)} runs · spread {spread:.1f}'
+            f'</span></div>'
+        )
+
     judge_entries = obs.get("judge", [])
     judge_html    = ""
     if judge_entries:
@@ -1374,7 +1423,12 @@ def render_trust_battery(rd):
         "<code>[debug]</code>, reuse cited in <code>[impl]</code>, rule cited in <code>[decision]</code>. "
         "Drains: <code>[memory-gap]</code> re-explanations (−2 each), silent failures, gate bypasses, churn. "
         "Delta=0 means the judge found no scorable evidence in the last 24h observations window — "
-        "normal for maintenance-only days or when sessions don't produce these specific tags."
+        "normal for maintenance-only days or when sessions don't produce these specific tags. "
+        "The judge runs <strong>3× per day</strong> and the <strong>median</strong> is applied; "
+        "when the three verdicts spread by more than 2.0 points the day is marked "
+        "<strong style='color:var(--yellow)'>judge split</strong> and <strong>no delta is "
+        "applied</strong> — that is the score declining to commit a number it can't stand "
+        "behind, not an error to fix."
     )
     return f"""<div class="section-inner">
   <h2 class="section-title">Trust Battery</h2>
@@ -1388,6 +1442,7 @@ def render_trust_battery(rd):
                      padding:4px 14px;font-size:13px;font-weight:600;
                      color:{delta_color}">{h(delta_str)} today</span>
       </div>
+      {sample_html}
       <div style="text-align:center;margin-top:5px;color:var(--overlay0);font-size:11px">
         {h(rel_time(ts))}
       </div>
@@ -3894,6 +3949,13 @@ function show(sectionKey) {
   if (sectionKey === 'gitnexus') probeGitnexus();
   if (sectionKey === 'workshop') loadWorkshopRuns();
   if (sectionKey === 'budget_efficiency') loadHeadroom();
+  // Guarded: the herder functions live in a companion-only block, so in a
+  // --static page this identifier does not exist at all.
+  if (sectionKey === 'herder' && typeof herderRefresh === 'function') {
+    _hdRosterSig = '';          // panel HTML was just replaced; force a rebuild
+    herderLoadOptions();
+    herderRefresh();
+  }
 }
 
 function switchRepo(v) { repo = v; show(sec); }
@@ -4517,6 +4579,99 @@ def render_headroom(repo_path: "str | None" = None) -> str:
 </div>"""
 
 
+def render_herder(rd, companion=False):
+    """Spawn form + live agent roster, backed by Herdr.
+
+    The target repo is the one selected in the dashboard's own repo dropdown —
+    there is deliberately no second repo picker here. Two selectors for the same
+    concept is exactly the kind of thing you get wrong at 1am.
+
+    Static mode (`--static`) has no server to call, so the controls are replaced
+    by a note rather than rendered dead — a button that silently does nothing is
+    worse than an absent one.
+    """
+    repo_name = Path(rd["path"]).name
+    desc = section_desc(
+        "Start Claude Code sessions and watch them from here. The session opens in "
+        "whichever repo the <b>dropdown at the top</b> is set to. Sessions run under "
+        "<b>Herdr</b> and outlive this dashboard — closing the tab does not kill them, "
+        "and <code>herdr agent attach &lt;name&gt;</code> drops you into one from a "
+        "terminal.",
+        icon="🐑", color="var(--mauve)",
+    )
+
+    if not companion:
+        return ('<div class="section-inner"><h2 class="section-title">Herder</h2>'
+                + desc
+                + empty_state("Spawning needs the live dashboard. "
+                              "Run: python3 scripts/utils/dashboard.py")
+                + "</div>")
+
+    if herder is None:
+        return ('<div class="section-inner"><h2 class="section-title">Herder</h2>'
+                + desc
+                + empty_state(f"herder module unavailable: {HERDER_IMPORT_ERROR}")
+                + "</div>")
+
+    kind_opts = "\n".join(
+        f'<option value="{k}"{" selected" if k == "claude" else ""}>{k}</option>'
+        for k in herder.AGENT_KINDS
+    )
+
+    fld = ("background:var(--surface0);border:1px solid var(--surface1);color:var(--text);"
+           "border-radius:6px;padding:7px 9px;font-size:12px;font-family:inherit")
+
+    return f"""<div class="section-inner">
+  <h2 class="section-title">Herder</h2>
+  {desc}
+  <div id="herder-status" style="font-size:11px;color:var(--subtext0);margin-bottom:14px">
+    checking Herdr…</div>
+
+  <div style="background:var(--surface0);border-radius:8px;padding:14px;margin-bottom:18px">
+    <div style="font-size:11px;color:var(--subtext0);margin-bottom:12px">
+      target repo —
+      <span style="color:var(--mauve);font-weight:600;font-family:monospace">{h(repo_name)}</span>
+      <span style="color:var(--overlay0)">· change it with the dropdown at the top</span>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));
+                gap:10px;margin-bottom:10px">
+      <label style="font-size:10px;color:var(--subtext1)">agent
+        <select id="hd-kind" onchange="herderLoadOptions()"
+                style="{fld};width:100%;margin-top:3px">{kind_opts}</select></label>
+      <label style="font-size:10px;color:var(--subtext1)">model
+        <select id="hd-model" style="{fld};width:100%;margin-top:3px">
+          <option value="">loading…</option></select></label>
+      <label style="font-size:10px;color:var(--subtext1)">permission mode
+        <select id="hd-mode" style="{fld};width:100%;margin-top:3px">
+          <option value="">loading…</option></select></label>
+      <label style="font-size:10px;color:var(--subtext1)">label
+        <input id="hd-label" value="agent" style="{fld};width:100%;margin-top:3px"></label>
+    </div>
+    <div id="hd-opt-src" style="font-size:10px;color:var(--overlay0);margin-bottom:8px"></div>
+    <textarea id="hd-prompt" rows="3" placeholder="Opening prompt (optional)."
+      style="{fld};width:100%;box-sizing:border-box;resize:vertical"></textarea>
+    <div style="display:flex;align-items:center;gap:14px;margin-top:10px;flex-wrap:wrap">
+      <button onclick="herderSpawn()" id="hd-spawn-btn"
+        style="background:var(--mauve);color:var(--base);border:none;border-radius:6px;
+               padding:8px 18px;font-size:12px;font-weight:600;cursor:pointer">
+        Spawn agent</button>
+      <span id="hd-spawn-msg" style="font-size:11px;color:var(--subtext0)"></span>
+    </div>
+  </div>
+
+  <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+    <span style="font-size:11px;color:var(--subtext1);font-weight:600">Running agents</span>
+    <label style="font-size:10px;color:var(--overlay1);display:flex;align-items:center;gap:5px">
+      <input type="checkbox" id="hd-live" checked> live tail (5s)</label>
+    <span id="hd-live-note" style="font-size:10px;color:var(--overlay0)"></span>
+  </div>
+  <div id="herder-roster" style="display:grid;gap:12px;
+       grid-template-columns:repeat(auto-fill,minmax(290px,1fr))">
+    {empty_state("No agents running.")}
+  </div>
+</div>"""
+
+
 def build_html(repos_data, harness_data, usage_sessions, pricing_snapshots, initial_idx=0, companion=False):
     repos = [rd["path"] for rd in repos_data]
 
@@ -4551,6 +4706,7 @@ def build_html(repos_data, harness_data, usage_sessions, pricing_snapshots, init
                 ("quality", "📊", "Session Quality", render_session_quality(rd)),
                 ("pq",      "✨", "Prompt Quality",  render_prompt_quality()),
             ]),
+            "herder":         render_herder(rd, companion=companion),
             "gitnexus":       render_gitnexus(rd, companion=companion),
             "workshop":       render_workshop(rd, companion=companion),
             "budget_efficiency": _combined_section("Budget & Efficiency", "be", [
@@ -4772,6 +4928,374 @@ function _scPollProposal(n) {
     .catch(function() { setTimeout(function() { _scPollProposal(n + 1); }, 3000); });
 }
 
+// ── Herder ──────────────────────────────────────────────────────────────────
+// Every herder call carries the per-process token. Without it the server replies
+// 403, so a page not served by this dashboard process cannot drive the API.
+var HERDER_TOKEN = '__HERDER_TOKEN__';
+var _hdRosterSig = '';
+
+function _hdFetch(url, opts) {
+  opts = opts || {};
+  opts.headers = opts.headers || {};
+  opts.headers['X-Herder-Token'] = HERDER_TOKEN;
+  return fetch(url, opts);
+}
+
+function _hdBadge(status) {
+  var map = { working: ['#f9e2af', 'working'], idle: ['#89b4fa', 'idle'],
+              done: ['#a6e3a1', 'done'], blocked: ['#f38ba8', 'blocked'] };
+  var e = map[status] || ['#6c7086', status || 'unknown'];
+  return '<span style="display:inline-block;padding:2px 8px;border-radius:20px;' +
+         'font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.6px;' +
+         'color:' + e[0] + ';background:' + e[0] + '22;border:1px solid ' + e[0] + '55">' +
+         e[1] + '</span>';
+}
+
+// Model and permission-mode choices are pulled from the selected agent itself —
+// never hardcoded here. Re-fetched whenever the agent kind changes.
+function herderLoadOptions() {
+  var kind = document.getElementById('hd-kind');
+  var mSel = document.getElementById('hd-model');
+  var pSel = document.getElementById('hd-mode');
+  var src  = document.getElementById('hd-opt-src');
+  if (!kind || !mSel || !pSel) { return; }
+  mSel.innerHTML = '<option value="">loading…</option>';
+  pSel.innerHTML = '<option value="">loading…</option>';
+
+  _hdFetch('/api/herder-options?kind=' + encodeURIComponent(kind.value))
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      var mo = '<option value="">(agent default)</option>';
+      var models = (d.models && d.models.models) || [];
+      var aliases = (d.models && d.models.aliases) || [];
+      if (aliases.length) {
+        mo += '<optgroup label="aliases — always the latest of that family">';
+        aliases.forEach(function(a) { mo += '<option value="' + a + '">' + a + '</option>'; });
+        mo += '</optgroup>';
+      }
+      if (models.length) {
+        mo += '<optgroup label="pinned versions">';
+        models.forEach(function(m) { mo += '<option value="' + m + '">' + m + '</option>'; });
+        mo += '</optgroup>';
+      }
+      mSel.innerHTML = mo;
+
+      var modes = (d.permission_modes && d.permission_modes.modes) || [];
+      var po = '';
+      modes.forEach(function(m) {
+        var sel = (m === 'acceptEdits') ? ' selected' : '';
+        var warn = (m === 'bypassPermissions' || m === 'dontAsk') ? ' ⚠' : '';
+        po += '<option value="' + m + '"' + sel + '>' + m + warn + '</option>';
+      });
+      pSel.innerHTML = po || '<option value="acceptEdits">acceptEdits</option>';
+
+      // Say plainly when a list is a fallback rather than something we read from
+      // the agent — a guessed list that looks authoritative is worse than none.
+      if (src) {
+        var mOk = d.models && d.models.discovered;
+        var pOk = d.permission_modes && d.permission_modes.discovered;
+        var bits = [];
+        bits.push((mOk ? '✓ models from ' : '⚠ models NOT discovered — ') +
+                  ((d.models && d.models.source) || '?'));
+        bits.push((pOk ? '✓ modes from ' : '⚠ modes NOT discovered — ') +
+                  ((d.permission_modes && d.permission_modes.source) || '?'));
+        src.innerHTML = bits.join(' · ');
+        src.style.color = (mOk && pOk) ? 'var(--overlay0)' : '#f9e2af';
+      }
+    })
+    .catch(function(e) {
+      mSel.innerHTML = '<option value="">(agent default)</option>';
+      pSel.innerHTML = '<option value="acceptEdits">acceptEdits</option>';
+      if (src) { src.textContent = 'could not load agent options: ' + e; }
+    });
+}
+
+function _hdNum(n) {
+  if (n === null || n === undefined) { return '—'; }
+  if (n >= 1000000) { return (n / 1000000).toFixed(1) + 'M'; }
+  if (n >= 1000)    { return (n / 1000).toFixed(1) + 'k'; }
+  return String(n);
+}
+
+// One box per agent, each tailing its own pane, so several runs are watchable at
+// once rather than one at a time through a shared log pane.
+function _hdBox(a) {
+  var badge = _hdBadge(a.status);
+  var meta = [];
+  if (a.repo)  { meta.push(a.repo); }
+  if (a.model) { meta.push(a.model); }
+  if (a.permission_mode) { meta.push(a.permission_mode); }
+
+  var spend = '<span style="color:var(--overlay0)">spend: not yet attributed</span>';
+  if (a.spend) {
+    spend = 'tokens <b style="color:var(--text)">' + _hdNum(a.spend.tokens) + '</b>' +
+            ' · cost-weighted <b style="color:var(--text)">' +
+            _hdNum(Math.round(a.spend.weighted_cost)) + '</b>' +
+            ' · cache-create ' + _hdNum(a.spend.cache_create);
+  } else if (!a.herder_spawned) {
+    spend = '<span style="color:var(--overlay0)">opened outside the herder — no ledger</span>';
+  }
+
+  var btn = 'background:var(--surface1);color:var(--text);border:none;border-radius:5px;' +
+            'padding:3px 9px;font-size:10.5px;cursor:pointer';
+
+  // Collapsed by default: the grid answers "what is running" at a glance, and the
+  // disclosure answers "what is it doing" only for the one you open.
+  return '' +
+  '<div style="background:var(--surface0);border-radius:8px;padding:11px;min-width:0">' +
+    '<div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-bottom:5px">' +
+      '<span style="font-family:monospace;font-size:11.5px;color:var(--text);overflow:hidden;' +
+        'text-overflow:ellipsis;white-space:nowrap;max-width:140px">' + a.name + '</span>' +
+      badge +
+    '</div>' +
+    '<div style="font-size:9.5px;color:var(--subtext0);margin-bottom:4px;overflow:hidden;' +
+      'text-overflow:ellipsis;white-space:nowrap">' + meta.join(' · ') + '</div>' +
+    '<div style="font-size:9.5px;color:var(--subtext0);margin-bottom:7px">' + spend + '</div>' +
+    '<div id="hdnow-' + a.name + '" style="font-size:10px;color:var(--overlay1);' +
+      'margin-bottom:8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">…</div>' +
+    '<div style="display:flex;gap:5px;margin-bottom:7px">' +
+      '<button onclick="herderPromptAgent(\\'' + a.name + '\\')" style="' + btn + '">prompt</button>' +
+      '<button onclick="herderStop(\\'' + a.workspace_id + '\\')" style="background:#f38ba822;color:#f38ba8;border:1px solid #f38ba855;border-radius:5px;padding:3px 9px;font-size:10.5px;cursor:pointer">stop</button>' +
+    '</div>' +
+    '<details id="hddet-' + a.name + '" ontoggle="herderStream(\\'' + a.name + '\\')">' +
+      '<summary style="cursor:pointer;font-size:10.5px;color:var(--mauve);outline:none">activity</summary>' +
+      '<div id="hdfeed-' + a.name + '" style="background:var(--crust);border-radius:6px;' +
+        'padding:9px;font-size:10px;line-height:1.5;max-height:300px;overflow:auto;' +
+        'margin-top:7px">loading…</div>' +
+      '<div style="margin-top:6px;display:flex;gap:5px">' +
+        '<button onclick="herderStream(\\'' + a.name + '\\',1)" style="' + btn + '">refresh</button>' +
+        '<button onclick="herderRawPane(\\'' + a.name + '\\')" style="' + btn + '">raw pane</button>' +
+      '</div>' +
+      '<pre id="hdlog-' + a.name + '" style="display:none;background:var(--crust);border-radius:6px;' +
+        'padding:9px;font-size:10px;max-height:260px;overflow:auto;white-space:pre-wrap;' +
+        'color:var(--subtext1);margin-top:7px"></pre>' +
+    '</details>' +
+  '</div>';
+}
+
+// Render the transcript feed: reasoning, tool calls, tool results — the same
+// shape as a chat transcript, not the terminal's redrawn TUI.
+function _hdEventHtml(e) {
+  var wrap = 'margin-bottom:6px;padding-left:8px;border-left:2px solid ';
+  if (e.t === 'thinking') {
+    return '<div style="' + wrap + 'var(--overlay0);color:var(--overlay1);font-style:italic">' +
+           _hdEsc(e.text) + '</div>';
+  }
+  if (e.t === 'text') {
+    return '<div style="' + wrap + 'var(--mauve);color:var(--text)">' + _hdEsc(e.text) + '</div>';
+  }
+  if (e.t === 'tool') {
+    return '<div style="' + wrap + '#89b4fa;color:var(--subtext1)">' +
+           '<b style="color:#89b4fa">' + _hdEsc(e.name) + '</b>' +
+           (e.summary ? ' <span style="color:var(--overlay1)">' + _hdEsc(e.summary) + '</span>' : '') +
+           '</div>';
+  }
+  if (e.t === 'result') {
+    var col = e.error ? '#f38ba8' : '#a6e3a1';
+    return '<div style="' + wrap + col + ';color:var(--overlay1)">' +
+           (e.error ? '✗ ' : '✓ ') + _hdEsc(e.name) +
+           (e.preview ? ' — ' + _hdEsc(e.preview) : '') + '</div>';
+  }
+  return '';
+}
+
+function _hdEsc(s) {
+  return String(s === null || s === undefined ? '' : s)
+    .split('&').join('&amp;').split('<').join('&lt;').split('>').join('&gt;');
+}
+
+function herderStream(name, force) {
+  var det = document.getElementById('hddet-' + name);
+  if (!det) { return; }
+  // Only poll what is open. Streaming every collapsed agent would read every
+  // transcript on the machine every 5 seconds for output nobody is looking at.
+  if (!det.open && !force) { return; }
+  var box = document.getElementById('hdfeed-' + name);
+  if (!box) { return; }
+
+  _hdFetch('/api/herder-stream?name=' + encodeURIComponent(name))
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      if (d.error)   { box.textContent = d.error; return; }
+      if (d.pending) { box.innerHTML = '<span style="color:var(--overlay0)">no transcript yet — the session has not written its first line</span>'; return; }
+      var evs = d.events || [];
+      if (!evs.length) {
+        box.innerHTML = '<span style="color:var(--overlay0)">no activity recorded yet</span>';
+        return;
+      }
+      var atBottom = (box.scrollHeight - box.scrollTop - box.clientHeight) < 40;
+      box.innerHTML = (d.truncated
+        ? '<div style="color:var(--overlay0);margin-bottom:6px">…earlier activity trimmed</div>' : '')
+        + evs.map(_hdEventHtml).join('');
+      if (atBottom) { box.scrollTop = box.scrollHeight; }
+    })
+    .catch(function(e) { box.textContent = String(e); });
+}
+
+// The rendered terminal, kept as an escape hatch: the feed above is derived from
+// the transcript, so the pane is the way to see what the TUI itself shows.
+function herderRawPane(name) {
+  var pre = document.getElementById('hdlog-' + name);
+  if (!pre) { return; }
+  pre.style.display = 'block';
+  pre.textContent = 'reading pane…';
+  _hdFetch('/api/herder-read?name=' + encodeURIComponent(name))
+    .then(function(r) { return r.json(); })
+    .then(function(d) { pre.textContent = d.output || d.error || '(empty)'; })
+    .catch(function(e) { pre.textContent = String(e); });
+}
+
+// One-line "what is it doing right now" for a collapsed card, so the grid is
+// informative without expanding anything.
+function _hdUpdateNow(a) {
+  var el = document.getElementById('hdnow-' + a.name);
+  if (!el) { return; }
+  _hdFetch('/api/herder-stream?name=' + encodeURIComponent(a.name))
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      if (d.pending) { el.textContent = 'starting…'; return; }
+      var evs = (d && d.events) || [];
+      if (!evs.length) { el.textContent = 'no activity yet'; return; }
+      var e = evs[evs.length - 1];
+      var label = e.t === 'tool'     ? '⚙ ' + e.name + ' ' + (e.summary || '')
+                : e.t === 'result'   ? (e.error ? '✗ ' : '✓ ') + e.name
+                : e.t === 'thinking' ? '· thinking'
+                :                      '▸ ' + e.text;
+      el.textContent = label;
+    })
+    .catch(function() {});
+}
+
+function herderRefresh() {
+  var st = document.getElementById('herder-status');
+  _hdFetch('/api/herder-status')
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      if (!st) { return; }
+      if (d.error)        { st.innerHTML = '<span style="color:#f38ba8">' + d.error + '</span>'; }
+      else if (!d.installed) { st.innerHTML = '<span style="color:#f38ba8">Herdr not installed — curl -fsSL https://herdr.dev/install.sh | sh</span>'; }
+      else if (!d.running)   { st.innerHTML = '<span style="color:#f9e2af">Herdr server not running — it starts automatically on first spawn.</span>'; }
+      else { st.innerHTML = 'Herdr running · ' + d.agents + ' agent(s), ' + d.workspaces + ' workspace(s)'; }
+    })
+    .catch(function() { if (st) { st.textContent = 'dashboard server unreachable'; } });
+
+  _hdFetch('/api/herder-list')
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      var box = document.getElementById('herder-roster');
+      if (!box) { return; }
+      var rows = (d && d.agents) || [];
+      if (!rows.length) {
+        box.innerHTML = '<div style="padding:36px;text-align:center;color:var(--overlay0);font-size:13px">No agents running.</div>';
+        return;
+      }
+      // Only rebuild the boxes when the set of agents changes. Re-rendering every
+      // poll would reset each pre's scroll position mid-read.
+      // Rebuild only when the agent set or a status changes; a full re-render on
+      // every poll would collapse any <details> the user has open.
+      var sig = rows.map(function(a) { return a.name + ':' + a.status; }).join('|');
+      if (sig !== _hdRosterSig) {
+        var openNames = rows.filter(function(a) {
+          var d = document.getElementById('hddet-' + a.name);
+          return d && d.open;
+        }).map(function(a) { return a.name; });
+
+        _hdRosterSig = sig;
+        box.innerHTML = rows.map(_hdBox).join('');
+
+        openNames.forEach(function(n) {
+          var d = document.getElementById('hddet-' + n);
+          if (d) { d.open = true; }
+        });
+      }
+
+      rows.forEach(function(a) { _hdUpdateNow(a); });
+
+      var live = document.getElementById('hd-live');
+      if (live && live.checked) {
+        rows.forEach(function(a) { herderStream(a.name); });
+      }
+
+      var note = document.getElementById('hd-live-note');
+      if (note) {
+        var open = rows.filter(function(a) {
+          var d = document.getElementById('hddet-' + a.name);
+          return d && d.open;
+        }).length;
+        note.textContent = rows.length + ' agent(s)' +
+          (open ? ' — ' + open + ' expanded, streaming' : ' — expand one to stream it');
+      }
+    })
+    .catch(function() {});
+}
+
+function herderSpawn() {
+  var btn = document.getElementById('hd-spawn-btn');
+  var msg = document.getElementById('hd-spawn-msg');
+  // `repo` is the dashboard-wide selection driven by the top dropdown
+  // (switchRepo). The herder deliberately has no repo picker of its own.
+  var body = {
+    repo:  repo,
+    label: document.getElementById('hd-label').value || 'agent',
+    kind:  document.getElementById('hd-kind').value,
+    model: document.getElementById('hd-model').value,
+    prompt: document.getElementById('hd-prompt').value,
+    permission_mode: document.getElementById('hd-mode').value || 'acceptEdits'
+  };
+  if (btn) { btn.disabled = true; btn.textContent = 'Starting…'; }
+  if (msg) { msg.textContent = 'starting a session — this takes a few seconds'; }
+  _hdFetch('/api/herder-spawn', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      if (btn) { btn.disabled = false; btn.textContent = 'Spawn agent'; }
+      if (!msg) { return; }
+      if (d.ok) {
+        msg.innerHTML = '<span style="color:#a6e3a1">started ' + d.agent.name +
+                        ' (' + d.agent.argv.join(' ') + ')</span>';
+        document.getElementById('hd-prompt').value = '';
+      } else {
+        msg.innerHTML = '<span style="color:#f38ba8">' + (d.error || 'failed') + '</span>';
+      }
+      herderRefresh();
+    })
+    .catch(function(e) {
+      if (btn) { btn.disabled = false; btn.textContent = 'Spawn agent'; }
+      if (msg) { msg.innerHTML = '<span style="color:#f38ba8">' + e + '</span>'; }
+    });
+}
+
+function herderStop(ws) {
+  _hdFetch('/api/herder-stop?workspace=' + encodeURIComponent(ws), { method: 'POST' })
+    .then(function() { herderRefresh(); })
+    .catch(function() {});
+}
+
+function herderPromptAgent(name) {
+  var text = window.prompt('Prompt for ' + name + ':');
+  if (!text) { return; }
+  _hdFetch('/api/herder-prompt', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: name, prompt: text })
+  })
+    .then(function() {
+      // Open the feed on send: you asked it something, you want to watch it.
+      var det = document.getElementById('hddet-' + name);
+      if (det) { det.open = true; }
+      setTimeout(function() { herderStream(name, 1); }, 1500);
+    })
+    .catch(function() {});
+}
+
+setInterval(function() {
+  var el = document.querySelector('.nav-item.active');
+  if (el && el.getAttribute('data-s') === 'herder') { herderRefresh(); }
+}, 5000);
+
 function runSkillCuratorPropose() {
   var btn = document.getElementById('sc-propose-btn');
   if (btn) { btn.disabled = true; btn.textContent = '🔍 Analyzing…'; }
@@ -4930,7 +5454,10 @@ function mcWhatIf(modelKey) {{
            .replace("__GN_SERVE_FUNS__", gn_funs)
            .replace("__WORKSHOP_FUNS__", workshop_funs)
            .replace("__HEADROOM_FUNS__", headroom_funs)
-           .replace("__MC_FUNS__", mc_funs))
+           .replace("__MC_FUNS__", mc_funs)
+           # Static output is written to a file and has no server to authorize
+           # against, so it must never carry a live token.
+           .replace("__HERDER_TOKEN__", HERDER_TOKEN if companion else ""))
     ts  = datetime.now().strftime("%Y-%m-%d %H:%M")
 
     return f"""<!DOCTYPE html>
@@ -5131,6 +5658,70 @@ class _DashboardHandler(BaseHTTPRequestHandler):
 
     WS_PORT = 5899  # raindrop workshop default port
 
+    # ── Herder request guard ─────────────────────────────────────────────────
+    def _herder_authorized(self) -> bool:
+        """Reject cross-origin and untokened calls to the herder API.
+
+        Two independent checks, because either alone is bypassable:
+          - the per-process token, which only a page served by this process has;
+          - an Origin allowlist, so a page that somehow learned the token still
+            cannot drive it from another site.
+        A same-origin fetch from the dashboard page sends no Origin header on
+        same-origin GET/POST in some browsers, so an ABSENT Origin is allowed and
+        a PRESENT-but-foreign one is not.
+        """
+        if self.headers.get("X-Herder-Token") != HERDER_TOKEN:
+            return False
+        origin = self.headers.get("Origin")
+        allowed = (
+            f"http://localhost:{COMPANION_PORT}",
+            f"http://127.0.0.1:{COMPANION_PORT}",
+        )
+        return not origin or origin in allowed
+
+    def _send_json(self, obj, code=200):
+        """JSON reply with no CORS header.
+
+        Deliberately omits Access-Control-Allow-Origin: these endpoints act on the
+        machine, so no other site should be able to read their replies.
+        """
+        body = json.dumps(obj).encode()
+        self.send_response(code)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _herder_guarded(self):
+        """Return the herder module if the request may proceed, else None.
+
+        Returns the module rather than a bool so callers get a non-Optional
+        reference — a plain `if not guard(): return` leaves a type checker unable
+        to prove `herder` is not None at the call site below.
+        Replies 503 (not installed) or 403 (unauthorized) before returning None.
+        """
+        if herder is None:
+            self._send_json({"error": "herder-unavailable",
+                             "detail": HERDER_IMPORT_ERROR}, 503)
+            return None
+        if not self._herder_authorized():
+            self._send_json({"error": "forbidden"}, 403)
+            return None
+        return herder
+
+    def _read_json_body(self):
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            return {}
+        if length <= 0 or length > 1_000_000:
+            return {}
+        try:
+            return json.loads(self.rfile.read(length) or b"{}")
+        except ValueError:
+            return {}
+
     def do_GET(self):
         parsed = urlparse(self.path)
         if parsed.path == "/":
@@ -5144,7 +5735,6 @@ class _DashboardHandler(BaseHTTPRequestHandler):
                 body = HEADROOM_SAVINGS.read_bytes() if HEADROOM_SAVINGS.exists() else b'{}'
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
-                self.send_header("Access-Control-Allow-Origin", "*")
                 self.end_headers()
                 self.wfile.write(body)
             except Exception:
@@ -5157,7 +5747,6 @@ class _DashboardHandler(BaseHTTPRequestHandler):
             body = json.dumps({"content": content, "age": age}).encode()
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
-            self.send_header("Access-Control-Allow-Origin", "*")
             self.end_headers()
             self.wfile.write(body)
         elif parsed.path == "/api/workshop-runs":
@@ -5172,15 +5761,66 @@ class _DashboardHandler(BaseHTTPRequestHandler):
                 body = json.dumps(all_runs).encode()
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
-                self.send_header("Access-Control-Allow-Origin", "*")
                 self.end_headers()
                 self.wfile.write(body)
             except Exception:
                 self.send_response(503)
                 self.send_header("Content-Type", "application/json")
-                self.send_header("Access-Control-Allow-Origin", "*")
                 self.end_headers()
                 self.wfile.write(b'{"error":"workshop-offline"}')
+        elif parsed.path == "/api/herder-status":
+            hd = self._herder_guarded()
+            if hd is None:
+                return
+            try:
+                self._send_json(hd.status())
+            except Exception as exc:                      # noqa: BLE001
+                self._send_json({"error": str(exc)}, 500)
+        elif parsed.path == "/api/herder-list":
+            hd = self._herder_guarded()
+            if hd is None:
+                return
+            try:
+                self._send_json({"agents": hd.list_agents()})
+            except Exception as exc:                      # noqa: BLE001
+                self._send_json({"error": str(exc)}, 500)
+        elif parsed.path == "/api/herder-options":
+            hd = self._herder_guarded()
+            if hd is None:
+                return
+            kind = parse_qs(parsed.query).get("kind", ["claude"])[0]
+            try:
+                self._send_json(hd.agent_options(kind))
+            except Exception as exc:                      # noqa: BLE001
+                self._send_json({"error": str(exc)}, 500)
+        elif parsed.path == "/api/herder-stream":
+            hd = self._herder_guarded()
+            if hd is None:
+                return
+            qs = parse_qs(parsed.query)
+            name = qs.get("name", [""])[0]
+            try:
+                after = int(qs.get("after", ["0"])[0])
+            except ValueError:
+                after = 0
+            try:
+                data = hd.agent_stream(name, after=after)
+                if data is None:
+                    self._send_json({"name": name, "events": [], "cursor": after,
+                                     "pending": True})
+                else:
+                    self._send_json({"name": name, **data})
+            except Exception as exc:                      # noqa: BLE001
+                self._send_json({"error": str(exc)}, 500)
+        elif parsed.path == "/api/herder-read":
+            hd = self._herder_guarded()
+            if hd is None:
+                return
+            name = parse_qs(parsed.query).get("name", [""])[0]
+            try:
+                self._send_json({"name": name, "output": hd.read_agent(name)})
+            except Exception as exc:                      # noqa: BLE001
+                self._send_json({"error": str(exc)}, 500)
         elif parsed.path.startswith("/workshop/") or parsed.path == "/workshop":
             self._proxy_workshop(parsed)
         else:
@@ -5213,7 +5853,6 @@ class _DashboardHandler(BaseHTTPRequestHandler):
 
         self.send_response(status)
         self.send_header("Content-Type", content_type)
-        self.send_header("Access-Control-Allow-Origin", "*")
         self.end_headers()
         self.wfile.write(content)
 
@@ -5226,14 +5865,12 @@ class _DashboardHandler(BaseHTTPRequestHandler):
                 _start_gitnexus_serve(repo_path)
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
-            self.send_header("Access-Control-Allow-Origin", "*")
             self.end_headers()
             self.wfile.write(b'{"ok":true}')
         elif parsed.path == "/api/workshop-start":
             _start_workshop()
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
-            self.send_header("Access-Control-Allow-Origin", "*")
             self.end_headers()
             self.wfile.write(b'{"ok":true}')
         elif parsed.path == "/api/workshop-eval":
@@ -5243,14 +5880,12 @@ class _DashboardHandler(BaseHTTPRequestHandler):
                 _run_workshop_eval(repo_path)
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
-            self.send_header("Access-Control-Allow-Origin", "*")
             self.end_headers()
             self.wfile.write(b'{"ok":true}')
         elif parsed.path == "/api/skill-curator-propose":
             _run_skill_curator_propose()
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
-            self.send_header("Access-Control-Allow-Origin", "*")
             self.end_headers()
             self.wfile.write(b'{"ok":true}')
         elif parsed.path == "/api/skill-curator-apply":
@@ -5259,9 +5894,45 @@ class _DashboardHandler(BaseHTTPRequestHandler):
             _run_skill_curator_apply(instruction)
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
-            self.send_header("Access-Control-Allow-Origin", "*")
             self.end_headers()
             self.wfile.write(b'{"ok":true}')
+        elif parsed.path == "/api/herder-spawn":
+            hd = self._herder_guarded()
+            if hd is None:
+                return
+            body = self._read_json_body()
+            try:
+                result = hd.spawn(
+                    body.get("repo", ""),
+                    body.get("label", "agent"),
+                    kind=body.get("kind", "claude"),
+                    prompt=body.get("prompt", ""),
+                    permission_mode=body.get("permission_mode", "acceptEdits"),
+                    model=body.get("model", ""),
+                )
+                self._send_json({"ok": True, "agent": result})
+            except Exception as exc:                      # noqa: BLE001
+                self._send_json({"ok": False, "error": str(exc)}, 500)
+        elif parsed.path == "/api/herder-stop":
+            hd = self._herder_guarded()
+            if hd is None:
+                return
+            ws = parse_qs(parsed.query).get("workspace", [""])[0]
+            try:
+                hd.stop(ws)
+                self._send_json({"ok": True})
+            except Exception as exc:                      # noqa: BLE001
+                self._send_json({"ok": False, "error": str(exc)}, 500)
+        elif parsed.path == "/api/herder-prompt":
+            hd = self._herder_guarded()
+            if hd is None:
+                return
+            body = self._read_json_body()
+            try:
+                hd.prompt_agent(body.get("name", ""), body.get("prompt", ""))
+                self._send_json({"ok": True})
+            except Exception as exc:                      # noqa: BLE001
+                self._send_json({"ok": False, "error": str(exc)}, 500)
         else:
             self.send_error(404)
 
@@ -5314,13 +5985,22 @@ def open_browser(url: str):
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def main():
+    # The module docstring has advertised --port since this file was written, but
+    # argparse never defined it, so passing it was an error and the port was
+    # effectively hardcoded. It is a real flag now. The herder Origin allowlist
+    # reads this same module global, so the two cannot drift apart.
+    global COMPANION_PORT
+
     ap = argparse.ArgumentParser(description="SDD Harness Dashboard")
     ap.add_argument("--repo",    help="Pre-select a repo path or name")
     ap.add_argument("--no-open", action="store_true",
                     help="Start server without opening browser")
     ap.add_argument("--static",  action="store_true",
                     help="Write static file to .dashboard/index.html instead of starting server")
+    ap.add_argument("--port", type=int, default=COMPANION_PORT,
+                    help=f"HTTP port for the local server (default {COMPANION_PORT})")
     args = ap.parse_args()
+    COMPANION_PORT = args.port
 
     print("⬡  SDD Harness Dashboard")
     print(f"   Harness: {HARNESS_DIR}")

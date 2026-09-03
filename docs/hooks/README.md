@@ -248,6 +248,30 @@ Hook output is injected into Claude's context as system messages — Claude read
 
 ---
 
+### `pr-evidence-hook.sh`
+**Event:** `PreToolUse` — **Matcher:** `Bash`
+
+**Purpose:**
+1. Parses `tool_input.command` from stdin and tokenizes it with `shlex`, then matches the `gh pr create` verb token-by-token — following the lesson recorded in `git-destructive-guard-hook.sh`, so `cd x && gh pr create`, `bash -c '...'`, `GH_TOKEN=x gh ...`, an absolute `gh` path, and `gh --repo o/r pr create` all resolve to the same verb.
+2. Resolves the PR body from `--body`/`-b` (inline or `=` form) or `--body-file`/`-F` (reads the file).
+3. Checks the body for the literal `## Evidence` heading and emits a nudge when it is absent.
+4. Emits the same nudge when the invocation supplies no inspectable body at all — `--fill`, `--fill-first`, or a bare `gh pr create` that opens an editor. Both reach the reviewer with no evidence section.
+5. Stays silent when the body cannot be judged rather than guessing: `--body-file -` (stdin) and an unreadable file produce no output.
+
+**Why it's needed:** `verification-before-completion` requires evidence for claims made in conversation, but that evidence stops at the PR boundary — `create-pr`, `iterate-pr`, and `pr-babysit` contained zero references to evidence artifacts, so the reviewer received the agent's description of its own work and nothing to check it against. The hook enforces the presence of the section; `create-pr` ("Attach Runtime Evidence") teaches what goes in it, including the load-bearing rule that the before-state must be captured while reproducing the problem, since after the fix it costs a revert and is therefore usually written from memory instead.
+
+**Output / side effect:** Prints a `PR Evidence — missing proof` block to stdout naming which case fired (no inspectable `--body`, or `--body` without the heading), with the required format and the docs-only escape hatch. No files written.
+
+**Soft by design:** always exits 0, never blocks. Not every PR has a visible surface, and a hard block would force fabricated evidence blocks on docs-only PRs. The hook checks that the heading exists; it cannot tell real evidence from a plausible-looking paragraph.
+
+**Not covered by this hook, covered elsewhere:** PRs opened by `scripts/pr/detect_base_and_create.sh` (the push-triggered auto-create path used by `pr-auto-create-hook.sh` and `pr-mention-nudge.sh`) call `gh pr create` inside the script, not through the Bash tool, so no `PreToolUse` event fires. That script writes the `## Evidence` section itself — as an explicit "not captured, opened automatically on push" placeholder that must be replaced before the PR leaves draft. It is deliberately not a real evidence section: nothing ran a probe on that path, and inventing one would be the exact failure this hook exists to prevent.
+
+**Tests:** `hooks/claude/pr-evidence-hook.test.sh` — 36 cases (nudge, quiet, false-positive guard, and an exit-code-0 block proving it never blocks). Asserts on emitted text, not exit codes, because a soft gate's exit code is constant.
+
+**Location:** ships in `hooks/claude/`, copied to each project's `.claude/hooks/`; wired via `PreToolUse` matcher `Bash` in `templates/settings.json.template` and `templates/settings.harness.json.template`, alongside `git-destructive-guard-hook.sh` / `agent-commit-attribution-hook.sh`.
+
+---
+
 ### `tool-failure-capture.sh`
 **Event:** `PostToolUseFailure` — **Matcher:** `Bash|mcp__.*`
 
@@ -480,11 +504,26 @@ Hook output is injected into Claude's context as system messages — Claude read
 - `name:` value must match the file path slug (e.g. `name: my-skill` in `~/.claude/skills/my-skill/SKILL.md`)
 - `description:` field must exist and be at least 25 characters
 - Warns if description starts with vague starters: `a skill that`, `this skill`, `skill for`, `use this skill`, `provides`
+- **Provenance (added 2026-09-01):** warns when a `SKILL.md` body points at a remote URL.
+  Two severities, both advisory:
+  - *remote instruction source* — a URL ending in `.md`/`.txt`/`.json`/`.yaml`/`.yml` on a line
+    that also carries an adopt verb (`set up`, `install`, `read`, `fetch`, `load`, `follow`).
+    This is the skill-supply-chain shape: the remote file can change after review.
+  - *remote install* — a line carrying `curl`, `wget`, `npx`, or a pipe to `sh`/`bash`.
+    Legitimate skills document installs (`agent-manager-skill` documents the Herdr one), so
+    this notes the source rather than blocking it.
+
+  Unlike the frontmatter rules, the provenance scan runs for **any** file named `SKILL.md`,
+  not only those under `~/.claude/skills/` — a skill written anywhere carries the same risk.
+  Implemented with substring tests only, no regex, per the repo-wide parsing ban.
 
 **Exit codes:**
 - `0` — valid (or file not in skills dir — hook is a no-op)
-- `0` with warning banner — valid but description starts with a vague phrase
+- `0` with warning banner — valid but description starts with a vague phrase, or a provenance finding
 - `2` — hard block: one or more errors must be fixed before write proceeds
+
+**Tests:** `hooks/claude/skill-validate-hook.test.sh` (8 cases: both provenance severities, two
+false-positive guards, frontmatter regressions, and the non-`SKILL.md` no-op).
 
 **Why it is needed:** Skill descriptions are the primary signal Claude uses to decide when to activate a skill. Vague, too-short, or mismatched names silently degrade trigger accuracy across all sessions. Catching these at write time is zero-cost compared to diagnosing misfired or missed skill activations later.
 
@@ -500,13 +539,17 @@ Hook output is injected into Claude's context as system messages — Claude read
 
 **Purpose:** After any Write/Edit/MultiEdit to a test file or a CI/coverage config, scans the change for "gradient-descent-to-green" signals — weakening the tests to make a red suite pass rather than fixing the code. Flags added skip/`xfail`/`@Disabled` markers, tautological or stub assertions (e.g. `assert True`), touched coverage thresholds (`--cov-fail-under`, `coverageThreshold`), and removed assertions. Prints a reminder asking Claude to confirm the change reflects a deliberate spec change rather than a shortcut to pass. Exits 0 always — advisory only, never blocks.
 
-**Paths covered:** test files (`test_*`, `*_test.*`, `*.spec.*`, `*.test.*`, anything under `tests/`) and CI/coverage config (`pytest.ini`, `pyproject.toml`, `.coveragerc`, jest/vitest config, CI YAML).
+**Paths covered:** test files (`test_*`, `*_test.*`, `*.spec.*`, `*.test.*`, anything under a `test/`, `tests/`, `__tests__/` or `spec/` directory) and CI/coverage config (`pytest.ini`, `pyproject.toml`, `.coveragerc`, jest/vitest config, `.gitlab-ci.yml`, and YAML under `.github/workflows/`). A CamelCase `FooTest.java` at the repo root is **not** classified — Java tests are found via their `src/test/java/` directory, which is the Maven/Gradle convention.
 
-**Why it's needed:** When a suite is red, the path of least resistance is to weaken the test, not fix the code — and that erodes the safety net silently. Catching the weakening at write time forces an explicit "is this a real spec change?" decision before the green checkmark is trusted. Pattern from Addy Osmani's "Agentic Code Review".
+**Why it's needed:** When a suite is red, the path of least resistance is to weaken the test, not fix the code — and that erodes the safety net silently. Catching the weakening at write time forces an explicit "is this a real spec change?" decision before the green checkmark is trusted. Pattern from Addy Osmani's "Agentic Code Review". Perrone's *What is Agentic Testing?* documents the same failure arriving from a new direction: an agentic test-repair tool that decides the app broke rather than its locator marks the test skipped and comments — silently dropping coverage. That is signal class 1 below.
 
-**Noise control:** Only fires on test files and CI/coverage config — silent on all other Write/Edit/MultiEdit operations. Never blocks (exits 0 always).
+**No regex (2026-09-03).** Every check in this hook used to be a Python `re` pattern, which put it in violation of the repo-wide ban in `ruff.toml` — a ban TID251 could not enforce here, because ruff only reads `.py` files and this Python lives in a shell heredoc. It is now literal-token membership plus `pathlib`. The tradeoff is deliberate: literal matching cannot express a word boundary, so `describe.skipBecause(` trips the `.skip(` probe. For a soft advisory that always exits 0, a rare extra line of output beats a pattern that silently matches the wrong span. `scripts/utils/check-no-regex.py` now enforces the ban across all shell files, and `hooks/claude/test-integrity-guard.test.sh` (39 cases) delegates its own no-regex assertion to that guard.
 
-**Output:** `╔══ Test Integrity Guard ══╗` reminder banner listing the weakening signals detected. Silent on no match.
+**Noise control:** Only fires on test files and CI/coverage config — silent on all other Write/Edit/MultiEdit operations. A skip marker already present in the *old* text is not an *added* skip and does not fire. Never blocks (exits 0 always).
+
+**Output:** `⚠  test-integrity-guard — <filename>` banner listing the weakening signals detected, followed by the gradient-descent-to-green reminder. Silent on no match.
+
+**Tests:** `hooks/claude/test-integrity-guard.test.sh` — 39 offline cases covering path classification, all four signal classes, false-positive resistance, and the always-exit-0 contract. `*.test.sh` is skipped by `install.sh`'s hook copy loop, so it stays in the harness repo.
 
 ---
 
@@ -683,12 +726,13 @@ The previous implementation regex-stripped quoted segments and then `grep -E`'d 
 **Why it's needed:** `CLAUDE.md`, `.claude/rules/`, and `SessionStart` hook output are parent-thread only. A subagent begins without any of it. Until `SubagentStart` existed the only lever was to nudge the *parent* at `PreToolUse:Agent` and hope it briefed the child (`gbrain-agent-spawn.sh`) — a request, not a guarantee. This is the guarantee.
 
 **Rules injected** (kept deliberately short — this is paid per spawn, so it competes with the actual task for attention):
-1. **Tools** — prefer `ctx_*` over native Read/Grep/Bash/Glob; Serena diagnostics after any `.py` edit; `find_referencing_symbols` before renaming a Python symbol; GitNexus `impact` before editing any function/class/method.
-2. **Parsing** — no regex over prose to extract structured facts; emit structured data at the source.
-3. **Evidence** — no completion claim without verification evidence from this run; hedged future tense is a tell; a non-zero probe exit is an answer, not a failure; report skipped or blocked steps.
-4. **Scope** — blast radius ≤1 module; Rule of Three before extraction; never commit installed harness output (`.claude/`, `specs/`, `CLAUDE.md`, `AGENTS.md`, `ERRORS.md`).
-5. **Reporting** — address the user as "Husband"; end with Files changed / What changed / Not touched.
-6. **Handoff pointer** — appended only when `.claude/memory/handoff/latest.md` exists and is <24h old. A stale pointer is worse than none, so freshness is checked with `find -mtime -1` rather than assumed.
+1. **Tools** — one line: prefer `ctx_*` over native equivalents, native Grep/Glob are policy-denied, native Read is for the edit gate. The full native→`ctx_*` mapping table is **deliberately not repeated here** — the lean-ctx MCP server states it in its own `instructions` block, which reaches the subagent anyway. (Trimmed 2026-09-01; it was previously stated in four always-loaded surfaces at once.)
+2. **Blast radius** — *one* ordered check, not three: Serena `find_referencing_symbols` for a Python symbol → GitNexus `impact` otherwise → `ctx_callgraph(action="callers")` when the index is broken or the edit is not symbol-shaped. A tool that errors gives **no answer**; it does not report "no callers". Also: Serena diagnostics after any `.py` edit. (Consolidated 2026-09-01 — these were three competing MUSTs across `CLAUDE.md`, `rules/lean-ctx.md`, and this hook, with no precedence, one of them naming a currently-broken index.)
+3. **Parsing** — no regex over free text to extract structured facts; emit structured data at the source.
+4. **Evidence** — no completion claim without verification evidence from this run; hedged future tense is a tell; a non-zero probe exit is an answer, not a failure; report skipped or blocked steps.
+5. **Scope** — change size ≤1 module (worded "change size", not "blast radius", so it does not collide with rule 2); Rule of Three before extraction; never commit installed harness output (`.claude/`, `specs/`, `CLAUDE.md`, `AGENTS.md`, `ERRORS.md`).
+6. **Reporting** — address the user as "Husband"; end with Files changed / What changed / Not touched.
+7. **Handoff pointer** — appended only when `.claude/memory/handoff/latest.md` exists and is <24h old. A stale pointer is worse than none, so freshness is checked with `find -mtime -1` rather than assumed.
 
 **Two implementation constraints, both load-bearing:**
 - **Must emit JSON, not plain stdout.** Claude Code adds plain-text stdout as context only for `UserPromptSubmit`, `UserPromptExpansion`, `SessionStart`, and `PostModelSwitch`. Every other hook in this directory uses `cat << 'RULES'`; that pattern is silently discarded here. This hook writes `hookSpecificOutput.additionalContext` via `jq`.
@@ -717,9 +761,9 @@ The previous implementation regex-stripped quoted segments and then `grep -E`'d 
 
 ## Hook Wiring Reference
 
-Verified directly against `.claude/settings.json` on 2026-08-30 (not just this doc's prior claims):
+Verified directly against `.claude/settings.json` on 2026-09-03 (not just this doc's prior claims):
 
-All 41 registrations below are live. Regenerate this block from the real config with:
+All 42 registrations below are live. Regenerate this block from the real config with:
 
 ```bash
 jq -r '.hooks | to_entries[] | .key as $e | .value[] | .matcher as $m | .hooks[]
@@ -745,6 +789,7 @@ UserPromptSubmit (all)                                → caveman-mode-tracker.j
 UserPromptSubmit .*                                   → lean-ctx hook observe  [global]
 PreToolUse       Bash                                 → git-destructive-guard-hook.sh
 PreToolUse       Bash                                 → agent-commit-attribution-hook.sh
+PreToolUse       Bash                                 → pr-evidence-hook.sh
 PreToolUse       Bash|mcp__.*                         → tool-failure-recall.sh
 PreToolUse       Bash                                 → bash …  [global, lean-ctx shell allowlist]
 PreToolUse       Grep|Glob                            → …       [global, lean-ctx — denies native Grep/Glob]

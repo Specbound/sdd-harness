@@ -32,11 +32,70 @@ if not file_path or not content:
 skills_dir = pathlib.Path.home() / '.claude' / 'skills'
 p = pathlib.Path(file_path)
 
+# ── Provenance scan ───────────────────────────────────────────────────────
+# A skill that tells an agent to load its instructions from a URL is a
+# supply-chain vector: the remote file can change after you reviewed it, and
+# nothing in the frontmatter check below can see that.
+#
+# Substring tests only — no regex. Pattern-matching text is banned repo-wide,
+# and a hand-rolled URL matcher is exactly the almost-right parser that ban
+# exists to prevent.
+ADOPT_VERBS   = ('set up ', 'setup ', 'install', 'read ', 'fetch ', 'load ', 'follow ')
+INSTALL_VERBS = ('curl ', 'wget ', '| sh', '|sh', '| bash', '|bash', 'npx ')
+REMOTE_DOC_SUFFIXES = ('.md', '.txt', '.json', '.yaml', '.yml')
+
+
+def first_url(line):
+    """First http(s) token on the line, stripped of surrounding punctuation."""
+    spaced = line.replace('(', ' ').replace(')', ' ').replace('[', ' ').replace(']', ' ')
+    for word in spaced.split():
+        if word.startswith('http://') or word.startswith('https://'):
+            return word.strip('.,;:`"\'<>')
+    return ''
+
+
+def provenance_findings(text):
+    found = []
+    for raw in text.splitlines():
+        line = raw.strip()
+        low = line.lower()
+        if 'http://' not in low and 'https://' not in low:
+            continue
+        url = first_url(line)
+        if not url:
+            continue
+        url_low = url.lower()
+        if any(url_low.endswith(s) for s in REMOTE_DOC_SUFFIXES) and \
+                any(v in low for v in ADOPT_VERBS):
+            found.append(
+                f'remote instruction source: {url} — this skill directs an agent to '
+                'load instructions from a URL. The file can change after you review it. '
+                'Vendor the content into the repo, or pin a specific commit/tag.'
+            )
+        elif any(v in low for v in INSTALL_VERBS):
+            found.append(
+                f'remote install: {url} — fine if you vetted it, but the skill carries no '
+                'record of who published it or what was reviewed. Note the source and the '
+                'version you checked.'
+            )
+    return found
+
+
+prov_warnings = provenance_findings(content) if p.name == 'SKILL.md' else []
+
 try:
     rel = p.relative_to(skills_dir)
     parts = rel.parts
 except ValueError:
-    sys.exit(0)  # Not in skills dir
+    # Not under ~/.claude/skills — frontmatter rules do not apply, but a SKILL.md
+    # written anywhere still carries the same provenance risk.
+    if prov_warnings:
+        print('╔══ Skill Provenance — WARNING ════════════════════════════════════╗')
+        print('╚══════════════════════════════════════════════════════════════════╝')
+        for w in prov_warnings:
+            print(f'  △  {w}')
+        print()
+    sys.exit(0)
 
 # Match: ~/.claude/skills/<name>/SKILL.md  or  ~/.claude/skills/<name> (flat)
 if len(parts) == 2 and parts[1] == 'SKILL.md':
@@ -47,7 +106,7 @@ else:
     sys.exit(0)
 
 errors = []
-warnings = []
+warnings = list(prov_warnings)
 
 if not content.strip().startswith('---'):
     errors.append('Missing YAML frontmatter — file must start with ---')

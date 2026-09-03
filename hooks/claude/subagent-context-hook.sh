@@ -63,13 +63,16 @@ CONTEXT="$(cat <<CTX
 == Harness conventions (injected at subagent start — these are not optional) ==
 
 TOOLS
-- Prefer ctx_* MCP tools over native equivalents: ctx_read (not Read), ctx_search
-  (not Grep), ctx_shell (not Bash), ctx_glob (not Glob), ctx_tree (not ls/find).
+- Prefer ctx_* MCP tools over native equivalents. Native Grep/Glob are policy-denied.
   Native Read is reserved for the read-before-write edit gate.
+
+BLAST RADIUS (before editing an existing function/class/method — run ONE, in this order)
+- Python symbol: mcp__serena__find_referencing_symbols. LSP-accurate, authoritative.
+- Anything else: mcp__gitnexus__impact. If the index errors or reports a version
+  mismatch, say so and fall back to ctx_callgraph(action="callers"). A broken index
+  is an unknown answer, never "no callers".
+- Report HIGH/CRITICAL risk instead of proceeding silently.
 - After editing any .py file: mcp__serena__get_diagnostics_for_file(path).
-- Before renaming/deleting a Python symbol: mcp__serena__find_referencing_symbols.
-- Before editing any function/class/method: mcp__gitnexus__impact on it. Report
-  HIGH/CRITICAL risk instead of proceeding silently.
 
 PARSING
 - Do not parse prose with regex to extract structured facts. Emit structured data
@@ -83,7 +86,7 @@ EVIDENCE
 - Report outcomes faithfully: if a step was skipped or blocked, say so.
 
 SCOPE
-- Blast radius: prefer changes touching <=1 folder/module.
+- Change size: prefer changes touching <=1 folder/module.
 - No shared extraction until 3 real call sites exist.
 - Do not commit .claude/, specs/, CLAUDE.md, AGENTS.md, or ERRORS.md — they are
   installed harness output and gitignored. The top-level source tree IS the product.

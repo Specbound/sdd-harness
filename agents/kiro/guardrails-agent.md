@@ -76,6 +76,43 @@ and the type evidence is gone. Audit for a rule set covering:
 Report presence/absence as its own coverage line — a project can be fully compliant on
 complexity and score zero here. Do not fold these into the complexity count.
 
+**Assertion strength (all ecosystems — a third, independent dimension)**:
+
+Complexity rules cap how tangled the code is. Type-evidence rules cap how much type
+information it threw away. Neither says whether the **tests assert anything**. A suite
+can be at 100% coverage and prove nothing: coverage records which lines executed, not
+whether any assertion would have failed had they misbehaved.
+
+This is the axis agent-written tests fail on. An agent asked to raise coverage will
+write tests that execute code and assert something trivially true, and the resulting
+diff is indistinguishable from a real test at review time — an assertion that a build
+*started* rather than that its tests *passed* reads fine.
+
+Audit for a mutation-testing gate:
+
+| Ecosystem | Tool | Config marker |
+|---|---|---|
+| Python | `mutmut`, `cosmic-ray` | `[tool.mutmut]` in `pyproject.toml`, `setup.cfg`, or `mutmut` in the dev deps |
+| JS/TS | Stryker | `stryker.conf.*`, `.stryker-tmp` in `.gitignore`, or `@stryker-mutator/*` in `devDependencies` |
+| Go | `go-mutesting`, `gremlins` | `.gremlins.yaml` or the tool in the toolchain manifest |
+| Rust | `cargo-mutants` | `.cargo/mutants.toml` or the tool in dev-dependencies |
+| Java | PIT | `pitest-maven` plugin in `pom.xml`, or `info.solidsoft.pitest` in Gradle |
+
+Report presence/absence as its own coverage line. Do **not** fold it into the complexity
+count, and do **not** treat a line-coverage percentage as a proxy for it — they measure
+different things and a project can score perfectly on one while scoring zero on the other.
+
+**Report it as a WARN-level gap, never a hard failure**, and never scaffold it
+unprompted. Mutation testing re-runs the suite once per mutant, which turns a 30-second
+test run into minutes or hours. That cost is why this is not on the daily tick and why
+`/kiro:guardrails` is the right place for it: a gate too slow to run is a gate that gets
+skipped, and a skipped gate is worse than an absent one because it looks like coverage.
+
+When recommending it, name the cheap entry point rather than the full sweep — mutation
+testing scoped to the diff (`mutmut run --paths-to-mutate <changed>`, Stryker's
+`--since`) is minutes, not hours, and catches the assertion-less test at the moment it
+is written.
+
 **Python (ruff/flake8)**:
 - `max-complexity` or `C901` rule enabled
 - `max-args` / `PLR0913`
@@ -118,9 +155,15 @@ Guardrails Audit
     low-evidence rule set:    {CONFIGURED / MISSING / N-A (not a JS/TS project)}
     rules present:            {N}/10 core (upstream ships 15 generic + an Effect group)
 
+  Assertion Strength:
+    mutation testing:         {CONFIGURED ({tool}) / MISSING}
+    scoped-to-diff invocation:{PRESENT / NOT WIRED / N-A (no mutation tool)}
+
   Zero-Warning Tolerance:     {YES/NO/N/A}
 
   Coverage: {X}/{Y} recommended rules configured
+            (complexity only — type-evidence and assertion-strength are
+             reported separately above and are NOT counted in this ratio)
   Gaps:     {list of missing rules with recommended values}
 
   Message Quality: {N}/{M} custom rules carry an actionable message
@@ -141,6 +184,10 @@ violation without naming a fix. Report it as a WARN-level gap, never a hard fail
 4. For JS/TS: check if SonarJS plugin is installed; if not, recommend it
 5. For JS/TS with no type-evidence rules: recommend anti-slop (see below)
 6. Give every custom rule an **actionable message** (see below)
+7. If no mutation-testing gate exists: **recommend only, never install.** Name the tool
+   for the ecosystem and the diff-scoped invocation, state the runtime cost honestly,
+   and stop there. Do not add it to the lint script, CI, or a pre-commit hook — a
+   minutes-to-hours check wired into a per-write gate makes the whole gate get bypassed.
 
 ##### Scaffolding type-evidence rules (JS/TS)
 

@@ -1,13 +1,14 @@
 # lean-ctx — Context Engineering Layer
 <!-- lean-ctx-rules-v11 -->
 
-## Tool Mapping (MANDATORY — use instead of native equivalents)
-| Instead of | Use | Example |
-|------------|-----|---------|
-| Read/cat/head/tail | `ctx_read(path, mode)` | `ctx_read("src/main.rs", "full")` |
-| Grep/rg/find | `ctx_search(pattern, path)` | `ctx_search("fn handle", "src/")` |
-| Shell/bash | `ctx_shell(command)` | `ctx_shell("cargo test")` |
-| Edit | `ctx_patch` after `ctx_read(mode="anchored")` | `ctx_read("f.rs","anchored")` → `ctx_patch` |
+## Tool Mapping
+The lean-ctx MCP server states the full native→`ctx_*` mapping in its own `instructions`
+block, which loads wherever the server does. It is not repeated here — a second copy costs
+context on every session and creates a second thing to keep in sync.
+
+The one fact the server cannot tell you: **native Grep and Glob are denied by policy in
+this harness**, so the mapping is not a preference for those two. Native `Read` stays
+available for the read-before-write edit gate and for `~/.claude/projects/<slug>/memory/`.
 
 ## Profile: `standard` (17 advertised tools)
 Advertised: ctx_callgraph, ctx_compose, ctx_delta, ctx_execute, ctx_expand, ctx_explore,
@@ -48,10 +49,17 @@ The bare `shell` alias was removed — use `ctx_shell`.
 Return to compressed defaults after one expanded retrieval.
 
 ## Risk Gate (before high-impact edits)
-Before editing exported symbols, auth, DB schemas, or 3+ files: run `ctx_callgraph(action="callers")`
-and `ctx_graph` for file-level deps — for a wider blast radius
-`ctx_call {"name":"ctx_impact","arguments":{"action":"analyze"}}`.
-Python symbols: before renaming or deleting any `.py` function/class, run `mcp__serena__find_referencing_symbols(symbol)` to confirm blast radius — LSP-accurate, not grep-based.
+One check, chosen by what you are editing — not three. Run the first row that applies:
+
+| Editing | Run | If it fails |
+|---|---|---|
+| A Python function/class | `mcp__serena__find_referencing_symbols(symbol)` — LSP-accurate, authoritative | fall to the row below |
+| Any other symbol | `mcp__gitnexus__impact({target, direction:"upstream"})` | fall to the row below |
+| Index broken/stale, or a non-symbol edit (auth, DB schema, 3+ files) | `ctx_callgraph(action="callers")`, plus `ctx_graph` for file-level deps | say the blast radius is unknown |
+
+Report HIGH/CRITICAL risk instead of proceeding silently. A tool that errors or reports a
+version mismatch has given you **no answer** — it has not told you there are no callers.
+Say so rather than treating silence as safety.
 
 ## Session
 - **Start:** `ctx_session(action="status")` + `ctx_knowledge(action="wakeup")`

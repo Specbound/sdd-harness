@@ -1,13 +1,15 @@
 ---
 name: iterate-pr
-description: "Iterate on a PR until CI passes. Use when you need to fix CI failures, address review feedback, or continuously push fixes until all checks are green. Automates the feedback-fix-push-wait cycle."
+description: "Iterates on a PR until CI is green and the reviewer re-runs clean. Use when fixing CI failures or addressing review feedback. Terminates on the reviewer's verdict, never on self-assessed done."
 source: "https://github.com/getsentry/skills/tree/main/plugins/sentry-skills/skills/iterate-pr"
 risk: safe
 ---
 
-# Iterate on PR Until CI Passes
+# Iterate on PR Until the Reviewer Passes It
 
-Continuously iterate on the current branch until all CI checks pass and review feedback is addressed.
+Continuously iterate on the current branch until CI is green and the reviewer
+re-runs clean on the code as it now stands — not until you believe the feedback
+is addressed.
 
 ## When to Use This Skill
 
@@ -125,17 +127,62 @@ gh pr checks --json name,state,bucket | jq '.[] | select(.bucket != "pass")'
 Return to Step 2 if:
 - Any CI checks failed
 - New review feedback appeared
+- The reviewer has not re-run since your last push
 
-Continue until all checks pass and no unaddressed feedback remains.
+Continue until the exit conditions below are met.
 
 ## Exit Conditions
 
-**Success:**
+**Success — all three, and the third is not self-assessed:**
 - All CI checks are green (`bucket: pass`)
 - No unaddressed human review feedback
+- **The reviewer re-ran after your latest push and came back clean**
+
+That third condition is the one that terminates the loop. "I addressed the
+comments" is graded by the same agent that wrote the code, and an agent that
+believes it is done is exactly the state this loop exists to escape. Wait for
+the reviewer's own verdict on the code as it now stands.
+
+Read the verdict from whatever reviewer the repo actually runs — resolve it,
+don't assume a vendor:
+
+```bash
+# Unresolved review threads (0 = clean). Works for any reviewer, bot or human.
+gh api graphql -f query='
+  query($owner:String!,$repo:String!,$pr:Int!){
+    repository(owner:$owner,name:$repo){
+      pullRequest(number:$pr){
+        reviewThreads(first:100){ nodes { isResolved isOutdated } }
+      }
+    }
+  }' -F owner=OWNER -F repo=REPO -F pr=NUMBER \
+  --jq '[.data.repository.pullRequest.reviewThreads.nodes[]
+         | select(.isResolved == false and .isOutdated == false)] | length'
+
+# Review-level verdict, and whether it postdates your last commit
+gh pr view --json reviews,reviewDecision,commits
+```
+
+Reviewers that post a numeric score (Greptile's n/5, and others) put it in the
+review body — treat the loop as open until that score is at its maximum with
+zero unresolved threads. Where no scoring bot is installed, zero unresolved
+non-outdated threads plus a green CI run is the clean verdict.
+
+Two failure modes to refuse:
+- A reviewer verdict from **before** your last push. Compare the review
+  timestamp against the head commit; a stale pass is not a pass.
+- Resolving a thread yourself to reach zero. Marking your own work resolved
+  makes the signal say what you want and measure nothing. Push the fix and let
+  the reviewer close it.
 
 **Ask for Help:**
 - Same failure persists after 3 attempts (likely a flaky test or deeper issue)
+- **5 review rounds without reaching a clean verdict** — stop and report what
+  the reviewer still objects to. A loop that cannot converge is information,
+  not a reason to keep pushing commits.
+- The reviewer's objection is wrong, or is a judgment call you should not make
+  alone (Step 5 already says not all feedback is correct — an unresolvable
+  disagreement with a reviewer is an escalation, not a stalemate to grind on)
 - Review feedback requires clarification or decision from the user
 - CI failure is unrelated to branch changes (infrastructure issue)
 

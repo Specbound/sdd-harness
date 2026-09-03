@@ -49,13 +49,51 @@ check "additionalContext is populated" "yes" "$HAS_CTX"
 
 # ── 3. Load-bearing rules actually present ────────────────────────────────────
 CTX="$(printf '%s' "$OUT" | jq -r '.hookSpecificOutput.additionalContext')"
-for needle in "ctx_read" "serena" "gitnexus" "regex" "Husband"; do
+for needle in "ctx_" "serena" "gitnexus" "regex" "Husband"; do
   if printf '%s' "$CTX" | grep -qi -- "$needle"; then
     ok "injects rule mentioning '$needle'"
   else
     bad "injects rule mentioning '$needle'" "absent from additionalContext"
   fi
 done
+
+# ── 3b. The native→ctx_* mapping table stays OUT of the injection ─────────────
+# The lean-ctx MCP server already states the full mapping in its own instructions
+# block, which reaches the subagent anyway. Restating it here made the same rule
+# resident in four always-loaded surfaces at once (2026-09-01). This guards the
+# de-duplication: one policy line is wanted, an enumerated table is not.
+MAPPING_HITS=0
+for pair in "not Read" "not Grep" "not Bash" "not Glob" "not ls/find"; do
+  if printf '%s' "$CTX" | grep -qF -- "$pair"; then
+    MAPPING_HITS=$((MAPPING_HITS + 1))
+  fi
+done
+if [ "$MAPPING_HITS" -eq 0 ]; then
+  ok "omits the native→ctx_* mapping table (stated by the MCP server)"
+else
+  bad "omits the native→ctx_* mapping table" \
+      "$MAPPING_HITS mapping pair(s) re-introduced — the MCP server already states these"
+fi
+
+# One line about tool preference is still wanted; only the table is not.
+if printf '%s' "$CTX" | grep -qi -- "policy-denied"; then
+  ok "keeps the Grep/Glob policy statement the MCP server cannot supply"
+else
+  bad "keeps the Grep/Glob policy statement" "policy line missing"
+fi
+
+# ── 3c. Exactly one blast-radius rule, with a stated fallback ─────────────────
+if printf '%s' "$CTX" | grep -qi -- "BLAST RADIUS"; then
+  ok "injects a single named BLAST RADIUS rule"
+else
+  bad "injects a single named BLAST RADIUS rule" "section heading absent"
+fi
+if printf '%s' "$CTX" | grep -qi -- "ctx_callgraph"; then
+  ok "names the fallback for a broken/stale index"
+else
+  bad "names the fallback for a broken/stale index" \
+      "no fallback — an unsatisfiable MUST trains the model to discount every MUST"
+fi
 
 # ── 4. agent_type is echoed when supplied, absent when not ────────────────────
 if printf '%s' "$CTX" | grep -q "subagent: Explore"; then

@@ -13,6 +13,18 @@
 # If data needs to be read by a program, emit it as structured data at the source
 # — JSONL, a JSON field, a delimited record — and parse it with a real parser.
 # See scripts/session/record_metric.py for the pattern.
+#
+# SCOPE LIMIT — this file is only half the ban. TID251 below fires on `.py` files
+# only, and a large share of this harness's Python lives inside shell heredocs in
+# hooks/claude/*.sh and scripts/**/*.sh, where ruff never looks. On 2026-09-03 that
+# unenforced half was measured at 16 files, two of them (stop-hook.sh's loop-debt
+# detector and learnings promoter) regex-parsing observations.md free text — the
+# exact failure described above, still live three weeks after the ban was written.
+#
+# scripts/utils/check-no-regex.py covers that half. It runs in .git/hooks/pre-commit
+# next to check-no-hardcoded-paths.sh, against a shrinking ledger in
+# scripts/utils/no-regex-debt.txt. hooks/claude/test-integrity-guard.sh is the
+# worked example of the rewrite: every regex in it became literal-token matching.
 
 line-length = 100
 

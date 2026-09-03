@@ -28,6 +28,8 @@ git log --since="24 hours ago" --format="%s" | grep -i "revert\|undo\|rollback\|
 git log --since="24 hours ago" --name-only --format="" | sort | uniq -c | sort -rn | head -10
 ```
 
+If commits are zero, check sibling repos — activity may be invisible if `.claude/` is gitignored or work lands in a parallel directory. (source: 2026-08-31 [routine-error])
+
 ### Step 2 — Collect signals from observations
 
 Read `.claude/memory/observations.md` for today's entries. Look for:
@@ -76,8 +78,10 @@ repo — no commits, no transcript), the score is a placeholder, not a judgement
 ```
 
 Averaging placeholders in is how a repo with one good session and two quiet days
-reports 3.3/5. Say "idle-routine window" in the prose too, but the `--idle` flag is
+reports 3.3/5. Say "idle-routine window" in the text too, but the `--idle` flag is
 what the dashboard acts on.
+
+When marking idle on zero commits, check routine transcripts for auth errors; ~15-19-line transcripts can be legitimate short sessions. (source: 2026-08-31 [routine-error])
 
 If score ≤ 2, also add a `[kaizen]` flag: `Investigate: [specific pattern observed]`
 

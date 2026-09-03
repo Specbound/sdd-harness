@@ -61,11 +61,28 @@ For each scenario, spawn an `Agent` (subagent_type: `general-purpose`, isolation
 
 Score each baseline run against the Phase 1 pass/fail check.
 
-### Phase 3: Run the Treatment (With-Skill)
+### Phase 3: Run the Treatment (With-Skill) — k=3 runs per scenario
 
 For each scenario, spawn a fresh `Agent` with the same prompt, this time explicitly told the skill is available and to use it if relevant (or, if the skill isn't yet installed, paste its `SKILL.md` content directly into the prompt as available context). Capture its output.
 
-Score each treatment run against the same Phase 1 pass/fail check used for the baseline.
+**Run each treatment scenario 3 times, in 3 independent agents.** A scenario scores PASS
+only if **all 3** runs pass — `pass^3`, not `pass@3`. Spawn the 3 runs in a single message
+so they execute concurrently.
+
+This asymmetry against the single baseline run is deliberate, not an oversight:
+
+| Arm | Runs | Why |
+|---|---|---|
+| Baseline (no skill) | **1** | Phase 1b already disqualifies any scenario a strong baseline passes. One passing baseline run is a sufficient disqualifier, so more runs buy nothing. |
+| Treatment (with skill) | **3** | This is the arm making the claim. The failure being guarded against is a skill certified on one lucky draw. |
+
+Cost is 12 agent spawns for a 3-scenario gate, not 6. That is the price of the verdict
+meaning something; if it is too expensive for the skill under test, the right move is
+fewer scenarios, not fewer runs per scenario. A gate that greens on 1-of-3 is not a gate
+(Perrone, *What is Agentic Testing?* — see `docs/sources/articles/README.md`).
+
+Score every treatment run against the same Phase 1 pass/fail check used for the baseline.
+Record all 3 results per scenario — a 2/3 is a finding, not a rounding error.
 
 ### Phase 3b: Validate the Judge (only when scoring uses an LLM rubric)
 
@@ -102,22 +119,30 @@ sampling.
 
 ### Phase 4: Compute the Delta
 
-Tabulate:
+Tabulate. Show the treatment runs individually — the collapsed score hides the one number
+that matters:
 
-| Scenario | Baseline (no-skill) | Treatment (with-skill) |
-|---|---|---|
-| 1 | pass/fail | pass/fail |
-| 2 | pass/fail | pass/fail |
-| 3 | pass/fail | pass/fail |
+| Scenario | Baseline (1 run) | Treatment runs (3) | Treatment `pass^3` |
+|---|---|---|---|
+| 1 | pass/fail | pass, pass, pass | **PASS** |
+| 2 | pass/fail | pass, fail, pass | **FAIL** (split) |
+| 3 | pass/fail | fail, fail, fail | **FAIL** |
 
-Compute pass-rate delta = treatment pass rate − baseline pass rate.
+Compute pass-rate delta = treatment `pass^3` rate − baseline pass rate.
+
+A scenario whose 3 runs split (2/3 or 1/3) is **not** a pass and **not** a clean fail. It
+is direct evidence that the skill's effect on that scenario is smaller than the run-to-run
+noise, which is the single most useful thing this gate can tell you. Carry splits into the
+verdict as splits — never round 2/3 up to "basically passing", and never average the three
+into a percentage that makes a coin-flip look like 67% quality.
 
 ### Phase 5: Verdict
 
 | Delta | Verdict | Action |
 |---|---|---|
-| Treatment clears baseline on a majority of scenarios, with no baseline-only passes | **PASS** | Skill may proceed to finalization/installation. |
+| Treatment clears baseline on a majority of scenarios **on `pass^3`**, with no baseline-only passes | **PASS** | Skill may proceed to finalization/installation. |
 | Treatment ties or loses to baseline on a majority of scenarios | **FAIL** | Do not finalize. Rewrite the skill's instructions (sharper triggers, more concrete steps, narrower scope) and re-run from Phase 2. |
+| A majority of scenarios **split** (2/3 or 1/3 treatment runs passing) | **INCONCLUSIVE** | The skill's effect is inside the noise floor. Do not finalize on this evidence. Sharpen the skill's triggers and steps until its behavior is repeatable, then re-run from Phase 3 — adding scenarios will not fix a skill that fires inconsistently on the ones it has. |
 | Fewer than 3 scenarios could be scored deterministically, or results are mixed with no clear majority | **INCONCLUSIVE** | Do not finalize on this evidence alone. Either add a deterministic check for the failing scenario(s) or add more scenarios until a majority verdict is reachable. |
 | Phase 1b was skipped, or scenarios failed calibration (strong baseline passed / strong scored below weak) | **INCONCLUSIVE** | The delta is unreadable regardless of its size. Recalibrate the scenarios and re-run from Phase 2. |
 | An LLM rubric was used and Phase 3b's judge validation was skipped or failed | **INCONCLUSIVE** | Discard the scores. Fix the rubric, revalidate, re-run. |
@@ -126,7 +151,8 @@ Report the verdict and the scenario table back to the calling skill (`skill-crea
 
 ## Success Criteria
 
-- Every finalized skill that passed through `skill-creator` or `skill-extraction` has a logged PASS verdict from this gate, backed by a scenario table with real (not assumed) pass/fail results from two independent runs per scenario.
+- Every finalized skill that passed through `skill-creator` or `skill-extraction` has a logged PASS verdict from this gate, backed by a scenario table with real (not assumed) pass/fail results from 1 baseline run and 3 independent treatment runs per scenario.
+- No skill is finalized on a `pass@3` reading. The recorded verdict is `pass^3` — every treatment run passed — and the per-run results are in the table so a split can be seen rather than inferred.
 - No skill is finalized on the strength of the *author's* confidence that it will help — only on a measured delta.
 
 ## Inputs and Outputs
@@ -137,7 +163,7 @@ Report the verdict and the scenario table back to the calling skill (`skill-crea
 
 ## Safety
 
-- This gate runs subagents that consume tokens; keep scenario prompts short and count (3–5) proportionate to the skill's stakes — do not run this for trivial one-line skill tweaks where the maintenance cost of gating exceeds the risk of a bad skill.
+- This gate runs subagents that consume tokens — 1 baseline + 3 treatment runs per scenario, so 12 spawns at 3 scenarios. Keep scenario prompts short and the scenario count (3–5) proportionate to the skill's stakes; do not run this for trivial one-line skill tweaks where the maintenance cost of gating exceeds the risk of a bad skill. **Cut scenarios, never the k=3 treatment runs** — 5 scenarios at k=1 is a worse gate than 3 at k=3, because it buys breadth with the ability to tell signal from noise.
 - Do not skip straight to a PASS verdict without actually running both baseline and treatment — a gate that isn't run is not a gate.
 - If the calling skill overrides an INCONCLUSIVE/FAIL verdict and finalizes anyway, that override must be logged somewhere durable — append a line (skill name, verdict, reason, date) to `reports/skill-curation-report.md`'s history, not just mentioned in that turn's chat summary. An unlogged override is how a bypass path quietly becomes the default route.
 - Scenario sets are authored once at creation time and go stale; `skill-curator`'s weekly Continuous Eval-Gate Drift Check samples live traces to catch failure modes the original scenarios missed and proposes new ones — this gate should not be treated as a one-time checkpoint.

@@ -1,4 +1,7 @@
 {
+  "env": {
+    "BASH_MAX_OUTPUT_LENGTH": "15000"
+  },
   "permissions": {
     "allow": [
       "Bash(ruff check *)",
@@ -15,23 +18,14 @@
       "Bash(bash bootstrap.sh *)",
       "Bash(bash generate-project-stack.sh *)",
       "Edit(docs/**)",
-      "Write(docs/**)",
       "Edit(specs/**)",
-      "Write(specs/**)",
       "Edit(.claude/**)",
-      "Write(.claude/**)",
       "Edit(hooks/**)",
-      "Write(hooks/**)",
       "Edit(scripts/**)",
-      "Write(scripts/**)",
       "Edit(templates/**)",
-      "Write(templates/**)",
       "Edit(kiro/**)",
-      "Write(kiro/**)",
       "Edit(agents/**)",
-      "Write(agents/**)",
-      "Edit(**/*.md)",
-      "Write(**/*.md)"
+      "Edit(**/*.md)"
     ],
     "deny": [
       "Bash(rm -rf*)",
@@ -192,6 +186,10 @@
           {
             "type": "command",
             "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/agent-commit-attribution-hook.sh\""
+          },
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/pr-evidence-hook.sh\""
           }
         ]
       },

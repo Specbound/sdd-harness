@@ -788,3 +788,23 @@ See also: [articles/README.md](../articles/README.md) and [x/README.md](../x/REA
 **Rejected:** the minimalism doctrine itself — `CLAUDE.md`'s AI-Legible Code section already runs it harder (blast radius ≤1 folder, Rule of Three, vertical slices, no `shared/`/`utils/`/`common/`), and `progressive-complexity-ladder` plus `code-review-excellence` are installed; a fourth anti-over-engineering voice is context tax. `/ponytail-review`, `/ponytail-audit` (covered by `code-review-excellence`, `architect-review`, `codex-review`). The mode-flag + statusline pattern (`caveman-savings-hook.sh` already does exactly this). The `ponytail:` debt marker (one grep and a format string; the harness already has `DEBT:` markers). `/ponytail-gain` as a dashboard widget — it renders the vendor's own benchmark medians, and its own docs admit it can never produce a real per-repo figure. The 20-agent portability layer and `ponytail-mcp` (Claude Code only here; four MCP servers already installed).
 
 See also: [articles/README.md](../articles/README.md) and [x/README.md](../x/README.md) — same 8-source sweep, 2026-08-30.
+
+---
+
+## visa/visa-vulnerability-agentic-harness (VVAH)
+**URL:** https://github.com/visa/visa-vulnerability-agentic-harness
+**Added:** 2026-09-03
+**Source / Author:** Visa — Apache 2.0, v1.2.0, ~2.7k stars
+
+**What it's about:** An open-source agentic SAST pipeline for automated vulnerability discovery, fixing and fix-checking with frontier models, built on lessons from Anthropic's "Project Glasswing". Four phases, eleven stages (S1–S11) plus an optional Stage 0 static seed, each LLM stage a swappable skill: attack-surface mapper, STRIDE threat modeler, research strategist, specialist lenses (crypto, logic-bug, access-control, IaC), adversarial reviewer, deduplicator, exploit strategist, remediation playbooks keyed to CWE–language–framework, and an adversarial validation panel. Headline metric is Mean Time to Adapt; the README argues triage speed, not discovery, is the real constraint. **No precision/recall numbers are published** — the README says so plainly rather than implying zero.
+
+**What we added:** one mechanism, which turned out to be the highest-value item in the whole 7-source batch.
+- Augmentation (shared with the articles batch): VVAH's **majority-vote false-positive filtering** — run a finding N times at temperature > 0 and require it to survive a threshold count — is the same claim Perrone makes as `pass^k`. A repo-wide grep for `pass@k`, `pass^k`, `mutation test`, `majority vote` and `self-consistency` across `hooks/`, `agents/`, `scripts/` and `commands/` returned **zero** hits; the only match anywhere was a vendored third-party skill. Two harness components were taking exactly one sample and treating it as fact: `skill-eval-gate` (one baseline + one treatment run per scenario) and `session-judge` (spawned once daily, its `score_delta` applied straight into a cumulative score nothing ever revisits). Both now sample and reconcile — see [articles/README.md](../articles/README.md) for the full file list.
+
+VVAH's own README is what made the mechanism concrete rather than aspirational: it notes the `cli` backend has **no temperature control** and is therefore single-pass, i.e. unfiltered — the same structural position the harness's judge was in.
+
+**Rejected:** SARIF 2.1.0 output (over-engineering for a solo harness with no security-tooling pipeline to feed). The MTTA metric (presumes an org and a production deploy path). The read-only, idempotent validation panel that never patches — already how the harness works: `validate-adversarial`, `validate-impl`, `validate-perf` and `session-judge` all declare `tools: Read, Grep, Glob` and cannot write code. `validate-adversarial`'s three passes were checked for overlap and are a *different axis* — three reasoning stances (assess / refute / synthesize) inside one sampling run, not N samples — so no `better-call` comparison was warranted.
+
+**Note, not an integration:** VVAH is runnable against this repo. The `taint.yaml` profile is login-only with S10/S11 off, so it needs no `ANTHROPIC_API_KEY` — which matters, since none exists here (`harness-llm-calls-use-subscription`). Two caveats: structured taint evidence exists only for Python, Java and C#, and this harness is mostly bash, so most of it would fall back to reachability seed paths; and a bare `scan` **edits source files in the target repo** at stage S10, making `--stop-after s9` mandatory for detection-only use.
+
+See also: [articles/README.md](../articles/README.md) — the other six sources in the same 2026-09-03 batch.

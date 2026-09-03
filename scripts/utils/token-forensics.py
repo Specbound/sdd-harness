@@ -76,6 +76,31 @@ WINDOW = timedelta(hours=5)
 SHORT_SESSION = timedelta(minutes=5)
 CHARS_PER_TOKEN = 4
 
+# Price of each token class relative to one input token. A raw token count ranks
+# the wrong sessions: a million cache reads cost a tenth of a million fresh input
+# tokens, and output costs five times as much as either.
+#   cache read  0.1x   — the recurring win; paid every turn the prefix survives
+#   cache write 2.0x   — paid once, to buy those 0.1x reads
+#   output      5.0x
+# Source: claude.com/blog/maximizing-the-value-of-your-claude-code-sessions
+COST_WEIGHTS = {
+    "input": 1.0,
+    "output": 5.0,
+    "cache_read": 0.1,
+    "cache_create": 2.0,
+}
+
+# A re-prefill after a cache bust shows up as an unusually large cache_creation on
+# the turn right after the switch. Below this it is ordinary incremental caching.
+CACHE_BUST_MIN_CREATE = 20_000
+
+# Transcripts carry placeholder model names for assistant turns the model did not
+# generate — `<synthetic>` marks injected/error messages. These are not model
+# switches: counting them produced 4 spurious busts out of 5 on the first run, all
+# with 0 re-prefill. Anything in angle brackets is a placeholder, not a model.
+def is_real_model(name: str) -> bool:
+    return bool(name) and not name.startswith("<")
+
 
 def parse_ts(value):
     if not value:
@@ -148,6 +173,8 @@ class Analysis:
         self.files = 0
         self.sidechain_seen = False   # did isSidechain=True EVER appear?
         self.session_tokens = defaultdict(int)
+        self.cache_busts = []         # model switches mid-session, with re-prefill cost
+        self.models_seen = defaultdict(int)   # model -> requests
 
     # ── ingest ────────────────────────────────────────────────────────────────
 
@@ -209,6 +236,7 @@ class Analysis:
                     "ts": ts,
                     "sidechain": obj.get("isSidechain") is True,
                     "session": obj.get("sessionId") or path.stem,
+                    "model": msg.get("model") or "",
                     **{f: (usage.get(r, 0) or 0) for f, r in USAGE_FIELDS},
                 }
                 order.append(key)
@@ -226,6 +254,7 @@ class Analysis:
             requests_after = max(total_requests - position, 0)
             self.tool_amplified[name] += chars * requests_after
 
+        last_model = {}   # session -> model on the previous request
         for key in order:
             rec = by_request[key]
             tokens = sum(rec[f] for f, _ in USAGE_FIELDS)
@@ -236,6 +265,27 @@ class Analysis:
             if rec["ts"]:
                 self.requests.append((rec["ts"], tokens, rec["sidechain"]))
             self.sessions[rec["session"]].observe(rec["ts"])
+
+            # Cache-bust detection. The prompt cache is keyed on model (and on
+            # effort/mode, which transcripts do not record). Switching model
+            # mid-session invalidates the prefix, so the next turn re-prefills the
+            # whole conversation at cache-WRITE price instead of reading it at 0.1x.
+            # Only the model half is observable here — say so rather than implying
+            # this is the complete picture.
+            model = rec["model"]
+            if is_real_model(model):
+                self.models_seen[model] += 1
+                prev_model = last_model.get(rec["session"])
+                if prev_model and prev_model != model:
+                    self.cache_busts.append({
+                        "session": rec["session"],
+                        "at": rec["ts"].isoformat() if rec["ts"] else None,
+                        "from_model": prev_model,
+                        "to_model": model,
+                        "reprefill_tokens": rec["cache_create"],
+                        "large_reprefill": rec["cache_create"] >= CACHE_BUST_MIN_CREATE,
+                    })
+                last_model[rec["session"]] = model
 
     # ── derived ───────────────────────────────────────────────────────────────
 
@@ -316,6 +366,30 @@ class Analysis:
     def total(self):
         return sum(self.totals[f] for f, _ in USAGE_FIELDS)
 
+    def weighted_cost(self):
+        """Spend in input-token-equivalents, using the real per-class price ratios.
+
+        Raw token count treats a cache read and an output token as the same thing;
+        they differ by 50x. This is the number to rank on. It is a cost *ratio*,
+        not currency — the harness runs on a subscription and has no per-token bill.
+        """
+        return sum(self.totals[f] * COST_WEIGHTS[f] for f, _ in USAGE_FIELDS)
+
+    def cost_breakdown(self):
+        weighted = self.weighted_cost()
+        return {
+            f: {
+                "tokens": self.totals[f],
+                "weight": COST_WEIGHTS[f],
+                "weighted": round(self.totals[f] * COST_WEIGHTS[f], 1),
+                "pct_of_cost": (
+                    round(self.totals[f] * COST_WEIGHTS[f] / weighted * 100, 1)
+                    if weighted else 0.0
+                ),
+            }
+            for f, _ in USAGE_FIELDS
+        }
+
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
@@ -361,6 +435,12 @@ def main() -> int:
             "window_days": args.days,
             "totals": {f: a.totals[f] for f, _ in USAGE_FIELDS},
             "total_tokens": total,
+            "weighted_cost": round(a.weighted_cost(), 1),
+            "cost_weights": COST_WEIGHTS,
+            "cost_breakdown": a.cost_breakdown(),
+            "models_seen": dict(a.models_seen),
+            "cache_busts": a.cache_busts,
+            "cache_bust_count": len(a.cache_busts),
             "naive_total": a.naive_total,
             "duplicate_inflation_pct": round(inflation, 1),
             "collapsed_lines": a.collapsed,
@@ -386,6 +466,50 @@ def main() -> int:
     print(f"  cache create         {a.totals['cache_create']:>15,}")
     print(f"Naive (undeduplicated) {a.naive_total:>15,}  → +{inflation:.0f}% "
           f"({a.collapsed:,} repeated blocks collapsed)")
+    print()
+
+    # ── Weighted cost ─────────────────────────────────────────────────────────
+    weighted = a.weighted_cost()
+    breakdown = a.cost_breakdown()
+    print(f"Cost-weighted:         {weighted:>15,.0f} input-token-equivalents")
+    print("  Raw counts rank the wrong sessions — a cache read and an output token")
+    print("  differ 50x in price. Weights: output 5x, cache write 2x, cache read 0.1x.")
+    for f, _ in USAGE_FIELDS:
+        b = breakdown[f]
+        print(f"  {f:<20} {b['weighted']:>15,.0f}  ({b['pct_of_cost']:>4.1f}% of cost, "
+              f"{b['weight']}x)")
+    dominant = max(breakdown.items(), key=lambda kv: kv[1]["weighted"])[0]
+    if dominant == "cache_create":
+        print("  ⚠️  Cache CREATION dominates cost. You are paying 2x to build prefixes")
+        print("     you are not reading back — sessions are too short to amortize, or")
+        print("     something is busting the cache (see below).")
+    elif dominant == "output":
+        print("  Output dominates — expected for generation-heavy work, not a problem.")
+    print()
+
+    # ── Cache busts ───────────────────────────────────────────────────────────
+    print(f"Cache busts (model switched mid-session): {len(a.cache_busts)}")
+    print("  The prompt cache is keyed on model, effort, and mode. Switching any of")
+    print("  them re-prefills the whole conversation at 2x write price instead of")
+    print("  reading it back at 0.1x. Only the MODEL half is recorded in transcripts —")
+    print("  effort and fast-mode switches are invisible here, so this is a floor,")
+    print("  not a total.")
+    if a.models_seen:
+        for m, n in sorted(a.models_seen.items(), key=lambda kv: -kv[1]):
+            print(f"    {m:<34} {n:>7,} requests")
+    if a.cache_busts:
+        big = [b for b in a.cache_busts if b["large_reprefill"]]
+        print(f"  {len(big)} of {len(a.cache_busts)} were followed by a re-prefill "
+              f"over {CACHE_BUST_MIN_CREATE:,} tokens:")
+        for b in sorted(a.cache_busts, key=lambda x: -x["reprefill_tokens"])[:5]:
+            when = b["at"][:16].replace("T", " ") if b["at"] else "unknown time"
+            print(f"    {when}  {b['from_model']} → {b['to_model']}  "
+                  f"re-prefill {b['reprefill_tokens']:,}")
+        print("  Fix: pick model and effort at session start or right after /clear,")
+        print("  not mid-task. Use /rewind rather than /compact to drop recent turns —")
+        print("  rewinding keeps the earlier prefix cached.")
+    else:
+        print("  None found — no session changed model mid-run in this window.")
     print()
     print(f"Peak 5h window:        {peak:>15,} tokens"
           + (f"   at {peak_at:%Y-%m-%d %H:%M UTC}" if peak_at else ""))

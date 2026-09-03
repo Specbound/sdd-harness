@@ -37,9 +37,21 @@
 - doc sync: automatically on every `git commit` via post-commit hook
 - lean-ctx enforces a shell allowlist: `bash`, `sh`, `zsh`, `uvx`, `claude` and `python3 -c` are refused by default. The "permanent restriction" wording is not a policy refusal — run `lean-ctx allow <cmd>` rather than abandoning the check
 
+## Blast Radius — one check, in this order
+This section takes precedence over the auto-generated GitNexus block below, which states its
+own rule without knowing about Serena or lean-ctx. Do not run all three; run the first that applies:
+1. **Python function/class** → `mcp__serena__find_referencing_symbols(symbol)`. LSP-accurate, authoritative.
+2. **Any other symbol** → `mcp__gitnexus__impact({target, direction: "upstream"})`.
+3. **Index broken/stale, or a non-symbol edit** (auth, DB schema, 3+ files) → `ctx_callgraph(action="callers")` + `ctx_graph`.
+
+Report HIGH/CRITICAL risk instead of proceeding silently. A tool that errors or reports a version
+mismatch has given **no answer** — it has not said there are no callers. Say the blast radius is
+unknown rather than treating a broken index as an all-clear. The GitNexus FTS index is stale right
+now (`version 42 vs 40`); until `node .gitnexus/run.cjs analyze` is run, step 2 is unavailable and
+step 3 is the real path.
+
 ## Serena (Python code intelligence — mandatory, not optional)
 - After editing any `.py` file: call `mcp__serena__get_diagnostics_for_file(path)` — real type/lint errors, not just ruff
-- Before renaming or deleting any Python function/class: call `mcp__serena__find_referencing_symbols(symbol)` to confirm blast radius
 - Registered user-scope, so every project inherits it: `claude mcp add serena --scope user -- uvx --from git+https://github.com/oraios/serena serena start-mcp-server --context claude-code --open-web-dashboard False`
 - The `claude-code` context excludes `initial_instructions` — Serena loads silently with zero session overhead. There is no `ide-assistant` context any more
 - `--open-web-dashboard False` is load-bearing: user scope means every agent spawn starts its own Serena process, and each one otherwise opens a browser tab. The dashboard still runs — reach it at http://localhost:24282/dashboard/ (port climbs per extra instance). The machine-local equivalent is `web_dashboard_open_on_launch: false` in `~/.serena/serena_config.yml`, which does not travel between machines
