@@ -497,7 +497,7 @@ Hook output is injected into Claude's context as system messages — Claude read
 ### `ledger-append-only.sh`
 **Event:** `PreToolUse` — **Matcher:** `Write|Edit|MultiEdit`
 
-**Purpose:** Hard-blocks (exit 2) Write/Edit/MultiEdit against the harness's own self-scored measurement ledgers. A metric an agent can also rewrite is not a measurement — modeled on `exo`'s (github.com/exoharness/exo) single safety invariant that the agent cannot alter its own canonical event log.
+**Purpose:** Hard-blocks (exit 2) Write/Edit/MultiEdit against the harness's own self-scored measurement ledgers. A metric an agent can also rewrite is not a measurement — modeled on `exo` (an autonomous-agent harness)'s single safety invariant that the agent cannot alter its own canonical event log.
 
 **Paths covered (literal suffix match, no regex):**
 - `.claude/memory/trust-score.jsonl`

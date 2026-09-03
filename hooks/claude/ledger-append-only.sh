@@ -3,7 +3,7 @@
 # ledgers — the files the agent both computes and stores its own scores in.
 #
 # A self-scored metric stored in an agent-editable file is not a measurement.
-# exo (github.com/exoharness/exo)'s one safety invariant is that its agent
+# exo (an autonomous-agent harness)'s one safety invariant is that its agent
 # cannot alter its own canonical event log; this harness had the opposite
 # property until this hook — protected-path-hook.sh guards secrets (.env,
 # keys, credentials) but has no entry for any memory file, and
