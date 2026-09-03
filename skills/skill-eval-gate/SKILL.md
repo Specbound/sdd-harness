@@ -55,6 +55,37 @@ number that means nothing.
 A gate that measures lift on scenarios of unknown difficulty is how a skill
 manufactures a pass. This phase is what makes the delta in Phase 4 worth anything.
 
+### Phase 1c: Compression-Regression Scenario
+
+One of the Phase 1 scenarios must target a **soft** instruction — a "usually", a
+"prefer", a "when x, do y" with an implied exception — rather than a hard rule. Then
+run it twice with the same deterministic check: once with the skill's SKILL.md given
+verbatim, once with a **compressed** version (a fresh subagent asked to summarize it
+to roughly half its length; if the project has a real compaction path — a
+`PreCompact` hook, `context-compression` — prefer running the actual one over a
+hand-written summary).
+
+This checks a specific failure mode, not general fidelity loss: compression tends to
+flatten qualifiers into absolutes, because "usually" carries the same weight as "always"
+once the reasoning behind it is gone. A skill whose soft instruction becomes a hard
+rule under compression can misfire in exactly the cases the qualifier existed to
+exclude — the source case (a GitHub Engineering blog post on Copilot cost-efficiency)
+was a compressed instruction that hardened into an absolute scheduling rule and broke
+parallel task execution; the fix was one clarifying sentence pinning the exception,
+not a rewrite.
+
+Score the compressed run against the same Phase 1 check used for the verbatim run.
+**Do not measure token count or summary length** — a shorter SKILL.md that still
+passes is not a finding; only a behavior change is. If the compressed run fails where
+the verbatim run passed, that is a compression regression: name which qualifier
+flattened, and fix it by pinning that one exception more explicitly rather than
+expanding the document generally — the same one-sentence-fix shape as the source case.
+
+This is one scenario, not a fourth requirement on top of Phase 1's ≥3 — reuse one of
+them. Skip only when the skill has no soft/conditional instructions at all (every step
+is an unconditional hard rule); state that explicitly rather than silently omitting
+the check.
+
 ### Phase 2: Run the No-Skill Baseline
 
 For each scenario, spawn an `Agent` (subagent_type: `general-purpose`, isolation: none needed unless the task writes files) with the scenario prompt **and explicitly instruct it not to reference or invoke the skill under test**. Capture its output.
@@ -146,6 +177,7 @@ into a percentage that makes a coin-flip look like 67% quality.
 | Fewer than 3 scenarios could be scored deterministically, or results are mixed with no clear majority | **INCONCLUSIVE** | Do not finalize on this evidence alone. Either add a deterministic check for the failing scenario(s) or add more scenarios until a majority verdict is reachable. |
 | Phase 1b was skipped, or scenarios failed calibration (strong baseline passed / strong scored below weak) | **INCONCLUSIVE** | The delta is unreadable regardless of its size. Recalibrate the scenarios and re-run from Phase 2. |
 | An LLM rubric was used and Phase 3b's judge validation was skipped or failed | **INCONCLUSIVE** | Discard the scores. Fix the rubric, revalidate, re-run. |
+| Phase 1c's compressed run fails a check the verbatim run passed | **FAIL** | A compression regression, not a capability gap — do not treat it as an ordinary scenario failure. Pin the flattened qualifier with one explicit sentence and re-run from Phase 1c. |
 
 Report the verdict and the scenario table back to the calling skill (`skill-creator` Phase 4b or `skill-extraction` Phase 5b). A **FAIL** or **INCONCLUSIVE** verdict blocks that phase from passing — the calling skill must not proceed to installation/finalization until this gate returns PASS.
 
@@ -154,6 +186,7 @@ Report the verdict and the scenario table back to the calling skill (`skill-crea
 - Every finalized skill that passed through `skill-creator` or `skill-extraction` has a logged PASS verdict from this gate, backed by a scenario table with real (not assumed) pass/fail results from 1 baseline run and 3 independent treatment runs per scenario.
 - No skill is finalized on a `pass@3` reading. The recorded verdict is `pass^3` — every treatment run passed — and the per-run results are in the table so a split can be seen rather than inferred.
 - No skill is finalized on the strength of the *author's* confidence that it will help — only on a measured delta.
+- Every finalized skill with at least one soft/conditional instruction has a logged Phase 1c result — verbatim and compressed runs scored against the same check, not a token-count comparison.
 
 ## Inputs and Outputs
 
