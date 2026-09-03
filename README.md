@@ -313,12 +313,10 @@ sdd-harness/
     ├── privacy-filter/README.md  #   PII scanning setup, CLI usage, integration checkpoints
     ├── skill-extraction/README.md#   Skill extraction methodology
     ├── prompt-master/README.md   #   Prompt engineering skill with JSON prompting
-    ├── design/                   #   Visual design quality integrations
-    │   ├── README.md             #     Design quality index + workflow overview
-    │   └── impeccable/           #     Impeccable anti-pattern detection
-    │       └── impeccable.md     #       Rules reference, skill usage, CLI setup
-    └── security/                 #   Security integration docs
-        └── sonar-hotspot-review.md
+    └── design/                   #   Visual design quality integrations
+        ├── README.md             #     Design quality index + workflow overview
+        └── impeccable/           #     Impeccable anti-pattern detection
+            └── impeccable.md     #       Rules reference, skill usage, CLI setup
 ```
 
 ---
