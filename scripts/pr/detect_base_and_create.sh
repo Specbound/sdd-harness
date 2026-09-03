@@ -65,8 +65,45 @@ if [ $? -ne 0 ]; then
   exit 0
 fi
 
-pr_number="$(echo "$pr_url" | grep -oE '[0-9]+$')"
+# Ask gh for the number instead of parsing it out of the printed URL. The URL is
+# free text; the number is a field. Same principle as the repo-wide regex ban.
+pr_number="$(gh pr list --head "$current_branch" --json number --jq '.[0].number' 2>/dev/null)"
+if [ -z "$pr_number" ]; then
+  echo "[PR-AUTO-CREATED] PR opened against $base_branch, but its number could not be read back: $pr_url" >&2
+  exit 0
+fi
 echo "[PR-AUTO-CREATED] PR #$pr_number opened against $base_branch (auto-detected base)."
+
+# Evidence section. This path runs headless on `git push`, where no before/after
+# probe was run and none can be invented — so the honest thing is to record that
+# fact in the body, not to leave the section out and not to fabricate one.
+#
+# The section is written here because pr-evidence-hook.sh cannot see this path:
+# the `gh pr create` above runs inside this script, not as a Bash tool call, so
+# no PreToolUse event fires. Writing the marker also means that when an agent
+# later fills it in, the hook stays quiet on the follow-up edit.
+#
+# Deliberately a placeholder that reads as debt, not as an exemption — the PR is
+# created as a draft, and this is what has to be replaced before it leaves draft.
+tmp_body="$(mktemp)"
+current_body="$(gh pr view "$pr_number" --json body --jq '.body' 2>/dev/null)"
+{
+  printf '%s' "$current_body"
+  printf '\n\n## Evidence\n'
+  printf 'Not captured — this PR was opened automatically on push, before any\n'
+  printf 'before/after probe was run. Replace this section with a real capture\n'
+  printf 'before taking the PR out of draft. See the create-pr skill,\n'
+  printf '"Attach Runtime Evidence".\n'
+} > "$tmp_body"
+
+if ! gh api -X PATCH "repos/{owner}/{repo}/pulls/$pr_number" -F "body=@$tmp_body" >/dev/null 2>&1; then
+  echo "WARN: could not write the Evidence placeholder into PR #$pr_number — add it by hand." >&2
+fi
+rm -f "$tmp_body"
+
+echo "[PR-AUTO-CREATED] PR #$pr_number carries a placeholder '## Evidence' section."
+echo "Capture the real before/after and replace it before undrafting — the before-state"
+echo "is cheapest to capture now and costs a revert once the change is merged."
 if [ -f "PULL_REQUEST_TEMPLATE.md" ] || [ -f ".github/PULL_REQUEST_TEMPLATE.md" ] || [ -f "docs/PULL_REQUEST_TEMPLATE.md" ]; then
   echo "[PR-AUTO-CREATED] A PULL_REQUEST_TEMPLATE.md exists — rewrite PR #$pr_number's body to follow it,"
   echo "sized to what a reviewer needs to make a decision (not the diff size), then run:"

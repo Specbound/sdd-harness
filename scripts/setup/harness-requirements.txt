@@ -13,5 +13,12 @@
 #   liteparse   — scripts/setup/liteparse-setup.sh (same venv, own fallback logic)
 #   headroom-ai — scripts/setup/headroom-setup.sh (global uv tool; hooks call its
 #                 own interpreter, so it is already prune-immune)
-
-anthropic    anthropic
+#   anthropic   — removed 2026-08-20. The only two importers (session/micro_reflect.py,
+#                 session/detect_reexplanation.py) now shell out to `claude --print`,
+#                 which authenticates with the user's Claude subscription. The SDK
+#                 needs an ANTHROPIC_API_KEY billed separately per token, and with no
+#                 key set it raised on every invocation — the memory-gap detector was
+#                 dead for its entire deployment and reported as "0 gaps".
+#
+# Nothing is currently listed. The file is kept so the next harness-owned dependency
+# has an obvious home; check-harness-deps.sh tolerates an empty list.

@@ -33,14 +33,14 @@ import html
 import json
 import math
 import os
-import re
+import secrets
 import subprocess
 import sys
 import threading
-from datetime import datetime, timezone, timedelta
+from datetime import date, datetime, timezone, timedelta
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, urlencode, urlparse
+from urllib.parse import parse_qs, urlparse
 from urllib.request import urlopen, Request as UrlRequest
 from urllib.error import URLError
 
@@ -70,16 +70,38 @@ ORCH_LOG       = HARNESS_DIR / "logs" / "orchestrator.log"
 COMPANION_PORT   = 4569
 WORKSHOP_PORT    = 5899
 HEADROOM_PORT    = 8787
+GN_PORT          = 4747
+# `gitnexus serve` ships no web UI — it is the API backend for the hosted app.
+GN_WEB_UI        = "https://gitnexus.vercel.app"
+GN_PROBE_URL     = f"http://localhost:{GN_PORT}/api/repos"
 HEADROOM_SAVINGS = Path.home() / ".headroom" / "proxy_savings.json"
 
 SECTION_DEFS = [
     ("session_health",    "⚡", "Session Health"),
+    ("herder",            "🐑", "Herder"),
     ("gitnexus",          "🕸", "GitNexus"),
     ("workshop",          "🔬", "Workshop"),
     ("budget_efficiency", "💰", "Budget & Efficiency"),
     ("automation",        "🤖", "Automation"),
     ("knowledge_base",    "🧠", "Knowledge Base"),
 ]
+
+# Herder backend. Imported lazily-tolerantly: the dashboard must still render on a
+# machine without Herdr installed, showing an install hint instead of a spawn form.
+try:
+    import herder
+    HERDER_IMPORT_ERROR = ""
+except Exception as _herder_exc:      # noqa: BLE001 - dashboard must never fail to render
+    herder = None
+    HERDER_IMPORT_ERROR = str(_herder_exc)
+
+# Per-process CSRF token for the herder endpoints. The dashboard binds 127.0.0.1,
+# but "local" is not "safe": any page in any open browser tab can POST to
+# localhost. That is tolerable for the fixed-prompt endpoints below and NOT
+# tolerable for an endpoint that starts an agent with a caller-supplied prompt.
+# The token is minted per process and embedded in the served HTML, so only a page
+# actually served by this process can call the herder API.
+HERDER_TOKEN = secrets.token_urlsafe(32)
 
 PRICING_HISTORY = DASHBOARD_DIR / "models-pricing-history.json"
 PRICING_MAX_AGE = 14 * 86400   # 14-day refresh cadence
@@ -197,8 +219,19 @@ def _inner(section_html: str) -> str:
         idx = s.rfind('</div>')
         if idx != -1:
             s = s[:idx]
-    s = re.sub(r'^\s*<h2 class="section-title">.*?</h2>\s*', '', s, flags=re.DOTALL)
+    s = _strip_leading_section_title(s)
     return s.strip()
+
+def _strip_leading_section_title(s: str) -> str:
+    """Drop a leading `<h2 class="section-title">…</h2>`, if the string opens with one."""
+    open_tag, close_tag = '<h2 class="section-title">', '</h2>'
+    body = s.lstrip()
+    if not body.startswith(open_tag):
+        return s
+    end = body.find(close_tag, len(open_tag))
+    if end == -1:
+        return s
+    return body[end + len(close_tag):].lstrip()
 
 def _combined_section(title: str, prefix: str, subs: list) -> str:
     """Combine multiple render_* outputs into a single tabbed section.
@@ -229,17 +262,80 @@ def section_desc(text, *, icon="ℹ", color="var(--blue)"):
 
 # ── Minimal Markdown → HTML ────────────────────────────────────────────────────
 
+def _replace_spans(text, opener, closer, render, forbid=None):
+    """Rewrite every `opener…closer` span through `render(inner)`, left to right.
+
+    A span whose body is empty, unterminated, or contains `forbid` is left as
+    literal text and scanning resumes one character past the opener.
+    """
+    out = []
+    i = 0
+    while i < len(text):
+        start = text.find(opener, i)
+        if start == -1:
+            break
+        inner_start = start + len(opener)
+        end = text.find(closer, inner_start)
+        if end == -1:
+            break
+        inner = text[inner_start:end]
+        if not inner or (forbid is not None and forbid in inner):
+            out.append(text[i:start + 1])
+            i = start + 1
+            continue
+        out.append(text[i:start])
+        out.append(render(inner))
+        i = end + len(closer)
+    out.append(text[i:])
+    return "".join(out)
+
+def _render_md_links(text):
+    """Rewrite `[label](url)` into an anchor. Anything malformed stays literal."""
+    out = []
+    i = 0
+    while i < len(text):
+        start = text.find("[", i)
+        if start == -1:
+            break
+        label_end = text.find("]", start + 1)
+        if label_end == -1:
+            break
+        label = text[start + 1:label_end]
+        url_end = text.find(")", label_end + 2)
+        url = text[label_end + 2:url_end] if url_end != -1 else ""
+        if not label or not url or text[label_end + 1:label_end + 2] != "(":
+            out.append(text[i:start + 1])
+            i = start + 1
+            continue
+        out.append(text[i:start])
+        out.append(f'<a href="{url}" style="color:var(--mauve)">{label}</a>')
+        i = url_end + 1
+    out.append(text[i:])
+    return "".join(out)
+
 def inline_md(text):
-    text = re.sub(r'`([^`]+)`',
-        lambda m: (f'<code style="background:var(--surface0);padding:1px 5px;'
-                   f'border-radius:3px;font-family:monospace;font-size:11px">'
-                   f'{h(m.group(1))}</code>'),
-        text)
-    text = re.sub(r'\*\*([^*]+)\*\*', r'<strong style="color:var(--text)">\1</strong>', text)
-    text = re.sub(r'\*([^*]+)\*', r'<em>\1</em>', text)
-    text = re.sub(r'\[([^\]]+)\]\(([^)]+)\)',
-        r'<a href="\2" style="color:var(--mauve)">\1</a>', text)
-    return text
+    text = _replace_spans(
+        text, "`", "`",
+        lambda inner: (f'<code style="background:var(--surface0);padding:1px 5px;'
+                       f'border-radius:3px;font-family:monospace;font-size:11px">'
+                       f'{h(inner)}</code>'),
+        forbid="`",
+    )
+    # Bold before italic: the two-star span has to be consumed first, or the
+    # single-star pass would claim its opening delimiter.
+    text = _replace_spans(text, "**", "**",
+                          lambda inner: f'<strong style="color:var(--text)">{inner}</strong>',
+                          forbid="*")
+    text = _replace_spans(text, "*", "*", lambda inner: f'<em>{inner}</em>', forbid="*")
+    return _render_md_links(text)
+
+def _is_table_rule(line: str) -> bool:
+    """True for a markdown table separator row: `|---|:--:|` — pipes, dashes,
+    colons and spaces only, with at least one character between the outer pipes."""
+    return (len(line) >= 3
+            and line.startswith("|")
+            and line.endswith("|")
+            and set(line) <= set("|-: "))
 
 def mini_md(text):
     lines = text.split("\n")
@@ -281,7 +377,7 @@ def mini_md(text):
             flush_ul(); flush_table()
             out.append(f'<h1 style="color:var(--text);margin:0 0 12px;font-size:18px">'
                        f'{inline_md(stripped[2:])}</h1>')
-        elif re.match(r'^\|[-| :]+\|$', stripped):
+        elif _is_table_rule(stripped):
             # Table separator row — mark header as done
             table_header_done = True
         elif stripped.startswith("|") and stripped.endswith("|"):
@@ -348,18 +444,54 @@ def parse_trust_scores(repo):
     return records[-30:]
 
 def parse_observations(repo):
+    """Split `- YYYY-MM-DD [tag]: text` lines by structure, not by pattern match.
+
+    Prose is parsed only for *display*. Every number the dashboard computes comes
+    from metrics.jsonl instead — see parse_metrics.
+    """
     f = repo / ".claude" / "memory" / "observations.md"
     if not f.exists():
         return {}
-    pattern = re.compile(r'^- (\d{4}-\d{2}-\d{2}) \[([^\]]+)\]: (.+)$')
     result = {}
     for line in f.read_text().splitlines():
-        m = pattern.match(line.strip())
-        if not m:
+        line = line.strip()
+        if not line.startswith("- ") or "[" not in line or "]: " not in line:
             continue
-        date_str, tags_raw, text = m.group(1), m.group(2), m.group(3)
-        for tag in [t.strip() for t in tags_raw.split(",")]:
+        date_str, _, remainder = line[2:].partition(" [")
+        try:
+            date.fromisoformat(date_str)
+        except ValueError:
+            continue
+        tags_raw, _, text = remainder.partition("]: ")
+        if not text:
+            continue
+        for tag in (t.strip() for t in tags_raw.split(",")):
             result.setdefault(tag, []).append((date_str, text))
+    return result
+
+def parse_metrics(repo):
+    """Read .claude/memory/metrics.jsonl — the machine channel for measurements.
+
+    One JSON object per line, written by scripts/session/record_metric.py. A
+    malformed line raises rather than being skipped: a metrics file that is
+    quietly half-read produces a plausible-looking wrong number, which is the
+    exact failure this file exists to prevent.
+    """
+    f = repo / ".claude" / "memory" / "metrics.jsonl"
+    if not f.exists():
+        return {}
+    result = {}
+    for lineno, line in enumerate(f.read_text().splitlines(), 1):
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            rec = json.loads(line)
+        except json.JSONDecodeError as e:
+            raise ValueError(f"{f}:{lineno} is not valid JSON: {e}") from e
+        result.setdefault(rec["metric"], []).append(rec)
+    for records in result.values():
+        records.sort(key=lambda r: r["date"])
     return result
 
 def list_hooks(repo):
@@ -497,34 +629,46 @@ def parse_orchestrator_log():
     if not ORCH_LOG.exists():
         return []
     runs = []
-    main_re = re.compile(r'^(\S+)\s+(.+?)\s+exit=(\d+)\s+duration=(\d+)s\s*$')
-    drift_re = re.compile(r'^(\S+)\s+harness:\s+drift review\s+exit=(\d+)\s*$')
     for line in ORCH_LOG.read_text().splitlines():
-        line = line.strip()
-        m = main_re.match(line)
-        if m:
-            ts, mid, ex, dur = m.groups()
-            parts = mid.split()
-            if len(parts) >= 2:
-                # last token is runner name
-                runner = parts[-1]
-                path   = " ".join(parts[:-1])
-            else:
-                runner = "daily-maintenance"
-                path   = parts[0] if parts else ""
-            runs.append({
-                "ts": ts, "path": path, "runner": runner,
-                "exit": int(ex), "duration": int(dur),
-            })
+        fields = line.split()
+        if len(fields) < 3:
             continue
-        m = drift_re.match(line)
-        if m:
-            ts, ex = m.groups()
+
+        # Trailing shape is always `exit=<N> duration=<N>s`, or `exit=<N>` for drift.
+        duration = _log_int(fields[-1], "duration=", "s")
+        exit_code = _log_int(fields[-2] if duration is not None else fields[-1], "exit=")
+        if exit_code is None:
+            continue
+
+        ts = fields[0]
+        middle = fields[1:-2] if duration is not None else fields[1:-1]
+
+        if middle[:3] == ["harness:", "drift", "review"] and duration is None:
             runs.append({
                 "ts": ts, "path": str(HARNESS_DIR), "runner": "drift-review",
-                "exit": int(ex), "duration": 0,
+                "exit": exit_code, "duration": 0,
             })
+            continue
+
+        if duration is None or not middle:
+            continue
+        if len(middle) >= 2:
+            runner, path = middle[-1], " ".join(middle[:-1])
+        else:
+            runner, path = "daily-maintenance", middle[0]
+        runs.append({
+            "ts": ts, "path": path, "runner": runner,
+            "exit": exit_code, "duration": duration,
+        })
     return runs
+
+
+def _log_int(field: str, prefix: str, suffix: str = "") -> int | None:
+    """Read `<prefix><digits><suffix>` from one whitespace-delimited log field."""
+    if not field.startswith(prefix) or not field.endswith(suffix):
+        return None
+    digits = field[len(prefix):len(field) - len(suffix) if suffix else None]
+    return int(digits) if digits.isdigit() else None
 
 
 # ── Scheduled Tasks ───────────────────────────────────────────────────────────
@@ -661,11 +805,11 @@ def _read_state_ts(path):
     if not raw:
         return None
     # Drift state uses ISO week '2026-W22' — convert to that week's Wednesday
-    m = re.match(r'^(\d{4})-W(\d{2})$', raw)
-    if m:
-        yr, wk = int(m.group(1)), int(m.group(2))
+    year_part, sep, week_part = raw.partition("-W")
+    if sep and len(year_part) == 4 and len(week_part) == 2 \
+            and year_part.isdigit() and week_part.isdigit():
         try:
-            dt = datetime.fromisocalendar(yr, wk, 3)  # 3 = Wednesday
+            dt = datetime.fromisocalendar(int(year_part), int(week_part), 3)  # 3 = Wednesday
             return dt.replace(tzinfo=timezone.utc)
         except Exception:
             return None
@@ -691,6 +835,67 @@ def _newest_artifact(glob_pattern):
         return None
 
 
+_SUMMARY_HEADINGS = ("summary", "tldr", "tl;dr", "overview", "findings")
+
+def _is_summary_heading(line: str) -> bool:
+    """True for `## Summary`, `### TL;DR`, `## Findings` and friends (any depth ≥ 2)."""
+    stripped = line.lstrip()
+    depth = len(stripped) - len(stripped.lstrip("#"))
+    if depth < 2:
+        return False
+    rest = stripped[depth:]
+    if rest[:1] not in (" ", "\t"):
+        return False
+    first_word = rest.split(maxsplit=1)[0].lower() if rest.split() else ""
+    return first_word.rstrip(":") in _SUMMARY_HEADINGS
+
+def _escape_script_close(payload: str) -> str:
+    """Neutralise `</script>` in any casing so embedded JSON cannot close the tag.
+
+    Security-relevant: a repo name or observation containing `</script>` would
+    otherwise break out of the surrounding <script> block.
+    """
+    needle = "</script>"
+    haystack = payload.lower()
+    out = []
+    i = 0
+    while True:
+        found = haystack.find(needle, i)
+        if found == -1:
+            break
+        out.append(payload[i:found])
+        out.append("<\\/" + payload[found + 2:found + len(needle)])
+        i = found + len(needle)
+    out.append(payload[i:])
+    return "".join(out)
+
+def _split_sweep_sections(text):
+    """Yield (date, body) for each `## Sweep — YYYY-MM-DD` block of a learning report.
+
+    Any `## Sweep — ` line ends the previous body; only one carrying a valid date
+    opens a new section.
+    """
+    marker = "## Sweep — "
+    lines = text.splitlines(keepends=True)
+    starts = [i for i, ln in enumerate(lines) if ln.startswith(marker)]
+    for n, i in enumerate(starts):
+        day = lines[i][len(marker):].strip()
+        try:
+            date.fromisoformat(day)
+        except ValueError:
+            continue
+        end = starts[n + 1] if n + 1 < len(starts) else len(lines)
+        yield day, "".join(lines[i + 1:end])
+
+def _is_numbered_bullet(line: str) -> bool:
+    """`- #12` or `- 7` — a bullet naming a numbered item."""
+    if not line.startswith("-"):
+        return False
+    rest = line[1:].lstrip()
+    if rest.startswith("#"):
+        rest = rest[1:]
+    return rest[:1].isdigit()
+
 def _extract_headline(md_text, max_chars=600):
     """Pull a human-readable summary out of a routine's report markdown.
 
@@ -713,9 +918,8 @@ def _extract_headline(md_text, max_chars=600):
                 block.append(s)
         return " ".join(block).strip()
 
-    summary_re = re.compile(r'^\s*##+\s+(summary|tl;?dr|overview|findings)\b', re.IGNORECASE)
     for i, line in enumerate(lines):
-        if summary_re.match(line):
+        if _is_summary_heading(line):
             text = collect_block(i + 1)
             if text:
                 return text[:max_chars] + ("…" if len(text) > max_chars else "")
@@ -801,9 +1005,12 @@ def _detect_os_scheduler():
         if out:
             result["installed"] = True
             for line in out.splitlines():
-                m = re.search(r'"LastExitStatus"\s*=\s*(\d+)', line)
-                if m:
-                    result["last_exit"] = int(m.group(1))
+                # launchctl prints `"LastExitStatus" = 0;`
+                key, sep, value = line.partition("=")
+                if sep and key.strip() == '"LastExitStatus"':
+                    digits = value.strip().rstrip(";").strip()
+                    if digits.isdigit():
+                        result["last_exit"] = int(digits)
     elif plat.startswith("linux"):
         # WSL has schtasks.exe; pure Linux uses cron
         out = run_cmd(["which", "schtasks.exe"])
@@ -1164,6 +1371,36 @@ def render_trust_battery(rd):
         delta_str   = "▬ 0.0"
         delta_color = "var(--overlay0)"
 
+    # Judge sampling state (pass^k). `samples`/`spread`/`inconclusive` are written
+    # by scripts/session/trust_score.py. Records predating 2026-09-03 have none of
+    # these keys — that is "unsampled", which is a different fact from "sampled and
+    # agreed", so it renders as nothing rather than as a reassuring badge.
+    samples      = cur.get("samples") or []
+    spread       = cur.get("spread")
+    inconclusive = bool(cur.get("inconclusive"))
+    sample_html  = ""
+    if inconclusive:
+        sample_html = (
+            f'<div style="margin-top:8px;text-align:center">'
+            f'<span style="display:inline-block;background:rgba(249,226,175,0.10);'
+            f'border:1px solid #f9e2af66;border-radius:20px;padding:4px 12px;'
+            f'font-size:12px;font-weight:600;color:#f9e2af" '
+            f'title="The judge was run {len(samples)}× and the verdicts spread by '
+            f'{spread:.1f} points. No delta was applied — a reading that depends on '
+            f'which draw you look at is not a reading.">'
+            f'⚠ judge split &nbsp;{h(", ".join(f"{s:+.1f}" for s in samples))}'
+            f'</span></div>'
+        )
+    elif len(samples) > 1:
+        sample_html = (
+            f'<div style="margin-top:8px;text-align:center">'
+            f'<span style="display:inline-block;color:var(--overlay0);font-size:11px" '
+            f'title="Median of {len(samples)} independent judge runs; spread '
+            f'{spread:.1f} points.">'
+            f'median of {len(samples)} runs · spread {spread:.1f}'
+            f'</span></div>'
+        )
+
     judge_entries = obs.get("judge", [])
     judge_html    = ""
     if judge_entries:
@@ -1186,7 +1423,12 @@ def render_trust_battery(rd):
         "<code>[debug]</code>, reuse cited in <code>[impl]</code>, rule cited in <code>[decision]</code>. "
         "Drains: <code>[memory-gap]</code> re-explanations (−2 each), silent failures, gate bypasses, churn. "
         "Delta=0 means the judge found no scorable evidence in the last 24h observations window — "
-        "normal for maintenance-only days or when sessions don't produce these specific tags."
+        "normal for maintenance-only days or when sessions don't produce these specific tags. "
+        "The judge runs <strong>3× per day</strong> and the <strong>median</strong> is applied; "
+        "when the three verdicts spread by more than 2.0 points the day is marked "
+        "<strong style='color:var(--yellow)'>judge split</strong> and <strong>no delta is "
+        "applied</strong> — that is the score declining to commit a number it can't stand "
+        "behind, not an error to fix."
     )
     return f"""<div class="section-inner">
   <h2 class="section-title">Trust Battery</h2>
@@ -1200,6 +1442,7 @@ def render_trust_battery(rd):
                      padding:4px 14px;font-size:13px;font-weight:600;
                      color:{delta_color}">{h(delta_str)} today</span>
       </div>
+      {sample_html}
       <div style="text-align:center;margin-top:5px;color:var(--overlay0);font-size:11px">
         {h(rel_time(ts))}
       </div>
@@ -1275,12 +1518,13 @@ def render_gitnexus(rd, companion=False):
       <div class="label">indexed</div></div>
   </div>"""
 
-    # In companion mode use the proxy so we can inject auto-select script
-    iframe_src = ""
-    if companion:
-        from urllib.parse import quote as _quote
-        rp_js  = html.escape(json.dumps(repo_path))  # &quot; inside onclick attr
-        iframe_src = f"http://localhost:4569/gn/?autoRepo={_quote(Path(repo_path).name)}"
+    # `gitnexus serve` is an API-only backend — it serves /api/* and 404s on /.
+    # The web UI is the hosted app, which talks to http://localhost:4747 by
+    # default and auto-selects a repo from its own ?repo= query param.
+    from urllib.parse import quote as _quote
+    iframe_src = f"{GN_WEB_UI}/?repo={_quote(Path(repo_path).name)}"
+
+    rp_js = html.escape(json.dumps(repo_path))  # &quot; inside onclick attr
 
     serve_btn = ""
     if companion:
@@ -1297,6 +1541,7 @@ def render_gitnexus(rd, companion=False):
     iframe_html = f"""<div style="position:relative;overflow:hidden;background:var(--crust);
                           flex:1;min-height:0">
     <iframe id="gn-frame" data-src="{html.escape(iframe_src)}"
+            allow="local-network-access"
             style="width:100%;height:{iframe_height};border:none;display:none">
     </iframe>
     <div id="gn-fallback" style="display:flex;height:{iframe_height};
@@ -1630,12 +1875,29 @@ def get_pricing_at(snapshots, date_str):
     return (best or snapshots[0]).get("models", {})
 
 
+USAGE_FIELDS = (
+    ("input",        "input_tokens"),
+    ("output",       "output_tokens"),
+    ("cache_read",   "cache_read_input_tokens"),
+    ("cache_create", "cache_creation_input_tokens"),
+)
+
+
 def _parse_session_file(path, project_name):
-    input_t = output_t = cache_read_t = cache_create_t = 0
+    # One API response is written to the transcript as one JSONL line PER CONTENT
+    # BLOCK, and every one of those lines repeats the SAME message.usage object.
+    # Summing line-by-line double-counts multi-block responses — measured at ~83%
+    # inflation across this machine's transcripts. Collapse on the response id
+    # first, then sum. Keep the max per field rather than the first seen: a
+    # streamed response's later blocks can carry the final (larger) output count.
+    by_request = {}
     model = None
     first_ts = None
+    collapsed = 0
 
-    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+    for lineno, line in enumerate(
+        path.read_text(encoding="utf-8", errors="replace").splitlines()
+    ):
         try:
             obj = json.loads(line)
         except Exception:
@@ -1650,10 +1912,25 @@ def _parse_session_file(path, project_name):
         if first_ts is None:
             first_ts = obj.get("timestamp")
         usage = msg.get("usage", {})
-        input_t        += usage.get("input_tokens",                0)
-        output_t       += usage.get("output_tokens",               0)
-        cache_read_t   += usage.get("cache_read_input_tokens",     0)
-        cache_create_t += usage.get("cache_creation_input_tokens", 0)
+        if not isinstance(usage, dict):
+            continue
+
+        # Fall back to file:lineno so an id-less line is never merged into another.
+        key = obj.get("requestId") or msg.get("id") or f"{path}:{lineno}"
+        prev = by_request.get(key)
+        if prev is None:
+            by_request[key] = {
+                field: usage.get(raw, 0) or 0 for field, raw in USAGE_FIELDS
+            }
+        else:
+            collapsed += 1
+            for field, raw in USAGE_FIELDS:
+                prev[field] = max(prev[field], usage.get(raw, 0) or 0)
+
+    input_t        = sum(u["input"]        for u in by_request.values())
+    output_t       = sum(u["output"]       for u in by_request.values())
+    cache_read_t   = sum(u["cache_read"]   for u in by_request.values())
+    cache_create_t = sum(u["cache_create"] for u in by_request.values())
 
     if model is None or (input_t == 0 and output_t == 0 and cache_read_t == 0):
         return None
@@ -1674,6 +1951,10 @@ def _parse_session_file(path, project_name):
         "output":       output_t,
         "cache_read":   cache_read_t,
         "cache_create": cache_create_t,
+        # Format-drift canary: if this is 0 across every session, the transcript
+        # no longer repeats usage per content block (or requestId went away) and
+        # the dedup above has silently become a no-op. See the usage-dedup test.
+        "collapsed":    collapsed,
     }
 
 
@@ -2641,120 +2922,129 @@ def render_skill_changes(hd, companion=False):
   <div id="sc-panel">{action_html}</div>
 </div>"""
 
+def _render_gap_details(gap_records, gap_observations):
+    """Collapsible list of what was actually re-explained, newest day first.
+
+    A count on its own is not actionable — the point of the tile is to name the
+    topic so it can be written into memory. Topics come from the detector's own
+    structured output; the prose observation is shown underneath for context.
+    """
+    days = [r for r in gap_records if r.get("value")]
+    if not days:
+        return ""
+
+    prose_by_date = dict(gap_observations)
+    blocks = ""
+    for r in reversed(days[-10:]):
+        topics = r.get("meta", {}).get("topics") or []
+        items = "".join(
+            f'<li style="margin:4px 0">{h(str(t))}</li>' for t in topics
+        ) or '<li style="margin:4px 0;opacity:0.6">no topic recorded</li>'
+        prose = prose_by_date.get(r["date"], "")
+        note = (f'<div style="margin-top:6px;padding-top:6px;border-top:1px solid var(--surface1);'
+                f'opacity:0.75">{h(prose)}</div>' if prose else "")
+        blocks += (
+            f'<details style="background:var(--surface0);border-radius:6px;'
+            f'padding:8px 12px;margin-bottom:6px">'
+            f'<summary style="cursor:pointer;color:var(--subtext1);font-size:12px">'
+            f'{h(r["date"])} — {r["value"]:.0f} re-explanation'
+            f'{"" if r["value"] == 1 else "s"}</summary>'
+            f'<ul style="padding-left:18px;margin:8px 0 0;color:var(--subtext0);'
+            f'font-size:12px;line-height:1.5">{items}</ul>{note}</details>'
+        )
+
+    total = sum(r["value"] for r in days)
+    return (
+        f'<div class="label" style="margin-bottom:6px">What you had to re-explain '
+        f'({total:.0f} across {len(days)} day{"" if len(days) == 1 else "s"})</div>'
+        f'<div style="margin-bottom:16px">{blocks}</div>'
+    )
+
 def render_session_quality(rd):
-    obs = rd["observations"]
-    sq  = obs.get("session-quality", [])
-    kr  = obs.get("keep-rate", [])
-    mg  = obs.get("memory-gap", [])
-    aa  = obs.get("ai-adoption", [])
+    # Every number here comes from metrics.jsonl. Nothing is extracted from the
+    # prose in observations.md — that is what produced a 5% AI-adoption reading
+    # from a 24.5% measurement. Prose below is quoted for context only.
+    metrics = rd.get("metrics", {})
+    scores  = metrics.get("session-quality", [])
+    keeps   = metrics.get("keep-rate", [])
+    gaps    = metrics.get("memory-gap", [])
+    mg      = rd["observations"].get("memory-gap", [])
 
-    if not sq and not kr:
-        return empty_state("No session quality data yet. Run daily-maintenance to start tracking.")
+    if not scores and not keeps:
+        return empty_state(
+            "No session quality data yet. Run daily-maintenance to start tracking "
+            "(measurements land in .claude/memory/metrics.jsonl)."
+        )
 
-    score_re = re.compile(r'Score=(\d+)/5')
-    keep_re  = re.compile(r'(\d+)%')
-    gap_re   = re.compile(r'(\d+)\s+re-explanation')
-    adopt_re = re.compile(r'(\d+)%')
+    # Idle-routine windows have no user session to judge. The routine still writes
+    # a neutral 3/5 placeholder so the day is accounted for, but averaging those in
+    # drags the number toward mediocre by construction — so they are excluded.
+    live_scores = [r for r in scores if not r.get("idle")]
+    idle_count  = len(scores) - len(live_scores)
 
-    scores, keeps, gaps, adopts = [], [], [], []
-    for d, t in sq:
-        m = score_re.search(t)
-        if m:
-            scores.append((d, int(m.group(1))))
-    for d, t in kr:
-        m = keep_re.search(t)
-        if m:
-            keeps.append((d, int(m.group(1))))
-    for d, t in mg:
-        m = gap_re.search(t)
-        if m:
-            gaps.append((d, int(m.group(1))))
-    for d, t in aa:
-        m = adopt_re.search(t)
-        if m:
-            adopts.append((d, int(m.group(1))))
-
-    avg_score  = sum(s for _, s in scores) / len(scores) if scores else None
-    avg_keep   = sum(k for _, k in keeps)  / len(keeps)  if keeps  else None
-    total_gaps = sum(g for _, g in gaps)
-    # Adoption is a volume metric (most recent reading, not averaged) — distinct
-    # from Keep Rate's durability signal. Averaging would smear a genuine trend.
-    latest_adopt = adopts[-1][1] if adopts else None
+    avg_score  = sum(r["value"] for r in live_scores) / len(live_scores) if live_scores else None
+    avg_keep   = sum(r["value"] for r in keeps) / len(keeps) if keeps else None
+    total_gaps = sum(r["value"] for r in gaps)
+    gaps_measured = bool(gaps)
 
     sc  = ("#a6e3a1" if (avg_score or 0) >= 4 else
            "#f9e2af" if (avg_score or 0) >= 2.5 else "#f38ba8")
     kc  = ("#a6e3a1" if (avg_keep or 0) >= 70 else
            "#f9e2af" if (avg_keep or 0) >= 40  else "#f38ba8")
+    # No measurement is not the same as zero gaps. An unmeasured detector shows "—".
     gc  = ("var(--red)"    if total_gaps > 5 else
            "var(--yellow)" if total_gaps > 0  else "var(--green)")
-    ac  = "var(--mauve)"
 
-    adopt_card = f"""
-    <div class="stat-card">
-      <div class="stat-val" style="color:{ac}">
-        {f"{latest_adopt}%" if latest_adopt is not None else "—"}</div>
-      <div class="stat-lbl">AI adoption (volume)</div></div>""" if adopts else ""
+    score_note = (f'<div class="stat-lbl" style="font-size:9px;opacity:0.7">'
+                  f'{idle_count} idle day{"s" if idle_count != 1 else ""} excluded</div>'
+                  if idle_count else "")
 
-    summary = f"""<div style="display:grid;grid-template-columns:repeat({4 if adopts else 3},1fr);
+    summary = f"""<div style="display:grid;grid-template-columns:repeat(3,1fr);
                        gap:12px;margin-bottom:20px">
     <div class="stat-card">
       <div class="stat-val" style="color:{sc}">
         {f"{avg_score:.1f}/5" if avg_score is not None else "—"}</div>
-      <div class="stat-lbl">avg session score</div></div>
+      <div class="stat-lbl">avg session score</div>{score_note}</div>
     <div class="stat-card">
       <div class="stat-val" style="color:{kc}">
         {f"{avg_keep:.0f}%" if avg_keep is not None else "—"}</div>
       <div class="stat-lbl">avg keep-rate</div></div>
     <div class="stat-card">
-      <div class="stat-val" style="color:{gc}">{total_gaps}</div>
-      <div class="stat-lbl">memory gaps (total)</div></div>{adopt_card}
+      <div class="stat-val" style="color:{gc if gaps_measured else 'var(--overlay0)'}">
+        {f"{total_gaps:.0f}" if gaps_measured else "—"}</div>
+      <div class="stat-lbl">memory gaps{"" if gaps_measured else " (not measured)"}</div></div>
   </div>"""
 
     timeline = ""
-    if scores:
+    if live_scores:
         bars = ""
-        for d, s in scores[-20:]:
+        for r in live_scores[-20:]:
+            d, s = r["date"], r["value"]
             bh = int(s / 5 * 44)
             bc = ("#a6e3a1" if s >= 4 else "#f9e2af" if s >= 2.5 else "#f38ba8")
             bars += (
-                f'<div title="{h(d)}: {s}/5" style="flex:1;display:flex;flex-direction:column;'
+                f'<div title="{h(d)}: {s:.0f}/5" style="flex:1;display:flex;flex-direction:column;'
                 f'align-items:center;justify-content:flex-end;gap:2px;min-width:14px">'
-                f'<div style="font-size:8px;color:{bc};font-weight:600">{s}</div>'
+                f'<div style="font-size:8px;color:{bc};font-weight:600">{s:.0f}</div>'
                 f'<div style="background:{bc};height:{bh}px;width:100%;border-radius:2px 2px 0 0;'
                 f'opacity:0.85"></div></div>'
             )
         timeline = (
-            f'<div class="label" style="margin-bottom:6px">Session scores (recent, 0–5)</div>'
+            f'<div class="label" style="margin-bottom:6px">Session scores '
+            f'(recent, 0–5, idle days excluded)</div>'
             f'<div style="display:flex;align-items:flex-end;gap:3px;height:64px;'
             f'margin-bottom:16px">{bars}</div>'
         )
 
-    recent = ""
-    if mg:
-        items = "".join(
-            f'<li style="margin:3px 0">{h(d)}: {h(t[:120])}</li>'
-            for d, t in mg[-5:]
-        )
-        recent = (f'<div class="label" style="margin-bottom:6px">Recent memory gaps</div>'
-                  f'<ul style="padding-left:16px;margin:0;color:var(--subtext0);'
-                  f'font-size:12px">{items}</ul>')
+    recent = _render_gap_details(gaps, mg)
 
-    adopt_glossary = """
-    <div style="background:var(--surface0);border-radius:6px;padding:10px 12px;font-size:11px">
-      <div style="color:var(--mauve);font-weight:600;margin-bottom:4px">🌊 AI Adoption %</div>
-      <div style="color:var(--subtext0);line-height:1.55">
-        What fraction of recent commits were Claude-co-authored at all — a volume
-        signal, not durability. <strong style="color:var(--subtext1)">Different from Keep-Rate</strong> —
-        high adoption + low keep-rate means Claude is doing a lot of work that isn't sticking.
-      </div>
-    </div>""" if adopts else ""
-
-    glossary = f"""<div style="display:grid;grid-template-columns:repeat({4 if adopts else 3},1fr);gap:10px;margin-top:20px">
+    glossary = """<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:20px">
     <div style="background:var(--surface0);border-radius:6px;padding:10px 12px;font-size:11px">
       <div style="color:var(--blue);font-weight:600;margin-bottom:4px">📊 Session Score (0–5)</div>
       <div style="color:var(--subtext0);line-height:1.55">
-        Rated by <code style="font-size:10px">impeccable-detect-hook</code> after each session.
-        Measures tool discipline, instruction adherence, revert rate.
+        Judged by the <code style="font-size:10px">session-quality</code> skill during
+        daily-maintenance, from the day's git activity: reverts, files reworked, forward commits.
+        Days with no user session are recorded but excluded from the average.
         <strong style="color:var(--subtext1)">Different from trust battery</strong> —
         trust is cumulative long-term; session score is per-session behavior.
       </div>
@@ -2762,19 +3052,20 @@ def render_session_quality(rd):
     <div style="background:var(--surface0);border-radius:6px;padding:10px 12px;font-size:11px">
       <div style="color:var(--teal);font-weight:600;margin-bottom:4px">📌 Keep-Rate %</div>
       <div style="color:var(--subtext0);line-height:1.55">
-        Of all changes Claude made in a session, what % was actually kept.
-        100% = all work accepted. 50% = half was reverted.
-        Low keep-rate often means unclear instructions or scope creep.
+        Of the lines Claude committed in the last 30 days, what % is still in HEAD
+        (<code style="font-size:10px">git blame</code> against the commits that carry the
+        Co-Authored-By trailer). 100% = nothing rewritten. Doc-sync churn and Claude
+        rewriting its own earlier lines both count as loss.
       </div>
     </div>
     <div style="background:var(--surface0);border-radius:6px;padding:10px 12px;font-size:11px">
       <div style="color:var(--yellow);font-weight:600;margin-bottom:4px">🧠 Memory Gaps</div>
       <div style="color:var(--subtext0);line-height:1.55">
-        Times Claude re-explained something it should have remembered from memory.
-        Detected by <code style="font-size:10px">memory-discipline-hook</code> at compaction.
-        High gaps → add a memory entry for the repeated topic.
+        Times you had to re-explain something Claude should have remembered.
+        Detected at session end by <code style="font-size:10px">detect_reexplanation.py</code>.
+        A dash means the detector never ran — that is not the same as zero.
       </div>
-    </div>{adopt_glossary}
+    </div>
   </div>"""
     return f"""<div class="section-inner">
   <h2 class="section-title">Session Quality</h2>
@@ -3462,17 +3753,13 @@ def render_automation_audit(rd, hd):
             text = learning_report.read_text(encoding="utf-8", errors="replace")
         except Exception:
             text = ""
-        for m in re.finditer(
-            r"^## Sweep — (\d{4}-\d{2}-\d{2})\n(.*?)(?=^## Sweep — |\Z)",
-            text, re.M | re.S,
-        ):
-            date_str, body = m.group(1), m.group(2)
+        for date_str, body in _split_sweep_sections(text):
             pending_section = (
                 body.split("## Pending Approval", 1)[-1]
                 if "## Pending Approval" in body else ""
             )
-            pending_count = 0 if "None this sweep" in pending_section else len(
-                re.findall(r"^-\s*#?\d+", pending_section, re.M)
+            pending_count = 0 if "None this sweep" in pending_section else sum(
+                1 for ln in pending_section.splitlines() if _is_numbered_bullet(ln)
             )
             events.append({
                 "ts":      date_str + "T12:00:00+00:00",
@@ -3643,6 +3930,9 @@ const SD = __SECTIONS_JSON__;
 let repo = __INIT_REPO__;
 let sec  = 'session_health';
 
+const GN_WEB_UI    = '__GN_WEB_UI__';
+const GN_PROBE_URL = '__GN_PROBE_URL__';
+
 function show(sectionKey) {
   // Release gitnexus WebGL context before destroying the iframe element
   var oldFrame = document.getElementById('gn-frame');
@@ -3659,6 +3949,13 @@ function show(sectionKey) {
   if (sectionKey === 'gitnexus') probeGitnexus();
   if (sectionKey === 'workshop') loadWorkshopRuns();
   if (sectionKey === 'budget_efficiency') loadHeadroom();
+  // Guarded: the herder functions live in a companion-only block, so in a
+  // --static page this identifier does not exist at all.
+  if (sectionKey === 'herder' && typeof herderRefresh === 'function') {
+    _hdRosterSig = '';          // panel HTML was just replaced; force a rebuild
+    herderLoadOptions();
+    herderRefresh();
+  }
 }
 
 function switchRepo(v) { repo = v; show(sec); }
@@ -3669,29 +3966,36 @@ function probeGitnexus() {
   _gnProbing = true;
   var ctrl  = new AbortController();
   var timer = setTimeout(function() { ctrl.abort(); }, 2500);
-  fetch('http://localhost:4747', { mode: 'no-cors', signal: ctrl.signal })
-    .then(function() {
+  // Probe /api/repos, not '/': gitnexus serve is API-only and 404s at the root.
+  // Real CORS mode (not no-cors) so an error status is visible instead of opaque.
+  fetch(GN_PROBE_URL, { signal: ctrl.signal })
+    .then(function(res) {
       clearTimeout(timer);
       _gnProbing = false;
+      if (!res.ok) { gnOffline('GitNexus API returned HTTP ' + res.status); return; }
       var f  = document.getElementById('gn-frame');
       var fb = document.getElementById('gn-fallback');
-      if (f)  { f.src = f.dataset.src || 'http://localhost:4747'; f.style.display = 'block'; }
+      if (f)  { f.src = f.dataset.src || GN_WEB_UI; f.style.display = 'block'; }
       if (fb) fb.style.display = 'none';
     })
     .catch(function() {
       clearTimeout(timer);
       _gnProbing = false;
-      var st    = document.getElementById('gn-status');
-      var btn   = document.getElementById('gn-copy-btn');
-      var hint  = document.getElementById('gn-copy-hint');
-      var sbtn  = document.getElementById('gn-start-btn');
-      var rbtn  = document.getElementById('gn-retry-btn');
-      if (st)   st.textContent = 'GitNexus not running';
-      if (btn)  btn.style.display  = 'block';
-      if (hint) hint.style.display = 'block';
-      if (sbtn) sbtn.style.display = 'block';
-      if (rbtn) rbtn.style.display = 'block';
+      gnOffline('GitNexus not running');
     });
+}
+
+function gnOffline(message) {
+  var st    = document.getElementById('gn-status');
+  var btn   = document.getElementById('gn-copy-btn');
+  var hint  = document.getElementById('gn-copy-hint');
+  var sbtn  = document.getElementById('gn-start-btn');
+  var rbtn  = document.getElementById('gn-retry-btn');
+  if (st)   st.textContent = message;
+  if (btn)  btn.style.display  = 'block';
+  if (hint) hint.style.display = 'block';
+  if (sbtn) sbtn.style.display = 'block';
+  if (rbtn) rbtn.style.display = 'block';
 }
 
 __GN_SERVE_FUNS__
@@ -3920,6 +4224,25 @@ def _read_rtk_stats() -> dict:
         return {"baseline": 0, "saved": 0, "after": 0, "commands": 0, "effective": 0}
 
 
+def _read_rtk_net_effect(repo_path: "str | None" = None) -> dict:
+    """Read .claude/memory/rtk-net-effect.json — written by
+    rtk-net-effect-runner.sh. Global rerun/reread signal, not RTK's own
+    local-savings figure: high rerun rate is evidence, not proof, that
+    compression cost detail the agent had to go get back.
+    """
+    empty = {"available": False, "bash_rerun_rate_pct": 0.0, "read_reread_rate_pct": 0.0}
+    base = Path(repo_path) if repo_path else HARNESS_DIR
+    snapshot = base / ".claude" / "memory" / "rtk-net-effect.json"
+    if not snapshot.exists():
+        return empty
+    try:
+        data = json.loads(snapshot.read_text())
+        data["available"] = True
+        return data
+    except Exception:
+        return empty
+
+
 def render_headroom(repo_path: "str | None" = None) -> str:
     """Compression pipeline tab — RTK + headroom + lean-ctx (per-repo if repo_path given)."""
     repo_hash = _repo_to_lean_ctx_hash(repo_path) if repo_path else None
@@ -4021,13 +4344,20 @@ def render_headroom(repo_path: "str | None" = None) -> str:
     # ── Pipeline layers ───────────────────────────────────────────────────────
     arrow = '<div style="text-align:center;font-size:18px;color:var(--overlay0);margin:2px 0">↓</div>'
 
+    rtk_ne = _read_rtk_net_effect(repo_path)
+    rtk_note = f"{rtk['commands']:,} commands · {rtk['effective']:,} effective"
+    if rtk_ne["available"]:
+        rtk_note += (
+            f" · rerun {rtk_ne['bash_rerun_rate_pct']:.0f}% · reread {rtk_ne['read_reread_rate_pct']:.0f}%"
+        )
+
     rtk_layer = _layer(
         "⚡", "RTK — Shell Output",
         "raw shell output", f"{rtk_baseline:,}",
         rtk_saved, rtk_pct,
         f"~${rtk_cost_est:.2f}",
         "into context", f"{rtk['after']:,}",
-        note=f"{rtk['commands']:,} commands · {rtk['effective']:,} effective",
+        note=rtk_note,
     )
 
     hr_layer = _layer(
@@ -4275,6 +4605,99 @@ def render_headroom(repo_path: "str | None" = None) -> str:
 </div>"""
 
 
+def render_herder(rd, companion=False):
+    """Spawn form + live agent roster, backed by Herdr.
+
+    The target repo is the one selected in the dashboard's own repo dropdown —
+    there is deliberately no second repo picker here. Two selectors for the same
+    concept is exactly the kind of thing you get wrong at 1am.
+
+    Static mode (`--static`) has no server to call, so the controls are replaced
+    by a note rather than rendered dead — a button that silently does nothing is
+    worse than an absent one.
+    """
+    repo_name = Path(rd["path"]).name
+    desc = section_desc(
+        "Start Claude Code sessions and watch them from here. The session opens in "
+        "whichever repo the <b>dropdown at the top</b> is set to. Sessions run under "
+        "<b>Herdr</b> and outlive this dashboard — closing the tab does not kill them, "
+        "and <code>herdr agent attach &lt;name&gt;</code> drops you into one from a "
+        "terminal.",
+        icon="🐑", color="var(--mauve)",
+    )
+
+    if not companion:
+        return ('<div class="section-inner"><h2 class="section-title">Herder</h2>'
+                + desc
+                + empty_state("Spawning needs the live dashboard. "
+                              "Run: python3 scripts/utils/dashboard.py")
+                + "</div>")
+
+    if herder is None:
+        return ('<div class="section-inner"><h2 class="section-title">Herder</h2>'
+                + desc
+                + empty_state(f"herder module unavailable: {HERDER_IMPORT_ERROR}")
+                + "</div>")
+
+    kind_opts = "\n".join(
+        f'<option value="{k}"{" selected" if k == "claude" else ""}>{k}</option>'
+        for k in herder.AGENT_KINDS
+    )
+
+    fld = ("background:var(--surface0);border:1px solid var(--surface1);color:var(--text);"
+           "border-radius:6px;padding:7px 9px;font-size:12px;font-family:inherit")
+
+    return f"""<div class="section-inner">
+  <h2 class="section-title">Herder</h2>
+  {desc}
+  <div id="herder-status" style="font-size:11px;color:var(--subtext0);margin-bottom:14px">
+    checking Herdr…</div>
+
+  <div style="background:var(--surface0);border-radius:8px;padding:14px;margin-bottom:18px">
+    <div style="font-size:11px;color:var(--subtext0);margin-bottom:12px">
+      target repo —
+      <span style="color:var(--mauve);font-weight:600;font-family:monospace">{h(repo_name)}</span>
+      <span style="color:var(--overlay0)">· change it with the dropdown at the top</span>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));
+                gap:10px;margin-bottom:10px">
+      <label style="font-size:10px;color:var(--subtext1)">agent
+        <select id="hd-kind" onchange="herderLoadOptions()"
+                style="{fld};width:100%;margin-top:3px">{kind_opts}</select></label>
+      <label style="font-size:10px;color:var(--subtext1)">model
+        <select id="hd-model" style="{fld};width:100%;margin-top:3px">
+          <option value="">loading…</option></select></label>
+      <label style="font-size:10px;color:var(--subtext1)">permission mode
+        <select id="hd-mode" style="{fld};width:100%;margin-top:3px">
+          <option value="">loading…</option></select></label>
+      <label style="font-size:10px;color:var(--subtext1)">label
+        <input id="hd-label" value="agent" style="{fld};width:100%;margin-top:3px"></label>
+    </div>
+    <div id="hd-opt-src" style="font-size:10px;color:var(--overlay0);margin-bottom:8px"></div>
+    <textarea id="hd-prompt" rows="3" placeholder="Opening prompt (optional)."
+      style="{fld};width:100%;box-sizing:border-box;resize:vertical"></textarea>
+    <div style="display:flex;align-items:center;gap:14px;margin-top:10px;flex-wrap:wrap">
+      <button onclick="herderSpawn()" id="hd-spawn-btn"
+        style="background:var(--mauve);color:var(--base);border:none;border-radius:6px;
+               padding:8px 18px;font-size:12px;font-weight:600;cursor:pointer">
+        Spawn agent</button>
+      <span id="hd-spawn-msg" style="font-size:11px;color:var(--subtext0)"></span>
+    </div>
+  </div>
+
+  <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+    <span style="font-size:11px;color:var(--subtext1);font-weight:600">Running agents</span>
+    <label style="font-size:10px;color:var(--overlay1);display:flex;align-items:center;gap:5px">
+      <input type="checkbox" id="hd-live" checked> live tail (5s)</label>
+    <span id="hd-live-note" style="font-size:10px;color:var(--overlay0)"></span>
+  </div>
+  <div id="herder-roster" style="display:grid;gap:12px;
+       grid-template-columns:repeat(auto-fill,minmax(290px,1fr))">
+    {empty_state("No agents running.")}
+  </div>
+</div>"""
+
+
 def build_html(repos_data, harness_data, usage_sessions, pricing_snapshots, initial_idx=0, companion=False):
     repos = [rd["path"] for rd in repos_data]
 
@@ -4309,6 +4732,7 @@ def build_html(repos_data, harness_data, usage_sessions, pricing_snapshots, init
                 ("quality", "📊", "Session Quality", render_session_quality(rd)),
                 ("pq",      "✨", "Prompt Quality",  render_prompt_quality()),
             ]),
+            "herder":         render_herder(rd, companion=companion),
             "gitnexus":       render_gitnexus(rd, companion=companion),
             "workshop":       render_workshop(rd, companion=companion),
             "budget_efficiency": _combined_section("Budget & Efficiency", "be", [
@@ -4329,8 +4753,7 @@ def build_html(repos_data, harness_data, usage_sessions, pricing_snapshots, init
 
     sj  = json.dumps(sections_map, ensure_ascii=False)
     # Escape any </script> or </Script> etc. that would break the enclosing script tag
-    import re as _re
-    sj  = _re.sub(r'(?i)</script>', r'<\/script>', sj)
+    sj  = _escape_script_close(sj)
     ir  = json.dumps(repos[initial_idx] if repos else "")
 
     gn_funs = """
@@ -4358,11 +4781,12 @@ function pollGitnexus(n) {
   if (st) st.textContent = 'Waiting for gitnexus… (' + (n + 1) + '/20)';
   var ctrl = new AbortController();
   setTimeout(function() { ctrl.abort(); }, 1500);
-  fetch('http://localhost:4747', { mode: 'no-cors', signal: ctrl.signal })
-    .then(function() {
+  fetch(GN_PROBE_URL, { signal: ctrl.signal })
+    .then(function(res) {
+      if (!res.ok) { setTimeout(function() { pollGitnexus(n + 1); }, 1000); return; }
       var f  = document.getElementById('gn-frame');
       var fb = document.getElementById('gn-fallback');
-      if (f)  { f.src = f.dataset.src || 'http://localhost:4747'; f.style.display = 'block'; }
+      if (f)  { f.src = f.dataset.src || GN_WEB_UI; f.style.display = 'block'; }
       if (fb) { fb.style.display = 'none'; }
     })
     .catch(function() {
@@ -4530,6 +4954,374 @@ function _scPollProposal(n) {
     .catch(function() { setTimeout(function() { _scPollProposal(n + 1); }, 3000); });
 }
 
+// ── Herder ──────────────────────────────────────────────────────────────────
+// Every herder call carries the per-process token. Without it the server replies
+// 403, so a page not served by this dashboard process cannot drive the API.
+var HERDER_TOKEN = '__HERDER_TOKEN__';
+var _hdRosterSig = '';
+
+function _hdFetch(url, opts) {
+  opts = opts || {};
+  opts.headers = opts.headers || {};
+  opts.headers['X-Herder-Token'] = HERDER_TOKEN;
+  return fetch(url, opts);
+}
+
+function _hdBadge(status) {
+  var map = { working: ['#f9e2af', 'working'], idle: ['#89b4fa', 'idle'],
+              done: ['#a6e3a1', 'done'], blocked: ['#f38ba8', 'blocked'] };
+  var e = map[status] || ['#6c7086', status || 'unknown'];
+  return '<span style="display:inline-block;padding:2px 8px;border-radius:20px;' +
+         'font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.6px;' +
+         'color:' + e[0] + ';background:' + e[0] + '22;border:1px solid ' + e[0] + '55">' +
+         e[1] + '</span>';
+}
+
+// Model and permission-mode choices are pulled from the selected agent itself —
+// never hardcoded here. Re-fetched whenever the agent kind changes.
+function herderLoadOptions() {
+  var kind = document.getElementById('hd-kind');
+  var mSel = document.getElementById('hd-model');
+  var pSel = document.getElementById('hd-mode');
+  var src  = document.getElementById('hd-opt-src');
+  if (!kind || !mSel || !pSel) { return; }
+  mSel.innerHTML = '<option value="">loading…</option>';
+  pSel.innerHTML = '<option value="">loading…</option>';
+
+  _hdFetch('/api/herder-options?kind=' + encodeURIComponent(kind.value))
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      var mo = '<option value="">(agent default)</option>';
+      var models = (d.models && d.models.models) || [];
+      var aliases = (d.models && d.models.aliases) || [];
+      if (aliases.length) {
+        mo += '<optgroup label="aliases — always the latest of that family">';
+        aliases.forEach(function(a) { mo += '<option value="' + a + '">' + a + '</option>'; });
+        mo += '</optgroup>';
+      }
+      if (models.length) {
+        mo += '<optgroup label="pinned versions">';
+        models.forEach(function(m) { mo += '<option value="' + m + '">' + m + '</option>'; });
+        mo += '</optgroup>';
+      }
+      mSel.innerHTML = mo;
+
+      var modes = (d.permission_modes && d.permission_modes.modes) || [];
+      var po = '';
+      modes.forEach(function(m) {
+        var sel = (m === 'acceptEdits') ? ' selected' : '';
+        var warn = (m === 'bypassPermissions' || m === 'dontAsk') ? ' ⚠' : '';
+        po += '<option value="' + m + '"' + sel + '>' + m + warn + '</option>';
+      });
+      pSel.innerHTML = po || '<option value="acceptEdits">acceptEdits</option>';
+
+      // Say plainly when a list is a fallback rather than something we read from
+      // the agent — a guessed list that looks authoritative is worse than none.
+      if (src) {
+        var mOk = d.models && d.models.discovered;
+        var pOk = d.permission_modes && d.permission_modes.discovered;
+        var bits = [];
+        bits.push((mOk ? '✓ models from ' : '⚠ models NOT discovered — ') +
+                  ((d.models && d.models.source) || '?'));
+        bits.push((pOk ? '✓ modes from ' : '⚠ modes NOT discovered — ') +
+                  ((d.permission_modes && d.permission_modes.source) || '?'));
+        src.innerHTML = bits.join(' · ');
+        src.style.color = (mOk && pOk) ? 'var(--overlay0)' : '#f9e2af';
+      }
+    })
+    .catch(function(e) {
+      mSel.innerHTML = '<option value="">(agent default)</option>';
+      pSel.innerHTML = '<option value="acceptEdits">acceptEdits</option>';
+      if (src) { src.textContent = 'could not load agent options: ' + e; }
+    });
+}
+
+function _hdNum(n) {
+  if (n === null || n === undefined) { return '—'; }
+  if (n >= 1000000) { return (n / 1000000).toFixed(1) + 'M'; }
+  if (n >= 1000)    { return (n / 1000).toFixed(1) + 'k'; }
+  return String(n);
+}
+
+// One box per agent, each tailing its own pane, so several runs are watchable at
+// once rather than one at a time through a shared log pane.
+function _hdBox(a) {
+  var badge = _hdBadge(a.status);
+  var meta = [];
+  if (a.repo)  { meta.push(a.repo); }
+  if (a.model) { meta.push(a.model); }
+  if (a.permission_mode) { meta.push(a.permission_mode); }
+
+  var spend = '<span style="color:var(--overlay0)">spend: not yet attributed</span>';
+  if (a.spend) {
+    spend = 'tokens <b style="color:var(--text)">' + _hdNum(a.spend.tokens) + '</b>' +
+            ' · cost-weighted <b style="color:var(--text)">' +
+            _hdNum(Math.round(a.spend.weighted_cost)) + '</b>' +
+            ' · cache-create ' + _hdNum(a.spend.cache_create);
+  } else if (!a.herder_spawned) {
+    spend = '<span style="color:var(--overlay0)">opened outside the herder — no ledger</span>';
+  }
+
+  var btn = 'background:var(--surface1);color:var(--text);border:none;border-radius:5px;' +
+            'padding:3px 9px;font-size:10.5px;cursor:pointer';
+
+  // Collapsed by default: the grid answers "what is running" at a glance, and the
+  // disclosure answers "what is it doing" only for the one you open.
+  return '' +
+  '<div style="background:var(--surface0);border-radius:8px;padding:11px;min-width:0">' +
+    '<div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-bottom:5px">' +
+      '<span style="font-family:monospace;font-size:11.5px;color:var(--text);overflow:hidden;' +
+        'text-overflow:ellipsis;white-space:nowrap;max-width:140px">' + a.name + '</span>' +
+      badge +
+    '</div>' +
+    '<div style="font-size:9.5px;color:var(--subtext0);margin-bottom:4px;overflow:hidden;' +
+      'text-overflow:ellipsis;white-space:nowrap">' + meta.join(' · ') + '</div>' +
+    '<div style="font-size:9.5px;color:var(--subtext0);margin-bottom:7px">' + spend + '</div>' +
+    '<div id="hdnow-' + a.name + '" style="font-size:10px;color:var(--overlay1);' +
+      'margin-bottom:8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">…</div>' +
+    '<div style="display:flex;gap:5px;margin-bottom:7px">' +
+      '<button onclick="herderPromptAgent(\\'' + a.name + '\\')" style="' + btn + '">prompt</button>' +
+      '<button onclick="herderStop(\\'' + a.workspace_id + '\\')" style="background:#f38ba822;color:#f38ba8;border:1px solid #f38ba855;border-radius:5px;padding:3px 9px;font-size:10.5px;cursor:pointer">stop</button>' +
+    '</div>' +
+    '<details id="hddet-' + a.name + '" ontoggle="herderStream(\\'' + a.name + '\\')">' +
+      '<summary style="cursor:pointer;font-size:10.5px;color:var(--mauve);outline:none">activity</summary>' +
+      '<div id="hdfeed-' + a.name + '" style="background:var(--crust);border-radius:6px;' +
+        'padding:9px;font-size:10px;line-height:1.5;max-height:300px;overflow:auto;' +
+        'margin-top:7px">loading…</div>' +
+      '<div style="margin-top:6px;display:flex;gap:5px">' +
+        '<button onclick="herderStream(\\'' + a.name + '\\',1)" style="' + btn + '">refresh</button>' +
+        '<button onclick="herderRawPane(\\'' + a.name + '\\')" style="' + btn + '">raw pane</button>' +
+      '</div>' +
+      '<pre id="hdlog-' + a.name + '" style="display:none;background:var(--crust);border-radius:6px;' +
+        'padding:9px;font-size:10px;max-height:260px;overflow:auto;white-space:pre-wrap;' +
+        'color:var(--subtext1);margin-top:7px"></pre>' +
+    '</details>' +
+  '</div>';
+}
+
+// Render the transcript feed: reasoning, tool calls, tool results — the same
+// shape as a chat transcript, not the terminal's redrawn TUI.
+function _hdEventHtml(e) {
+  var wrap = 'margin-bottom:6px;padding-left:8px;border-left:2px solid ';
+  if (e.t === 'thinking') {
+    return '<div style="' + wrap + 'var(--overlay0);color:var(--overlay1);font-style:italic">' +
+           _hdEsc(e.text) + '</div>';
+  }
+  if (e.t === 'text') {
+    return '<div style="' + wrap + 'var(--mauve);color:var(--text)">' + _hdEsc(e.text) + '</div>';
+  }
+  if (e.t === 'tool') {
+    return '<div style="' + wrap + '#89b4fa;color:var(--subtext1)">' +
+           '<b style="color:#89b4fa">' + _hdEsc(e.name) + '</b>' +
+           (e.summary ? ' <span style="color:var(--overlay1)">' + _hdEsc(e.summary) + '</span>' : '') +
+           '</div>';
+  }
+  if (e.t === 'result') {
+    var col = e.error ? '#f38ba8' : '#a6e3a1';
+    return '<div style="' + wrap + col + ';color:var(--overlay1)">' +
+           (e.error ? '✗ ' : '✓ ') + _hdEsc(e.name) +
+           (e.preview ? ' — ' + _hdEsc(e.preview) : '') + '</div>';
+  }
+  return '';
+}
+
+function _hdEsc(s) {
+  return String(s === null || s === undefined ? '' : s)
+    .split('&').join('&amp;').split('<').join('&lt;').split('>').join('&gt;');
+}
+
+function herderStream(name, force) {
+  var det = document.getElementById('hddet-' + name);
+  if (!det) { return; }
+  // Only poll what is open. Streaming every collapsed agent would read every
+  // transcript on the machine every 5 seconds for output nobody is looking at.
+  if (!det.open && !force) { return; }
+  var box = document.getElementById('hdfeed-' + name);
+  if (!box) { return; }
+
+  _hdFetch('/api/herder-stream?name=' + encodeURIComponent(name))
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      if (d.error)   { box.textContent = d.error; return; }
+      if (d.pending) { box.innerHTML = '<span style="color:var(--overlay0)">no transcript yet — the session has not written its first line</span>'; return; }
+      var evs = d.events || [];
+      if (!evs.length) {
+        box.innerHTML = '<span style="color:var(--overlay0)">no activity recorded yet</span>';
+        return;
+      }
+      var atBottom = (box.scrollHeight - box.scrollTop - box.clientHeight) < 40;
+      box.innerHTML = (d.truncated
+        ? '<div style="color:var(--overlay0);margin-bottom:6px">…earlier activity trimmed</div>' : '')
+        + evs.map(_hdEventHtml).join('');
+      if (atBottom) { box.scrollTop = box.scrollHeight; }
+    })
+    .catch(function(e) { box.textContent = String(e); });
+}
+
+// The rendered terminal, kept as an escape hatch: the feed above is derived from
+// the transcript, so the pane is the way to see what the TUI itself shows.
+function herderRawPane(name) {
+  var pre = document.getElementById('hdlog-' + name);
+  if (!pre) { return; }
+  pre.style.display = 'block';
+  pre.textContent = 'reading pane…';
+  _hdFetch('/api/herder-read?name=' + encodeURIComponent(name))
+    .then(function(r) { return r.json(); })
+    .then(function(d) { pre.textContent = d.output || d.error || '(empty)'; })
+    .catch(function(e) { pre.textContent = String(e); });
+}
+
+// One-line "what is it doing right now" for a collapsed card, so the grid is
+// informative without expanding anything.
+function _hdUpdateNow(a) {
+  var el = document.getElementById('hdnow-' + a.name);
+  if (!el) { return; }
+  _hdFetch('/api/herder-stream?name=' + encodeURIComponent(a.name))
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      if (d.pending) { el.textContent = 'starting…'; return; }
+      var evs = (d && d.events) || [];
+      if (!evs.length) { el.textContent = 'no activity yet'; return; }
+      var e = evs[evs.length - 1];
+      var label = e.t === 'tool'     ? '⚙ ' + e.name + ' ' + (e.summary || '')
+                : e.t === 'result'   ? (e.error ? '✗ ' : '✓ ') + e.name
+                : e.t === 'thinking' ? '· thinking'
+                :                      '▸ ' + e.text;
+      el.textContent = label;
+    })
+    .catch(function() {});
+}
+
+function herderRefresh() {
+  var st = document.getElementById('herder-status');
+  _hdFetch('/api/herder-status')
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      if (!st) { return; }
+      if (d.error)        { st.innerHTML = '<span style="color:#f38ba8">' + d.error + '</span>'; }
+      else if (!d.installed) { st.innerHTML = '<span style="color:#f38ba8">Herdr not installed — curl -fsSL https://herdr.dev/install.sh | sh</span>'; }
+      else if (!d.running)   { st.innerHTML = '<span style="color:#f9e2af">Herdr server not running — it starts automatically on first spawn.</span>'; }
+      else { st.innerHTML = 'Herdr running · ' + d.agents + ' agent(s), ' + d.workspaces + ' workspace(s)'; }
+    })
+    .catch(function() { if (st) { st.textContent = 'dashboard server unreachable'; } });
+
+  _hdFetch('/api/herder-list')
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      var box = document.getElementById('herder-roster');
+      if (!box) { return; }
+      var rows = (d && d.agents) || [];
+      if (!rows.length) {
+        box.innerHTML = '<div style="padding:36px;text-align:center;color:var(--overlay0);font-size:13px">No agents running.</div>';
+        return;
+      }
+      // Only rebuild the boxes when the set of agents changes. Re-rendering every
+      // poll would reset each pre's scroll position mid-read.
+      // Rebuild only when the agent set or a status changes; a full re-render on
+      // every poll would collapse any <details> the user has open.
+      var sig = rows.map(function(a) { return a.name + ':' + a.status; }).join('|');
+      if (sig !== _hdRosterSig) {
+        var openNames = rows.filter(function(a) {
+          var d = document.getElementById('hddet-' + a.name);
+          return d && d.open;
+        }).map(function(a) { return a.name; });
+
+        _hdRosterSig = sig;
+        box.innerHTML = rows.map(_hdBox).join('');
+
+        openNames.forEach(function(n) {
+          var d = document.getElementById('hddet-' + n);
+          if (d) { d.open = true; }
+        });
+      }
+
+      rows.forEach(function(a) { _hdUpdateNow(a); });
+
+      var live = document.getElementById('hd-live');
+      if (live && live.checked) {
+        rows.forEach(function(a) { herderStream(a.name); });
+      }
+
+      var note = document.getElementById('hd-live-note');
+      if (note) {
+        var open = rows.filter(function(a) {
+          var d = document.getElementById('hddet-' + a.name);
+          return d && d.open;
+        }).length;
+        note.textContent = rows.length + ' agent(s)' +
+          (open ? ' — ' + open + ' expanded, streaming' : ' — expand one to stream it');
+      }
+    })
+    .catch(function() {});
+}
+
+function herderSpawn() {
+  var btn = document.getElementById('hd-spawn-btn');
+  var msg = document.getElementById('hd-spawn-msg');
+  // `repo` is the dashboard-wide selection driven by the top dropdown
+  // (switchRepo). The herder deliberately has no repo picker of its own.
+  var body = {
+    repo:  repo,
+    label: document.getElementById('hd-label').value || 'agent',
+    kind:  document.getElementById('hd-kind').value,
+    model: document.getElementById('hd-model').value,
+    prompt: document.getElementById('hd-prompt').value,
+    permission_mode: document.getElementById('hd-mode').value || 'acceptEdits'
+  };
+  if (btn) { btn.disabled = true; btn.textContent = 'Starting…'; }
+  if (msg) { msg.textContent = 'starting a session — this takes a few seconds'; }
+  _hdFetch('/api/herder-spawn', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      if (btn) { btn.disabled = false; btn.textContent = 'Spawn agent'; }
+      if (!msg) { return; }
+      if (d.ok) {
+        msg.innerHTML = '<span style="color:#a6e3a1">started ' + d.agent.name +
+                        ' (' + d.agent.argv.join(' ') + ')</span>';
+        document.getElementById('hd-prompt').value = '';
+      } else {
+        msg.innerHTML = '<span style="color:#f38ba8">' + (d.error || 'failed') + '</span>';
+      }
+      herderRefresh();
+    })
+    .catch(function(e) {
+      if (btn) { btn.disabled = false; btn.textContent = 'Spawn agent'; }
+      if (msg) { msg.innerHTML = '<span style="color:#f38ba8">' + e + '</span>'; }
+    });
+}
+
+function herderStop(ws) {
+  _hdFetch('/api/herder-stop?workspace=' + encodeURIComponent(ws), { method: 'POST' })
+    .then(function() { herderRefresh(); })
+    .catch(function() {});
+}
+
+function herderPromptAgent(name) {
+  var text = window.prompt('Prompt for ' + name + ':');
+  if (!text) { return; }
+  _hdFetch('/api/herder-prompt', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: name, prompt: text })
+  })
+    .then(function() {
+      // Open the feed on send: you asked it something, you want to watch it.
+      var det = document.getElementById('hddet-' + name);
+      if (det) { det.open = true; }
+      setTimeout(function() { herderStream(name, 1); }, 1500);
+    })
+    .catch(function() {});
+}
+
+setInterval(function() {
+  var el = document.querySelector('.nav-item.active');
+  if (el && el.getAttribute('data-s') === 'herder') { herderRefresh(); }
+}, 5000);
+
 function runSkillCuratorPropose() {
   var btn = document.getElementById('sc-propose-btn');
   if (btn) { btn.disabled = true; btn.textContent = '🔍 Analyzing…'; }
@@ -4683,10 +5475,15 @@ function mcWhatIf(modelKey) {{
     js  = (JS_TEMPLATE
            .replace("__SECTIONS_JSON__", sj)
            .replace("__INIT_REPO__", ir)
+           .replace("__GN_WEB_UI__", GN_WEB_UI)
+           .replace("__GN_PROBE_URL__", GN_PROBE_URL)
            .replace("__GN_SERVE_FUNS__", gn_funs)
            .replace("__WORKSHOP_FUNS__", workshop_funs)
            .replace("__HEADROOM_FUNS__", headroom_funs)
-           .replace("__MC_FUNS__", mc_funs))
+           .replace("__MC_FUNS__", mc_funs)
+           # Static output is written to a file and has no server to authorize
+           # against, so it must never carry a live token.
+           .replace("__HERDER_TOKEN__", HERDER_TOKEN if companion else ""))
     ts  = datetime.now().strftime("%Y-%m-%d %H:%M")
 
     return f"""<!DOCTYPE html>
@@ -4721,13 +5518,16 @@ function mcWhatIf(modelKey) {{
 
 def _wsl_to_windows(path: str) -> str | None:
     """Convert /mnt/c/foo → C:\\foo. Returns None if not a /mnt/<drive>/ path."""
-    import re as _re
-    m = _re.match(r'^/mnt/([a-zA-Z])(/.*)?$', path)
-    if not m:
+    prefix = "/mnt/"
+    if not path.startswith(prefix) or len(path) < len(prefix) + 1:
         return None
-    drive   = m.group(1).upper()
-    rest    = (m.group(2) or "").replace("/", "\\")
-    return f"{drive}:{rest}"
+    drive = path[len(prefix)]
+    rest  = path[len(prefix) + 1:]
+    if not drive.isascii() or not drive.isalpha():
+        return None
+    if rest and not rest.startswith("/"):
+        return None
+    return f"{drive.upper()}:{rest.replace('/', chr(92))}"
 
 
 def _start_gitnexus_serve(repo_path: str) -> None:
@@ -4882,8 +5682,71 @@ def _run_skill_curator_apply(instruction: str) -> None:
 class _DashboardHandler(BaseHTTPRequestHandler):
     _html: bytes = b""
 
-    GN_PORT = 4747  # gitnexus serve default port
     WS_PORT = 5899  # raindrop workshop default port
+
+    # ── Herder request guard ─────────────────────────────────────────────────
+    def _herder_authorized(self) -> bool:
+        """Reject cross-origin and untokened calls to the herder API.
+
+        Two independent checks, because either alone is bypassable:
+          - the per-process token, which only a page served by this process has;
+          - an Origin allowlist, so a page that somehow learned the token still
+            cannot drive it from another site.
+        A same-origin fetch from the dashboard page sends no Origin header on
+        same-origin GET/POST in some browsers, so an ABSENT Origin is allowed and
+        a PRESENT-but-foreign one is not.
+        """
+        if self.headers.get("X-Herder-Token") != HERDER_TOKEN:
+            return False
+        origin = self.headers.get("Origin")
+        allowed = (
+            f"http://localhost:{COMPANION_PORT}",
+            f"http://127.0.0.1:{COMPANION_PORT}",
+        )
+        return not origin or origin in allowed
+
+    def _send_json(self, obj, code=200):
+        """JSON reply with no CORS header.
+
+        Deliberately omits Access-Control-Allow-Origin: these endpoints act on the
+        machine, so no other site should be able to read their replies.
+        """
+        body = json.dumps(obj).encode()
+        self.send_response(code)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _herder_guarded(self):
+        """Return the herder module if the request may proceed, else None.
+
+        Returns the module rather than a bool so callers get a non-Optional
+        reference — a plain `if not guard(): return` leaves a type checker unable
+        to prove `herder` is not None at the call site below.
+        Replies 503 (not installed) or 403 (unauthorized) before returning None.
+        """
+        if herder is None:
+            self._send_json({"error": "herder-unavailable",
+                             "detail": HERDER_IMPORT_ERROR}, 503)
+            return None
+        if not self._herder_authorized():
+            self._send_json({"error": "forbidden"}, 403)
+            return None
+        return herder
+
+    def _read_json_body(self):
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            return {}
+        if length <= 0 or length > 1_000_000:
+            return {}
+        try:
+            return json.loads(self.rfile.read(length) or b"{}")
+        except ValueError:
+            return {}
 
     def do_GET(self):
         parsed = urlparse(self.path)
@@ -4893,14 +5756,11 @@ class _DashboardHandler(BaseHTTPRequestHandler):
             self.send_header("Content-Length", str(len(self._html)))
             self.end_headers()
             self.wfile.write(self._html)
-        elif parsed.path.startswith("/gn/") or parsed.path == "/gn":
-            self._proxy_gitnexus(parsed)
         elif parsed.path == "/api/headroom-stats":
             try:
                 body = HEADROOM_SAVINGS.read_bytes() if HEADROOM_SAVINGS.exists() else b'{}'
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
-                self.send_header("Access-Control-Allow-Origin", "*")
                 self.end_headers()
                 self.wfile.write(body)
             except Exception:
@@ -4913,7 +5773,6 @@ class _DashboardHandler(BaseHTTPRequestHandler):
             body = json.dumps({"content": content, "age": age}).encode()
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
-            self.send_header("Access-Control-Allow-Origin", "*")
             self.end_headers()
             self.wfile.write(body)
         elif parsed.path == "/api/workshop-runs":
@@ -4928,81 +5787,70 @@ class _DashboardHandler(BaseHTTPRequestHandler):
                 body = json.dumps(all_runs).encode()
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
-                self.send_header("Access-Control-Allow-Origin", "*")
                 self.end_headers()
                 self.wfile.write(body)
             except Exception:
                 self.send_response(503)
                 self.send_header("Content-Type", "application/json")
-                self.send_header("Access-Control-Allow-Origin", "*")
                 self.end_headers()
                 self.wfile.write(b'{"error":"workshop-offline"}')
+        elif parsed.path == "/api/herder-status":
+            hd = self._herder_guarded()
+            if hd is None:
+                return
+            try:
+                self._send_json(hd.status())
+            except Exception as exc:                      # noqa: BLE001
+                self._send_json({"error": str(exc)}, 500)
+        elif parsed.path == "/api/herder-list":
+            hd = self._herder_guarded()
+            if hd is None:
+                return
+            try:
+                self._send_json({"agents": hd.list_agents()})
+            except Exception as exc:                      # noqa: BLE001
+                self._send_json({"error": str(exc)}, 500)
+        elif parsed.path == "/api/herder-options":
+            hd = self._herder_guarded()
+            if hd is None:
+                return
+            kind = parse_qs(parsed.query).get("kind", ["claude"])[0]
+            try:
+                self._send_json(hd.agent_options(kind))
+            except Exception as exc:                      # noqa: BLE001
+                self._send_json({"error": str(exc)}, 500)
+        elif parsed.path == "/api/herder-stream":
+            hd = self._herder_guarded()
+            if hd is None:
+                return
+            qs = parse_qs(parsed.query)
+            name = qs.get("name", [""])[0]
+            try:
+                after = int(qs.get("after", ["0"])[0])
+            except ValueError:
+                after = 0
+            try:
+                data = hd.agent_stream(name, after=after)
+                if data is None:
+                    self._send_json({"name": name, "events": [], "cursor": after,
+                                     "pending": True})
+                else:
+                    self._send_json({"name": name, **data})
+            except Exception as exc:                      # noqa: BLE001
+                self._send_json({"error": str(exc)}, 500)
+        elif parsed.path == "/api/herder-read":
+            hd = self._herder_guarded()
+            if hd is None:
+                return
+            name = parse_qs(parsed.query).get("name", [""])[0]
+            try:
+                self._send_json({"name": name, "output": hd.read_agent(name)})
+            except Exception as exc:                      # noqa: BLE001
+                self._send_json({"error": str(exc)}, 500)
         elif parsed.path.startswith("/workshop/") or parsed.path == "/workshop":
             self._proxy_workshop(parsed)
         else:
             self.send_error(404)
-
-    def _proxy_gitnexus(self, parsed):
-        """Proxy to gitnexus serve, injecting auto-repo-select script into HTML."""
-        qs_params = parse_qs(parsed.query)
-        auto_repo = qs_params.pop("autoRepo", [None])[0]
-
-        # Build target path (strip /gn prefix)
-        gn_path = parsed.path[3:] or "/"
-        target_qs = urlencode({k: v[0] for k, v in qs_params.items()})
-        # Use "localhost" not "127.0.0.1": gitnexus serve binds to the IPv6
-        # loopback (::1) on macOS, which 127.0.0.1 (IPv4-only) cannot reach.
-        target_url = f"http://localhost:{self.GN_PORT}{gn_path}"
-        if target_qs:
-            target_url += f"?{target_qs}"
-
-        try:
-            req = UrlRequest(target_url, headers={"Accept": self.headers.get("Accept", "*/*")})
-            with urlopen(req, timeout=8) as resp:
-                content     = resp.read()
-                content_type = resp.headers.get("Content-Type", "application/octet-stream")
-                status       = resp.status
-        except URLError:
-            self.send_error(502, "gitnexus serve not reachable at port 4747")
-            return
-        except Exception as e:
-            self.send_error(502, str(e))
-            return
-
-        # For HTML: rewrite absolute /assets/ and /api/ URLs to point at gitnexus,
-        # then inject the auto-repo-select script.
-        if b"text/html" in content_type.encode() and b"</head>" in content:
-            gn_origin = f"http://localhost:{self.GN_PORT}"
-            # Rewrite absolute-path references so browser fetches from gitnexus, not 4569
-            content = content.replace(b'href="/', f'href="{gn_origin}/'.encode())
-            content = content.replace(b'src="/',  f'src="{gn_origin}/'.encode())
-
-            if auto_repo:
-                inject = f"""<script>
-(function(){{
-  var want = {json.dumps(auto_repo)};
-  function tryClick(){{
-    var cards = document.querySelectorAll('[data-testid="landing-repo-card"]');
-    for(var i=0;i<cards.length;i++){{
-      if(cards[i].textContent.indexOf(want) !== -1){{ cards[i].click(); return true; }}
-    }}
-    return false;
-  }}
-  var n=0;
-  function poll(){{ if(n++>40||tryClick()) return; setTimeout(poll,250); }}
-  if(document.readyState==='loading')
-    document.addEventListener('DOMContentLoaded', function(){{ setTimeout(poll,100); }});
-  else setTimeout(poll,100);
-}})();
-</script>
-</head>""".encode()
-                content = content.replace(b"</head>", inject, 1)
-
-        self.send_response(status)
-        self.send_header("Content-Type", content_type)
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.end_headers()
-        self.wfile.write(content)
 
     def _proxy_workshop(self, parsed):
         """Proxy to raindrop workshop UI at port 5899."""
@@ -5031,7 +5879,6 @@ class _DashboardHandler(BaseHTTPRequestHandler):
 
         self.send_response(status)
         self.send_header("Content-Type", content_type)
-        self.send_header("Access-Control-Allow-Origin", "*")
         self.end_headers()
         self.wfile.write(content)
 
@@ -5044,14 +5891,12 @@ class _DashboardHandler(BaseHTTPRequestHandler):
                 _start_gitnexus_serve(repo_path)
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
-            self.send_header("Access-Control-Allow-Origin", "*")
             self.end_headers()
             self.wfile.write(b'{"ok":true}')
         elif parsed.path == "/api/workshop-start":
             _start_workshop()
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
-            self.send_header("Access-Control-Allow-Origin", "*")
             self.end_headers()
             self.wfile.write(b'{"ok":true}')
         elif parsed.path == "/api/workshop-eval":
@@ -5061,14 +5906,12 @@ class _DashboardHandler(BaseHTTPRequestHandler):
                 _run_workshop_eval(repo_path)
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
-            self.send_header("Access-Control-Allow-Origin", "*")
             self.end_headers()
             self.wfile.write(b'{"ok":true}')
         elif parsed.path == "/api/skill-curator-propose":
             _run_skill_curator_propose()
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
-            self.send_header("Access-Control-Allow-Origin", "*")
             self.end_headers()
             self.wfile.write(b'{"ok":true}')
         elif parsed.path == "/api/skill-curator-apply":
@@ -5077,9 +5920,45 @@ class _DashboardHandler(BaseHTTPRequestHandler):
             _run_skill_curator_apply(instruction)
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
-            self.send_header("Access-Control-Allow-Origin", "*")
             self.end_headers()
             self.wfile.write(b'{"ok":true}')
+        elif parsed.path == "/api/herder-spawn":
+            hd = self._herder_guarded()
+            if hd is None:
+                return
+            body = self._read_json_body()
+            try:
+                result = hd.spawn(
+                    body.get("repo", ""),
+                    body.get("label", "agent"),
+                    kind=body.get("kind", "claude"),
+                    prompt=body.get("prompt", ""),
+                    permission_mode=body.get("permission_mode", "acceptEdits"),
+                    model=body.get("model", ""),
+                )
+                self._send_json({"ok": True, "agent": result})
+            except Exception as exc:                      # noqa: BLE001
+                self._send_json({"ok": False, "error": str(exc)}, 500)
+        elif parsed.path == "/api/herder-stop":
+            hd = self._herder_guarded()
+            if hd is None:
+                return
+            ws = parse_qs(parsed.query).get("workspace", [""])[0]
+            try:
+                hd.stop(ws)
+                self._send_json({"ok": True})
+            except Exception as exc:                      # noqa: BLE001
+                self._send_json({"ok": False, "error": str(exc)}, 500)
+        elif parsed.path == "/api/herder-prompt":
+            hd = self._herder_guarded()
+            if hd is None:
+                return
+            body = self._read_json_body()
+            try:
+                hd.prompt_agent(body.get("name", ""), body.get("prompt", ""))
+                self._send_json({"ok": True})
+            except Exception as exc:                      # noqa: BLE001
+                self._send_json({"ok": False, "error": str(exc)}, 500)
         else:
             self.send_error(404)
 
@@ -5132,13 +6011,22 @@ def open_browser(url: str):
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def main():
+    # The module docstring has advertised --port since this file was written, but
+    # argparse never defined it, so passing it was an error and the port was
+    # effectively hardcoded. It is a real flag now. The herder Origin allowlist
+    # reads this same module global, so the two cannot drift apart.
+    global COMPANION_PORT
+
     ap = argparse.ArgumentParser(description="SDD Harness Dashboard")
     ap.add_argument("--repo",    help="Pre-select a repo path or name")
     ap.add_argument("--no-open", action="store_true",
                     help="Start server without opening browser")
     ap.add_argument("--static",  action="store_true",
                     help="Write static file to .dashboard/index.html instead of starting server")
+    ap.add_argument("--port", type=int, default=COMPANION_PORT,
+                    help=f"HTTP port for the local server (default {COMPANION_PORT})")
     args = ap.parse_args()
+    COMPANION_PORT = args.port
 
     print("⬡  SDD Harness Dashboard")
     print(f"   Harness: {HARNESS_DIR}")
@@ -5165,6 +6053,7 @@ def main():
             "path":             str(repo),
             "trust_scores":     parse_trust_scores(repo),
             "observations":     parse_observations(repo),
+            "metrics":          parse_metrics(repo),
             "hooks":            list_hooks(repo),
             "last_routine_run": read_last_routine_run(repo),
             "gitnexus":         gitnexus_stats(repo),

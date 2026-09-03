@@ -108,6 +108,8 @@ Reads `observations.md` + `trace.log` for the last 24 hours and applies the rubr
 
 Idempotent: if a `[judge]` observation already exists for today, the Judge emits `score_delta: 0` with summary `"Already judged for this window"` and appends nothing new.
 
+**Sample mode suspends that idempotency.** When the caller runs the Judge three times and tells it not to append, the duplicate-run guard does **not** apply: each run scores the window normally and appends nothing, and the caller writes one `[judge]` line covering all three. This is load-bearing. The guard exists to stop a rerun of the whole routine from double-scoring a day; applied to samples it would mean run 1 scores the day, runs 2 and 3 see run 1's entry and return `score_delta: 0`, and three independent draws collapse into `[-2, 0, 0]` with a median of `0`. That is not a measurement with variance removed — it is the first sample discarded and replaced with two fabricated zeros. Suppressing the append also keeps `trust_score.py auto-score` honest, since it counts tag occurrences and three appended `[judge]` lines would triple-count every tag.
+
 ### 3. Reflector — consumes the Judge's drains
 
 **File**: `agents/kiro/reflect-agent.md` (existing; not changed)
@@ -126,19 +128,39 @@ The orchestrator passes the Judge's verdict JSON directly into the reflect-agent
 **Trigger**: Step 4 of `/kiro:daily-maintenance`
 
 ```bash
+# One --delta per judge run; the median is applied and the spread gates it:
+python3 .claude/scripts/trust_score.py apply --delta -1.0 --delta -2.0 --delta -1.0 --summary "..."
+# A single sample still works, and skips the spread gate:
 python3 .claude/scripts/trust_score.py apply --delta -1.0 --summary "..."
 python3 .claude/scripts/trust_score.py show
 ```
 
 Behavior:
 - Starts at **20%** on fresh install (matches the source's "AI hasn't earned trust yet" framing)
+- Accepts **repeated `--delta`, one per judge run**, and reduces them with `consensus_delta()`
 - Clamps the applied delta to `[-4.5, +4.5]` (matches the source's cap)
 - Clamps the score to `[0, 100]`
 - **Idempotent per calendar day**: if a record already exists for today, skips without writing
 - Rewrites the `## Harness Trust Score:` line at the top of `hot-memory.md`
-- Appends to `trust-score.jsonl` with raw delta, applied delta, and timestamp for the 7-day trend
+- Appends to `trust-score.jsonl` with raw delta, applied delta, and timestamp for the 7-day trend, plus the raw `samples`, the `spread`, and the `inconclusive` flag
 
 Output arrows: ▲ (up), ▼ (down), ▬ (flat). 7-day delta is `null` until there are records older than 7 days.
+
+#### Multi-sample verdicts — the spread gate
+
+The judge is an LLM at temperature > 0, and until 2026-09-03 a single draw from it was committed straight into a cumulative score that nothing ever revisits. That made "the score fell 4 points" and "the judge sampled differently" the same observation, and nothing ever revisited a draw. `/kiro:daily-maintenance` now runs the judge three times and passes all three deltas here.
+
+`consensus_delta(deltas)` returns `(delta, spread, inconclusive)`:
+
+| Samples | Result |
+|---|---|
+| One | Passed through unchanged, `spread` is `null`, gate skipped. One sample has no spread; reporting `0.0` would read as perfect agreement on evidence that was never collected |
+| Several, spread ≤ `JUDGE_SPREAD_LIMIT` | The **median**, so one outlier draw cannot move the score |
+| Several, spread > `JUDGE_SPREAD_LIMIT` | `0.0`, and the day is recorded **inconclusive** |
+
+`JUDGE_SPREAD_LIMIT` is **2.0** on the `[-4.5, +4.5]` scale: three runs landing within 2 points of each other are reading the same day, while a wider spread means the reading depends on which draw you looked at, and the honest delta for that day is `0.0` rather than whichever number the middle sample happened to be. An inconclusive day is stored distinguishably from a day nothing ran — it is the helper declining to commit a number it cannot stand behind, not a failure to fix.
+
+Sources: Perrone, *What is Agentic Testing?* (`pass^k` over `pass@k` — a gate that greens on 1-of-3 is not a gate) and Visa's VVAH README (majority-vote false-positive filtering at temperature > 0). See `docs/sources/articles/README.md`.
 
 ## The Nightly Loop
 
@@ -159,8 +181,9 @@ Output arrows: ▲ (up), ▼ (down), ▬ (flat). 7-day delta is `null` until the
 │  Pre-check:  .claude/memory/ exists?                         │
 │              today's [judge] already written?  → exit        │
 │                                                              │
-│  Step 1 ── session-judge ──► JSON verdict + [judge] obs      │
-│             (reads observations + trace; proposes nothing)   │
+│  Step 1 ── session-judge ×3 ──► 3 JSON verdicts             │
+│             (concurrent, independent; caller writes ONE      │
+│              [judge] obs covering all three)                 │
 │                                                              │
 │  Step 2 ── reflect-agent  ──► new memory / patterns          │
 │             (seeded with Judge's drains)                     │
@@ -174,8 +197,9 @@ Output arrows: ▲ (up), ▼ (down), ▬ (flat). 7-day delta is `null` until the
 │                                                              │
 │  Step 6 ── keep-rate ──► [keep-rate] obs                     │
 │                                                              │
-│  Step 7 ── trust_score.py apply --delta ... ──► scoreboard   │
-│             (runs after steps 5 & 6; sees all signals)       │
+│  Step 7 ── trust_score.py apply --delta ×3 ──► scoreboard    │
+│             (runs after steps 5 & 6; sees all signals;       │
+│              median applied, spread >2.0 ⇒ inconclusive)     │
 └──────────────────────────────────────────────────────────────┘
 ```
 
@@ -257,6 +281,7 @@ Check the guard conditions in order:
 
 - The Judge scored 0 for each run. Causes: empty observations window, every finding lacked evidence (the rubric requires citations), or all observations are already tagged `[judge]` (idempotent skip).
 - Check: `python3 .claude/scripts/trust_score.py show` — if `records > 0` but `score == 20`, the Judge is consistently emitting `score_delta: 0`. Inspect the rubric and recent observations.
+- Check for **inconclusive days** in `trust-score.jsonl` before blaming the rubric: a record with `"inconclusive": true` applied `0.0` because the three judge samples spread past 2.0, which is a disagreement between draws rather than a genuinely flat day. Several in a row point at the rubric being ambiguous on the evidence available, not at the score being stuck.
 
 ### Routine not registered
 
@@ -293,4 +318,4 @@ The deliberate non-goals above are stable. If any of these come up in a future r
 
 ---
 
-_Last synced: 2026-08-20_
+_Last synced: 2026-09-03_

@@ -190,7 +190,7 @@ $SDD_HARNESS/install.sh /path/to/project --with-gitnexus
 
 This indexes the repo (`.gitnexus/`), adds the MCP server to `.claude/settings.json`, updates `.gitignore`, and registers editor integration.
 
-Option A now does the MCP wiring itself: `install.sh --with-gitnexus` calls `scripts/setup/gitnexus-reconcile.sh <project> --wire` instead of printing a note asking you to paste the `mcpServers` JSON by hand, and it only runs `gitnexus setup` once a `--check` confirms both the index and the MCP server exist. If that check fails it says so and sends you to Option B — that gate exists because `gitnexus setup` writes a MUST/NEVER block into `CLAUDE.md`, and an unwired install left the agent ordered to call `gitnexus_*` tools that did not exist.
+Option A now does the MCP wiring itself: `install.sh --with-gitnexus` calls `scripts/setup/gitnexus-reconcile.sh <project> --wire` instead of printing a note asking you to paste the `mcpServers` JSON by hand, and it only runs `gitnexus setup` once a `--check` confirms both the index and the MCP server exist. If that check fails it says so and sends you to Option B — that gate exists because `gitnexus setup` writes a MUST/NEVER block into `CLAUDE.md` (or `AGENTS.md`, if that's where the project keeps its conventions), and an unwired install left the agent ordered to call `gitnexus_*` tools that did not exist.
 
 ---
 
@@ -351,9 +351,11 @@ $SDD_HARNESS/install.sh --all --force          # re-sync every project (push upd
 $SDD_HARNESS/install.sh --all --with-gitnexus  # batch install + GitNexus
 ```
 
-`install.sh` propagates **every** hook in the harness's `hooks/` directory into the project's `.claude/hooks/` (and `chmod +x`'s them), syncs `docs/` into `.claude/docs/`, and generates a project stack summary. The harness is the source of truth — which hooks actually fire is governed by the project's `.claude/settings.json` wiring, not by which files are present. Re-run `update.sh` to re-sync after the harness changes.
+`install.sh` propagates **every** hook in the harness's `hooks/` directory into the project's `.claude/hooks/` (and `chmod +x`'s them) — except `*.test.sh` files, which are harness-repo test suites for the hooks rather than runtime hooks and are skipped by the copy loop — syncs `docs/` into `.claude/docs/`, and generates a project stack summary. The harness is the source of truth — which hooks actually fire is governed by the project's `.claude/settings.json` wiring, not by which files are present. Re-run `update.sh` to re-sync after the harness changes.
 
 `install.sh` validates `templates/settings.json.template` with `scripts/setup/check-settings-json.sh` before copying it; if the template is not strict JSON the copy is skipped and an error is printed rather than shipping a settings file Claude Code cannot parse. It also drops `.claude/settings.notes.md` (from `templates/settings.notes.md.template`) — the place for notes that cannot live inside `settings.json`, since JSON allows no comments and no content after the closing brace. Both `install.sh` and `update.sh` then run `scripts/setup/repair-settings-json.py` over the project, which peels a trailing `//` comment block out of an existing `settings.json` into that sidecar. It is idempotent, leaves valid files untouched, and reports (rather than guesses) when the breakage is something other than a trailing comment block.
+
+Before generating the harness repo's own `.claude/settings.json`, `install.sh` and `update.sh` both run `scripts/setup/reconcile-settings-templates.py --sync`. `templates/settings.json.template` is the source of truth for shared hooks and `templates/settings.harness.json.template` is derived from it plus an explicit harness-only allowlist, so the two cannot drift apart in the direction that matters — a hook firing in every installed project while not firing in the repo where it is written and tested. A failure there prints a warning and the install continues. Add a shared hook to the project template and run `--sync`; never edit the harness template directly.
 
 Then, inside Claude Code in the project directory, run these once:
 
@@ -364,9 +366,13 @@ Then, inside Claude Code in the project directory, run these once:
 
 Daily maintenance runs automatically via the local OS scheduler (registered by `install.sh` / `update.sh`). No per-project setup is required. Registration is followed by a **preflight** that runs the orchestrator once under the scheduler's own environment — on macOS and Linux the install fails (exit 1) if that comes back non-zero, so a job that registers but cannot execute is reported at setup instead of doing nothing nightly. On macOS the most common cause is a harness under a TCC-protected folder (`~/Documents`, `~/Desktop`, `~/Downloads`), which launchd is refused access to; the preflight names it and gives both fixes.
 
-Update `.gitignore` to exclude harness files. `install.sh` automatically adds the core three entries (`.claude/`, `specs/`, `CLAUDE.md`) under a `# SDD harness` header — skip those below if already present. For the full recommended exclusion set:
+Update `.gitignore` to exclude harness files. `install.sh` automatically adds the harness-local entries (`.claude/`, `specs/`, `CLAUDE.md`, `AGENTS.md`, `ERRORS.md`) under a `# SDD harness` header — skip those below if already present. The list is defined once as `SDD_GITIGNORE_ENTRIES` in `scripts/lib/project-gitignore.sh`, and `update.sh` calls the same `ensure_gitignore` on every sync (git repos only), so a project installed before an entry existed picks it up on its next update instead of needing a re-install. For the full recommended exclusion set:
 ```gitignore
 CLAUDE.md
+# Generated per machine, same class as CLAUDE.md: AGENTS.md by `lean-ctx setup`,
+# ERRORS.md by the 2+-attempts logging rule
+AGENTS.md
+ERRORS.md
 specs/
 .claude/settings.json
 .claude/.last-harness-check
@@ -437,4 +443,4 @@ Run through this on a fresh machine:
 | `Settings file failed to parse: .claude/settings.json — Invalid or malformed JSON` (permission rules and hooks silently inactive) | Comments or notes after the closing brace — JSON allows neither. Installs before 2026-08-12 copied a template that carried a `//` block | `python3 $SDD_HARNESS/scripts/setup/repair-settings-json.py /path/to/project` moves the block to `.claude/settings.notes.md`; `update.sh` now does this automatically. Keep all notes in `settings.notes.md` |
 | `headroom` proxy exits with `FastAPI required` or `h2 package not installed` | Missing `uvicorn` or `httpx[http2]` in headroom's uv env | Re-run `install.sh` (patched) or manually: `uv tool install headroom-ai --python 3.12 --with-requirements $SDD_HARNESS/scripts/setup/headroom-extras.txt` |
 
-_Last synced: 2026-08-20_
+_Last synced: 2026-09-01_

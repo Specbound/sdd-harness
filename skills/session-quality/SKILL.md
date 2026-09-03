@@ -28,6 +28,8 @@ git log --since="24 hours ago" --format="%s" | grep -i "revert\|undo\|rollback\|
 git log --since="24 hours ago" --name-only --format="" | sort | uniq -c | sort -rn | head -10
 ```
 
+If commits are zero, check sibling repos — activity may be invisible if `.claude/` is gitignored or work lands in a parallel directory. (source: 2026-08-31 [routine-error])
+
 ### Step 2 — Collect signals from observations
 
 Read `.claude/memory/observations.md` for today's entries. Look for:
@@ -52,11 +54,34 @@ Also assess:
 - **Spec quality**: Were requirements clear? (frequent scope changes suggest spec issue)
 - **Tool reliability**: Any tool errors or unexpected failures?
 
-### Step 4 — Record observation
+### Step 4 — Record the score twice: once for humans, once for the dashboard
+
+Prose observation (context, nuance, root-cause hint):
 
 ```
 - YYYY-MM-DD [session-quality]: Score=X/5. Signals: [reverts: N, rework files: N, forward commits: N]. Root cause hint: [context gap / spec ambiguity / tool issue / none]. 
 ```
+
+Structured measurement — the dashboard reads **only** this, never the prose:
+
+```bash
+.claude/scripts/session/record_metric.py --metric session-quality --value X \
+  --meta '{"reverts": N, "rework_files": N, "forward_commits": N}'
+```
+
+**Idle windows.** If there was no user session in the window (routine ran on a stale
+repo — no commits, no transcript), the score is a placeholder, not a judgement. Pass
+`--idle` so it is excluded from the average:
+
+```bash
+.claude/scripts/session/record_metric.py --metric session-quality --value 3 --idle
+```
+
+Averaging placeholders in is how a repo with one good session and two quiet days
+reports 3.3/5. Say "idle-routine window" in the text too, but the `--idle` flag is
+what the dashboard acts on.
+
+When marking idle on zero commits, check routine transcripts for auth errors; ~15-19-line transcripts can be legitimate short sessions. (source: 2026-08-31 [routine-error])
 
 If score ≤ 2, also add a `[kaizen]` flag: `Investigate: [specific pattern observed]`
 
@@ -79,3 +104,9 @@ Not all metric signals indicate real problems. **Idle-routine artifacts** fire o
 - Repeating signal with same anchor date (not escalating)? Likely artifact.
 - Signal fires only in zero-charge judge windows? Filter before alerting.
 Example: loop-debt on 2026-06-21 was recognized as idle-routine artifact, not regression. (source: 2026-06-21 insight, pattern)
+
+### ❌ Marking `--idle` on zero commits alone
+Do not use `--idle` on zero commits alone; prior-run output lands post-judge in this window. (source: 2026-08-26 [session-quality])
+
+### ❌ Assuming routine idleness on zero observations
+Check routine transcripts for hard-failure signature (~15 lines means died at auth); zero observations can hide outages indistinguishable from idle. (source: 2026-08-31 [routine-error])

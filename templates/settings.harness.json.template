@@ -1,4 +1,7 @@
 {
+  "env": {
+    "BASH_MAX_OUTPUT_LENGTH": "15000"
+  },
   "permissions": {
     "allow": [
       "Bash(ruff check *)",
@@ -15,23 +18,14 @@
       "Bash(bash bootstrap.sh *)",
       "Bash(bash generate-project-stack.sh *)",
       "Edit(docs/**)",
-      "Write(docs/**)",
       "Edit(specs/**)",
-      "Write(specs/**)",
       "Edit(.claude/**)",
-      "Write(.claude/**)",
       "Edit(hooks/**)",
-      "Write(hooks/**)",
       "Edit(scripts/**)",
-      "Write(scripts/**)",
       "Edit(templates/**)",
-      "Write(templates/**)",
       "Edit(kiro/**)",
-      "Write(kiro/**)",
       "Edit(agents/**)",
-      "Write(agents/**)",
-      "Edit(**/*.md)",
-      "Write(**/*.md)"
+      "Edit(**/*.md)"
     ],
     "deny": [
       "Bash(rm -rf*)",
@@ -40,21 +34,56 @@
       "Edit(secrets/*)",
       "Read(secrets/*)"
     ],
-    "additionalDirectories": ["/tmp"]
+    "additionalDirectories": [
+      "/tmp"
+    ]
   },
   "hooks": {
     "SessionStart": [
       {
+        "matcher": "",
         "hooks": [
           {
             "type": "command",
             "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/session-start-hook.sh\""
+          },
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/headless-envelope-hook.sh\""
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/prompt-hook.sh\""
+          },
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/frontend-security-nudge.sh\""
+          },
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/pr-mention-nudge.sh\""
+          },
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/reject-feedback-hook.sh\""
+          },
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/doc-parse-nudge.sh\""
           }
         ]
       }
     ],
     "Stop": [
       {
+        "matcher": "",
         "hooks": [
           {
             "type": "command",
@@ -62,74 +91,16 @@
           },
           {
             "type": "command",
-            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/address-check-hook.sh\""
-          },
-          {
-            "type": "command",
             "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/caveman-savings-hook.sh\""
-          }
-        ]
-      }
-    ],
-    "PostToolUse": [
-      {
-        "matcher": "Write|Edit",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/impeccable-detect-hook.sh\""
           },
           {
             "type": "command",
-            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/hook-added-notify.sh\""
-          },
-          {
-            "type": "command",
-            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/skill-permissions-gate.sh\""
-          }
-        ]
-      },
-      {
-        "matcher": "Write|Edit|MultiEdit",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/test-integrity-guard.sh\""
-          },
-          {
-            "type": "command",
-            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/ruff-quality-gate-hook.sh\""
-          }
-        ]
-      },
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/revert-detect-hook.sh\""
-          },
-          {
-            "type": "command",
-            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/setup-buffer-hook.sh\""
-          },
-          {
-            "type": "command",
-            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/action-capture.sh\""
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/address-check-hook.sh\""
           }
         ]
       }
     ],
     "PreToolUse": [
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/git-destructive-guard-hook.sh\""
-          }
-        ]
-      },
       {
         "matcher": "Write|Edit",
         "hooks": [
@@ -144,6 +115,24 @@
           {
             "type": "command",
             "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/skill-validate-hook.sh\""
+          }
+        ]
+      },
+      {
+        "matcher": "Read|Edit|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/pre-tool-use-gitnexus.sh\""
+          }
+        ]
+      },
+      {
+        "matcher": "Write|Edit|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/ledger-append-only.sh\""
           }
         ]
       },
@@ -179,6 +168,41 @@
         ]
       },
       {
+        "matcher": "mcp__raindrop__",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/raindrop-best-practices.sh\""
+          }
+        ]
+      },
+      {
+        "matcher": "Bash|mcp__.*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/tool-failure-recall.sh\""
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/git-destructive-guard-hook.sh\""
+          },
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/agent-commit-attribution-hook.sh\""
+          },
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/pr-evidence-hook.sh\""
+          }
+        ]
+      },
+      {
         "matcher": "Read|Bash|WebFetch|WebSearch",
         "hooks": [
           {
@@ -186,26 +210,134 @@
             "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/agent-behavior-guard.sh\""
           }
         ]
-      }
-    ],
-    "UserPromptSubmit": [
+      },
       {
-        "matcher": "",
+        "matcher": "Write|Edit|MultiEdit|Bash",
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/doc-parse-nudge.sh\"",
-            "timeout": 5
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/ai-writing-guard-hook.sh\""
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/impeccable-detect-hook.sh\""
+          },
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/hook-added-notify.sh\""
+          },
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/lean-ctx-nudge-hook.sh\""
+          },
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/skill-permissions-gate.sh\""
+          }
+        ]
+      },
+      {
+        "matcher": "Write|Edit|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/test-integrity-guard.sh\""
+          },
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/ruff-quality-gate-hook.sh\""
+          },
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/js-quality-gate-hook.sh\""
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/revert-detect-hook.sh\""
+          },
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/setup-buffer-hook.sh\""
+          },
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/pr-auto-create-hook.sh\""
+          },
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/action-capture.sh\""
+          }
+        ]
+      },
+      {
+        "matcher": "Agent",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/agent-trace-hook.sh\""
+          }
+        ]
+      },
+      {
+        "matcher": "Skill",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/skill-usage-tracker.sh\""
+          }
+        ]
+      },
+      {
+        "matcher": "TodoWrite",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/todo-focus-hook.sh\""
           }
         ]
       }
     ],
     "PreCompact": [
       {
+        "matcher": "",
         "hooks": [
           {
             "type": "command",
             "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/compaction-discipline-hook.sh\""
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/subagent-context-hook.sh\""
+          }
+        ]
+      }
+    ],
+    "PostToolUseFailure": [
+      {
+        "matcher": "Bash|mcp__.*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/tool-failure-capture.sh\""
           }
         ]
       }

@@ -128,6 +128,24 @@ Executes tasks via TDD (test first, then code, then verify). After each task's V
 /kiro:spec-impl revenue-trend-chart
 ```
 
+Two gates bracket the delegation. **Before**: Phase -1 adds a Decision-Budget check to the existing simplicity / anti-abstraction / integration-first trio — the first three catch *too much* (over-engineering), this one catches *too little* (under-specification), asking whether every task leaves the implementer inheriting decisions rather than making them, and whether every deliberately-open freedom is named as delegated. **After**: `/kiro:audit-choices` runs automatically on each pass.
+
+### `/kiro:audit-choices` — Record decisions the spec never made
+Reconstructs the choices the implementation made where the spec said nothing, verdicts each as `sound` / `unsound` / `needs-user`, and appends them to `specs/<feature>/choices.md`.
+
+This closes a gap the other reviews leave open. `validate-impl` and `validate-adversarial` check the artifact; `session-quality` and `.claude/behaviors/` check conduct. Neither catches an implementation that is correct, tested, and passes every gate while quietly embedding an architecture nobody chose — because a diff shows what was built and says nothing about what was silently discarded.
+
+It **changes no code** and **never blocks**: every `needs-user` entry carries a reversible provisional call, so an unattended run finishes with an open ledger rather than stalling. An irreversible provisional is reported as irreversible, not dressed up.
+
+Runs per pass, not once at the end — waiting means auditing a session trace that has been compacted away and subagent reports that no longer exist.
+
+```
+/kiro:audit-choices revenue-trend-chart           # audit the pass just finished
+/kiro:audit-choices revenue-trend-chart --close   # resolve open calls, consolidate
+```
+
+Read the ledger as a signal, not just a record: entries clustering on one slice mean that slice was under-specified and should be resliced; a pass heavy with `needs-user` means the Decision-Budget Gate should have failed first.
+
 ### `/kiro:spec-status` — Check spec progress
 Shows current phase, approvals, and open tasks.
 
@@ -378,13 +396,14 @@ Each setup script also **preflights** that the orchestrator can actually run und
 
 Pipeline:
 
-1. **`session-judge`** — independent adversarial scorer. Reads the last 24h of `observations.md` + trace log, applies the rubric in `kiro/settings/rules/session-quality-rubric.md`, emits a JSON verdict (±1 charges, -2 drains, ±4.5%/day cap). **Proposes no fixes** — if the same agent scored and improved, it would optimize for score, not work.
+1. **`session-judge`, run 3×** — independent adversarial scorer. Reads the last 24h of `observations.md` + trace log, applies the rubric in `kiro/settings/rules/session-quality-rubric.md`, emits a JSON verdict (±1 charges, -2 drains, ±4.5%/day cap). **Proposes no fixes** — if the same agent scored and improved, it would optimize for score, not work.
+   The judge is an LLM at temperature > 0 and its verdict lands in a cumulative score nothing ever revisits, so a single draw is not a measurement — until this ran three times, "the score fell 4 points" and "the judge sampled differently" were the same observation. It is spawned **three times in a single message** (the runs are independent and read-only, so they run concurrently), with no run told about the others and no variation between prompts. Only the *caller* appends the `[judge]` observation, one line covering all three — three subagents each appending their own would triple-count every tag into `trust_score.py auto-score`, which counts tag occurrences. A run that fails is **missing**, not a vote for zero; substituting `0` for a crashed judge pulls the median toward no-change and manufactures agreement out of a failure.
 2. **`/kiro:reflect`** — consumes the Judge's drains as priority signals, converts them into new memory entries or pattern promotions.
 3. **`/kiro:housekeeping`** — prunes/archives observations, enforces memory caps.
 4. **Memory-gap alert** — if any `[memory-gap]` observations remain unresolved after reflection, appends a `[routine-alert]` observation so the user sees it next session.
 5. **Session quality** — scores the session via the `session-quality` rubric, writes a `[session-quality]` observation.
 6. **Keep rate** — `keep-rate` skill evaluates pattern retention, writes a `[keep-rate]` observation.
-7. **Trust Score update** — `scripts/session/trust_score.py` runs after session quality and keep rate are written so all signals (`[session-charge]`, `[memory-gap]`, `[session-quality]`, `[keep-rate]`) are visible. Rewrites the `## Harness Trust Score:` line in `hot-memory.md`, appends to `.claude/memory/trust-score.jsonl`.
+7. **Trust Score update** — `scripts/session/trust_score.py` runs after session quality and keep rate are written so all signals (`[session-charge]`, `[memory-gap]`, `[session-quality]`, `[keep-rate]`) are visible. Rewrites the `## Harness Trust Score:` line in `hot-memory.md`, appends to `.claude/memory/trust-score.jsonl`. `apply` takes **one `--delta` per judge run** and reconciles them: it applies the **median**, so a single outlier draw cannot move the score, and records the day as **inconclusive** with a delta of `0.0` when the samples spread by more than `JUDGE_SPREAD_LIMIT` (2.0 on the ±4.5 scale) — a reading that depends on which draw you looked at is not a reading. The raw `samples`, the `spread` and the `inconclusive` flag are persisted to `trust-score.jsonl`, so an inconclusive day is distinguishable from a day nothing ran. A single `--delta` is still accepted and skips the spread gate, reporting `"spread": null` rather than `0.0` — one sample has no spread, and claiming otherwise would read as perfect agreement. An inconclusive result is not a problem to fix; it is the helper declining to commit a number it cannot stand behind.
 8. **Skill augmentation** — `skill-augment-agent` reviews today's observations and judge drains, encodes up to 5 evidence-backed improvements (circuit breaker cap) into relevant `SKILL.md` files (append-only, ≤150 chars each). Logs each change as a `[skill-update]` observation. Also processes any `[seed-target:]` observations written by the action-capture hook during the session, and today's `type: feedback` memories (user corrections), which auto-qualify and are drafted before judge drains — human ground-truth outranks the LLM grader.
 8b. **Behavior spec mining** — `behavior-spec-agent` (process-focused sibling of step 8) reviews the same evidence for *recurring agent conduct* rather than skill-content gaps, and drafts/revises up to 3 durable `BEHAVIOR.md` specs under `.claude/behaviors/<name>/` — answer-key material for grading future trajectories, deliberately never shown to the agent being graded (unlike `SKILL.md`/`CLAUDE.md`). Requires ≥2 recurring occurrences of the same conduct class, except `type: feedback` memories which auto-qualify at 1. Every spec is validated with `scripts/validate-behavior-spec.py` before being left in place. Logs each change as a `[behavior-update]` observation. See the `writing-behavior-specs` skill for the format and calibration methodology.
 9. **Adversarial check** — a separate verification agent (no loyalty to step 8's output) reviews each `[skill-update]` written today: does it address the stated gap? does it contradict existing guidance? Flags failures as `[skill-update-flagged]`, confirms passes as `[skill-update-verified]`. Skipped if step 8 wrote nothing.
@@ -458,6 +477,14 @@ Runs automatically every day via the daily orchestrator. Performs a static secur
 Visible in the dashboard **Scheduled Tasks** section (row 6) with last-run status, artifact diff, and any findings headline.
 
 Self-paces to daily (`MIN_GAP_DAYS=1`). Applies to every repo. Opt-out: `SDD_SKIP_SECURITY_REPORT=1`.
+
+---
+
+### RTK Net-Effect (`rtk-net-effect-runner.sh`)
+
+Runs automatically every day via the daily orchestrator. Deterministic (no LLM) wrapper around `scripts/utils/rtk-net-effect.py`, which measures RTK's **global** effect from `~/.claude/projects/**/*.jsonl` rather than its local savings alone: exact-match Bash rerun rate and Read reread rate within the same session — the recovery-cost signal RTK's own per-command byte-savings figure cannot see. Writes `.claude/memory/rtk-net-effect.json`, read by the dashboard's RTK layer note (Headroom tab), which now shows both rates alongside its savings figure instead of savings alone.
+
+Self-paces to daily (own state-file guard). Applies to every repo. Opt-out: `SDD_SKIP_RTK_NET_EFFECT=1`. Lookback window: `SDD_RTK_NET_EFFECT_DAYS` (default 30).
 
 ---
 
@@ -592,6 +619,7 @@ Starts a local HTTP server at `http://localhost:4569` and opens the browser auto
 | 11 | 🧵 Context Health | Sessions per day trend + `/compact` recommendations; live context-usage card (color-coded %, from the open Claude Code session's statusline via `hooks/global/caveman-statusline.sh`, shown only while a session is open in the last 15 minutes) |
 | 12 | 🔧 Maintenance Status | Per-repo orchestrator log tail and last-run status; **deferred-work banner** — count of `DEBT:` markers (deliberate shortcuts, per `karpathy-guidelines`) found by `git grep` across tracked code, recomputed each dashboard launch |
 | 13 | 🤖 Automation Audit | Timeline of automated events — runs from every routine (daily-maintenance, macro-eval, skill-curator, harness-health, tool-failure, security, drift), each with its own icon/label; not-due checks (duration 0s) are hidden and daily-maintenance entries expand to show that day's brief; plus trust-judge scores, session signals, scheduled task outcomes, and a PR-review-pipeline event section (`detect_base_and_create.sh` → `log_review.sh` → `validate_review_json.py` → GitHub Action publish) |
+| 14 | 🐑 Herder | Spawn form + live agent roster, backed by `scripts/utils/herder.py` (Herdr). Starts **real interactive** Claude Code sessions that outlive the dashboard process, in whichever repo the dashboard's own repo dropdown is set to — there is deliberately no second repo picker. Per-agent lifecycle state (`idle`/`working`/`blocked`/`done`), a live tail on a 5s poll, and per-agent token/cost-weighted spend read from that session's own transcript (reported as **None**, not 0, when the transcript cannot be located). Permission modes and model ids are discovered rather than hardcoded, and each list states plainly when it is a fallback. Under `--static` the controls are replaced by a note instead of rendered dead |
 
 ### 💰 Model Cost section
 
@@ -600,6 +628,16 @@ Reads session JSONL files from `~/.claude/projects/*/`. Pricing is fetched from 
 The **"What if?" switcher** lets you recalculate total projected cost against any supported provider (Anthropic, OpenAI, Google, Mistral, DeepSeek, xAI, Cohere, Amazon Bedrock, Azure, Perplexity, Groq) and model — select provider first, then model, and the projected vs. actual totals update instantly.
 
 The **cache-cost stat card** shows what share of a session's token spend was cache reads/writes vs. fresh tokens — the same signal `stop-hook.sh`'s cache-cost dominance check uses to decide whether to write a handoff snapshot.
+
+### 🐑 Herder section
+
+Backed by [Herdr](https://herdr.dev) via `scripts/utils/herder.py`. `herdr server` is a headless daemon needing no TTY, and every `herdr workspace|tab|pane|agent` subcommand answers with JSON on stdout, so nothing in this path pattern-matches terminal text. It is used instead of the `claude --print` primitive the skill-curator endpoints use because `--print` is a one-shot pipe with nothing to attach to; a Herdr-started session can be joined from a terminal mid-run with `herdr agent attach <name>`.
+
+The API endpoints (`/api/herder-status`, `-list`, `-options`, `-spawn`, `-prompt`, `-read`, `-stream`, `-stop`) are guarded by **two independent checks**, either of which alone is bypassable: a per-process `X-Herder-Token` that only the page served by this process holds, and an `Origin` allowlist. An *absent* Origin is allowed (browsers send none on same-origin GET/POST) while a *present but foreign* one is rejected, so a page that somehow learned the token still cannot drive the dashboard from another site.
+
+Two undocumented Herdr behaviours are handled here. A spawned pane inherits `CLAUDE_CODE_CHILD_SESSION`, which turns transcript saving **off** — that would make every herder-spawned session invisible to `scripts/utils/token-forensics.py` and to `agents/kiro/session-judge.md`, so it is scrubbed both in the server env and per-workspace via `--env`. And `herdr agent read` returns raw pane text rather than a JSON envelope, with failures arriving as JSON on stderr, so both are handled separately from the normal JSON path.
+
+Known limitation: spawning into a repo Claude Code has never been opened in fails with `agent_not_ready`, because Claude stops on its first-run "do you trust the files in this folder?" prompt. Open that repo by hand once.
 
 See `docs/workflow/superpowers/specs/2026-05-14-harness-dashboard-design.md` for the full section spec (gitignored — local only).
 
@@ -726,11 +764,12 @@ Bundled in the harness — replicated to every machine via `install.sh`. No per-
 2. /kiro:idea-refine "rough idea"        ← (optional) refine vague ideas
 3. /kiro:spec-quick "Add feature X"      ← fast: requirements → design → tasks
    (review and approve each phase)
-4. /kiro:spec-impl feature-x             ← implement via TDD
+4. /kiro:spec-impl feature-x             ← implement via TDD (audits choices per pass)
 5. /kiro:verify                          ← confirm build, tests, lint all pass
 6. /kiro:validate-impl feature-x         ← confirm spec alignment
-7. /kiro:ship feature-x                  ← (optional) launch readiness check
-8. /kiro:reflect                         ← capture what you learned
+7. /kiro:audit-choices feature-x --close ← resolve open needs-user calls before shipping
+8. /kiro:ship feature-x                  ← (optional) launch readiness check
+9. /kiro:reflect                         ← capture what you learned
 ```
 
 For larger features, use the individual spec phases (`spec-requirements` → `spec-design` → `spec-grill` → `spec-tasks`) instead of `spec-quick` to review each phase separately.
@@ -795,9 +834,9 @@ Four protocols extracted from [garrytan/gbrain](https://github.com/garrytan/gbra
 **Memory-First Lookup** (`~/.claude/skills/memory-first-lookup/`) — Always run `mcp__plugin_claude-mem_mcp-search__search` before reaching for external APIs. The lookup chain: keyword search → semantic search → get_observations → external only if memory is empty.
 
 **Model Tiers** (`~/.claude/skills/model-tiers/`) — Match model to task type:
-- `haiku-4-5` for classification, validation, dedup (utility)
-- `sonnet-4-6` for generation, synthesis, agent work (default)
-- `opus-4-8` only for deep multi-step reasoning (upgrade when sonnet consistently fails)
+- `haiku-4-5` (`claude-haiku-4-5-20251001`) for classification, validation, dedup (utility)
+- `sonnet-5` (`claude-sonnet-5`) for generation, synthesis, agent work (default)
+- `opus-5` (`claude-opus-5`) only for deep multi-step reasoning (upgrade when sonnet consistently fails)
 - `fable-5` for long, multi-sitting autonomous sessions (`/model fable`)
 - Subagents always use `sonnet`, not opus — latency compounds in tool loops
 
@@ -807,4 +846,4 @@ Four protocols extracted from [garrytan/gbrain](https://github.com/garrytan/gbra
 
 Full reference: `docs/gbrain-patterns/gbrain-patterns.md`
 
-_Last synced: 2026-08-16_
+_Last synced: 2026-09-03_

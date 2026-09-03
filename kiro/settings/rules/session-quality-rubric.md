@@ -48,12 +48,14 @@ These are scored deterministically from observation tags — no Judge pass neede
 
 `[session-charge]` entries are written automatically by the stop hook when the user's session transcript contains unambiguous approval phrases ("that's perfect", "that works!", "great work", etc.). They require no manual action.
 
+`auto-score` is deterministic, so it submits its total as a **single** sample — the multi-sample spread gate that reconciles repeated judge runs is skipped, and the record reports `"spread": null` rather than `0.0`. Because the count is over observation tags, a routine that appended one `[judge]` observation per judge run would multiply every tag it cites; that is why only the caller appends, once, for all runs.
+
 ## Judging Constraints
 
 - **No proposals.** The judge names what it sees and assigns a weight. It does not recommend fixes, rewrite memories, or edit rules. That is the reflector's job, run separately so the judge has no incentive to soften its own scoring.
 - **Evidence required.** Every weighted entry must cite an observation ID, file path, or trace line. Gut feelings score 0.
 - **Bounded.** Maximum 10 entries per pass (5 charges + 5 drains). More than that means the rubric is being stretched — stop and take only the strongest.
-- **Idempotent.** If an observation is already tagged `[judge]` for today's window, it is not scored again.
+- **Idempotent — except in sample mode.** If an observation is already tagged `[judge]` for today's window, it is not scored again. This is suspended when the caller runs the judge k times and tells it not to append: each run must score the window in full. Otherwise run 1 scores the day, runs 2 and 3 find run 1's entry and return `score_delta: 0`, and k independent draws collapse into one real sample plus k−1 fabricated zeros — a median with the variance removed by construction rather than by measurement.
 
 ## Output Schema
 
@@ -71,4 +73,6 @@ These are scored deterministically from observation tags — no Judge pass neede
 }
 ```
 
-`score_delta` is the sum of all weights, clamped to `[-4.5, +4.5]`.
+`score_delta` is the sum of all weights, clamped to `[-4.5, +4.5]`. When the caller collects several runs, each run's `score_delta` is passed to `trust_score.py apply` as its own `--delta`; the median is applied, and a spread above 2.0 across the samples is recorded as inconclusive with a delta of `0.0`.
+
+_Last synced: 2026-09-03_

@@ -56,6 +56,46 @@ If the link is a GitHub repo, also check:
 
 If the input is plain text (category **x**), skip fetching — the content is the input itself. Summarize it in your own words for the subsequent phases.
 
+#### When retrieval degrades — the recourse ladder
+
+WebFetch failing is the normal case, not the exception: login walls, Cloudflare
+challenges, SPA shells, cross-host redirects, paywalls, and deleted pages all return
+*something*, so a bare "I fetched it" can be false. **Never summarize a page you did
+not actually read**, and never let a partial fetch silently become a confident claim.
+
+First name the failure mode, then walk the ladder from the top. Stop at the first rung
+that returns real content.
+
+| Rung | Try | Good for |
+|---|---|---|
+| 1 | WebFetch the URL directly | most pages |
+| 2 | Re-call with the redirect URL WebFetch handed back | cross-host redirects |
+| 3 | Provider public JSON, no auth: Reddit `<url>.json`, HN `hacker-news.firebaseio.com/v0/item/<id>.json`, Bluesky public XRPC, Mastodon `/api/v1/statuses/<id>`, GitHub `gh api repos/<o>/<r>/contents/<path>` | social + forum posts |
+| 4 | YouTube transcript: `uvx --from youtube-transcript-api youtube_transcript_api <VIDEO_ID> --languages en` | video |
+| 5 | Third-party archive mirrors of the aggregator/newsletter | X posts, newsletters |
+| 6 | Wayback: `https://web.archive.org/web/2/<url>` | dead, changed, or walled pages |
+| 7 | WebSearch for the title plus `transcript` / `summary` / `notes` | anything; yields secondhand only |
+
+Rung-specific notes:
+- **YouTube** — `yt-dlp` is often not installed; do not install it. Bare `timedtext` and
+  InnerTube endpoints are now gated behind a PO token and return empty, and transcript
+  mirror sites mostly 403. Rung 4 is the one that currently works.
+- **Rung 7 is secondhand.** Content obtained this way is a recap, not the source. Label
+  it as such in the report, and never quote it as if it were the source's own words.
+- **Private/deleted content** is a dead end — say so and stop rather than substituting a
+  guess. A private account will not resolve at any rung.
+
+Report retrieval honestly in the extraction output:
+- `Fetch status: ok | partial | failed`, plus which rung succeeded
+- On failure, **which rungs you tried and why each failed** — not a vague "unavailable".
+  The next session needs to know whether to retry or give up.
+- Distinguish **missing** from **zero/absent**: a field the source never mentioned is
+  unknown, not `0`, and not "the source says no". Carry that distinction into the
+  `docs/sources/` entry rather than flattening it.
+
+If no rung returns real content, propose **nothing** from that source. An extraction
+built on a title and a guess is fabrication wearing a citation.
+
 ### Phase 2: Audit the Harness
 
 Before proposing anything, understand what the harness already has. Read in parallel:
@@ -210,7 +250,7 @@ After approval, implement each approved item.
 - Keep SKILL.md focused; move extended reference content to a `resources/` subfolder.
 
 **For Hooks:**
-- Write `$HARNESS/hooks/<name>.sh` as a standalone bash script. install.sh/update.sh copy harness hooks into each project's `.claude/hooks/` and chmod them — add the new hook to those copy+chmod lists so it propagates.
+- Write `$HARNESS/hooks/claude/<name>.sh` as a standalone bash script. install.sh/update.sh copy every `hooks/claude/*.sh` into each project's `.claude/hooks/` and chmod them, so a new hook propagates with no installer edit. Files matching `*.test.sh` are skipped by that copy loop — put the hook's test suite in `$HARNESS/hooks/claude/<name>.test.sh` and it stays in the harness repo instead of shipping as a runtime hook.
 - Include a `# REGISTRATION` comment block at the end of the file with the exact settings.json JSON to add. Register it in `templates/settings.json.template` (shipped to projects) so the hook is wired everywhere, not just locally.
 - Use the `update-config` skill to write the local settings.json entry after confirming with the user.
 

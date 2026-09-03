@@ -1,4 +1,7 @@
 {
+  "env": {
+    "BASH_MAX_OUTPUT_LENGTH": "15000"
+  },
   "permissions": {
     "allow": [
       "Bash(ruff check *)",
@@ -14,8 +17,7 @@
       "Edit(.claude/docs/**)",
       "Edit(.claude/steering/**)",
       "Edit(.claude/memory/**)",
-      "Edit(**/*.md)",
-      "Write(**/*.md)"
+      "Edit(**/*.md)"
     ],
     "deny": [
       "Bash(rm -rf*)",
@@ -34,6 +36,10 @@
           {
             "type": "command",
             "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/session-start-hook.sh\""
+          },
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/headless-envelope-hook.sh\""
           }
         ]
       }
@@ -57,6 +63,10 @@
           {
             "type": "command",
             "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/reject-feedback-hook.sh\""
+          },
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/doc-parse-nudge.sh\""
           }
         ]
       }
@@ -68,6 +78,10 @@
           {
             "type": "command",
             "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/stop-hook.sh\""
+          },
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/caveman-savings-hook.sh\""
           }
         ]
       }
@@ -96,6 +110,15 @@
           {
             "type": "command",
             "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/pre-tool-use-gitnexus.sh\""
+          }
+        ]
+      },
+      {
+        "matcher": "Write|Edit|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/ledger-append-only.sh\""
           }
         ]
       },
@@ -154,6 +177,14 @@
           {
             "type": "command",
             "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/git-destructive-guard-hook.sh\""
+          },
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/agent-commit-attribution-hook.sh\""
+          },
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/pr-evidence-hook.sh\""
           }
         ]
       },
@@ -208,6 +239,10 @@
           {
             "type": "command",
             "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/ruff-quality-gate-hook.sh\""
+          },
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/js-quality-gate-hook.sh\""
           }
         ]
       },
@@ -225,6 +260,10 @@
           {
             "type": "command",
             "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/pr-auto-create-hook.sh\""
+          },
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/action-capture.sh\""
           }
         ]
       },
@@ -245,6 +284,15 @@
             "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/skill-usage-tracker.sh\""
           }
         ]
+      },
+      {
+        "matcher": "TodoWrite",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/todo-focus-hook.sh\""
+          }
+        ]
       }
     ],
     "PreCompact": [
@@ -254,6 +302,17 @@
           {
             "type": "command",
             "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/compaction-discipline-hook.sh\""
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/subagent-context-hook.sh\""
           }
         ]
       }

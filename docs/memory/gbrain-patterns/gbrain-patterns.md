@@ -45,10 +45,10 @@ Also applies when spawning agents: run memory lookup first, then include finding
 | Tier | Model | Use for |
 |---|---|---|
 | utility | `claude-haiku-4-5-20251001` | classification, validation, expansion, dedup |
-| reasoning | `claude-sonnet-4-6` | generation, synthesis, chat — **DEFAULT** |
-| deep | `claude-opus-4-8` | complex multi-step reasoning, high-stakes judgment |
+| reasoning | `claude-sonnet-5` | generation, synthesis, chat — **DEFAULT** |
+| deep | `claude-opus-5` | complex multi-step reasoning, high-stakes judgment |
 | autonomous | `claude-fable-5` | long, multi-sitting autonomous sessions (`/model fable`) |
-| subagent | `claude-sonnet-4-6` | Agent() calls — use sonnet, not opus |
+| subagent | `claude-sonnet-5` | Agent() calls — use sonnet, not opus |
 
 The non-obvious rule: **subagents run sonnet, not opus.** Subagents run multi-turn tool loops; latency compounds and the bottleneck is tool-call reliability, not reasoning depth. Opus buys little here at 3× the cost.
 
@@ -108,6 +108,12 @@ Three hooks fire automatically from `$SDD_HARNESS/.claude/settings.json`:
 gbrain-agent-spawn.sh     → PreToolUse on Agent
                             Injects model-tier table + background-routing pain signals + memory-first reminder
                             Fires on every Agent() call before the subagent is spawned
+                            Addresses the PARENT only — PreToolUse:Agent cannot reach the child.
+                            The banner is a request that the caller brief the subagent, not a
+                            guarantee. Always-true conventions are carried into the child by
+                            subagent-context-hook.sh on SubagentStart instead; this hook keeps
+                            the spawn-time decisions only the parent can make (which model,
+                            run mode, what context to hand down).
 
 gbrain-memory-write.sh    → PreToolUse on save_observation
                             Injects compiled-truth two-zone structure + source attribution format
@@ -144,3 +150,5 @@ The `using-superpowers` system requires skill invocation at 1% trigger confidenc
 | Citation fixer, frontmatter guard | Require gbrain's CLI |
 
 To adopt gbrain as the actual knowledge backend: `git clone https://github.com/garrytan/gbrain ~/gbrain && cd ~/gbrain && bun install && gbrain init`. The `INSTALL_FOR_AGENTS.md` in the repo is the 9-step guide.
+
+_Last synced: 2026-09-01_

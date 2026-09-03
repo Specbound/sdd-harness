@@ -12,6 +12,15 @@ Each routine's stderr is captured to a per-run buffer; on a non-zero exit, the b
 
 The orchestrator itself is fail-loud: every non-dry-run invocation logs a `run started (mode=...)` line to `logs/orchestrator.log` and, via an `EXIT` trap, a `run finished exit=<code> repos=<count>` line — so a crash before the repo loop even starts (bad args, missing `projects.txt`) leaves a diagnosable trace in `logs/orchestrator-errors.log` instead of looking identical to a zero-work success.
 
+**Every routine below runs under a stricter behavioural envelope than an interactive session.** All of them invoke `SDD_HEADLESS=1 claude --print --permission-mode bypassPermissions`, which trips `headless-envelope-hook.sh` at `SessionStart`. That injects six constraints — one unit of work; no push, rewrite, or force git; writes confined to report files and `.claude/memory/`; a two-strike loop guard that escalates into the report instead of retrying a third time; honest partial reporting; no new dependencies.
+
+Two of those constraints defer to an explicit instruction in a routine's own prompt, so writing a new routine does not mean fighting the envelope:
+
+- **Committing** is allowed when the routine prompt says to commit. Pushing is not, under any prompt.
+- **Writing harness artifacts** (`skills/`, `agents/`, `hooks/`, `.claude/behaviors/`, …) is allowed when the routine prompt names that artifact class as its output — which is how *Bi-Weekly Harness Health* repairs `SKILL.md` files and how *Daily Maintenance* step E drafts `BEHAVIOR.md` specs. Permission for one class never extends to another.
+
+Full text and the `SDD_SKIP_HEADLESS_ENVELOPE=1` per-runner opt-out: [docs/hooks/README.md](../hooks/README.md#headless-envelope-hooksh).
+
 ---
 
 ### Fleet Harness Sync
@@ -37,10 +46,10 @@ Guards:
 **Scope:** Every registered repo
 
 **What it does (five steps, error-isolated):**
-- **A** — Judge + Reflect + Housekeep: score the previous day's observations via the session-quality rubric; convert drain entries into memory updates; archive `observations.md` if >50 entries
+- **A** — Judge + Reflect + Housekeep: score the previous day's observations via the session-quality rubric; convert drain entries into memory updates; archive `observations.md` if >50 entries. The interactive `/kiro:daily-maintenance` pipeline runs the judge **three times** and reconciles the deltas by median; the headless routine prompt still writes one `[judge]` observation and defers scoring to step D
 - **B** — Session Quality Assessment: collect git activity; score session 1–5; append `[session-quality]` observation
 - **C** — Keep Rate Evaluation: find Claude-co-authored commits older than 7 days; compute lines still in HEAD; append `[keep-rate]` observation
-- **D** — Trust Score update: run `trust_score.py auto-score` after B and C are written, so all signals (`[session-charge]`, `[memory-gap]`, `[session-quality]`, `[keep-rate]`) are visible to the scorer
+- **D** — Trust Score update: run `trust_score.py auto-score` after B and C are written, so all signals (`[session-charge]`, `[memory-gap]`, `[session-quality]`, `[keep-rate]`) are visible to the scorer. `auto-score` is deterministic and submits a **single** sample, so the multi-sample spread gate is skipped and the record reports `"spread": null` — the gate applies only when `apply` is given one `--delta` per judge run
 - **E** — Skill Augmentation (Sleep-Phase Knowledge Seeding): invoke `skill-augment-agent` with today's judge verdict. The agent collects `[seed-target:]` observations written by the `action-capture.sh` hook during the Wake phase (failed Bash commands), maps them to skill domains, and loads today's `type: feedback` memories (user corrections) as highest-trust evidence ranked above the LLM judge, generates synthetic worked examples (Dreaming), and applies up to 3 evidence-backed skill improvements. Logs each as `[skill-update]`. Idempotent — skips if `[skill-update]` entries already exist for today. This step closes the full Wake→Sleep cycle: struggles during active sessions automatically become targeted skill updates overnight.
 
 **Channel summary (optional):** after the run, `daily-runner.sh` posts the last ~20 lines of output to your chat channels via `scripts/integrations/channels/notify.py` (title `Daily maintenance — <repo> (exit=<code>)`). No-op unless `~/.env.channels` exists, so the call stays unconditional. Opt out with `SDD_SKIP_CHANNEL_NOTIFY=1`. See [docs/integrations/channels](../integrations/channels/README.md).
@@ -79,6 +88,21 @@ Guards:
 - Enforces the harness's own "read on demand, not upfront" rule by measuring whether it's actually followed. See the `context-optimization` skill (Startup vs Runtime axis).
 
 **Opt-out:** `SDD_SKIP_STARTUP_AUDIT=1` env var. Force a run with `--force`.
+
+---
+
+### RTK Net-Effect
+**Runner:** `.claude/scripts/routines/rtk-net-effect-runner.sh`
+**Cadence:** Every day (own state-file guard `.claude/memory/.last-rtk-net-effect-run`; deterministic — no LLM call)
+**Scope:** Every registered repo
+
+**What it does:**
+- Wraps `.claude/scripts/utils/rtk-net-effect.py`, which measures RTK's **global** effect from `~/.claude/projects/**/*.jsonl`, not just its local savings: exact-match Bash rerun rate and Read reread rate within the same session — RTK's own figure is local savings on one command's output, and cannot see whether the agent, missing detail it needed, reran the command or re-read the file later
+- Writes `.claude/memory/rtk-net-effect.json`; on no data in the lookback window, leaves the prior snapshot in place rather than overwriting it with an empty one
+- Read by the dashboard's RTK layer note (Headroom tab), which appends both rates alongside its existing savings figure instead of reporting savings alone
+- Not a Scheduled Tasks tab card — it feeds the RTK layer note directly, not `_scheduled_task_registry()`
+
+**Opt-out:** `SDD_SKIP_RTK_NET_EFFECT=1` env var. Lookback window: `SDD_RTK_NET_EFFECT_DAYS` (default 30).
 
 ---
 
@@ -124,7 +148,7 @@ This is the **review** stage of the tool-failure-memory loop (capture → recall
 **Scope:** Every registered repo (no-ops unless there's a merged PR with a logged automated review not yet processed)
 
 **What it does:**
-- Discovers merged PRs with a logged `.claude/memory/pr-reviews/pr-<n>.md` (written by `scripts/pr/log_review.sh` via the `gitnexus-pr-review` skill, backgrounded from `scripts/pr/detect_base_and_create.sh` when the PR is created) not yet processed, via `gh pr view --json state`
+- Discovers merged PRs with a logged `.claude/memory/pr-reviews/pr-<n>.md` (written by `scripts/pr/log_review.sh` via the `gitnexus-pr-review` skill, backgrounded from `scripts/pr/detect_base_and_create.sh` when the PR is created) not yet processed, via `gh pr view --json state`. `detect_base_and_create.sh` now reads the new PR's number back from `gh pr list --json number` instead of parsing it out of the printed URL — the URL is free text, the number is a field — and writes a placeholder `## Evidence` section into the PR body stating that no before/after probe was run, since this path fires headless on `git push` where none can be captured. `pr-evidence-hook.sh` cannot cover it: the `gh pr create` here runs inside the script, not as a Bash tool call, so no `PreToolUse` event fires. If the number cannot be read back, the script says so and exits without inventing one
 - For each: diffs the logged review against real human review activity (`gh api .../comments`, `.../reviews`) to find **missed** flags, **false positives**, or **convention gaps**
 - **Low-risk** findings (team conventions, dismissed-flag patterns) are written directly into `.claude/memory/` as `project`/`feedback` facts
 - **Higher-risk** findings (changes to the `code-reviewer` skill's methodology) are never auto-applied — only reported to `docs/code-review-learning-report.md` for human approval
@@ -164,9 +188,12 @@ This is the **review** stage of the tool-failure-memory loop (capture → recall
 **What it does:**
 1. **CLAUDE.md review** — reads all repos in `$SDD_HARNESS/projects.txt`; audits for stale instructions, model-assumption drift, and over-constraining rules from pre-Claude-4.x habits; rates each repo `clean` / `minor` / `needs-update`; writes `docs/claudemd-review-report.md`. This is the *harness-wide* pass. Its *per-repo* counterpart is the `/claudemd-review` global command (`commands/global/claudemd-review.md`), which `session-start-hook.sh` fires when a single repo's `.claude/memory/.last-claudemd-review` is >14 days stale; that command audits only the current repo (adding a 200-line size budget, an "inferable from the manifest" filter, and an `@AGENTS.md` import/dedup check) and writes `.claude/memory/claudemd-review-report.md` — do not confuse the two report paths.
 2. **Iterative skill repair** — reads `docs/skill-curation-report.md` for low-quality flags; applies a Review→Repair→Validate loop (up to 3 skills per run, max 3 repair iterations per skill); writes repaired `SKILL.md` files directly; appends a `## Iterative Repair Run — [date]` section to the curation report
+3. **Token spend attribution** — the runner executes `scripts/utils/token-forensics.py --days 14` itself and substitutes the output into the prompt's `FORENSICS_PLACEHOLDER`, then has the session read it via the `auditing-token-spend` skill and name **one** cause. Catches harness overhead — routine cadence, agent fan-out width, an unbounded tool injecting large output early — before a usage limit does. Appends a `## Token Spend — [date]` block to `reports/harness-health-report.md`. Reports only what is anomalous: a stable profile is a one-line "no change", because a phase that always finds a problem stops being read. It changes no code and no cadence.
+- The script is run by the **runner**, not by the model. A headless session merely *told* to invoke a script can skip it silently, and the phase would then report on nothing while appearing to have run. A missing script or non-zero exit is substituted as a visible marker so the phase can say "no data" but can never fabricate figures.
+- The automation split in that output carries a `method` label. It currently reads `proxy (sessions under 5min)` because `isSidechain` is never `True` in this transcript format — subagent turns are not separable, so the figure is a stand-in and is labelled as one. It is never reported as a measured 0%.
 - Race-safe via `mkdir` lock; a lock older than 2h (left by a killed run) is auto-removed on the next run
 
-**How to use:** `git pull` after the routine runs, then read `docs/claudemd-review-report.md`. Stalled skills in the repair report need manual intervention — invoke the relevant skill locally with domain context the automated run couldn't supply.
+**How to use:** `git pull` after the routine runs, then read `docs/claudemd-review-report.md` and the Token Spend block in `reports/harness-health-report.md`. Stalled skills in the repair report need manual intervention — invoke the relevant skill locally with domain context the automated run couldn't supply. For an on-demand spend audit between runs, invoke `auditing-token-spend` directly.
 
 **Opt-out:** `SDD_SKIP_HARNESS_HEALTH=1` env var.
 
@@ -236,5 +263,5 @@ The dashboard's **Scheduled Tasks** tab shows live status for each task, scoped 
 
 ---
 
-_Last synced: 2026-08-20_
+_Last synced: 2026-09-03_
 

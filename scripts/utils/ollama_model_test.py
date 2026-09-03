@@ -10,7 +10,6 @@ import io
 import json
 import math
 import os
-import re
 import subprocess
 import sys
 import time
@@ -18,7 +17,6 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 from typing import Any, TextIO
-
 
 OLLAMA_HOST = "http://localhost:11434"
 OUTPUT_ROOT = Path("ollama-runs")
@@ -378,15 +376,34 @@ def create_prompt_run_dir(prompt: str) -> Path:
     return run_dir
 
 
+def _runs_of(value: str, keep) -> list[str]:
+    """Split `value` into maximal runs of characters satisfying `keep`."""
+    runs: list[str] = []
+    current: list[str] = []
+    for ch in value:
+        if keep(ch):
+            current.append(ch)
+        elif current:
+            runs.append("".join(current))
+            current = []
+    if current:
+        runs.append("".join(current))
+    return runs
+
+
+def _is_alnum_ascii(ch: str) -> bool:
+    return ch.isascii() and ch.isalnum()
+
+
 def prompt_slug(prompt: str, max_words: int = 6) -> str:
-    words = re.findall(r"[A-Za-z0-9]+", prompt.lower())
+    words = _runs_of(prompt.lower(), _is_alnum_ascii)
     if not words:
         return "prompt"
     return "-".join(words[:max_words])[:80].strip("-") or "prompt"
 
 
 def prompt_preview(prompt: str, max_chars: int = 160) -> str:
-    compact = re.sub(r"\s+", " ", prompt).strip()
+    compact = " ".join(prompt.split())
     if len(compact) <= max_chars:
         return compact
     return compact[: max_chars - 3].rstrip() + "..."
@@ -396,9 +413,21 @@ def prompt_hash(prompt: str) -> str:
     return hashlib.sha256(prompt.encode("utf-8")).hexdigest()
 
 
+_SAFE_NAME_EXTRA = frozenset("._-")
+
+
 def safe_name(value: str) -> str:
-    cleaned = re.sub(r"[^A-Za-z0-9._-]+", "-", value)
-    return cleaned.strip("-") or "model"
+    """Collapse every run of unsafe characters into a single '-'."""
+    out: list[str] = []
+    previous_was_replacement = False
+    for ch in value:
+        if _is_alnum_ascii(ch) or ch in _SAFE_NAME_EXTRA:
+            out.append(ch)
+            previous_was_replacement = False
+        elif not previous_was_replacement:
+            out.append("-")
+            previous_was_replacement = True
+    return "".join(out).strip("-") or "model"
 
 
 def unique_model_output_path(run_dir: Path, model: str) -> Path:
@@ -747,7 +776,7 @@ def write_model_output_file(
 
 
 def markdown_fence_block(value: str, language: str = "") -> str:
-    longest_backtick_run = max((len(match.group(0)) for match in re.finditer(r"`+", value)), default=0)
+    longest_backtick_run = max((len(run) for run in _runs_of(value, "`".__eq__)), default=0)
     fence = "`" * max(3, longest_backtick_run + 1)
     suffix = language if language else ""
     return f"{fence}{suffix}\n{value}\n{fence}"

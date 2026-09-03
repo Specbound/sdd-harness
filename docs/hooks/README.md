@@ -17,7 +17,10 @@ Hook output is injected into Claude's context as system messages — Claude read
 | `PreToolUse` | Before a specific tool is invoked |
 | `PostToolUse` | After a specific tool returns |
 | `PostToolUseFailure` | After a specific tool returns an error |
+| `SubagentStart` | When a subagent is spawned — fires **inside the child**, matcher is the agent type |
 | `PreCompact` | Before context compaction summarizes the conversation |
+
+> **Not every event injects stdout.** Claude Code adds plain-text stdout as context only for `UserPromptSubmit`, `UserPromptExpansion`, `SessionStart`, and `PostModelSwitch`. For every other event, stdout goes to the debug log and Claude never sees it, and so does stderr on exit 0. Two consequences worth knowing before writing a hook: `SubagentStart` must emit JSON `hookSpecificOutput.additionalContext` (the `cat << 'RULES'` pattern used by most hooks here is silently discarded), and a `PostToolUse` warning must **exit 2** to reach Claude at all — the tool has already run, so exit 2 warns without blocking.
 
 ---
 
@@ -51,7 +54,7 @@ Hook output is injected into Claude's context as system messages — Claude read
 
 1. **Harness update check** — compares the harness repo’s latest commit timestamp to `.claude/.last-harness-check`. Prints a `Run: update.sh` nudge if the harness has changes since last install.
 2. **Memory health** — counts entries in `observations.md`. If >50, suggests `/kiro:housekeeping` to prune before the file bloats.
-3. **Session signal detection** — runs `scripts/session/detect_reexplanation.py` on the session transcript in two passes (Haiku-based LLM). Drain pass: phrases like "I already told you", "you’re doing it again" → appends a `[memory-gap]` observation. Charge pass: unambiguous approval like "that’s perfect", "great work" → appends a `[session-charge]` observation. Both are written at most once per calendar day.
+3. **Session signal detection** — runs `scripts/session/detect_reexplanation.py` on the session transcript in two passes (Haiku-based LLM). Drain pass: phrases like "I already told you", "you’re doing it again" → appends a `[memory-gap]` observation. Charge pass: unambiguous approval like "that’s perfect", "great work" → appends a `[session-charge]` observation. Both are written at most once per calendar day. The detector classifies through `claude --print` (the user's subscription), not the `anthropic` SDK, so it runs on `python3` and stdlib — the hook no longer routes it through `.venv-tools`. Because that is a nested headless session which fires this same `Stop` hook when it ends, the whole check is skipped when `SDD_HEADLESS=1` (set by the detector itself and by `scripts/routines/*-runner.sh`); that guard is what prevents recursion, and it also keeps routine sessions — which have no user in them to re-explain anything — out of the measurement. Failures are **not** swallowed: the detector emits a `[detector-down]` observation and exits 4, and the run is passed `--record-metric` so the drain count (including a measured zero) lands in `.claude/memory/metrics.jsonl`. The once-per-day idempotency guard matches either a `[memory-gap]` or a `[detector-down]` line for today, so a failed detector is not retried all day.
 4. **Agent failure pattern** — scans `trace.log` for 3+ consecutive failures for the same agent type. Surfaces a `/kiro:evolve` nudge to investigate the friction pattern.
 5. **Session depth tracking** — appends an ISO timestamp to `.claude/memory/.session-history`, keeping the last 30 entries. This file is read by the dashboard’s **Context Health** section to show sessions/week, a sessions/day trend chart, and tips for `/compact` and subagent delegation.
 6. **Setup sequence capture** — reads `.claude/memory/.setup-session-buffer.log` (populated during the session by `setup-buffer-hook.sh`). If ≥2 setup commands were accumulated, appends them as a dated `bash` code block under `## <project> — <date>` in `.claude/memory/setup-knowledge.md` (creating the file if needed), then clears the buffer. Threshold of 2 prevents trivial one-off installs from polluting the knowledge file.
@@ -63,7 +66,8 @@ Hook output is injected into Claude's context as system messages — Claude read
 
 **Output / side effect:**
 - Text nudges printed to Claude’s context (harness update, housekeeping)
-- Appends `[memory-gap]` drain entries to `observations.md` (async, non-blocking)
+- Appends `[memory-gap]` drain entries to `observations.md`, or a `[detector-down]` line when the detector could not run (skipped entirely under `SDD_HEADLESS=1`)
+- Appends one `memory-gap` record per day to `.claude/memory/metrics.jsonl` via `scripts/session/record_metric.py` — a measured zero, so the dashboard can tell it apart from "never measured"
 - Appends `[session-charge]` charge entries to `observations.md` (async, non-blocking)
 - Appends ISO timestamp to `.claude/memory/.session-history` (always, at session end)
 - Appends setup command block to `.claude/memory/setup-knowledge.md` and clears buffer (when ≥2 setup commands captured)
@@ -244,6 +248,30 @@ Hook output is injected into Claude's context as system messages — Claude read
 
 ---
 
+### `pr-evidence-hook.sh`
+**Event:** `PreToolUse` — **Matcher:** `Bash`
+
+**Purpose:**
+1. Parses `tool_input.command` from stdin and tokenizes it with `shlex`, then matches the `gh pr create` verb token-by-token — following the lesson recorded in `git-destructive-guard-hook.sh`, so `cd x && gh pr create`, `bash -c '...'`, `GH_TOKEN=x gh ...`, an absolute `gh` path, and `gh --repo o/r pr create` all resolve to the same verb.
+2. Resolves the PR body from `--body`/`-b` (inline or `=` form) or `--body-file`/`-F` (reads the file).
+3. Checks the body for the literal `## Evidence` heading and emits a nudge when it is absent.
+4. Emits the same nudge when the invocation supplies no inspectable body at all — `--fill`, `--fill-first`, or a bare `gh pr create` that opens an editor. Both reach the reviewer with no evidence section.
+5. Stays silent when the body cannot be judged rather than guessing: `--body-file -` (stdin) and an unreadable file produce no output.
+
+**Why it's needed:** `verification-before-completion` requires evidence for claims made in conversation, but that evidence stops at the PR boundary — `create-pr`, `iterate-pr`, and `pr-babysit` contained zero references to evidence artifacts, so the reviewer received the agent's description of its own work and nothing to check it against. The hook enforces the presence of the section; `create-pr` ("Attach Runtime Evidence") teaches what goes in it, including the load-bearing rule that the before-state must be captured while reproducing the problem, since after the fix it costs a revert and is therefore usually written from memory instead.
+
+**Output / side effect:** Prints a `PR Evidence — missing proof` block to stdout naming which case fired (no inspectable `--body`, or `--body` without the heading), with the required format and the docs-only escape hatch. No files written.
+
+**Soft by design:** always exits 0, never blocks. Not every PR has a visible surface, and a hard block would force fabricated evidence blocks on docs-only PRs. The hook checks that the heading exists; it cannot tell real evidence from a plausible-looking paragraph.
+
+**Not covered by this hook, covered elsewhere:** PRs opened by `scripts/pr/detect_base_and_create.sh` (the push-triggered auto-create path used by `pr-auto-create-hook.sh` and `pr-mention-nudge.sh`) call `gh pr create` inside the script, not through the Bash tool, so no `PreToolUse` event fires. That script writes the `## Evidence` section itself — as an explicit "not captured, opened automatically on push" placeholder that must be replaced before the PR leaves draft. It is deliberately not a real evidence section: nothing ran a probe on that path, and inventing one would be the exact failure this hook exists to prevent.
+
+**Tests:** `hooks/claude/pr-evidence-hook.test.sh` — 36 cases (nudge, quiet, false-positive guard, and an exit-code-0 block proving it never blocks). Asserts on emitted text, not exit codes, because a soft gate's exit code is constant.
+
+**Location:** ships in `hooks/claude/`, copied to each project's `.claude/hooks/`; wired via `PreToolUse` matcher `Bash` in `templates/settings.json.template` and `templates/settings.harness.json.template`, alongside `git-destructive-guard-hook.sh` / `agent-commit-attribution-hook.sh`.
+
+---
+
 ### `tool-failure-capture.sh`
 **Event:** `PostToolUseFailure` — **Matcher:** `Bash|mcp__.*`
 
@@ -271,7 +299,9 @@ Hook output is injected into Claude's context as system messages — Claude read
 ### `gbrain-agent-spawn.sh`
 **Event:** `PreToolUse` — **Matcher:** `Agent`
 
-**Purpose:** Injects model-tier selection and background-routing guidance before every subagent spawn. Part of the GBrain patterns suite. Also writes a deterministic session-handoff snapshot (`scripts/session/write_handoff.py --trigger agent-spawn`) of the *main* session's state to `.claude/memory/handoff/latest.md` before printing the rules banner — hooks can't inject content into the Agent tool's own prompt param, so this is the honest mechanism: snapshot to disk, then nudge the caller (via the banner's "Session handoff" note) to pull relevant parts into the subagent's prompt.
+**Purpose:** Injects model-tier selection and background-routing guidance before every subagent spawn. Part of the GBrain patterns suite. Also writes a deterministic session-handoff snapshot (`scripts/session/write_handoff.py --trigger agent-spawn`) of the *main* session's state to `.claude/memory/handoff/latest.md` before printing the rules banner, then nudges the caller (via the banner's "Session handoff" note) to pull relevant parts into the subagent's prompt.
+
+**Scope correction (2026-08-30):** this section previously stated that hooks *cannot* inject content into a subagent's context. That was true of `PreToolUse:Agent`, which is all this hook has; it is **not** true in general — `SubagentStart` fires inside the child and injects via JSON `hookSpecificOutput.additionalContext`. Verified against Claude Code 2.1.221 with a probe subagent that read the injected block back verbatim, `agent_type` included. See `subagent-context-hook.sh`. Division of labour: `SubagentStart` carries always-true conventions straight into the child; this hook carries spawn-time decisions only the parent can make (which model, run mode, what context to hand down).
 
 **Rules enforced:**
 - **Model tiers:** Haiku for classification/validation, Sonnet for generation/synthesis (default), Opus only for high-stakes deep reasoning. Subagents should default to Sonnet — latency compounds in loops and Opus rarely adds value there.
@@ -464,6 +494,30 @@ Hook output is injected into Claude's context as system messages — Claude read
 
 ---
 
+### `ledger-append-only.sh`
+**Event:** `PreToolUse` — **Matcher:** `Write|Edit|MultiEdit`
+
+**Purpose:** Hard-blocks (exit 2) Write/Edit/MultiEdit against the harness's own self-scored measurement ledgers. A metric an agent can also rewrite is not a measurement — modeled on `exo` (an autonomous-agent harness)'s single safety invariant that the agent cannot alter its own canonical event log.
+
+**Paths covered (literal suffix match, no regex):**
+- `.claude/memory/trust-score.jsonl`
+- `.claude/memory/metrics.jsonl`
+- `.claude/memory/caveman-savings.jsonl`
+- `.claude/memory/learnings.jsonl`
+- `.claude/memory/observations.md`
+
+**Escape hatch:** `SDD_LEDGER_ROTATE=1` disables the block for that invocation, for housekeeping-agent's legitimate pruning/archival passes.
+
+**What it does not block:** every real producer of these files appends via `>>`/`echo` from a Bash-run hook or routine script — a different tool (`Bash`), never seen by this matcher. Only Claude's own Write/Edit/MultiEdit tool calls against these exact files are blocked.
+
+**Tests:** `hooks/claude/ledger-append-only.test.sh` (12 cases: block per protected file across all three tools, absolute-path match, allow on unrelated memory files and non-Write/Edit tools, and the rotate escape hatch).
+
+**Why it is needed:** Without this hook, an agent under pressure to show improvement could quietly truncate or rewrite `trust-score.jsonl` or `learnings.jsonl` rather than earning the number honestly. The existing `protected-path-hook.sh` guards secrets, not the harness's own history.
+
+**Output:** `BLOCKED: ...` message to stderr, `exit 2`. No output on allow (silent).
+
+---
+
 ### `skill-validate-hook.sh`
 **Event:** `PreToolUse` — **Matcher:** `Write|Edit`
 
@@ -474,11 +528,26 @@ Hook output is injected into Claude's context as system messages — Claude read
 - `name:` value must match the file path slug (e.g. `name: my-skill` in `~/.claude/skills/my-skill/SKILL.md`)
 - `description:` field must exist and be at least 25 characters
 - Warns if description starts with vague starters: `a skill that`, `this skill`, `skill for`, `use this skill`, `provides`
+- **Provenance (added 2026-09-01):** warns when a `SKILL.md` body points at a remote URL.
+  Two severities, both advisory:
+  - *remote instruction source* — a URL ending in `.md`/`.txt`/`.json`/`.yaml`/`.yml` on a line
+    that also carries an adopt verb (`set up`, `install`, `read`, `fetch`, `load`, `follow`).
+    This is the skill-supply-chain shape: the remote file can change after review.
+  - *remote install* — a line carrying `curl`, `wget`, `npx`, or a pipe to `sh`/`bash`.
+    Legitimate skills document installs (`agent-manager-skill` documents the Herdr one), so
+    this notes the source rather than blocking it.
+
+  Unlike the frontmatter rules, the provenance scan runs for **any** file named `SKILL.md`,
+  not only those under `~/.claude/skills/` — a skill written anywhere carries the same risk.
+  Implemented with substring tests only, no regex, per the repo-wide parsing ban.
 
 **Exit codes:**
 - `0` — valid (or file not in skills dir — hook is a no-op)
-- `0` with warning banner — valid but description starts with a vague phrase
+- `0` with warning banner — valid but description starts with a vague phrase, or a provenance finding
 - `2` — hard block: one or more errors must be fixed before write proceeds
+
+**Tests:** `hooks/claude/skill-validate-hook.test.sh` (8 cases: both provenance severities, two
+false-positive guards, frontmatter regressions, and the non-`SKILL.md` no-op).
 
 **Why it is needed:** Skill descriptions are the primary signal Claude uses to decide when to activate a skill. Vague, too-short, or mismatched names silently degrade trigger accuracy across all sessions. Catching these at write time is zero-cost compared to diagnosing misfired or missed skill activations later.
 
@@ -494,13 +563,17 @@ Hook output is injected into Claude's context as system messages — Claude read
 
 **Purpose:** After any Write/Edit/MultiEdit to a test file or a CI/coverage config, scans the change for "gradient-descent-to-green" signals — weakening the tests to make a red suite pass rather than fixing the code. Flags added skip/`xfail`/`@Disabled` markers, tautological or stub assertions (e.g. `assert True`), touched coverage thresholds (`--cov-fail-under`, `coverageThreshold`), and removed assertions. Prints a reminder asking Claude to confirm the change reflects a deliberate spec change rather than a shortcut to pass. Exits 0 always — advisory only, never blocks.
 
-**Paths covered:** test files (`test_*`, `*_test.*`, `*.spec.*`, `*.test.*`, anything under `tests/`) and CI/coverage config (`pytest.ini`, `pyproject.toml`, `.coveragerc`, jest/vitest config, CI YAML).
+**Paths covered:** test files (`test_*`, `*_test.*`, `*.spec.*`, `*.test.*`, anything under a `test/`, `tests/`, `__tests__/` or `spec/` directory) and CI/coverage config (`pytest.ini`, `pyproject.toml`, `.coveragerc`, jest/vitest config, `.gitlab-ci.yml`, and YAML under `.github/workflows/`). A CamelCase `FooTest.java` at the repo root is **not** classified — Java tests are found via their `src/test/java/` directory, which is the Maven/Gradle convention.
 
-**Why it's needed:** When a suite is red, the path of least resistance is to weaken the test, not fix the code — and that erodes the safety net silently. Catching the weakening at write time forces an explicit "is this a real spec change?" decision before the green checkmark is trusted. Pattern from Addy Osmani's "Agentic Code Review".
+**Why it's needed:** When a suite is red, the path of least resistance is to weaken the test, not fix the code — and that erodes the safety net silently. Catching the weakening at write time forces an explicit "is this a real spec change?" decision before the green checkmark is trusted. Pattern from Addy Osmani's "Agentic Code Review". Perrone's *What is Agentic Testing?* documents the same failure arriving from a new direction: an agentic test-repair tool that decides the app broke rather than its locator marks the test skipped and comments — silently dropping coverage. That is signal class 1 below.
 
-**Noise control:** Only fires on test files and CI/coverage config — silent on all other Write/Edit/MultiEdit operations. Never blocks (exits 0 always).
+**No regex (2026-09-03).** Every check in this hook used to be a Python `re` pattern, which put it in violation of the repo-wide ban in `ruff.toml` — a ban TID251 could not enforce here, because ruff only reads `.py` files and this Python lives in a shell heredoc. It is now literal-token membership plus `pathlib`. The tradeoff is deliberate: literal matching cannot express a word boundary, so `describe.skipBecause(` trips the `.skip(` probe. For a soft advisory that always exits 0, a rare extra line of output beats a pattern that silently matches the wrong span. `scripts/utils/check-no-regex.py` now enforces the ban across all shell files, and `hooks/claude/test-integrity-guard.test.sh` (39 cases) delegates its own no-regex assertion to that guard.
 
-**Output:** `╔══ Test Integrity Guard ══╗` reminder banner listing the weakening signals detected. Silent on no match.
+**Noise control:** Only fires on test files and CI/coverage config — silent on all other Write/Edit/MultiEdit operations. A skip marker already present in the *old* text is not an *added* skip and does not fire. Never blocks (exits 0 always).
+
+**Output:** `⚠  test-integrity-guard — <filename>` banner listing the weakening signals detected, followed by the gradient-descent-to-green reminder. Silent on no match.
+
+**Tests:** `hooks/claude/test-integrity-guard.test.sh` — 39 offline cases covering path classification, all four signal classes, false-positive resistance, and the always-exit-0 contract. `*.test.sh` is skipped by `install.sh`'s hook copy loop, so it stays in the harness repo.
 
 ---
 
@@ -513,9 +586,55 @@ Hook output is injected into Claude's context as system messages — Claude read
 
 **Noise control:** Only fires on `.py` files with real `ruff check` findings — silent when clean, silent on non-Python files, silent when `ruff` isn't installed. Never blocks (exits 0 always).
 
+**Repo config:** in the harness repo itself the rules come from `ruff.toml` at the root, which sets `line-length = 100` and — the one rule there that is not style — bans importing `re` or `regex` via `flake8-tidy-imports` `banned-api` (TID251). Added 2026-08-20 after a `(\d+)%` pattern read "24.5%" as 5 and the dashboard displayed 5% for weeks without erroring; every regex under `scripts/` was replaced with an explicit parser the same day. Values a program has to read back get emitted as structured data at the source instead — `scripts/session/record_metric.py` is the reference.
+
 **Output:** `⚠  ruff-quality-gate — <filename>` banner with the raw `ruff check` findings. Silent on no findings.
 
 **Location:** ships in `hooks/claude/`, copied to each project's `.claude/hooks/`; wired via `PostToolUse` matcher `Write|Edit|MultiEdit` in both `templates/settings.json.template` and `templates/settings.harness.json.template`.
+
+---
+
+### `js-quality-gate-hook.sh`
+**Event:** `PostToolUse` — **Matcher:** `Write|Edit|MultiEdit` — _(soft gate, never blocks)_
+
+**Purpose:** The sibling of `ruff-quality-gate-hook.sh` for the other half of the languages the harness installs into. `ruff check` fired on every `.py` write; **nothing fired on a `.ts`/`.tsx`/`.js`/`.jsx` write at all**, so agent-written TypeScript reached the human unlinted in every project the harness ships to. Runs on any JS/TS file touched by Write/Edit/MultiEdit:
+
+1. Selects on extension — `.ts`, `.tsx`, `.mts`, `.cts`, `.js`, `.jsx`, `.mjs`, `.cjs`. Skips `.d.ts` (no runtime logic) and anything under `node_modules/`, `dist/`, `build/`, `.next/`, `coverage/`, `vendor/`.
+2. Prefers `oxlint` (millisecond-scale, and the runner `dmmulroy/anti-slop` targets), falls back to `eslint`, no-ops silently when neither is installed.
+3. Suppresses the linters' "0 problems" summary so a clean write prints nothing.
+4. Adds an extra callout when the finding names an **anti-slop** rule (`no-chained-type-assertions`, `no-unknown-parameters/returns/type-aliases`, `no-unsafe-dictionary-type`, `no-known-value-widening`, `no-widen-then-assert`, `require-safety-comment-for-type-assertion`, `no-runtime-typeof`, `no-module-mocking`) — those mean type evidence was discarded, not that style drifted, so the fix is to recover the real type rather than silence the rule.
+
+**Why it's needed:** Complexity linting and type-evidence linting are independent axes, and agent-written TypeScript fails the second far more often — reaching for a cast or `unknown` to quiet the compiler. Extracted from `github.com/dmmulroy/anti-slop`. The rules themselves are **vendored per repo by design** (`npx skills add dmmulroy/anti-slop --skill install-anti-slop`); this hook is only the enforcement point, and `guardrails-agent` is what proposes the rule set. Nothing is fabricated here — the hook runs whatever the repo actually configured.
+
+**Noise control:** Silent on non-JS/TS files, on declaration files, on vendored/build paths, on clean results, and on machines with no JS linter. Best-effort 20s wall-clock guard via `timeout`/`gtimeout` when present (eslint on a large project can be slow; oxlint cannot). Never blocks (exits 0 always).
+
+**Output:** `⚠  js-quality-gate (oxlint|eslint) — <filename>` banner with raw linter findings, plus the anti-slop callout line when applicable. Silent on no findings.
+
+**Location:** ships in `hooks/claude/`, copied to each project's `.claude/hooks/`; wired via `PostToolUse` matcher `Write|Edit|MultiEdit` in `templates/settings.json.template`, `templates/settings.harness.json.template`, and this repo's `.claude/settings.json`. Tests: `bash hooks/claude/js-quality-gate-hook.test.sh` (21 cases, stubs the linter so the suite passes with no JS toolchain installed).
+
+---
+
+### `headless-envelope-hook.sh`
+**Event:** `SessionStart` — **Matcher:** `""` — _(context injection; cannot block)_
+
+**Purpose:** Applies a **stricter** operating envelope to unattended runs only. Seven headless entry points — the six `scripts/routines/*-runner.sh` and `daily-orchestrator.sh`'s drift review — all invoke `SDD_HEADLESS=1 claude --print --permission-mode bypassPermissions`, so the least-supervised sessions in the harness were running with the widest permissions and no human backstop. Before this hook, `SDD_HEADLESS` was read only to *suppress* interactive behaviour (`stop-hook.sh`, `caveman-savings-hook.sh`, `scripts/utils/dashboard.py`); nothing anywhere read it to *tighten* behaviour. The injected envelope carries six rules:
+
+1. **One unit of work** — do exactly what the routine prompt asks; record adjacent work in the report instead of starting it.
+2. **No history-rewriting or publishing git** — no `push`, `reset --hard`, `rebase`, `--force`, branch/tag deletion; commit only when the routine prompt says to.
+3. **Writes stay in the routine's lane** — report files and `.claude/memory/` are always fair game; `skills/`, `hooks/`, `agents/`, `commands/`, `templates/`, `CLAUDE.md`, `settings.json`, `.claude/behaviors/` must be *proposed* rather than edited **unless the routine prompt explicitly names that artifact class as its output**, and then only within the caps that prompt states. The carve-out is load-bearing, not softness: `harness-health-prompt.md` step 3 tells the agent to rewrite up to 3 `SKILL.md` files per run (gated on a ≥2-point score improvement), and `daily-maintenance-prompt.md` step E drafts up to 3 `BEHAVIOR.md` specs. A flat prohibition would have broken both. Permission for one artifact class never generalises to another.
+4. **Two-strike loop guard** — same action fails twice → stop, write `ESCALATION: <what failed, what was tried, what a human should check>` into the report, move on. Never a third attempt.
+5. **Report honestly** — partial completion is acceptable, fabricated completion is not; never widen scope to look productive.
+6. **No new dependencies** — no package installs, MCP servers, cron or launchd entries; escalate per rule 4 instead.
+
+**Why it's needed:** Extracted from the "global rules vs factory rules" separation in the AI-dark-factory walkthrough (`youtube.com/watch?v=eecUhBpTz_g`) — the rules that apply with a human watching are not the rules that should apply when nobody is. The two-strike guard comes from the same source's stated reason for keeping a human fail-safe: agents "go through an infinite loop of trying to fix a problem."
+
+**Noise control:** Emits **zero bytes** in every interactive session. The gate is the environment (`SDD_HEADLESS=1`), not the event payload, and it is an exact-match test — `0`, empty, `true`, and `11` all stay silent.
+
+**Opt-out:** `SDD_SKIP_HEADLESS_ENVELOPE=1`, set inside a specific runner that legitimately needs the wider envelope (e.g. a future runner whose job *is* committing). Never set it globally.
+
+**Output:** `=== UNATTENDED RUN — STRICTER ENVELOPE APPLIES ===` block on stdout, which SessionStart folds into context. Exits 0 in both modes; drains stdin so a large payload can never make it hang.
+
+**Location:** ships in `hooks/claude/`, copied to each project's `.claude/hooks/`; wired via `SessionStart` in `templates/settings.json.template`, `templates/settings.harness.json.template`, and this repo's `.claude/settings.json`. Tests: `bash hooks/claude/headless-envelope-hook.test.sh` (18 cases covering gate, opt-out, rule presence, exit code, stdin drain).
 
 ---
 
@@ -558,9 +677,44 @@ Hook output is injected into Claude's context as system messages — Claude read
 
 **Why it's needed:** Soft nudges (`protected-path-hook.sh`) only warn — this is the one place in the harness that actually refuses to run a destructive git/gh command.
 
-**Matching detail:** all checks run against the command with quoted segments stripped, not the raw string, so a commit message or PR body containing the text `-f` or "force" inside quotes cannot false-trip the block. (Ported from claude-codex-settings' `ultralytics-dev` plugin, github.com/fcakyon/claude-codex-settings, which also added the `git rebase` check.)
+**Matching detail (rewritten 2026-08-25 — was a bypassable string match):** the command is tokenized with `shlex` (a real shell lexer), split on shell operators into individual commands, and compared **token-by-token against exact flag names**. It recurses into `bash -c '...'` wrappers, skips `git` global options so `git -C dir push --force` and `git -c k=v push --force` still resolve to the `push` verb, strips leading `VAR=value` assignments, and rejects `git -c alias.*` outright (an alias hides the real verb).
+
+The previous implementation regex-stripped quoted segments and then `grep -E`'d the remaining raw text. That is a string match over a rendered value, and every one of these defeated it while remaining a real force-push: `F=--force; git push $F`, `bash -c 'git push --force'`, `git push --fo""rce`, `cd sub && git push --force`. Guard rules must normalize before comparing — the same class of bug as blocking the literal string `169.254.169.254` while `curl http://2852039166/` reaches the same address. See `skills/agent-permissions-design/SKILL.md` § "Verdict Computation and Context-Dependence".
+
+**Fail-closed behavior:** if the command cannot be parsed (unbalanced quotes) or a destructive-capable verb carries an unresolved expansion (`$VAR`, `$(...)`, backtick) that could expand to a flag, the hook blocks and asks for the literal value. This deliberately over-blocks on a narrow set of high-stakes verbs — `git push`, `git branch`, `git rebase`, `gh repo` — and nowhere else.
+
+**No `ask` verdict, by design:** the hook only ever allows or hard-blocks. The harness's routine runners (`scripts/orchestration/daily-orchestrator.sh`, `scripts/routines/*`) run headless, where a prompt-the-human verdict is unanswerable and silently degrades to a hang or an implicit allow.
+
+**Quoted text still safe:** `git commit -m "document git push --force risks"` is not blocked — `shlex` keeps the message as a single token and the verb resolves to `commit`, which is not checked.
+
+(Original checks ported from claude-codex-settings' `ultralytics-dev` plugin, github.com/fcakyon/claude-codex-settings, which also added the `git rebase` check. Normalization rewrite prompted by Google ADK's `long-horizon-harness/horizon/guardrails/exfil_guard.py`, 2026-08.)
 
 **Output / side effect:** `BLOCKED: ...` to stderr with reason and the offending command, exit 2. Silent (exit 0) on anything else.
+
+**Tests:** `hooks/claude/git-destructive-guard-hook.test.sh` — 46 cases covering baseline blocks, the four regex-era bypasses above, and a false-positive guard block (normal pushes, commit messages that mention `--force`, `git status`, `gh repo view`). Run `bash hooks/claude/git-destructive-guard-hook.test.sh`.
+
+---
+
+### `agent-commit-attribution-hook.sh`
+**Event:** `PreToolUse` — **Matcher:** `Bash` — _(soft, never blocks)_
+
+**Purpose:** Warns before a `git commit` whose inline message carries no `Co-Authored-By` trailer.
+
+1. Extracts the commit message from `-m`, `--message`, `--message=`, `-mmsg`, and short bundles such as `-am`
+2. Checks the assembled message for a `Co-Authored-By:` trailer (case-insensitive)
+3. Prints the trailer to append, then exits 0 — the commit is never blocked
+
+**Why it's needed:** this is a measurement repair, not a style nag. `skills/keep-rate/SKILL.md` selects agent-authored commits with `git log --all --grep="Co-Authored-By: Claude"`, and the keep-rate widget in `scripts/utils/dashboard.py` blames against the same set. An agent commit that ships without the trailer drops silently out of the denominator, so keep-rate reads **high** — the failure is invisible and biased in the flattering direction. As of 2026-08 only 10 of the last 30 commits in this repo carried the trailer.
+
+**Why `PreToolUse` and not `.git/hooks/commit-msg`:** a git hook sees a commit, not an author, so it can only nag on every commit or none. A PreToolUse Bash hook can tell the difference — if Claude issued the command, it is an agent commit by definition. Enforce identity at the chokepoint that knows who acted. (Framing from onecli's gateway, which rewrites commit payloads in-flight because GitHub App tokens have "no natural author identity" — github.com/onecli/onecli.)
+
+**Why soft:** matches `address-check-hook.sh`, the harness's existing precedent for "did a CLAUDE.md instruction survive compaction" — a passive signal for a human to act on, not a gate.
+
+**Exclusions (silent, no warning):** `--amend --no-edit`, `--squash`, `--fixup`, `-C`/`--reuse-message`, `-c`/`--reedit-message`, and any `git commit` with no inline message (an editor session, whose content the hook cannot see). These are commits whose message is generated or inherited rather than authored — the same reason onecli's gateway skips merge endpoints.
+
+**Output / side effect:** `[attribution] ...` block to stdout naming the trailer to append, exit 0. Silent on trailered commits, excluded forms, and non-commit commands.
+
+**Tests:** `hooks/claude/agent-commit-attribution-hook.test.sh` — 22 cases. Run `bash hooks/claude/agent-commit-attribution-hook.test.sh`.
 
 ---
 
@@ -588,64 +742,162 @@ Hook output is injected into Claude's context as system messages — Claude read
 
 ---
 
+### `subagent-context-hook.sh`
+**Event:** `SubagentStart` — **Matcher:** none (every agent type)
+
+**Purpose:** Injects the harness's load-bearing conventions directly into each spawned subagent's context, so a child agent starts knowing them rather than re-deriving or violating them.
+
+**Why it's needed:** `CLAUDE.md`, `.claude/rules/`, and `SessionStart` hook output are parent-thread only. A subagent begins without any of it. Until `SubagentStart` existed the only lever was to nudge the *parent* at `PreToolUse:Agent` and hope it briefed the child (`gbrain-agent-spawn.sh`) — a request, not a guarantee. This is the guarantee.
+
+**Rules injected** (kept deliberately short — this is paid per spawn, so it competes with the actual task for attention):
+1. **Tools** — one line: prefer `ctx_*` over native equivalents, native Grep/Glob are policy-denied, native Read is for the edit gate. The full native→`ctx_*` mapping table is **deliberately not repeated here** — the lean-ctx MCP server states it in its own `instructions` block, which reaches the subagent anyway. (Trimmed 2026-09-01; it was previously stated in four always-loaded surfaces at once.)
+2. **Blast radius** — *one* ordered check, not three: Serena `find_referencing_symbols` for a Python symbol → GitNexus `impact` otherwise → `ctx_callgraph(action="callers")` when the index is broken or the edit is not symbol-shaped. A tool that errors gives **no answer**; it does not report "no callers". Also: Serena diagnostics after any `.py` edit. (Consolidated 2026-09-01 — these were three competing MUSTs across `CLAUDE.md`, `rules/lean-ctx.md`, and this hook, with no precedence, one of them naming a currently-broken index.)
+3. **Parsing** — no regex over free text to extract structured facts; emit structured data at the source.
+4. **Evidence** — no completion claim without verification evidence from this run; hedged future tense is a tell; a non-zero probe exit is an answer, not a failure; report skipped or blocked steps.
+5. **Scope** — change size ≤1 module (worded "change size", not "blast radius", so it does not collide with rule 2); Rule of Three before extraction; never commit installed harness output (`.claude/`, `specs/`, `CLAUDE.md`, `AGENTS.md`, `ERRORS.md`).
+6. **Reporting** — address the user as "Husband"; end with Files changed / What changed / Not touched.
+7. **Handoff pointer** — appended only when `.claude/memory/handoff/latest.md` exists and is <24h old. A stale pointer is worse than none, so freshness is checked with `find -mtime -1` rather than assumed.
+
+**Two implementation constraints, both load-bearing:**
+- **Must emit JSON, not plain stdout.** Claude Code adds plain-text stdout as context only for `UserPromptSubmit`, `UserPromptExpansion`, `SessionStart`, and `PostModelSwitch`. Every other hook in this directory uses `cat << 'RULES'`; that pattern is silently discarded here. This hook writes `hookSpecificOutput.additionalContext` via `jq`.
+- **Must never block on stdin.** A hook that waits on a read which never completes stalls the subagent spawn itself. The read is bounded (`read -t 2`) and every failure path still injects — `agent_type` only tailors the text, so losing it degrades the message, not the mechanism.
+
+**Output / side effect:** One JSON object on stdout. Silent (exit 0, no output) when `SDD_SKIP_SUBAGENT_CONTEXT=1`. Tests: `hooks/claude/subagent-context-hook.test.sh` (14 cases, including a FIFO stall case that fails if the hook ever blocks).
+
+---
+
+### `todo-focus-hook.sh`
+**Event:** `PostToolUse` — **Matcher:** `TodoWrite`
+
+**Purpose:** Enforces one in-progress todo at a time. Counts `in_progress` entries in the written list and, when there is more than one, names the competing items and asks for one to be picked.
+
+**Why it's needed:** `TodoWrite` accepts any number of concurrent `in_progress` entries and enforces nothing. The failure is not cosmetic — an agent that marks four items in progress starts all four, splits attention, and finishes none cleanly. The single-active constraint is what makes a todo list a work queue instead of a wish list.
+
+**Strength:** Soft. The write already happened and this hook does not undo it.
+
+**Exit code is 2, deliberately.** For `PostToolUse`, stdout goes to the debug log and stderr on exit 0 is never shown to Claude. Exit 2 is the documented way to surface stderr from this event — the tool already ran, so it warns without blocking. An `echo` on exit 0 here would be a hook that appears to work and does nothing.
+
+**Parsing:** reads `.tool_input.todos[].status` with `jq`. Structured fields only — no prose pattern-matching.
+
+**Output / side effect:** `[todo-focus] N todos are in_progress at once:` plus the competing item names, on stderr, exit 2. Silent (exit 0) at 0 or 1 active items, on any non-`TodoWrite` tool, on malformed input, or when `SDD_SKIP_TODO_FOCUS=1`. Tests: `hooks/claude/todo-focus-hook.test.sh` (15 cases).
+
+---
+
 ## Hook Wiring Reference
 
-Verified directly against `.claude/settings.json` on 2026-08-02 (not just this doc's prior claims):
+Verified directly against `.claude/settings.json` on 2026-09-03 (not just this doc's prior claims):
 
-```
-SessionStart   → session-start-hook.sh
-SessionStart   (all)                                        → caveman-activate.js  [global, ~/.claude/hooks/]
-Stop           → stop-hook.sh
-Stop           (all)                                        → address-check-hook.sh
-Stop           (all)                                        → caveman-savings-hook.sh
-UserPromptSubmit (matcher: "")                                → doc-parse-nudge.sh
-UserPromptSubmit (matcher: "")                                → reject-feedback-hook.sh
-PreToolUse     Bash                                          → rtk hook claude  [global, ~/.claude/settings.json — token compression]
-PreToolUse     Bash                                          → git-destructive-guard-hook.sh
-PreToolUse     Write|Edit                                    → memory-discipline-hook.sh
-PreToolUse     Write|Edit                                    → protected-path-hook.sh
-PreToolUse     Write|Edit                                    → skill-validate-hook.sh
-PreToolUse     Write|Edit|MultiEdit|Bash                     → ai-writing-guard-hook.sh
-PreToolUse     Agent                                         → gbrain-agent-spawn.sh
-PreToolUse     Agent                                         → prompt-quality-check.sh  [no dedicated section below yet]
-PreToolUse     mcp__plugin_claude-mem_mcp-search__save_obs  → gbrain-memory-write.sh
-PreToolUse     WebFetch|WebSearch                            → gbrain-external-search.sh
-PreToolUse     Read|Bash|WebFetch|WebSearch                  → agent-behavior-guard.sh
-PostToolUse    Write|Edit                                    → impeccable-detect-hook.sh
-PostToolUse    Write|Edit                                    → hook-added-notify.sh
-PostToolUse    Write|Edit  (*/skills/*/SKILL.md only)        → skill-permissions-gate.sh
-PostToolUse    Write|Edit|MultiEdit (test/CI config only)     → test-integrity-guard.sh
-PostToolUse    Write|Edit|MultiEdit (.py files only)          → ruff-quality-gate-hook.sh
-PostToolUse    Bash                                          → revert-detect-hook.sh
-PostToolUse    Bash                                          → setup-buffer-hook.sh
-PostToolUse    Bash                                          → action-capture.sh
-PreCompact     (all)                                         → compaction-discipline-hook.sh
+All 42 registrations below are live. Regenerate this block from the real config with:
+
+```bash
+jq -r '.hooks | to_entries[] | .key as $e | .value[] | .matcher as $m | .hooks[]
+       | [$e, ($m//""|if .=="" then "(all)" else . end),
+          (.command|sub(".*/hooks/";"")|sub("\"$";""))] | @tsv' .claude/settings.json | sort
 ```
 
-**Documented above but NOT found wired in this repo's `.claude/settings.json` as of the same verification pass** (the hook file and/or its description section exist, but no matching event/matcher entry is present in the live config — confirm before relying on any of these firing):
+```
+SessionStart     (all)                                → session-start-hook.sh
+SessionStart     (all)                                → headless-envelope-hook.sh
+SessionStart     (all)                                → caveman-activate.js  [global, ~/.claude/hooks/]
+SessionStart     .*                                   → lean-ctx hook observe  [global]
+Stop             (all)                                → stop-hook.sh
+Stop             (all)                                → address-check-hook.sh   [HARNESS-ONLY]
+Stop             (all)                                → caveman-savings-hook.sh
+Stop             .*                                   → lean-ctx hook observe  [global]
+UserPromptSubmit (all)                                → prompt-hook.sh
+UserPromptSubmit (all)                                → doc-parse-nudge.sh
+UserPromptSubmit (all, keyword-gated)                 → frontend-security-nudge.sh
+UserPromptSubmit (all, keyword-gated)                 → pr-mention-nudge.sh
+UserPromptSubmit (all)                                → reject-feedback-hook.sh
+UserPromptSubmit (all)                                → caveman-mode-tracker.js  [global]
+UserPromptSubmit .*                                   → lean-ctx hook observe  [global]
+PreToolUse       Bash                                 → git-destructive-guard-hook.sh
+PreToolUse       Bash                                 → agent-commit-attribution-hook.sh
+PreToolUse       Bash                                 → pr-evidence-hook.sh
+PreToolUse       Bash|mcp__.*                         → tool-failure-recall.sh
+PreToolUse       Bash                                 → bash …  [global, lean-ctx shell allowlist]
+PreToolUse       Grep|Glob                            → …       [global, lean-ctx — denies native Grep/Glob]
+PreToolUse       Read                                 → …       [global, lean-ctx read gate]
+PreToolUse       Write|Edit                           → memory-discipline-hook.sh
+PreToolUse       Write|Edit                           → protected-path-hook.sh
+PreToolUse       Write|Edit                           → skill-validate-hook.sh
+PreToolUse       Write|Edit|MultiEdit|Bash            → ai-writing-guard-hook.sh
+PreToolUse       Read|Edit|MultiEdit                  → pre-tool-use-gitnexus.sh
+PreToolUse       Agent                                → gbrain-agent-spawn.sh
+PreToolUse       Agent                                → prompt-quality-check.sh  [no dedicated section below yet]
+PreToolUse       mcp__…claude-mem…save_observation    → gbrain-memory-write.sh
+PreToolUse       mcp__raindrop__                      → raindrop-best-practices.sh
+PreToolUse       WebFetch|WebSearch                   → gbrain-external-search.sh
+PreToolUse       Read|Bash|WebFetch|WebSearch         → agent-behavior-guard.sh
+SubagentStart    (all)                                → subagent-context-hook.sh
+PostToolUse      Write|Edit                           → impeccable-detect-hook.sh
+PostToolUse      Write|Edit                           → hook-added-notify.sh
+PostToolUse      Write|Edit                           → lean-ctx-nudge-hook.sh
+PostToolUse      Write|Edit  (*/skills/*/SKILL.md)    → skill-permissions-gate.sh
+PostToolUse      Write|Edit|MultiEdit (test/CI cfg)   → test-integrity-guard.sh
+PostToolUse      Write|Edit|MultiEdit (.py only)      → ruff-quality-gate-hook.sh
+PostToolUse      Write|Edit|MultiEdit (.ts/.js only)  → js-quality-gate-hook.sh
+PostToolUse      Bash                                 → revert-detect-hook.sh
+PostToolUse      Bash                                 → setup-buffer-hook.sh
+PostToolUse      Bash                                 → action-capture.sh
+PostToolUse      Bash                                 → pr-auto-create-hook.sh
+PostToolUse      Bash                                 → gitnexus-hook.cjs  [global]
+PostToolUse      Agent                                → agent-trace-hook.sh
+PostToolUse      Skill                                → skill-usage-tracker.sh
+PostToolUse      TodoWrite                            → todo-focus-hook.sh
+PostToolUse      Read                                 → lean-ctx hook read-dedup  [global]
+PostToolUse      .*                                   → lean-ctx hook observe  [global]
+PostToolUseFailure Bash|mcp__.*                       → tool-failure-capture.sh
+PreCompact       (all)                                → compaction-discipline-hook.sh
+PreCompact       .*                                   → lean-ctx hook observe  [global]
+SessionEnd       .*                                   → lean-ctx hook observe  [global]
+```
+
+**Nothing is unwired.** Until 2026-08-30 this section carried a second list of 14
+hooks that were registered in `templates/settings.json.template` (shipped to every
+project) but missing from `templates/settings.harness.json.template` (which
+generates this repo's own config). The direction of that drift was the harmful
+one: those hooks fired in every installed repo while *not* firing in the repo
+where they are written and tested — including the entire tool-failure-memory
+loop (`tool-failure-recall.sh` + `tool-failure-capture.sh`).
+
+The two templates are now reconciled and the relationship is enforced:
 
 ```
-UserPromptSubmit (all, keyword-gated)                       → frontend-security-nudge.sh   [NOT WIRED]
-UserPromptSubmit (all, keyword-gated)                       → pr-mention-nudge.sh          [NOT WIRED]
-PreToolUse     mcp__raindrop__                               → raindrop-best-practices.sh   [NOT WIRED]
-PostToolUse    Skill                                         → skill-usage-tracker.sh       [NOT WIRED]
-PostToolUse    Bash                                          → pr-auto-create-hook.sh       [NOT WIRED]
-PostToolUse    Agent                                          → agent-trace-hook.sh         [NOT WIRED]
-PostToolUse    Read                                          → lean-ctx-nudge-hook.sh       [NOT WIRED]
-PreToolUse     Bash|mcp__.*                                  → tool-failure-recall.sh       [NOT WIRED]
-PostToolUseFailure Bash|mcp__.*                              → tool-failure-capture.sh      [NOT WIRED]
+hooks(harness template) == hooks(project template) + HARNESS_ONLY
 ```
 
-The `tool-failure-*` pair plus the `tool-failure-review` routine are designed to form the **tool-failure-memory loop** (capture → recall → review), but per the check above neither `tool-failure-recall.sh` nor `tool-failure-capture.sh` currently has a matching entry in `.claude/settings.json` — the loop's hook half is presently unwired even though the routine and skill exist. See the `tool-failure-memory` skill and `docs/harness-documentation/SDD-SETUP-GUIDE.md`.
+`scripts/setup/reconcile-settings-templates.py` owns that rule. `--check` fails on
+drift and runs inside `/kiro:harness-validate`; `--sync` regenerates the harness
+template and runs inside both `install.sh` and `update.sh` before either copies a
+template anywhere.
+
+**Add shared hooks to `templates/settings.json.template` and run `--sync`. Never
+edit the harness template directly** — that is precisely the drift the check exists
+to catch, and it will fail the next validate.
+
+`HARNESS_ONLY` currently holds exactly one entry, `address-check-hook.sh`: it
+enforces the "Husband" address convention, which lives in the harness repo's own
+CLAUDE.md and is deliberately absent from `templates/CLAUDE.md.template`, so in any
+other project it would log violations of a rule that repo never adopted. Every
+addition to that list needs a written reason for the same standard.
+
+Permissions are deliberately **not** reconciled and are excluded from the check.
+The harness repo grants itself write access to its own source tree (`hooks/`,
+`scripts/`, `templates/`, `agents/`, `kiro/`) that no target project may have, and
+denies `git push*` outright where projects only deny force-push.
 
 ---
 
 ## Adding a New Hook
 
-1. Write the script to `.claude/hooks/<name>.sh` and `chmod +x` it.
-2. Add the wiring entry to `.claude/settings.json` under the appropriate event.
+1. Write the script to the harness source at `hooks/claude/<name>.sh` — **not** to an installed `.claude/hooks/` copy, which `update.sh` overwrites. `install.sh`/`update.sh` propagate every `hooks/claude/*.sh` to every project automatically and `chmod +x` it; no per-hook edit to the installers is needed.
+2. Add the wiring entry to `templates/settings.json.template` so the hook ships everywhere, and to the local `.claude/settings.json` so it fires this session.
 3. Document it in this file (the `hook-added-notify.sh` hook will remind you if you forget).
 4. Update the Wiring Reference table above.
+5. For any hook that blocks, or whose matching logic is non-trivial, add `hooks/claude/<name>.test.sh` with both block *and* allow cases. Files matching `*.test.sh` are skipped by the installers' copy loop, so they stay in the harness repo and never ship as runtime hooks. Run them with `bash hooks/claude/<name>.test.sh`.
 
-_Last synced: 2026-08-20_
+**Matching rule for any guard hook:** parse the command into its structure (argv via `shlex`, URLs via a URL parser) and compare tokens exactly. Do not substring- or regex-match the rendered command text — that is defeated by re-rendering the same value, and `git-destructive-guard-hook.sh` shipped with exactly that bug until 2026-08-25.
+
+_Last synced: 2026-09-03_
 

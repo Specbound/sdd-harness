@@ -18,40 +18,43 @@ The Keep Rate is a lagging quality signal: if code Claude wrote is still in the 
 ### Step 1 — Find Claude-co-authored commits
 
 ```bash
-git log --all --format="%H %ae %s" | grep -i "co-authored-by.*claude\|noreply@anthropic"
+git log --format="%H %ae %s" --no-merges | grep -i "co-authored-by.*claude\|noreply@anthropic"
 ```
 
 Alternatively scan for the Co-Authored-By trailer:
 ```bash
-git log --all --format="%H %aI" --grep="Co-Authored-By: Claude" | head -100
+git log --format="%H %aI" --grep="Co-Authored-By: Claude" --no-merges | head -100
 ```
 
 Collect: commit hash, date, author, subject.
 
-### Step 1b — AI Adoption % (volume, not durability)
-
-A second, distinct metric: what fraction of recent commits/lines are Claude-co-authored at all — not whether they survived. Keep Rate answers "how much of Claude's code stuck"; Adoption % answers "how much of the work was Claude's to begin with." Compute over the same 30-day window as Step 3's aggregate:
-
-```bash
-git log --all --since=30.days --format="%H" | wc -l
-# total commits in window
-
-git log --all --since=30.days --grep="Co-Authored-By: Claude" --format="%H" | wc -l
-# Claude-co-authored commits in window
-```
-
-**AI Adoption %** = `claude_commits / total_commits` (or line-count equivalent if commit-level granularity is too coarse for the repo). Record alongside Keep Rate in Step 5 — don't conflate the two numbers, a high adoption % with a low keep rate is a real (and different) signal than the reverse.
+> **Do not compute an "AI adoption %" here.** It was removed on 2026-08-20. The metric
+> divided trailered commits by all commits, so in a single-developer repo it measured
+> commit-trailer hygiene — auto-generated `docs: auto-sync` commits and hand-typed
+> commits both counted as "not AI" regardless of who wrote the code. Keep Rate below
+> is the durability signal and stands on its own.
 
 ### Step 2 — For each commit older than 7 days, calculate line survival
 
-For each file touched in that commit:
+For each text file touched in that commit (skip binaries per anti-pattern above), first detect if the commit is a root commit (has no parent):
 ```bash
-git diff <commit>^..<commit> --unified=0 -- <file> | grep "^+" | grep -v "^+++" | wc -l
-# lines added by Claude in that commit
-
-git blame HEAD -- <file> 2>/dev/null | grep <commit_hash> | wc -l
-# lines from that commit still present in HEAD
+if git rev-parse --verify -q "<commit>^" >/dev/null 2>&1; then
+  base_commit="<commit>^"
+else
+  base_commit="4b825dc642cb6eb9a060e54bf8d69288fbee4904"  # empty-tree for root commits
+fi
 ```
+
+Then calculate lines added (--numstat handles renames; skip binary rows marked with -):
+```bash
+git diff $base_commit..<commit> --numstat -M -C -- <file> | awk '$1 != "-" {print $1}'
+# lines added by Claude
+
+git blame --line-porcelain HEAD -- <file> 2>/dev/null | grep "^<commit_hash>" | wc -l
+# lines from that commit still present (--line-porcelain handles continuations)
+```
+
+For best results per anti-patterns, build a blame map once over all text files in HEAD (keyed by commit) rather than blaming per-commit diff paths, to capture files renamed after the commit.
 
 **Keep Rate for commit** = `lines_still_in_HEAD / lines_added_by_Claude`
 
@@ -72,14 +75,24 @@ git blame HEAD -- <file> 2>/dev/null | grep <commit_hash> | wc -l
 
 **Window Artifact Check:** Before flagging a sharp drop in keep-rate, verify whether a large durable commit just aged past 30 days (removed from denominator) or a large low-survival commit entered the 7-30d window. Recompute keeping only feature code, excluding infra/revert/churn commits. High feature-code survival with low aggregate = window shift, not a quality drain. (source: 2026-07-29 patterns)
 
+**Baseline Recording Note:** Record git-blame flags used; pinning `-M -C` reattributes lines that later commits moved within the codebase, causing per-commit variance up to 4.7pt (8df5ed3 93.6→98.3, 0a9946c 99.9→92.4). Blame-based keep rates are incomparable across different flag settings. (source: 2026-08-31 [keep-rate])
+
 ### Step 5 — Record as observation
 
-Save to `.claude/memory/observations.md`:
+Prose observation in `.claude/memory/observations.md` (trend, window notes, outliers):
 
 ```
 - YYYY-MM-DD [keep-rate]: Keep Rate = X% (N commits, M lines). Trend: ↑/↓/→ vs last period. [any notable pattern]
-- YYYY-MM-DD [ai-adoption]: AI Adoption = Y% (N of M commits in last 30d). Trend: ↑/↓/→ vs last period.
 ```
+
+Structured measurement — the dashboard reads **only** this, never the prose:
+
+```bash
+.claude/scripts/session/record_metric.py --metric keep-rate --value X \
+  --meta '{"commits": N, "lines": M, "window": "YYYY-MM-DD..YYYY-MM-DD"}'
+```
+
+Pass the percentage as a plain number (`86` or `86.4`), not a string with `%`.
 
 If keep rate < 50%, add a `kaizen` note flagging the pattern for review.
 
@@ -87,10 +100,9 @@ If keep rate < 50%, add a `kaizen` note flagging the pattern for review.
 
 Report:
 - Overall keep rate %
-- AI adoption % (volume) — distinct from keep rate (durability)
 - Number of Claude commits analyzed
 - Any files or feature areas with notably low keep rate (potential signal of prompt or context issues)
-- Trend direction vs last measurement, for both metrics
+- Trend direction vs last measurement
 
 ## Expected Churn Patterns (Anti-Patterns)
 
@@ -98,3 +110,36 @@ Not all low keep-rate signals indicate code quality issues:
 - **Iterative patch commits** (fixup, revert cycles): naturally 0–20% survival; expected in active refactor.
 - **Infra/reorg commits**: wholesale rewrites inflate denominator with pure renames (0% lines remain); not a code-quality signal.
 When keep-rate drops, separately analyze feature-code survival from infra-churn to avoid false regression. (source: 2026-06-22 observations)
+
+### ❌ Using `--all` in Step 1
+`git log --all` enumerates all branches, inflating denominator. Enumerate on the working branch. (source: 2026-08-25 [keep-rate])
+
+### ❌ Merge commits in Step 1
+Add `--no-merges` to exclude; without it, 3 merges worth 8505 phantom lines inflate count. (source: 2026-08-25 [keep-rate])
+
+### ❌ Binary files in Step 2 diffs
+.mp3/.wav files inflate by 1141% on one file. Skip `--numstat` rows with `-`. (source: 2026-08-25 [keep-rate])
+
+### ❌ Testing blob for binaries instead of worktree
+Detect binariness by testing the working-tree file, not the diff blob; git-LFS pointers appear as text in diffs but are binary in the worktree.
+
+### ❌ Blame field filtering in Step 2
+`git blame | grep <hash>` misses continuations; use `--line-porcelain` headers. (source: 2026-08-25 [keep-rate])
+
+### ❌ Filtering --line-porcelain headers on field count alone
+Headers vary (3–4 fields); filtering on `len(parts) >= 4` counts first line only. Check fields 2–3 for digits.
+
+### ❌ Blaming only each commit's own paths in Step 2
+Blaming only commit's own paths loses renamed files. Build blame map over all text files in HEAD keyed by commit. (source: 2026-08-27 [keep-rate])
+
+### ❌ Unpinned blame flags in Step 2
+`git blame` without `-M -C` causes 0.5pp variance (89.9% vs 90.4%). Pin flags consistently. (source: 2026-08-27 [keep-rate])
+
+### ❌ Changing blame flags mid-measurement
+Per-commit reattribution reaches 4.7pt under `-M -C` (e.g. 8df5ed3 93.6→98.3). Pin flags consistently and record choice per Step 2. (source: 2026-08-31 [keep-rate])
+
+### ❌ Root commit diffs without empty-tree fallback
+`git diff <commit>^..<commit>` fails on root commits; detect via `git rev-parse --verify "<commit>^"` and use empty-tree 4b825dc642cb6eb9a060e54bf8d69288fbee4904.
+
+### ❌ Denominator spanning only surviving-HEAD paths
+The denominator must count all touched paths; deleted/renamed files are silently dropped from HEAD-only counts, yielding impossible keep-rate >100%.

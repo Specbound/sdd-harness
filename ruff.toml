@@ -1,0 +1,36 @@
+# Ruff config for the sdd-harness source tree.
+#
+# The one rule here that is not style: `re` is banned. On 2026-08-20 the dashboard
+# read the AI-adoption metric out of prose with `(\d+)%`, which cannot cross a
+# decimal point — it captured 5 from "24.5%" and displayed 5% for weeks with no
+# error and no warning. Regex fails by producing a plausible wrong answer instead
+# of raising, and no amount of care at the call site changes that.
+#
+# Every regex in scripts/ was replaced with an explicit parser on the same day
+# (231k differential checks confirmed the rewrites agree with what they replaced).
+# The ban keeps them from coming back.
+#
+# If data needs to be read by a program, emit it as structured data at the source
+# — JSONL, a JSON field, a delimited record — and parse it with a real parser.
+# See scripts/session/record_metric.py for the pattern.
+#
+# SCOPE LIMIT — this file is only half the ban. TID251 below fires on `.py` files
+# only, and a large share of this harness's Python lives inside shell heredocs in
+# hooks/claude/*.sh and scripts/**/*.sh, where ruff never looks. On 2026-09-03 that
+# unenforced half was measured at 16 files, two of them (stop-hook.sh's loop-debt
+# detector and learnings promoter) regex-parsing observations.md free text — the
+# exact failure described above, still live three weeks after the ban was written.
+#
+# scripts/utils/check-no-regex.py covers that half. It runs in .git/hooks/pre-commit
+# next to check-no-hardcoded-paths.sh, against a shrinking ledger in
+# scripts/utils/no-regex-debt.txt. hooks/claude/test-integrity-guard.sh is the
+# worked example of the rewrite: every regex in it became literal-token matching.
+
+line-length = 100
+
+[lint]
+extend-select = ["TID"]
+
+[lint.flake8-tidy-imports.banned-api]
+"re" = { msg = "regex is banned in this repo — write an explicit parser, or emit structured data at the source. See the note at the top of ruff.toml." }
+"regex" = { msg = "regex is banned in this repo — write an explicit parser, or emit structured data at the source. See the note at the top of ruff.toml." }

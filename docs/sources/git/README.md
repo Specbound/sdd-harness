@@ -660,3 +660,151 @@ See also: [github.com/mattpocock/skills — `wayfinder` skill](#githubcommattpoc
 **Rejected:** any skill/hook derived from the Amphetamine/PowerProtect repo itself — wrong tool for the gap (targets a display-mode/adapter bug, not general sleep prevention), and would introduce a paid third-party app + sudoers.d modification where a one-line native `caffeinate -i` already solves the actual orchestrator failure mode.
 
 See also: [articles/README.md](../articles/README.md) — "The Shapes of Agent Memory" entry, extracted in the same batch.
+
+---
+
+## onecli/onecli
+**URL:** https://github.com/onecli/onecli
+**Added:** 2026-08-25
+**Source / Author:** onecli — TypeScript/Rust pnpm-turbo monorepo, Apache-2.0 with an `ee/` enterprise carve-out, ~3,376★
+
+**What it's about:** "Open-source sandboxed agent harness for teams" — one sandboxed agent per employee, provisioned off the corporate IdP, reachable via dashboard or Slack. Mature and heavily engineered (`apps/{gateway,runner,sandbox-supervisor,api-server,channel-adapter,web}`, ~70 Prisma migrations, live-gated conformance suites). Architecturally a *server product*, not a CLI installed alongside Claude Code — so nothing here is a dependency to adopt.
+
+**What we added:**
+- **Hook:** `hooks/claude/agent-commit-attribution-hook.sh` — PreToolUse(Bash), advisory. Warns when a `git commit` supplies an inline message with no `Co-Authored-By` trailer. Registered in `templates/settings.json.template` and the local `.claude/settings.json`; tests in `hooks/claude/agent-commit-attribution-hook.test.sh` (22 cases).
+
+  What transferred is not the trailer format but onecli's chokepoint argument. Its gateway rewrites the `message` field on GitHub content/commit endpoints in-flight, appending `On-Behalf-Of: <agent>[onecli] (<workspace_id>)`, because App-installation-token commits have "no natural author identity" — attribution is injected where identity is known rather than requested of the agent. The local analogue: a `.git/hooks/commit-msg` hook sees a commit but not an author and can only nag on all commits or none, whereas a PreToolUse Bash hook knows Claude issued the command.
+
+  The justification is a measured local defect, not tidiness. `skills/keep-rate/SKILL.md` selects agent commits with `git log --grep="Co-Authored-By: Claude"` and the keep-rate dashboard widget blames against the same set, so an untrailered agent commit leaves the denominator and the metric reads **high** — invisible, and biased flatteringly. Verified at time of extraction: only 10 of the last 30 commits in this repo carried the trailer; `.git/hooks/commit-msg` was a zero-byte file. Also ported: onecli's idempotence check and its explicit exclusion list (it skips merge endpoints because they use different append semantics — here that maps to `--amend --no-edit`, `--squash`, `--fixup`, `-C`/`-c` reuse forms, and editor-driven commits).
+
+**Rejected:** onecli as an installed dependency — Postgres + Rust MITM gateway + Docker sandbox runner + Next.js control plane for *teams*; this harness is single-user and local; semantic action catalog (`provider/tool` → host/path/method policy targeting) — hollow without a proxy intercepting every egress request, and the design principles are >70% covered by `agent-permissions-design`; **vendor-neutral harness interface + conformance suite** — the most interesting artifact in the repo and still a skip: sdd-harness is single-vendor with no second adapter and no prospect of one, so writing it up is speculative architecture with zero call sites, which the repo's own Rule of Three forbids; capability-profile discipline ("declared up front, never probed") — a real principle with no enforcement point here; skill-loading-mechanic guidance — conditioned on the native Skill tool being *disabled*, which it is not, and the project CLAUDE.md's GitNexus table already lists literal skill-file paths; vault/60s-TTL credential injection — needs the gateway; the achievable local subset is already `protected-path-hook` + `scan-pii`; fail-closed policy resolution on partial load — a property of a stateful policy server, nothing here resolves cached policy over a network.
+
+See also: [articles/README.md](../articles/README.md) — 14-source sweep batch note, and the Google ADK entry, which prompted the guard-normalization rewrite in the same session.
+
+---
+
+## dmmulroy/anti-slop
+**URL:** https://github.com/dmmulroy/anti-slop
+**Added:** 2026-08-26
+**Source / Author:** dmmulroy — MIT, ~3.7k★, TypeScript
+
+**What it's about:** "Opinionated Oxlint rules that reject low-evidence and low-signal TypeScript and JavaScript patterns." 15 generic rules plus a separately packaged Effect group, and an `install-anti-slop` agent skill that does the setup. Explicitly **vendored, not depended on** — you copy `src/` into the repo, register it under `jsPlugins` in `oxlint.config.ts`, and own it from then on. Representative rules: `no-chained-type-assertions` (blocks stacked casts), `no-unknown-parameters` / `no-unknown-returns` / `no-unknown-type-aliases` (keeps `unknown` out of contracts), `no-unsafe-dictionary-type` (rejects `Record<string, unknown>`), `no-known-value-widening` / `no-widen-then-assert` (prefer `satisfies`), `require-safety-comment-for-type-assertion` (every non-const cast needs a `// SAFETY:` note), `no-runtime-typeof` (`allowInTypeGuards`, default off), `no-module-mocking`.
+
+**What we added:**
+- **Hook:** `hooks/claude/js-quality-gate-hook.sh` — `PostToolUse` on `Write|Edit|MultiEdit`, advisory. The sibling of `ruff-quality-gate-hook.sh` for the other half of the languages this harness installs into. Selects `.ts/.tsx/.mts/.cts/.js/.jsx/.mjs/.cjs`; skips `.d.ts` and `node_modules/`, `dist/`, `build/`, `.next/`, `coverage/`, `vendor/`; prefers `oxlint`, falls back to `eslint`, silent no-op when neither exists; suppresses the linters' own "0 problems" summary so a clean write prints nothing. Adds an extra callout when a finding names an anti-slop rule, because those mean type evidence was discarded rather than style drifting — recover the real type, never silence the rule. Registered in `templates/settings.json.template`, `templates/settings.harness.json.template`, and this repo's `.claude/settings.json`. Tests: `hooks/claude/js-quality-gate-hook.test.sh`, 21 cases, stubbing the linter on `PATH` so the suite passes on a machine with no JS toolchain.
+
+  The gap was measurable, not aesthetic: `CLAUDE.md`'s Quality Gates section had `ruff check` firing on every `.py` write and **nothing at all** firing on a `.ts`/`.js` write, so agent-written TypeScript reached the human unlinted in every project the harness ships to. Complexity linting (which `guardrails-agent` already covered) and type-evidence linting are independent axes, and agent-written TS fails the second far more often — a cast or `unknown` is the shortest path to a quiet compiler.
+
+- **Augmentation:** `agents/kiro/guardrails-agent.md` — a "JS/TS (type evidence)" audit dimension scored separately from complexity (a project can be fully compliant on complexity and score zero here), an `oxlint.config.*` / `.oxlintrc.json` row in the config-discovery table, a Type-Evidence Rules line in the audit output, and a scaffold path that **recommends rather than vendors**: it surfaces `npx skills add dmmulroy/anti-slop --skill install-anti-slop` and what that will change, honoring the agent's existing "Don't install packages" constraint. Two rules are flagged as judgement calls to name when proposing the set — `require-safety-comment-for-type-assertion` (high friction, high value) and `no-runtime-typeof` (needs `allowInTypeGuards` on for codebases with real type guards).
+
+  Nothing was copied from the repo. The 15 rule implementations were never fetched and are not reproduced here — writing them from README prose would have been fabrication. What transferred is the taxonomy and the enforcement point; the rules stay upstream where they are maintained, vendored per-repo by whoever owns that repo.
+
+**Rejected:** anti-slop as a harness dependency — this repo is bash + markdown with zero TS/JS surface, and the rules are designed to be edited per-team, so pinning them centrally fights their own distribution model. Duplicating the upstream `install-anti-slop` skill into `skills/` — it already exists and is one command away; a local copy would be a stale fork within a release cycle.
+
+---
+
+## M4F-S/mnemosyne
+**URL:** https://github.com/M4F-S/mnemosyne
+**Added:** 2026-08-26
+**Source / Author:** `mnemosyne-memory` — Apache-2.0, Python, v3.4.0, ~25★
+
+**What it's about:** "Production-grade, local-first hierarchical memory engine for autonomous AI agents." Three storage layers: an Obsidian markdown vault (YAML frontmatter + `[[wikilinks]]`), Postgres + pgvector (HNSW, `vector_cosine_ops`, m=16, ef_construction=64, plus GIN full-text search) with a full-parity SQLite fallback, and optional MD5-checksummed Google Drive sync. Wing/Room two-level scoping so a marketing agent's recall never surfaces pentest findings. Hybrid RRF retrieval fusing dense vectors (1.0), keyword FTS (0.8), recursive-CTE graph traversal at 1 and 2 hops (0.6), and salience (0.2). Ebbinghaus decay at ×0.95/day, archiving below 0.05 salience after 90 idle days; `pinned=True` locks salience at 1.0 permanently. MCP server over stdio exposing 8 tools. Ingest-time credential regex screening and control-token neutralization outside code blocks.
+
+**What we added:** nothing.
+
+**Rejected:** the whole engine. `.claude/memory/` plus the `memory-systems` / `agent-memory-consolidation` / `agent-memory-discipline` / `agent-memory-mcp` cluster, `memory-discipline-hook.sh`, `housekeeping-agent`, and `memory-first-lookup` already cover roughly 85% of this, and the remainder is infrastructure — Postgres, pgvector, an embedding service, a sync daemon — for a single-user local harness that has none of it and needs none of it. Ebbinghaus decay was the one genuinely novel mechanism and is still a skip: `housekeeping-agent` already archives on staleness, so a salience float would be new arithmetic guarding a failure nobody has observed here. Wing/Room scoping maps onto per-repo `.claude/memory/` directories, which is isolation this harness gets for free. Injection armor and credential screening are real, but `scan-pii.sh` and `protected-path-hook.sh` hold the equivalent ground on the write path.
+
+---
+
+## xhluca/session-migrate
+**URL:** https://github.com/xhluca/session-migrate
+**Added:** 2026-08-26
+**Source / Author:** xhluca — MIT, Python 3.11+, Linux
+
+**What it's about:** A CLI for moving coding-agent conversations between harnesses — "Migrate your sessions to any harness." Supports Claude Code, Codex CLI, Pi, Oh My Pi, OpenCode, Copilot CLI, Antigravity CLI, Mistral Vibe, Muse Code, Qwen Code, Kimi Code, and Cursor Agent (experimental, version-pinned, text-only): 144 ordered routes. Pipeline is `native session → validated event timeline → native target → resume`, emitting only structures verified against the destination CLI and leaving the source untouched. Messages preserved in full; tool calls, images, and compaction summaries carried when the target has an equivalent native shape; session name/ID/picker entry recreated; reasoning traces, auth, hooks, policies, MCP and runtime config deliberately dropped. Every transformation is tallied in a "content-free migration manifest."
+
+**What we added:** nothing.
+
+**Rejected:** the tool and any wrapper around it. It solves cross-CLI portability; this harness runs Claude Code, and `save-session` / `resume-session` plus `.claude/memory/` already cover the continuity actually in use. Adopting it means a Linux-only Python tool (per its own README) for a migration with no evidence of demand. The one idea worth remembering is documentary, not portable: its explicit **drop list** — hooks, policies, MCP, auth stay with the original client — is a clean statement that the harness *is* the non-transferable part of a session, which is the same conclusion the "Intelligence EXPLOSION" video reaches from the opposite direction.
+
+See also: [articles/README.md](../articles/README.md) and [x/README.md](../x/README.md) — same 13-source sweep, 2026-08-26.
+
+---
+
+## dzhng/skills — "AI skills for building software factories"
+**URL:** https://github.com/dzhng/skills
+**Added:** 2026-08-30
+**Source / Author:** dzhng — MIT, 21 skills, ~766★, last push 2026-08-25
+
+**What it's about:** A harness-agnostic skill pack (Claude Code / Codex / opencode / Cursor) encoding one opinionated unattended-agent loop: `/explore-unknowns` → `/write-spec` → `/implement-spec` → review. Its thesis is that the hard part of delegation is not decomposing a goal into tasks but splitting it into *independently verifiable* slices, and that the human review surface should be the agent's **decisions**, not its diff. 95% prose-in-markdown; only the visual skills ship executable code.
+
+**What we added:**
+- Skill: `auditing-spec-choices` — the choices-ledger pattern. Reconstructs decisions the implementer made where the spec was **silent**, verdicts each `sound`/`unsound`/`needs-user`, and requires a *reversible provisional call* for every `needs-user` so an unattended run never stalls. Fills a real hole: the harness reviews artifacts (`validate-impl`, `validate-adversarial`) and conduct (`session-quality`, `.claude/behaviors/`) but nothing reviewed decisions invented because the spec was underspecified. A diff shows what was built and says nothing about what was silently discarded.
+- Command: `/kiro:audit-choices <feature> [--close]` — runs the audit per pass; `--close` consolidates at spec close.
+- Augmentation: `commands/kiro/spec-impl.md` — **Decision-Budget Gate** as a fourth Phase -1 check ("does every task leave the implementer inheriting decisions rather than making them?"). The existing three gates all catch *too much*; this one catches *too little*. Plus a Phase +1 step invoking the audit after each pass.
+- Augmentation: `skills/dispatching-parallel-agents` — fan-out **for planning** as a distinct variant from fan-out for partitioned work. Undifferentiated drafters converge on correlated blind spots, so divergence must be engineered: assign each an orthogonal bias (fewest-slices / risk-first / seam-quality), keep them blind to each other, diversify by *vendor family* not model tier, and have the orchestrator synthesize rather than anoint a winner.
+- Augmentation: `skills/goal-mode` — non-blocking checkpoint protocol (open evidence, bounded ~5min wait, on silence decide on evidence and record how to reverse it, continue). Resolves the tension between "don't stop to ask" and decisions that genuinely want a human.
+
+**Rejected:** the `write-spec`/`implement-spec`/`close-spec` commands wholesale — sdd-harness *is* a spec-driven harness with a 12-command `kiro:spec-*` pipeline, and a parallel workflow creates two competing sources of truth; mine the mechanics, not the commands. `explore-unknowns` (covered by `surfacing-unknowns`), `write-skills` (covered four times over by `skill-creator`/`skill-curator`/`skill-developer`/`writing-skills`), `eval-skills` (`skill-eval-gate`), `refactor-clean` (installed twice already), `compare-screenshots` + its pixelmatch script (hardwired to a `web/` monorepo layout the harness does not have), `renderer`/`marketing-pages`/`eli5` (domain-narrow or hollow). 17 of 21 skills were redundant against the installed ~999.
+
+See also: [articles/README.md](../articles/README.md) and [x/README.md](../x/README.md) — same 8-source sweep, 2026-08-30.
+
+---
+
+## kelviq/tare — Claude Code token-usage forensics
+**URL:** https://github.com/kelviq/tare
+**Added:** 2026-08-30
+**Source / Author:** kelviq — MIT, Python (stdlib only), ~141★, created 2026-08-12
+
+**What it's about:** A skill plus three scripts that parse `~/.claude/projects/**/*.jsonl` to answer "where did my tokens go and why did I hit the 5-hour limit." Ships a diagnosis workflow rather than a dashboard: the scripts produce numbers, the agent produces the cause. **The newsletter that surfaced it ("7 companies got hacked by a tricked AI") misfiled it — there is nothing security-related here.** Key mechanisms: `requestId` dedup, context amplification (`tokens × requests_remaining`, ranking tools by what they *caused* rather than what they returned), a rolling 5h two-pointer window, and automation fingerprinting via sweep-line peak concurrency.
+
+**What we added:**
+- Bug fix: `scripts/utils/dashboard.py` `_parse_session_file` now dedups on `requestId`/`message.id` before summing. One API response is written to the transcript as one JSONL line **per content block**, each repeating the identical `message.usage`; the parser summed line-by-line. Measured on this machine's own logs: naive 1,107,857,347 → dedup 607,706,742 across 200 transcripts — the usage tab and every derived USD figure were overstating spend by **~82%**. This was a defect in shipped code that the tool merely exposed.
+- Script: `scripts/utils/dashboard-usage-dedup.test.sh` — 8 synthetic cases plus a format-drift canary that **fails on zero duplicates found in real transcripts**, since that would mean the transcript format changed and the dedup had silently become a no-op. Each session record now carries a `collapsed` count for the same reason.
+
+- Script: `scripts/utils/token-forensics.py` + skill `auditing-token-spend` — the measurement layer the harness lacked. Deduplicated totals, **amplified per-tool cost** (chars returned × requests that followed it, ranking what a tool *caused* rather than what it *returned*), peak rolling 5h window, session-shape automation fingerprint, and an automation split. Every existing token-related skill (`context-optimization`, `context-window-management`, `rtk-token-reduction`, `cost-optimization`) is prescriptive advice about reducing context; none measured actual spend, so none could say which advice would pay.
+- Routine: Phase 3 of the bi-weekly harness-health routine — the runner executes the script and substitutes its output into the prompt, so a headless session cannot silently skip it and report on nothing. Reports only anomalies; a stable profile is one line.
+
+**Correction to tare's own approach:** tare reaches for an OTLP collector (`otel_sink.py`, a daemon plus six env vars) to separate subagent spend. `isSidechain` in the transcript looked like a free replacement — **it is not**. Measured here: present on every assistant line, `True` on none, 0 of 6,423 across 150 transcripts in sessions that provably spawned agents. Each agent appears to get its own session file, indistinguishable from a short human session. The script therefore reports a clearly-labelled short-session **proxy** and switches to the exact split automatically if the field is ever populated. It never prints the unpopulated field as `0%` — unknown and zero are different findings, and only one of them is true.
+
+**Rejected:** `ccwatch.py` — walks `~/.claude/.credentials.json` and the macOS Keychain for an OAuth token, then polls the undocumented `https://claude.ai/api/oauth/usage`. Credential-harvesting shape against an unsupported endpoint; not worth it to confirm phantom usage. The `/tare` command, HTML report, and `--share` export (the dashboard already has a usage tab). `MODEL_RATES` (the dashboard already prices models). `otel_sink.py` — superseded by the proxy above for the harness's purposes, and a daemon plus six env vars is a large standing cost for an attribution that a labelled proxy approximates.
+
+See also: [articles/README.md](../articles/README.md) and [x/README.md](../x/README.md) — same 8-source sweep, 2026-08-30.
+
+---
+
+## DietrichGebert/ponytail — "lazy senior dev mode"
+**URL:** https://github.com/DietrichGebert/ponytail
+**Added:** 2026-08-30
+**Source / Author:** DietrichGebert — MIT, JS + Markdown + a Python benchmark harness, npm `@dietrichgebert/ponytail` v4.9.0
+
+**What it's about:** A cross-agent ruleset pushing coding agents toward minimalism via a 7-rung decision ladder (YAGNI → reuse existing → stdlib → native platform → installed dep → one line → minimum that works), shipped as always-on injected instructions with adapters for ~20 agents. Star count (~117k in 79 days on a Markdown ruleset repo) is meme velocity, not engineering signal — and the README itself retracts its original "80–94% less code" headline as a conversational-baseline artifact, restating it as −54%.
+
+**What we added:**
+- Hook: `hooks/claude/subagent-context-hook.sh` (`SubagentStart`) — injects harness conventions directly into every spawned subagent via JSON `hookSpecificOutput.additionalContext`. **This falsified a stated assumption baked into the harness**: `gbrain-agent-spawn.sh` asserted in a comment (and `docs/hooks/README.md` repeated) that hooks cannot inject content into a subagent's context. That was true of `PreToolUse:Agent`, which is all that existed when it was written. Verified against Claude Code 2.1.221 with a probe subagent that read the injected block back verbatim, `agent_type` included. Two constraints inherited from ponytail's scar tissue: `SubagentStart` is **not** a stdout-as-context event (only `UserPromptSubmit`/`UserPromptExpansion`/`SessionStart`/`PostModelSwitch` are), so the `cat << 'RULES'` pattern used by every other hook here would be silently discarded; and the stdin read must be bounded or a hung read stalls the spawn itself (their issue #443). Both are covered by tests, including a FIFO stall case.
+- Augmentation: `skills/skill-eval-gate` — judge self-validation. Before trusting an LLM rubric, make it rank a deliberately-bad reference strictly above a good one on the same task; if it cannot, discard the run. Plus a paired **completeness** judgement, because a skill can win any "is this lean" rubric by doing less, and persisting raw runs so a rubric tweak re-scores offline instead of re-generating (which changes two variables at once).
+- Correction: `hooks/claude/gbrain-agent-spawn.sh` — stale model IDs (`claude-sonnet-4-6`, `claude-opus-4-7`) updated to `claude-sonnet-5` / `claude-opus-5`, and the falsified comment replaced with a division-of-labour note.
+
+**Rejected:** the minimalism doctrine itself — `CLAUDE.md`'s AI-Legible Code section already runs it harder (blast radius ≤1 folder, Rule of Three, vertical slices, no `shared/`/`utils/`/`common/`), and `progressive-complexity-ladder` plus `code-review-excellence` are installed; a fourth anti-over-engineering voice is context tax. `/ponytail-review`, `/ponytail-audit` (covered by `code-review-excellence`, `architect-review`, `codex-review`). The mode-flag + statusline pattern (`caveman-savings-hook.sh` already does exactly this). The `ponytail:` debt marker (one grep and a format string; the harness already has `DEBT:` markers). `/ponytail-gain` as a dashboard widget — it renders the vendor's own benchmark medians, and its own docs admit it can never produce a real per-repo figure. The 20-agent portability layer and `ponytail-mcp` (Claude Code only here; four MCP servers already installed).
+
+See also: [articles/README.md](../articles/README.md) and [x/README.md](../x/README.md) — same 8-source sweep, 2026-08-30.
+
+---
+
+## visa/visa-vulnerability-agentic-harness (VVAH)
+**URL:** https://github.com/visa/visa-vulnerability-agentic-harness
+**Added:** 2026-09-03
+**Source / Author:** Visa — Apache 2.0, v1.2.0, ~2.7k stars
+
+**What it's about:** An open-source agentic SAST pipeline for automated vulnerability discovery, fixing and fix-checking with frontier models, built on lessons from Anthropic's "Project Glasswing". Four phases, eleven stages (S1–S11) plus an optional Stage 0 static seed, each LLM stage a swappable skill: attack-surface mapper, STRIDE threat modeler, research strategist, specialist lenses (crypto, logic-bug, access-control, IaC), adversarial reviewer, deduplicator, exploit strategist, remediation playbooks keyed to CWE–language–framework, and an adversarial validation panel. Headline metric is Mean Time to Adapt; the README argues triage speed, not discovery, is the real constraint. **No precision/recall numbers are published** — the README says so plainly rather than implying zero.
+
+**What we added:** one mechanism, which turned out to be the highest-value item in the whole 7-source batch.
+- Augmentation (shared with the articles batch): VVAH's **majority-vote false-positive filtering** — run a finding N times at temperature > 0 and require it to survive a threshold count — is the same claim Perrone makes as `pass^k`. A repo-wide grep for `pass@k`, `pass^k`, `mutation test`, `majority vote` and `self-consistency` across `hooks/`, `agents/`, `scripts/` and `commands/` returned **zero** hits; the only match anywhere was a vendored third-party skill. Two harness components were taking exactly one sample and treating it as fact: `skill-eval-gate` (one baseline + one treatment run per scenario) and `session-judge` (spawned once daily, its `score_delta` applied straight into a cumulative score nothing ever revisits). Both now sample and reconcile — see [articles/README.md](../articles/README.md) for the full file list.
+
+VVAH's own README is what made the mechanism concrete rather than aspirational: it notes the `cli` backend has **no temperature control** and is therefore single-pass, i.e. unfiltered — the same structural position the harness's judge was in.
+
+**Rejected:** SARIF 2.1.0 output (over-engineering for a solo harness with no security-tooling pipeline to feed). The MTTA metric (presumes an org and a production deploy path). The read-only, idempotent validation panel that never patches — already how the harness works: `validate-adversarial`, `validate-impl`, `validate-perf` and `session-judge` all declare `tools: Read, Grep, Glob` and cannot write code. `validate-adversarial`'s three passes were checked for overlap and are a *different axis* — three reasoning stances (assess / refute / synthesize) inside one sampling run, not N samples — so no `better-call` comparison was warranted.
+
+**Note, not an integration:** VVAH is runnable against this repo. The `taint.yaml` profile is login-only with S10/S11 off, so it needs no `ANTHROPIC_API_KEY` — which matters, since none exists here (`harness-llm-calls-use-subscription`). Two caveats: structured taint evidence exists only for Python, Java and C#, and this harness is mostly bash, so most of it would fall back to reachability seed paths; and a bare `scan` **edits source files in the target repo** at stage S10, making `--stop-after s9` mandatory for detection-only use.
+
+See also: [articles/README.md](../articles/README.md) — the other six sources in the same 2026-09-03 batch.
