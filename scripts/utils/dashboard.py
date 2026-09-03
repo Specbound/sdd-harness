@@ -4224,6 +4224,25 @@ def _read_rtk_stats() -> dict:
         return {"baseline": 0, "saved": 0, "after": 0, "commands": 0, "effective": 0}
 
 
+def _read_rtk_net_effect(repo_path: "str | None" = None) -> dict:
+    """Read .claude/memory/rtk-net-effect.json — written by
+    rtk-net-effect-runner.sh. Global rerun/reread signal, not RTK's own
+    local-savings figure: high rerun rate is evidence, not proof, that
+    compression cost detail the agent had to go get back.
+    """
+    empty = {"available": False, "bash_rerun_rate_pct": 0.0, "read_reread_rate_pct": 0.0}
+    base = Path(repo_path) if repo_path else HARNESS_DIR
+    snapshot = base / ".claude" / "memory" / "rtk-net-effect.json"
+    if not snapshot.exists():
+        return empty
+    try:
+        data = json.loads(snapshot.read_text())
+        data["available"] = True
+        return data
+    except Exception:
+        return empty
+
+
 def render_headroom(repo_path: "str | None" = None) -> str:
     """Compression pipeline tab — RTK + headroom + lean-ctx (per-repo if repo_path given)."""
     repo_hash = _repo_to_lean_ctx_hash(repo_path) if repo_path else None
@@ -4325,13 +4344,20 @@ def render_headroom(repo_path: "str | None" = None) -> str:
     # ── Pipeline layers ───────────────────────────────────────────────────────
     arrow = '<div style="text-align:center;font-size:18px;color:var(--overlay0);margin:2px 0">↓</div>'
 
+    rtk_ne = _read_rtk_net_effect(repo_path)
+    rtk_note = f"{rtk['commands']:,} commands · {rtk['effective']:,} effective"
+    if rtk_ne["available"]:
+        rtk_note += (
+            f" · rerun {rtk_ne['bash_rerun_rate_pct']:.0f}% · reread {rtk_ne['read_reread_rate_pct']:.0f}%"
+        )
+
     rtk_layer = _layer(
         "⚡", "RTK — Shell Output",
         "raw shell output", f"{rtk_baseline:,}",
         rtk_saved, rtk_pct,
         f"~${rtk_cost_est:.2f}",
         "into context", f"{rtk['after']:,}",
-        note=f"{rtk['commands']:,} commands · {rtk['effective']:,} effective",
+        note=rtk_note,
     )
 
     hr_layer = _layer(

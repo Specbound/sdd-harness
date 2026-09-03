@@ -18,6 +18,7 @@ This one measures first. The script produces numbers; you produce the cause.
 python3 $SDD_HARNESS/scripts/utils/token-forensics.py --days 30
 python3 $SDD_HARNESS/scripts/utils/token-forensics.py --days 7 --project sdd-harness
 python3 $SDD_HARNESS/scripts/utils/token-forensics.py --days 14 --json
+python3 $SDD_HARNESS/scripts/utils/rtk-net-effect.py --days 30
 ```
 
 Read-only, local transcripts only, no network.
@@ -116,6 +117,29 @@ When there is a finding, route it rather than restating it:
 
 Record durable findings with `ctx_knowledge(action="remember", ...)` so the next
 audit starts from the last one instead of rediscovering it.
+
+### Phase 5: RTK Net Effect (local savings vs global cost)
+
+`token-forensics.py` measures spend; it cannot tell you whether a compression
+layer's local savings are a net win. RTK reports raw shell output removed on
+one command — it cannot see whether the agent, missing detail it needed, then
+reran that command or re-read the same file later in the session. That is the
+cost that would make a "saved" number net-negative globally.
+
+`rtk-net-effect.py` measures that recovery-path signal directly from
+transcripts: exact-match Bash rerun rate and Read reread rate within the same
+session. It is the same instrument the dashboard's RTK layer note reads
+(written daily by `routines/rtk-net-effect-runner.sh`).
+
+```bash
+python3 $SDD_HARNESS/scripts/utils/rtk-net-effect.py --days 30 --json
+```
+
+Read it as a caveat, not a verdict: a high rerun/reread rate is evidence, not
+proof, that compression cost detail the agent had to go get back — a
+genuinely new task can also re-issue an old command or re-read an old file.
+Treat a rerun rate that is high *and* rising as the signal worth acting on;
+a flat baseline rate is not itself a finding.
 
 ---
 

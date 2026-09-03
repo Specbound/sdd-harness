@@ -249,6 +249,24 @@ run_one() {
     fi
     rm -f "$sp_errbuf"
   fi
+
+  # RTK net-effect — deterministic (no LLM). Measures Bash rerun rate and Read
+  # reread rate from transcripts, writing a JSON the dashboard's RTK layer note
+  # reads — a global signal alongside RTK's own local-savings number, not a
+  # replacement for it. Self-paces to daily via its own state-file guard, so
+  # calling it daily is cheap. Applies to every repo. Opt out with
+  # SDD_SKIP_RTK_NET_EFFECT=1.
+  if [ "${SDD_SKIP_RTK_NET_EFFECT:-0}" != "1" ] && [ -f "$repo/.claude/scripts/routines/rtk-net-effect-runner.sh" ]; then
+    local rne_start=$(date +%s)
+    local rne_errbuf; rne_errbuf=$(mktemp)
+    (cd "$repo" && bash .claude/scripts/routines/rtk-net-effect-runner.sh) > /dev/null 2>"$rne_errbuf"
+    local rne_exit=$?
+    echo "$ts $repo rtk-net-effect exit=$rne_exit duration=$(($(date +%s) - rne_start))s" >> "$LOG_FILE"
+    if [ "$rne_exit" -ne 0 ] && [ -s "$rne_errbuf" ]; then
+      { echo "--- $ts $repo rtk-net-effect (exit=$rne_exit) ---"; cat "$rne_errbuf"; } >> "$ERR_LOG"
+    fi
+    rm -f "$rne_errbuf"
+  fi
 }
 
 if [ -n "$SINGLE_REPO" ]; then
