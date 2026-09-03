@@ -27,7 +27,7 @@ bash .claude/scripts/utils/check-no-hardcoded-paths.sh
 
 It scans harness sources — `*.sh`, `*.py`, `*.json` and `*.template`, plus the generated-but-gitignored `.claude/settings.json` by name — for machine/user-specific absolute paths and the hardcoded `$HOME/.claude/sdd-harness` root. Config counts as code: the guard originally scanned only `*.sh`/`*.py` and excluded `.claude/**`, so `.claude/settings.json` was invisible on both counts while holding 23 absolute hook paths. Every path must instead be self-located via `scripts/lib/resolve-harness-dir.sh`, read from `scripts/lib/harness-pointer.sh`, or computed from `$HARNESS_DIR`. If it exits non-zero, report each offending `file:line` and do not issue a "pass" verdict.
 
-The same guard is installed as the harness repo's `.git/hooks/pre-commit` by `install.sh` / `update.sh`, so this step should normally already be clean.
+The same guard runs from the harness repo's `.git/hooks/pre-commit`, installed by `install.sh` / `update.sh`, so this step should normally already be clean. That hook runs a **second** guard alongside it — `scripts/utils/check-no-regex.py`, which extends the repo-wide regex ban to Python embedded in shell heredocs where ruff's TID251 cannot reach — and blocks the commit if either fails. It is not part of this command's deterministic block, so a stale `scripts/utils/no-regex-debt.txt` entry surfaces at commit time rather than here; run it by hand with `python3 scripts/utils/check-no-regex.py` (or `--list` for violators without a verdict) if you want that answer during validation.
 
 Then run the fleet roster check and fold its result in as a WARNING-level finding (not a gate — an unregistered repo is a roster gap, not structural corruption):
 
@@ -78,3 +78,5 @@ YYYY-MM-DD HH:MM | harness-validate | haiku | {outcome} | fast
 - Run this before starting a new spec to ensure the harness is healthy
 - This is a read-only operation — it reports issues but does not fix them
 - Tier 3 (Haiku) agent — this is mechanical validation work
+
+_Last synced: 2026-09-03_

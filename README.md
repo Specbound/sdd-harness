@@ -244,22 +244,26 @@ sdd-harness/
 │   │   ├── detect_reexplanation.py #   Haiku-based drain/charge classifier (via `claude --print`, subscription auth)
 │   │   ├── record_metric.py        #   Writes one measurement per day to .claude/memory/metrics.jsonl
 │   │   ├── micro_reflect.py        #   Extracts durable facts → [auto-learn] in hot-memory.md
-│   │   └── trust_score.py          #   Applies Judge score delta to hot-memory.md (numbers read from metrics.jsonl)
+│   │   └── trust_score.py          #   Applies Judge score delta to hot-memory.md (numbers read from metrics.jsonl); `apply` accepts repeated --delta (one per judge run), applies the median, and records the day inconclusive with delta 0.0 when the samples spread past 2.0
 │   ├── setup/                    #   One-time project setup helpers
 │   │   ├── generate-project-stack.sh # Auto-detect tech stack
 │   │   ├── check-settings-json.sh    # Strict-JSON validation of settings files and templates
 │   │   ├── repair-settings-json.py   # Moves a trailing // comment block out of settings.json into settings.notes.md
+│   │   ├── fix-inert-write-rules.py  # Retires Write(path) permission rules Claude Code silently ignores (only Edit(path) is consulted, and it already covers Write/Edit/MultiEdit). Allow rules with an Edit twin are dropped, without one renamed; deny rules are always renamed, never dropped. Dry-run by default, --apply to write
 │   │   ├── reconcile-settings-templates.py # Keeps the two settings templates from drifting: hooks(harness) == hooks(project) + HARNESS_ONLY. --check blocks in /kiro:harness-validate; --sync is run by install.sh and update.sh before either copies a template
 │   │   ├── headroom-setup.sh         # Install headroom memory proxy
 │   │   └── raindrop-setup.sh         # Auto-installs raindrop-ai in virtualenvs
 │   ├── skill-listing-budget.py   #   Measures the aggregate skill-listing cost (every skill's name + description, paid on every session) against a 1%-of-context-window ceiling
 │   └── utils/                    #   Standalone utilities
-│       ├── dashboard.py          #     Local harness dashboard (13 sections, Workshop + Headroom tabs); token totals deduplicated on requestId before summing
+│       ├── dashboard.py          #     Local harness dashboard (14 sections, Workshop + Headroom + Herder tabs); token totals deduplicated on requestId before summing
+│       ├── herder.py             #     Spawns and supervises real interactive Claude Code sessions behind the dashboard's Herder tab (Herdr backend, JSON-only, no text pattern-matching); permission modes and model ids are discovered, never hardcoded, and each spawn is attributed to its own transcript
 │       ├── token-forensics.py    #     Where the tokens actually went, from ~/.claude/projects/**/*.jsonl — dedup, per-tool amplification, peak rolling 5h window, session shape, automation split
 │       ├── dashboard-usage-dedup.test.sh # Tests dashboard.py's usage dedup + a format-drift canary that fails if real transcripts stop showing duplicates
 │       ├── ollama_model_test.py  #     Zero-dependency Ollama model test runner
 │       ├── sync-memories-to-headroom.py # Bidirectional harness memory ↔ headroom sync
-│       ├── check-no-hardcoded-paths.sh  # Verify no machine-specific paths in harness sources (*.sh, *.py, *.json, *.template + the generated .claude/settings.json); installed as the harness repo's .git/hooks/pre-commit
+│       ├── check-no-hardcoded-paths.sh  # Verify no machine-specific paths in harness sources (*.sh, *.py, *.json, *.template + the generated .claude/settings.json); run by the harness repo's .git/hooks/pre-commit
+│       ├── check-no-regex.py    #     Extends the repo-wide regex ban to Python embedded in shell heredocs, where ruff's TID251 cannot reach. Runs in .git/hooks/pre-commit against a shrinking debt ledger
+│       ├── no-regex-debt.txt    #     The ledger check-no-regex.py reads. Listed files are known debt and do not fail; a file that is fixed but still listed DOES fail, so the ledger can only shrink
 │       └── check-fleet-registration.sh  # Find harness-installed repos missing from projects.txt (they get no routines and appear on no dashboard)
 │
 ├── hooks/                        # Claude Code and Git lifecycle hooks
@@ -268,7 +272,8 @@ sdd-harness/
 │   │   ├── stop-hook.sh          #     On session exit: check updates, memory health, re-explanation detection, agent failure patterns
 │   │   ├── prompt-hook.sh        #     On prompt submit: inject hot-memory context
 │   │   ├── action-capture.sh     #     PostToolUse(Bash): prompts memory capture after git-commit, test-failure, deploy, or struggle
-│   │   ├── test-integrity-guard.sh #   PostToolUse(Write/Edit/MultiEdit): soft gate flagging "gradient descent to green" — weakened test assertions, added skips, lowered coverage thresholds
+│   │   ├── test-integrity-guard.sh #   PostToolUse(Write/Edit/MultiEdit): soft gate flagging "gradient descent to green" — weakened test assertions, added skips, lowered coverage thresholds. Detection is literal-token membership plus pathlib, not regex (2026-09-03)
+│   │   ├── pr-evidence-hook.sh   #     PreToolUse(Bash): soft gate on `gh pr create` — nudges when the PR body carries no `## Evidence` section. Never blocks; the command is tokenized with shlex and matched token-by-token
 │   │   ├── setup-buffer-hook.sh  #     PostToolUse(Bash): buffers setup-pattern commands to .claude/memory/.setup-session-buffer.log (flushed by stop-hook)
 │   │   ├── skill-permissions-gate.sh # PostToolUse(Write/Edit): soft gate on */skills/*/SKILL.md — prompts agent-permissions-design review
 │   │   ├── js-quality-gate-hook.sh #   PostToolUse(Write/Edit/MultiEdit): runs oxlint (or eslint) on .ts/.tsx/.js/.jsx writes — the JS half of the ruff gate; no-ops when neither linter is installed
@@ -286,7 +291,7 @@ sdd-harness/
 │   │   ├── caveman-statusline.sh #     Statusline command: emits [CAVEMAN] / [CAVEMAN:ULTRA] badge + live context-usage meter (color-coded %ctx)
 │   │   └── lean-ctx-rewrite.sh  #     PreToolUse(Bash): rewrites common shell commands to lean-ctx equivalents
 │   └── git/                      # Git lifecycle hooks (copied to .git/hooks/ on install/update)
-│       ├── pre-commit            #     Harness repo only: runs check-no-hardcoded-paths.sh and blocks a commit that would bake a machine-specific path into harness source. Never propagated to downstream projects
+│       ├── pre-commit            #     Harness repo only: runs check-no-hardcoded-paths.sh (machine-specific paths) and check-no-regex.py (regex in embedded Python). Both run and both verdicts print — it does not short-circuit on the first failure — and either one blocks the commit. Never propagated to downstream projects
 │       └── post-commit           #     On commit: detects doc-sync/harness-update work, then runs it in ONE detached job (log: .git/post-commit-docsync.log) that auto-commits/pushes only the .md files touched; serialized on .git/post-commit-docsync.lock so concurrent commits skip instead of racing the git index
 │
 ├── templates/                    # Project-level templates
@@ -674,7 +679,7 @@ echo 'bash "$(git rev-parse --show-toplevel)/.claude/hooks/scan-pii.sh" --staged
   >> .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit
 ```
 
-> **In the harness repo itself**, `.git/hooks/pre-commit` is owned by `hooks/git/pre-commit` (the hardcoded-path guard), which `install.sh` / `update.sh` rewrite on every run — a line appended there is lost at the next install or update. Add the scan-pii line to `hooks/git/pre-commit` in the source tree instead. In any other project the slot is free: the harness guard is deliberately not propagated downstream, and the installer leaves a pre-commit it doesn't recognise alone.
+> **In the harness repo itself**, `.git/hooks/pre-commit` is owned by `hooks/git/pre-commit` (the hardcoded-path guard, and since 2026-09-03 the embedded-Python regex guard alongside it), which `install.sh` / `update.sh` rewrite on every run — a line appended there is lost at the next install or update. Add the scan-pii line to `hooks/git/pre-commit` in the source tree instead. In any other project the slot is free: the harness guard is deliberately not propagated downstream, and the installer leaves a pre-commit it doesn't recognise alone.
 
 See [docs/security/privacy-filter/README.md](docs/security/privacy-filter/README.md).
 
@@ -764,6 +769,8 @@ Fires on `SessionStart`, but produces zero bytes unless `SDD_HEADLESS=1` — tha
 ### Subagent Context (`hooks/claude/subagent-context-hook.sh`)
 
 Fires on `SubagentStart` — inside the child — and injects harness conventions via JSON `hookSpecificOutput.additionalContext` (plain stdout is not injected for this event). `CLAUDE.md`, `.claude/rules/` and `SessionStart` output are all parent-thread only, so before this a subagent started without them and re-derived or violated conventions the main thread already knew. The older `gbrain-agent-spawn.sh` can only ask the *parent* to brief the child; this is the guarantee. Kept deliberately short — the text is prepended to every spawn. Requires `jq`; opt out with `SDD_SKIP_SUBAGENT_CONTEXT=1`.
+
+The injected text carries a **BLAST RADIUS** block that names one check to run, in order, rather than a list of three: `mcp__serena__find_referencing_symbols` for a Python symbol (LSP-accurate, authoritative), `mcp__gitnexus__impact` for anything else, and `ctx_callgraph(action="callers")` when the index errors or reports a version mismatch — a broken index is an unknown answer, never "no callers". The TOOLS block states that native Grep/Glob are policy-denied instead of re-listing the whole `ctx_*` mapping, and what was formerly a second "blast radius" bullet under SCOPE is now called **change size**, so the two senses of the phrase stop colliding.
 
 ### JS Quality Gate (`hooks/claude/js-quality-gate-hook.sh`)
 
@@ -959,7 +966,6 @@ The Model Cost section reads session data from `~/.claude/projects/*/`. Pricing 
 | [Privacy Filter](docs/security/privacy-filter/README.md) | PII scanning setup, CLI usage, integration checkpoints, and troubleshooting |
 | [Skill Extraction](docs/skills/skill-extraction/README.md) | Skill extraction pipeline and scoring |
 | [Prompt Master](docs/prompts/prompt-master/README.md) | Prompt engineering skill with JSON prompting, 30+ tool profiles, 14 templates |
-| [Sonar Integration](docs/security/sonar-hotspot-review.md) | SonarQube security hotspot review |
 | [Design Quality](docs/design/README.md) | Visual design quality integrations index |
 | [Impeccable](docs/design/impeccable/impeccable.md) | Anti-pattern rules, skill usage, CLI setup for frontend design quality |
 | [Local LLM Eval](docs/evaluation/local-llm-eval/README.md) | Offline prompt evaluation with Ollama via OMT — multi-model comparison, variance testing |
@@ -1008,4 +1014,4 @@ The Model Cost section reads session data from `~/.claude/projects/*/`. Pricing 
 
 Private repository. Contact the maintainer for access.
 
-_Last synced: 2026-09-01_
+_Last synced: 2026-09-03_

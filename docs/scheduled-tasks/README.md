@@ -46,10 +46,10 @@ Guards:
 **Scope:** Every registered repo
 
 **What it does (five steps, error-isolated):**
-- **A** — Judge + Reflect + Housekeep: score the previous day's observations via the session-quality rubric; convert drain entries into memory updates; archive `observations.md` if >50 entries
+- **A** — Judge + Reflect + Housekeep: score the previous day's observations via the session-quality rubric; convert drain entries into memory updates; archive `observations.md` if >50 entries. The interactive `/kiro:daily-maintenance` pipeline runs the judge **three times** and reconciles the deltas by median; the headless routine prompt still writes one `[judge]` observation and defers scoring to step D
 - **B** — Session Quality Assessment: collect git activity; score session 1–5; append `[session-quality]` observation
 - **C** — Keep Rate Evaluation: find Claude-co-authored commits older than 7 days; compute lines still in HEAD; append `[keep-rate]` observation
-- **D** — Trust Score update: run `trust_score.py auto-score` after B and C are written, so all signals (`[session-charge]`, `[memory-gap]`, `[session-quality]`, `[keep-rate]`) are visible to the scorer
+- **D** — Trust Score update: run `trust_score.py auto-score` after B and C are written, so all signals (`[session-charge]`, `[memory-gap]`, `[session-quality]`, `[keep-rate]`) are visible to the scorer. `auto-score` is deterministic and submits a **single** sample, so the multi-sample spread gate is skipped and the record reports `"spread": null` — the gate applies only when `apply` is given one `--delta` per judge run
 - **E** — Skill Augmentation (Sleep-Phase Knowledge Seeding): invoke `skill-augment-agent` with today's judge verdict. The agent collects `[seed-target:]` observations written by the `action-capture.sh` hook during the Wake phase (failed Bash commands), maps them to skill domains, and loads today's `type: feedback` memories (user corrections) as highest-trust evidence ranked above the LLM judge, generates synthetic worked examples (Dreaming), and applies up to 3 evidence-backed skill improvements. Logs each as `[skill-update]`. Idempotent — skips if `[skill-update]` entries already exist for today. This step closes the full Wake→Sleep cycle: struggles during active sessions automatically become targeted skill updates overnight.
 
 **Channel summary (optional):** after the run, `daily-runner.sh` posts the last ~20 lines of output to your chat channels via `scripts/integrations/channels/notify.py` (title `Daily maintenance — <repo> (exit=<code>)`). No-op unless `~/.env.channels` exists, so the call stays unconditional. Opt out with `SDD_SKIP_CHANNEL_NOTIFY=1`. See [docs/integrations/channels](../integrations/channels/README.md).
@@ -133,7 +133,7 @@ This is the **review** stage of the tool-failure-memory loop (capture → recall
 **Scope:** Every registered repo (no-ops unless there's a merged PR with a logged automated review not yet processed)
 
 **What it does:**
-- Discovers merged PRs with a logged `.claude/memory/pr-reviews/pr-<n>.md` (written by `scripts/pr/log_review.sh` via the `gitnexus-pr-review` skill, backgrounded from `scripts/pr/detect_base_and_create.sh` when the PR is created) not yet processed, via `gh pr view --json state`
+- Discovers merged PRs with a logged `.claude/memory/pr-reviews/pr-<n>.md` (written by `scripts/pr/log_review.sh` via the `gitnexus-pr-review` skill, backgrounded from `scripts/pr/detect_base_and_create.sh` when the PR is created) not yet processed, via `gh pr view --json state`. `detect_base_and_create.sh` now reads the new PR's number back from `gh pr list --json number` instead of parsing it out of the printed URL — the URL is free text, the number is a field — and writes a placeholder `## Evidence` section into the PR body stating that no before/after probe was run, since this path fires headless on `git push` where none can be captured. `pr-evidence-hook.sh` cannot cover it: the `gh pr create` here runs inside the script, not as a Bash tool call, so no `PreToolUse` event fires. If the number cannot be read back, the script says so and exits without inventing one
 - For each: diffs the logged review against real human review activity (`gh api .../comments`, `.../reviews`) to find **missed** flags, **false positives**, or **convention gaps**
 - **Low-risk** findings (team conventions, dismissed-flag patterns) are written directly into `.claude/memory/` as `project`/`feedback` facts
 - **Higher-risk** findings (changes to the `code-reviewer` skill's methodology) are never auto-applied — only reported to `docs/code-review-learning-report.md` for human approval
@@ -248,5 +248,5 @@ The dashboard's **Scheduled Tasks** tab shows live status for each task, scoped 
 
 ---
 
-_Last synced: 2026-09-01_
+_Last synced: 2026-09-03_
 
