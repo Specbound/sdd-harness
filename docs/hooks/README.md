@@ -494,6 +494,30 @@ Hook output is injected into Claude's context as system messages — Claude read
 
 ---
 
+### `ledger-append-only.sh`
+**Event:** `PreToolUse` — **Matcher:** `Write|Edit|MultiEdit`
+
+**Purpose:** Hard-blocks (exit 2) Write/Edit/MultiEdit against the harness's own self-scored measurement ledgers. A metric an agent can also rewrite is not a measurement — modeled on `exo`'s (github.com/exoharness/exo) single safety invariant that the agent cannot alter its own canonical event log.
+
+**Paths covered (literal suffix match, no regex):**
+- `.claude/memory/trust-score.jsonl`
+- `.claude/memory/metrics.jsonl`
+- `.claude/memory/caveman-savings.jsonl`
+- `.claude/memory/learnings.jsonl`
+- `.claude/memory/observations.md`
+
+**Escape hatch:** `SDD_LEDGER_ROTATE=1` disables the block for that invocation, for housekeeping-agent's legitimate pruning/archival passes.
+
+**What it does not block:** every real producer of these files appends via `>>`/`echo` from a Bash-run hook or routine script — a different tool (`Bash`), never seen by this matcher. Only Claude's own Write/Edit/MultiEdit tool calls against these exact files are blocked.
+
+**Tests:** `hooks/claude/ledger-append-only.test.sh` (12 cases: block per protected file across all three tools, absolute-path match, allow on unrelated memory files and non-Write/Edit tools, and the rotate escape hatch).
+
+**Why it is needed:** Without this hook, an agent under pressure to show improvement could quietly truncate or rewrite `trust-score.jsonl` or `learnings.jsonl` rather than earning the number honestly. The existing `protected-path-hook.sh` guards secrets, not the harness's own history.
+
+**Output:** `BLOCKED: ...` message to stderr, `exit 2`. No output on allow (silent).
+
+---
+
 ### `skill-validate-hook.sh`
 **Event:** `PreToolUse` — **Matcher:** `Write|Edit`
 

@@ -480,6 +480,14 @@ Self-paces to daily (`MIN_GAP_DAYS=1`). Applies to every repo. Opt-out: `SDD_SKI
 
 ---
 
+### RTK Net-Effect (`rtk-net-effect-runner.sh`)
+
+Runs automatically every day via the daily orchestrator. Deterministic (no LLM) wrapper around `scripts/utils/rtk-net-effect.py`, which measures RTK's **global** effect from `~/.claude/projects/**/*.jsonl` rather than its local savings alone: exact-match Bash rerun rate and Read reread rate within the same session — the recovery-cost signal RTK's own per-command byte-savings figure cannot see. Writes `.claude/memory/rtk-net-effect.json`, read by the dashboard's RTK layer note (Headroom tab), which now shows both rates alongside its savings figure instead of savings alone.
+
+Self-paces to daily (own state-file guard). Applies to every repo. Opt-out: `SDD_SKIP_RTK_NET_EFFECT=1`. Lookback window: `SDD_RTK_NET_EFFECT_DAYS` (default 30).
+
+---
+
 ## Jira Integration
 
 ### `/kiro:jira-solve` — Work on a Jira ticket with auto-commenting

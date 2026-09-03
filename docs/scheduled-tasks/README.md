@@ -91,6 +91,21 @@ Guards:
 
 ---
 
+### RTK Net-Effect
+**Runner:** `.claude/scripts/routines/rtk-net-effect-runner.sh`
+**Cadence:** Every day (own state-file guard `.claude/memory/.last-rtk-net-effect-run`; deterministic — no LLM call)
+**Scope:** Every registered repo
+
+**What it does:**
+- Wraps `.claude/scripts/utils/rtk-net-effect.py`, which measures RTK's **global** effect from `~/.claude/projects/**/*.jsonl`, not just its local savings: exact-match Bash rerun rate and Read reread rate within the same session — RTK's own figure is local savings on one command's output, and cannot see whether the agent, missing detail it needed, reran the command or re-read the file later
+- Writes `.claude/memory/rtk-net-effect.json`; on no data in the lookback window, leaves the prior snapshot in place rather than overwriting it with an empty one
+- Read by the dashboard's RTK layer note (Headroom tab), which appends both rates alongside its existing savings figure instead of reporting savings alone
+- Not a Scheduled Tasks tab card — it feeds the RTK layer note directly, not `_scheduled_task_registry()`
+
+**Opt-out:** `SDD_SKIP_RTK_NET_EFFECT=1` env var. Lookback window: `SDD_RTK_NET_EFFECT_DAYS` (default 30).
+
+---
+
 ### Macro-Eval Sweep
 **Runner:** `.claude/scripts/routines/macro-eval-runner.sh`
 **Prompt:** `.claude/scripts/routines/macro-eval-prompt.md`
