@@ -5064,6 +5064,8 @@ function _hdBox(a) {
 
   var btn = 'background:var(--surface1);color:var(--text);border:none;border-radius:5px;' +
             'padding:3px 9px;font-size:10.5px;cursor:pointer';
+  var fld = 'background:var(--surface0);border:1px solid var(--surface1);color:var(--text);' +
+            'border-radius:6px;padding:6px 9px;font-size:10px;font-family:inherit';
 
   // Collapsed by default: the grid answers "what is running" at a glance, and the
   // disclosure answers "what is it doing" only for the one you open.
@@ -5080,21 +5082,25 @@ function _hdBox(a) {
     '<div id="hdnow-' + a.name + '" style="font-size:10px;color:var(--overlay1);' +
       'margin-bottom:8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">…</div>' +
     '<div style="display:flex;gap:5px;margin-bottom:7px">' +
-      '<button onclick="herderPromptAgent(\\'' + a.name + '\\')" style="' + btn + '">prompt</button>' +
       '<button onclick="herderStop(\\'' + a.workspace_id + '\\')" style="background:#f38ba822;color:#f38ba8;border:1px solid #f38ba855;border-radius:5px;padding:3px 9px;font-size:10.5px;cursor:pointer">stop</button>' +
     '</div>' +
-    '<details id="hddet-' + a.name + '" ontoggle="herderStream(\\'' + a.name + '\\')">' +
-      '<summary style="cursor:pointer;font-size:10.5px;color:var(--mauve);outline:none">activity</summary>' +
-      '<div id="hdfeed-' + a.name + '" style="background:var(--crust);border-radius:6px;' +
-        'padding:9px;font-size:10px;line-height:1.5;max-height:300px;overflow:auto;' +
-        'margin-top:7px">loading…</div>' +
-      '<div style="margin-top:6px;display:flex;gap:5px">' +
-        '<button onclick="herderStream(\\'' + a.name + '\\',1)" style="' + btn + '">refresh</button>' +
-        '<button onclick="herderRawPane(\\'' + a.name + '\\')" style="' + btn + '">raw pane</button>' +
-      '</div>' +
-      '<pre id="hdlog-' + a.name + '" style="display:none;background:var(--crust);border-radius:6px;' +
-        'padding:9px;font-size:10px;max-height:260px;overflow:auto;white-space:pre-wrap;' +
-        'color:var(--subtext1);margin-top:7px"></pre>' +
+    '<div id="hdchat-' + a.name + '" style="background:var(--crust);border-radius:6px;' +
+      'padding:9px;font-size:10px;line-height:1.5;max-height:400px;overflow-y:auto;' +
+      'margin-bottom:8px;display:flex;flex-direction:column;gap:8px">loading…</div>' +
+    '<div id="hdfiles-' + a.name + '" style="margin-bottom:6px;display:flex;flex-wrap:wrap;gap:4px;' +
+      'font-size:9px"></div>' +
+    '<div style="display:flex;gap:6px;align-items:flex-end">' +
+      '<textarea id="hdinput-' + a.name + '" placeholder="Reply…" ' +
+        'style="flex:1;' + fld + ';font-size:10px;padding:6px;border-radius:4px;' +
+        'resize:none;min-height:32px;max-height:100px" onkeydown="herderInputKeydown(event, \\'' + a.name + '\\')"></textarea>' +
+      '<button onclick="herderFileTag(\\'' + a.name + '\\')" style="' + btn + ';padding:6px 10px">📎</button>' +
+      '<button onclick="herderSendReply(\\'' + a.name + '\\')" style="' + btn + ';padding:6px 12px">send</button>' +
+    '</div>' +
+    '<details id="hddet-' + a.name + '" ontoggle="herderChatOpen(\\'' + a.name + '\\')" style="margin-top:6px">' +
+      '<summary style="cursor:pointer;font-size:9.5px;color:var(--overlay0);outline:none">raw pane</summary>' +
+      '<pre id="hdlog-' + a.name + '" style="background:var(--crust);border-radius:6px;' +
+        'padding:9px;font-size:9px;max-height:200px;overflow:auto;white-space:pre-wrap;' +
+        'color:var(--subtext1);margin-top:6px;white-space:pre-wrap;word-break:break-word"></pre>' +
     '</details>' +
   '</div>';
 }
@@ -5239,7 +5245,10 @@ function herderRefresh() {
 
       var live = document.getElementById('hd-live');
       if (live && live.checked) {
-        rows.forEach(function(a) { herderStream(a.name); });
+        rows.forEach(function(a) {
+          var chat = document.getElementById('hdchat-' + a.name);
+          if (chat) { herderUpdateChat(a.name); }
+        });
       }
 
       var note = document.getElementById('hd-live-note');
@@ -5300,21 +5309,128 @@ function herderStop(ws) {
     .catch(function() {});
 }
 
-function herderPromptAgent(name) {
-  var text = window.prompt('Prompt for ' + name + ':');
-  if (!text) { return; }
+var _hdChat = {};
+
+function _hdChatMessage(role, text) {
+  var bg = role === 'user' ? 'var(--mauve)' : 'var(--surface1)';
+  var color = role === 'user' ? 'var(--base)' : 'var(--text)';
+  var align = role === 'user' ? 'flex-end' : 'flex-start';
+  return '<div style="display:flex;justify-content:' + align + '">' +
+         '<div style="background:' + bg + ';color:' + color + ';' +
+         'border-radius:6px;padding:6px 9px;max-width:85%;word-break:break-word;' +
+         'font-size:10px;line-height:1.4">' + _hdEsc(text) + '</div>' +
+         '</div>';
+}
+
+function herderChatOpen(name) {
+  var det = document.getElementById('hddet-' + name);
+  var chat = document.getElementById('hdchat-' + name);
+  if (det && det.open) {
+    if (!_hdChat[name]) { _hdChat[name] = { cursor: 0 }; }
+    herderUpdateChat(name, true);
+  }
+}
+
+function herderUpdateChat(name, force) {
+  var chat = document.getElementById('hdchat-' + name);
+  if (!chat) { return; }
+
+  _hdFetch('/api/herder-stream?name=' + encodeURIComponent(name))
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      if (d.error) { chat.textContent = d.error; return; }
+      if (d.pending) { chat.innerHTML = '<span style="color:var(--overlay0);font-size:9px">Starting session…</span>'; return; }
+
+      var evs = d.events || [];
+      if (!evs.length) {
+        chat.innerHTML = '<span style="color:var(--overlay0);font-size:9px">No messages yet. Send the first prompt.</span>';
+        return;
+      }
+
+      var msgs = [];
+      for (var i = 0; i < evs.length; i++) {
+        var e = evs[i];
+        if (e.t === 'text') { msgs.push({ role: 'assistant', text: e.text }); }
+      }
+
+      var html = msgs.map(function(m) { return _hdChatMessage(m.role, m.text); }).join('');
+      var atBottom = (chat.scrollHeight - chat.scrollTop - chat.clientHeight) < 40;
+      chat.innerHTML = html || '<span style="color:var(--overlay0);font-size:9px">No messages yet.</span>';
+      if (atBottom) { chat.scrollTop = chat.scrollHeight; }
+    })
+    .catch(function(e) { chat.textContent = String(e); });
+}
+
+function herderInputKeydown(e, name) {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    herderSendReply(name);
+  }
+}
+
+function herderSendReply(name) {
+  var input = document.getElementById('hdinput-' + name);
+  var fileChips = document.getElementById('hdfiles-' + name);
+  if (!input) { return; }
+
+  var text = input.value.trim();
+  var files = fileChips ? (fileChips.dataset.files || '').split(',').filter(function(f) { return f; }) : [];
+
+  if (!text && !files.length) { return; }
+
+  var prompt = text;
+  if (files.length) {
+    prompt += '\n\nFiles: ' + files.map(function(f) { return '@' + f; }).join(' ');
+  }
+
   _hdFetch('/api/herder-prompt', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name: name, prompt: text })
+    body: JSON.stringify({ name: name, prompt: prompt })
   })
     .then(function() {
-      // Open the feed on send: you asked it something, you want to watch it.
-      var det = document.getElementById('hddet-' + name);
-      if (det) { det.open = true; }
-      setTimeout(function() { herderStream(name, 1); }, 1500);
+      input.value = '';
+      fileChips.innerHTML = '';
+      fileChips.dataset.files = '';
+      herderUpdateChat(name, true);
+      setTimeout(function() { herderUpdateChat(name, true); }, 1000);
     })
-    .catch(function() {});
+    .catch(function(e) { alert('Error sending reply: ' + e); });
+}
+
+function herderFileTag(name) {
+  var fileChips = document.getElementById('hdfiles-' + name);
+  if (!fileChips) { return; }
+
+  var input = prompt('Enter filename (or comma-separated list):');
+  if (!input) { return; }
+
+  var files = input.split(',').map(function(f) { return f.trim(); }).filter(function(f) { return f; });
+  var existing = (fileChips.dataset.files || '').split(',').filter(function(f) { return f; });
+  var all = existing.concat(files);
+
+  fileChips.dataset.files = all.join(',');
+  fileChips.innerHTML = all.map(function(f) {
+    return '<div style="background:var(--mauve);color:var(--base);' +
+           'border-radius:4px;padding:2px 8px;display:flex;align-items:center;gap:4px;' +
+           'font-size:9px">' + _hdEsc(f) +
+           '<span onclick="herderRemoveFile(\\'' + name + '\\',\\'' + _hdEsc(f) + '\\')" ' +
+           'style="cursor:pointer;font-weight:bold">×</span></div>';
+  }).join('');
+}
+
+function herderRemoveFile(name, file) {
+  var fileChips = document.getElementById('hdfiles-' + name);
+  if (!fileChips) { return; }
+  var files = (fileChips.dataset.files || '').split(',').filter(function(f) { return f && f !== file; });
+  fileChips.dataset.files = files.join(',');
+  fileChips.innerHTML = files.map(function(f) {
+    return '<div style="background:var(--mauve);color:var(--base);' +
+           'border-radius:4px;padding:2px 8px;display:flex;align-items:center;gap:4px;' +
+           'font-size:9px">' + _hdEsc(f) +
+           '<span onclick="herderRemoveFile(\\'' + name + '\\',\\'' + _hdEsc(f) + '\\')" ' +
+           'style="cursor:pointer;font-weight:bold">×</span></div>';
+  }).join('');
 }
 
 setInterval(function() {
