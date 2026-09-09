@@ -11,7 +11,7 @@ TMPFILE=$(mktemp /tmp/skill-validate-XXXXXX.py)
 trap 'rm -f "$TMPFILE"' EXIT
 
 cat > "$TMPFILE" << 'PYTHON_END'
-import json, sys, re, pathlib
+import hashlib, json, sys, re, pathlib
 
 try:
     e = json.loads(sys.stdin.read())
@@ -81,7 +81,61 @@ def provenance_findings(text):
     return found
 
 
+# ── Eval-verdict staleness ────────────────────────────────────────────────
+# A PASS verdict from skill-eval-gate is a statement about one specific set of
+# instructions. Every later edit invalidates it, and nothing re-runs the gate on
+# its own, so an augmented skill keeps shipping a verdict it no longer earned.
+# skill-eval-gate Phase 6 records the sha256 of the SKILL.md it measured;
+# comparing that to the incoming content is the only way to notice the drift.
+#
+# Hash, not date: a skill edited an hour after its eval has a same-day verdict
+# that means nothing.
+def eval_verdict_findings(path_obj, text):
+    if path_obj.name != 'SKILL.md':
+        return []
+
+    verdict_file = path_obj.parent / 'eval-verdict.json'
+
+    if not verdict_file.exists():
+        # A skill being created for the first time has not reached the gate yet —
+        # warning there would fire on every new skill and train the warning out.
+        # Only an EXISTING skill missing a verdict is a finding.
+        if not path_obj.exists():
+            return []
+        return [
+            'no eval-verdict.json beside this SKILL.md — this skill has no recorded '
+            'PASS from skill-eval-gate, so its instructions have never been measured '
+            'against a no-skill baseline. Run Skill("skill-eval-gate") before finalizing.'
+        ]
+
+    try:
+        recorded = json.loads(verdict_file.read_text())
+    except (OSError, ValueError):
+        return [
+            f'eval-verdict.json at {verdict_file} could not be read — treat this skill '
+            'as unevaluated rather than assuming it passed.'
+        ]
+
+    want = recorded.get('skill_md_sha256', '')
+    if not want:
+        return [
+            f'eval-verdict.json at {verdict_file} records no skill_md_sha256, so there is '
+            'no way to tell which instructions it describes. Re-run Skill("skill-eval-gate").'
+        ]
+
+    if want != hashlib.sha256(text.encode('utf-8')).hexdigest():
+        return [
+            f'SKILL.md changed since its {recorded.get("verdict", "?")} verdict of '
+            f'{recorded.get("date", "unknown date")} — that result describes different '
+            'instructions. Re-run Skill("skill-eval-gate") and rewrite eval-verdict.json, '
+            'or state plainly that this edit ships unmeasured.'
+        ]
+
+    return []
+
+
 prov_warnings = provenance_findings(content) if p.name == 'SKILL.md' else []
+prov_warnings = prov_warnings + eval_verdict_findings(p, content)
 
 try:
     rel = p.relative_to(skills_dir)

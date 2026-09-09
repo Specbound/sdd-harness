@@ -28,7 +28,7 @@ git log --since="24 hours ago" --format="%s" | grep -i "revert\|undo\|rollback\|
 git log --since="24 hours ago" --name-only --format="" | sort | uniq -c | sort -rn | head -10
 ```
 
-If commits are zero, check sibling repos — activity may be invisible if `.claude/` is gitignored or work lands in a parallel directory. (source: 2026-08-31 [routine-error])
+If commits are zero, check sibling repos — activity may be invisible if `.claude/` is gitignored or work lands in a parallel directory. (source: 2026-09-01 [session-quality])
 
 ### Step 2 — Collect signals from observations
 
@@ -110,3 +110,12 @@ Do not use `--idle` on zero commits alone; prior-run output lands post-judge in 
 
 ### ❌ Assuming routine idleness on zero observations
 Check routine transcripts for hard-failure signature (~15 lines means died at auth); zero observations can hide outages indistinguishable from idle. (source: 2026-08-31 [routine-error])
+
+### ❌ Single-channel coverage checks
+Check all four channels (observations.md, metrics.jsonl, markers, transcripts) before declaring idle. (source: 2026-09-08 [session-quality])
+
+### ❌ Absolute line count as auth-outage discriminator
+Line count fails—dead runs 15-16/66, live 18-34 lines. Use tail-distance: tail≤3=dead, tail≥24=real. (source: 2026-09-08 [session-quality])
+
+### ❌ Completion sentinel stamped at routine start
+Stamping completion marker at start (not end) hides auth-outages: runs mark done before auth, suppressing retry. (source: 2026-09-08 [routine-error])

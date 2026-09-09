@@ -1,5 +1,7 @@
 <!-- L0: Quick reference — all SDD commands with usage examples -->
 
+_Last synced: 2026-09-06_
+
 # SDD Usage Guide
 
 How to use the Spec-Driven Development harness day-to-day.
@@ -317,16 +319,27 @@ Run on demand when something feels off about the workflow, or periodically to au
 - `add/remove/modify-instruction` → run `/kiro:harness-test regression`
 - `adjust-tier` → run `/kiro:harness-test {agent-name}` at the new tier
 
-### `/kiro:guardrails` — Audit and scaffold linter guardrails
-Checks your project's linter configuration for complexity rules and scaffolds missing guardrails. Supports ESLint (JS/TS), ruff (Python), clippy (Rust), and golangci-lint (Go).
+### `/kiro:guardrails` — Audit and scaffold enforcement guardrails
+Checks your project's configuration across four independent dimensions and scaffolds what is missing. Supports ESLint (JS/TS), ruff (Python), clippy (Rust), and golangci-lint (Go).
 
 ```
-/kiro:guardrails              # audit: check existing config for complexity rules
-/kiro:guardrails scaffold     # create or enhance linter config with recommended baselines
+/kiro:guardrails              # audit: check existing config across all four dimensions
+/kiro:guardrails scaffold     # create or enhance config with recommended baselines
 /kiro:guardrails report       # show enforcement maturity level (L0-L3)
 ```
 
-Recommended baselines: `max-lines-per-function: 40`, `complexity: 10`, `max-depth: 3`, `max-params: 4`, with zero-warning tolerance (`--max-warnings=0`).
+The four dimensions are reported separately, never summed — a project can score full marks on the first and zero on the rest, which is the normal case:
+
+| Dimension | Caps | Typical tool |
+|---|---|---|
+| Complexity | how tangled one function is | ESLint, ruff, clippy, golangci-lint |
+| Type evidence (JS/TS) | how much type information it threw away | oxlint + anti-slop |
+| Assertion strength | whether the tests prove anything | mutmut, Stryker |
+| Structure | duplication, dead code, import direction — **across** functions | pyscn, jscpd, knip, import-linter |
+
+Recommended complexity baselines: `max-lines-per-function: 40`, `complexity: 10`, `max-depth: 3`, `max-params: 4`, with zero-warning tolerance (`--max-warnings=0`).
+
+The structural dimension is the one a standard pipeline cannot reach: no linter has a rule for "this block also exists in another file", nothing knows which modules may import which, and a helper with no callers left lints and type-checks clean because no call site disagrees with it. Those failures used to be caught by a human reading the diff, which stopped scaling once agents started producing diffs faster than they get read. Two constraints on how it is scaffolded, both load-bearing: **gate on the delta**, never on whole-repo state (a first run reporting hundreds of findings gets the check disabled the same day, leaving the repo worse off than never adding it), and make the checker **agent-callable**, not CI-only — the benefit comes from the agent running it in the session it wrote the code, while it still knows why two copies exist.
 
 ### `/kiro:ci-scaffold` — Generate CI configuration
 Generates a CI configuration that mirrors the `/kiro:verify` pipeline stages. Auto-detects platform or accepts an explicit argument.
@@ -382,7 +395,7 @@ The rule is added to the appropriate agent file or rule file and distributed via
 
 ### `/kiro:daily-maintenance` — Nightly orchestrator
 
-Runs the full maintenance cycle end-to-end: **Judge → Reflect → Housekeeping → Session Quality → Keep Rate → Trust Score → Augment Skills → Adversarial Check**. Designed to run on a nightly schedule (18:00 local) with a SessionStart hook as catch-up. The scheduler is registered automatically by `install.sh` / `update.sh`: Windows Task Scheduler on WSL (`setup-global-orchestrator.sh`) fires at 18:00 and repeats every 4h for the rest of the day (6x/day total — each sub-routine self-gates on its own last-run state, so 5 of 6 fires are cheap no-ops), cron on Linux (`setup-linux-orchestrator.sh`), and launchd on macOS (`setup-mac-orchestrator.sh`) still fire once daily.
+Runs the full maintenance cycle end-to-end: **Judge → Reflect → Housekeeping → Session Quality → Keep Rate → Trust Score → Augment Skills → Adversarial Check → Eval Staleness**. Designed to run on a nightly schedule (18:00 local) with a SessionStart hook as catch-up. The scheduler is registered automatically by `install.sh` / `update.sh`: Windows Task Scheduler on WSL (`setup-global-orchestrator.sh`) fires at 18:00 and repeats every 4h for the rest of the day (6x/day total — each sub-routine self-gates on its own last-run state, so 5 of 6 fires are cheap no-ops), cron on Linux (`setup-linux-orchestrator.sh`), and launchd on macOS (`setup-mac-orchestrator.sh`) still fire once daily.
 
 Before it visits any repo, `daily-orchestrator.sh` runs one harness-level task: once per calendar day it executes `update.sh` so every registered project picks up harness changes with no human step. Nothing else ever did — `stop-hook.sh` only prints a `Run: update.sh` nudge and waits — so a harness fix could sit unapplied in an installed project indefinitely. It runs `bash -n update.sh` first so a half-written `update.sh` is never run across the fleet, and it writes its state file only on success, so a failed sync retries tomorrow rather than being skipped. Opt out with `SDD_SKIP_HARNESS_SYNC=1`.
 
@@ -407,6 +420,7 @@ Pipeline:
 8. **Skill augmentation** — `skill-augment-agent` reviews today's observations and judge drains, encodes up to 5 evidence-backed improvements (circuit breaker cap) into relevant `SKILL.md` files (append-only, ≤150 chars each). Logs each change as a `[skill-update]` observation. Also processes any `[seed-target:]` observations written by the action-capture hook during the session, and today's `type: feedback` memories (user corrections), which auto-qualify and are drafted before judge drains — human ground-truth outranks the LLM grader.
 8b. **Behavior spec mining** — `behavior-spec-agent` (process-focused sibling of step 8) reviews the same evidence for *recurring agent conduct* rather than skill-content gaps, and drafts/revises up to 3 durable `BEHAVIOR.md` specs under `.claude/behaviors/<name>/` — answer-key material for grading future trajectories, deliberately never shown to the agent being graded (unlike `SKILL.md`/`CLAUDE.md`). Requires ≥2 recurring occurrences of the same conduct class, except `type: feedback` memories which auto-qualify at 1. Every spec is validated with `scripts/validate-behavior-spec.py` before being left in place. Logs each change as a `[behavior-update]` observation. See the `writing-behavior-specs` skill for the format and calibration methodology.
 9. **Adversarial check** — a separate verification agent (no loyalty to step 8's output) reviews each `[skill-update]` written today: does it address the stated gap? does it contradict existing guidance? Flags failures as `[skill-update-flagged]`, confirms passes as `[skill-update-verified]`. Skipped if step 8 wrote nothing.
+10. **Skill eval staleness** — `scripts/skill-eval-staleness.py` checks every `eval-verdict.json` against the model now running. A verdict is a joint fact about a skill's instructions and the model that read them; `skill-validate-hook.sh` catches the first half on write, but a model change invalidates every verdict at once with no write to fire on, so it needs a scan on the tick. Flags `stale-model`, `unknown-model` and `hash-mismatch`, appends one `[routine-alert]`, and **reports only** — re-measuring one skill costs 12 agent spawns, so an unattended fleet-wide re-run on a model-change day would be the most expensive thing the routine has ever done. The model ID is passed explicitly with no default and no auto-detection: a wrong guess marks every stale verdict as current, which is the failure the step exists to prevent. Skills with no verdict file are counted but never flagged.
 
 Idempotent per calendar day (uses today's `[judge]` observation as the sentinel). Each step is error-isolated: a bad Judge pass does not block housekeeping.
 
@@ -619,7 +633,7 @@ Starts a local HTTP server at `http://localhost:4569` and opens the browser auto
 | 11 | 🧵 Context Health | Sessions per day trend + `/compact` recommendations; live context-usage card (color-coded %, from the open Claude Code session's statusline via `hooks/global/caveman-statusline.sh`, shown only while a session is open in the last 15 minutes) |
 | 12 | 🔧 Maintenance Status | Per-repo orchestrator log tail and last-run status; **deferred-work banner** — count of `DEBT:` markers (deliberate shortcuts, per `karpathy-guidelines`) found by `git grep` across tracked code, recomputed each dashboard launch |
 | 13 | 🤖 Automation Audit | Timeline of automated events — runs from every routine (daily-maintenance, macro-eval, skill-curator, harness-health, tool-failure, security, drift), each with its own icon/label; not-due checks (duration 0s) are hidden and daily-maintenance entries expand to show that day's brief; plus trust-judge scores, session signals, scheduled task outcomes, and a PR-review-pipeline event section (`detect_base_and_create.sh` → `log_review.sh` → `validate_review_json.py` → GitHub Action publish) |
-| 14 | 🐑 Herder | Spawn form + live agent roster, backed by `scripts/utils/herder.py` (Herdr). Starts **real interactive** Claude Code sessions that outlive the dashboard process, in whichever repo the dashboard's own repo dropdown is set to — there is deliberately no second repo picker. Per-agent lifecycle state (`idle`/`working`/`blocked`/`done`), a live tail on a 5s poll, and per-agent token/cost-weighted spend read from that session's own transcript (reported as **None**, not 0, when the transcript cannot be located). Permission modes and model ids are discovered rather than hardcoded, and each list states plainly when it is a fallback. Under `--static` the controls are replaced by a note instead of rendered dead |
+| 14 | 🐑 Herder | Spawn form + live agent roster, backed by `scripts/utils/herder.py` (Herdr). Starts **real interactive** Claude Code sessions that outlive the dashboard process, in whichever repo the dashboard's own repo dropdown is set to — there is deliberately no second repo picker. Each card is a **chat**: an always-visible message feed above a reply box (Enter sends, Shift+Enter newlines) with `@file` tag chips, plus per-agent lifecycle state (`idle`/`working`/`blocked`/`done`), a live tail on a 5s poll, and per-agent token/cost-weighted spend read from that session's own transcript (reported as **None**, not 0, when the transcript cannot be located). Permission modes and model ids are discovered rather than hardcoded, and each list states plainly when it is a fallback. Under `--static` the controls are replaced by a note instead of rendered dead |
 
 ### 💰 Model Cost section
 
@@ -634,6 +648,10 @@ The **cache-cost stat card** shows what share of a session's token spend was cac
 Backed by [Herdr](https://herdr.dev) via `scripts/utils/herder.py`. `herdr server` is a headless daemon needing no TTY, and every `herdr workspace|tab|pane|agent` subcommand answers with JSON on stdout, so nothing in this path pattern-matches terminal text. It is used instead of the `claude --print` primitive the skill-curator endpoints use because `--print` is a one-shot pipe with nothing to attach to; a Herdr-started session can be joined from a terminal mid-run with `herdr agent attach <name>`.
 
 The API endpoints (`/api/herder-status`, `-list`, `-options`, `-spawn`, `-prompt`, `-read`, `-stream`, `-stop`) are guarded by **two independent checks**, either of which alone is bypassable: a per-process `X-Herder-Token` that only the page served by this process holds, and an `Origin` allowlist. An *absent* Origin is allowed (browsers send none on same-origin GET/POST) while a *present but foreign* one is rejected, so a page that somehow learned the token still cannot drive the dashboard from another site.
+
+**Talking to an agent (chat, not a popup).** Each agent card holds the conversation inline: a scrolling message feed, a reply `textarea` (Enter sends, Shift+Enter inserts a newline), a 📎 button that attaches `@filename` chips, and `send`. Attached files are appended to the outgoing prompt as a trailing `Files: @a @b` line, then the chips clear. The feed auto-scrolls only when you were already at the bottom, so reading back through history is not yanked forward by the next message. It renders assistant **text** events from `/api/herder-stream`; reasoning and tool-call events are not shown in the chat. Sending posts to `/api/herder-prompt` refreshes the feed immediately and again after 1s. With the **live tail** checkbox on, every card's feed refreshes on the 5s roster poll, not just an opened one.
+
+The raw pane sits below the chat in a collapsed `raw pane` disclosure. Opening it populates the `<pre>` with the full raw session output via `herderUpdateChat` (refreshes on disclosure open and on live-tail 5s polls).
 
 Two undocumented Herdr behaviours are handled here. A spawned pane inherits `CLAUDE_CODE_CHILD_SESSION`, which turns transcript saving **off** — that would make every herder-spawned session invisible to `scripts/utils/token-forensics.py` and to `agents/kiro/session-judge.md`, so it is scrubbed both in the server env and per-workspace via `--env`. And `herdr agent read` returns raw pane text rather than a JSON envelope, with failures arriving as JSON on stderr, so both are handled separately from the normal JSON path.
 
@@ -846,4 +864,4 @@ Four protocols extracted from [garrytan/gbrain](https://github.com/garrytan/gbra
 
 Full reference: `docs/gbrain-patterns/gbrain-patterns.md`
 
-_Last synced: 2026-09-03_
+_Last synced: 2026-09-06_

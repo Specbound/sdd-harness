@@ -181,12 +181,56 @@ into a percentage that makes a coin-flip look like 67% quality.
 
 Report the verdict and the scenario table back to the calling skill (`skill-creator` Phase 4b or `skill-extraction` Phase 5b). A **FAIL** or **INCONCLUSIVE** verdict blocks that phase from passing — the calling skill must not proceed to installation/finalization until this gate returns PASS.
 
+### Phase 6: Record the Verdict Next to the Skill
+
+On **PASS**, write `eval-verdict.json` into the skill's own directory, beside its `SKILL.md`:
+
+```json
+{
+  "skill": "<slug>",
+  "verdict": "PASS",
+  "date": "YYYY-MM-DD",
+  "scenarios": 3,
+  "treatment_runs_per_scenario": 3,
+  "measured_on_model": "<exact model ID the treatment runs executed under>",
+  "skill_md_sha256": "<sha256 of the exact SKILL.md bytes that were evaluated>"
+}
+```
+
+Get the hash from the file that was actually evaluated — `shasum -a 256 <skill-dir>/SKILL.md` — not from a draft in context. Write the same file to the harness source copy (`skills/<slug>/`) and to the installed copy (`~/.claude/skills/<slug>/`) if both exist, so neither tree claims a verdict the other never earned.
+
+The hash is the whole point. A verdict is a statement about a specific set of instructions, and every later augmentation invalidates it. Dates cannot express that — a skill edited an hour after its eval has a same-day verdict that means nothing. `skill-validate-hook.sh` compares the hash of every incoming `SKILL.md` write against this file and warns when they diverge, which is the only reason a skill edited six months from now hears about its stale verdict at all.
+
+`measured_on_model` records the *other* thing that invalidates a verdict. A lift
+of "+2 scenarios over baseline" is a joint fact about the instructions and the
+model that read them, and only one of those two is under this repo's control.
+Skills written for an older Claude are documented to break on a newer one, with
+the recommended fix being to simplify or delete them rather than trust them
+across the boundary (dbreunig on the Fable 5.1 system prompt — see
+`docs/sources/articles/README.md`). A verdict that names only the instructions
+silently claims to survive a model change it was never tested through.
+
+Take the ID from the **treatment** agents — they are what produced the passing
+runs — not from whichever model happens to be reading this file. When the
+subagent model is genuinely not knowable, write `"unknown"` rather than guessing
+or omitting the field. Both read as "cannot be shown to still hold", which is
+correct; a guess reads as current, which is a lie the scan cannot detect.
+
+`scripts/skill-eval-staleness.py` scans every verdict against the running model
+and reports the ones that no longer describe what they claim to. It runs on the
+daily tick (`/kiro:daily-maintenance` Step 7), because a model change invalidates
+every verdict at once with no file write to hang a hook on.
+
+On **FAIL** or **INCONCLUSIVE**, write nothing. An absent `eval-verdict.json` reads as "never passed this gate", which is exactly right, and the hook warns on absence too. Do not record a non-PASS verdict here as if the file were a general eval log — its only job is to answer "were *these* instructions measured, and did they pass".
+
 ## Success Criteria
 
 - Every finalized skill that passed through `skill-creator` or `skill-extraction` has a logged PASS verdict from this gate, backed by a scenario table with real (not assumed) pass/fail results from 1 baseline run and 3 independent treatment runs per scenario.
 - No skill is finalized on a `pass@3` reading. The recorded verdict is `pass^3` — every treatment run passed — and the per-run results are in the table so a split can be seen rather than inferred.
 - No skill is finalized on the strength of the *author's* confidence that it will help — only on a measured delta.
 - Every finalized skill with at least one soft/conditional instruction has a logged Phase 1c result — verbatim and compressed runs scored against the same check, not a token-count comparison.
+- Every skill carrying a PASS verdict has an `eval-verdict.json` whose `skill_md_sha256` matches its current `SKILL.md`. A mismatch means the skill was edited after it was measured, and the verdict no longer describes the file it sits next to.
+- Every PASS verdict names the model it was measured on. A verdict with no `measured_on_model`, or one naming a model that is no longer running, is not evidence the skill got worse — it is the absence of evidence that it still helps, and is treated as such by `scripts/skill-eval-staleness.py`.
 
 ## Inputs and Outputs
 
@@ -200,6 +244,7 @@ Report the verdict and the scenario table back to the calling skill (`skill-crea
 - Do not skip straight to a PASS verdict without actually running both baseline and treatment — a gate that isn't run is not a gate.
 - If the calling skill overrides an INCONCLUSIVE/FAIL verdict and finalizes anyway, that override must be logged somewhere durable — append a line (skill name, verdict, reason, date) to `reports/skill-curation-report.md`'s history, not just mentioned in that turn's chat summary. An unlogged override is how a bypass path quietly becomes the default route.
 - Scenario sets are authored once at creation time and go stale; `skill-curator`'s weekly Continuous Eval-Gate Drift Check samples live traces to catch failure modes the original scenarios missed and proposes new ones — this gate should not be treated as a one-time checkpoint.
+- A stale-model finding from `scripts/skill-eval-staleness.py` is a prompt to re-run this gate, never a reason to auto-delete or auto-rewrite a skill. Re-measuring costs 12 spawns; deleting on a staleness flag alone would throw away working skills on the strength of a date comparison. Re-run the gate, read the new delta, then decide.
 
 ## Related Skills
 

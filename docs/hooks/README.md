@@ -540,14 +540,29 @@ Hook output is injected into Claude's context as system messages — Claude read
   Unlike the frontmatter rules, the provenance scan runs for **any** file named `SKILL.md`,
   not only those under `~/.claude/skills/` — a skill written anywhere carries the same risk.
   Implemented with substring tests only, no regex, per the repo-wide parsing ban.
+- **Eval-verdict staleness (added 2026-09-06):** warns when a `SKILL.md` write no longer matches
+  the verdict recorded beside it. `skill-eval-gate` Phase 6 writes `eval-verdict.json` into the
+  skill's directory on PASS, carrying the sha256 of the instructions it measured. This hook
+  hashes the incoming content and compares. Four findings, all advisory:
+  - *changed since its PASS verdict* — hash mismatch. The recorded result describes different
+    instructions; the edit ships unmeasured unless the gate is re-run.
+  - *no eval-verdict.json* — an **existing** skill that never passed the gate. Deliberately
+    silent when the `SKILL.md` does not yet exist on disk: a brand-new skill has not reached the
+    gate yet, and warning there would fire on every creation and train the warning out.
+  - *could not be read* / *records no skill_md_sha256* — a verdict file that cannot say which
+    instructions it describes is treated as no verdict, never as an assumed pass.
+
+  Hash, not date: a skill edited an hour after its eval has a same-day verdict that means
+  nothing. Runs for any `SKILL.md`, like the provenance scan. No regex — `hashlib` and `json`.
 
 **Exit codes:**
 - `0` — valid (or file not in skills dir — hook is a no-op)
-- `0` with warning banner — valid but description starts with a vague phrase, or a provenance finding
+- `0` with warning banner — valid but description starts with a vague phrase, or a provenance or eval-verdict finding
 - `2` — hard block: one or more errors must be fixed before write proceeds
 
-**Tests:** `hooks/claude/skill-validate-hook.test.sh` (8 cases: both provenance severities, two
-false-positive guards, frontmatter regressions, and the non-`SKILL.md` no-op).
+**Tests:** `hooks/claude/skill-validate-hook.test.sh` (14 cases: both provenance severities, two
+false-positive guards, frontmatter regressions, the non-`SKILL.md` no-op, and six eval-verdict
+cases covering new/missing/current/stale/unreadable/hashless).
 
 **Why it is needed:** Skill descriptions are the primary signal Claude uses to decide when to activate a skill. Vague, too-short, or mismatched names silently degrade trigger accuracy across all sessions. Catching these at write time is zero-cost compared to diagnosing misfired or missed skill activations later.
 
@@ -766,6 +781,25 @@ The previous implementation regex-stripped quoted segments and then `grep -E`'d 
 
 ---
 
+### `claudemd-edit-notice.sh`
+**Event:** `PostToolUse` — **Matcher:** `Write|Edit|MultiEdit` — _(soft gate, never blocks)_
+
+**Purpose:** Says that a just-written `CLAUDE.md`, `CLAUDE.local.md`, or `AGENTS.md` is **not active in the running session**. Fires on the basename only, wherever the file lives — project root, a package subdirectory, or `~/.claude/`.
+
+**Why it's needed:** Project-root and user-level instruction files are read once at session start and held in memory. Editing one mid-session changes the file on disk and changes nothing about the session that is running. That is not a hypothetical here — `harness-fix-agent`, `skill-augment-agent`, `claudemd-review` and `/kiro:evolve` all write `CLAUDE.md` mid-session and then continue as though the rule they just wrote is in force. It is not, and the agent cannot observe its own stale context, so no prompt or skill can catch this. Only something outside the model's context can say so.
+
+**Strength:** Soft. The write already happened and this does not undo it. The remedy it names is `/compact`, `/clear`, or a restart.
+
+**Exit code is 2, deliberately.** For `PostToolUse`, stdout goes to the debug log and stderr on exit 0 is never shown to Claude. Exit 2 is the documented way to surface stderr from this event — the tool already ran, so it warns without blocking. An `echo` on exit 0 here would be a hook that appears to work and does nothing.
+
+**Parsing:** reads `.tool_input.file_path` (falling back to `.tool_input.path`) with `jq`, takes the basename, and compares against a literal three-name list. Structured fields and exact tokens only — a substring match would fire on `templates/CLAUDE.md.template`, which the tests assert it does not.
+
+**Output / side effect:** `[claudemd-edit-notice] <file> was edited — the change is NOT active in this session.` plus the remedy, on stderr, exit 2. Silent (exit 0) on every other file, on malformed or empty input, when `jq` is missing, and when `SDD_SKIP_CLAUDEMD_NOTICE=1`. Tests: `hooks/claude/claudemd-edit-notice.test.sh` (18 cases, including the template and `claude.md` near-misses and a directory literally named `CLAUDE.md`).
+
+**Source:** extracted 2026-09-06 — see `docs/sources/articles/README.md`, the "19 Claude Code mistakes" entry.
+
+---
+
 ### `todo-focus-hook.sh`
 **Event:** `PostToolUse` — **Matcher:** `TodoWrite`
 
@@ -785,9 +819,9 @@ The previous implementation regex-stripped quoted segments and then `grep -E`'d 
 
 ## Hook Wiring Reference
 
-Verified directly against `.claude/settings.json` on 2026-09-03 (not just this doc's prior claims):
+Verified directly against `.claude/settings.json` on 2026-09-06 (not just this doc's prior claims):
 
-All 42 registrations below are live. Regenerate this block from the real config with:
+All 44 registrations below are live — counted with the `jq` command in this section, not carried over from the previous sync. Regenerate this block from the real config with:
 
 ```bash
 jq -r '.hooks | to_entries[] | .key as $e | .value[] | .matcher as $m | .hooks[]
@@ -837,6 +871,7 @@ PostToolUse      Write|Edit  (*/skills/*/SKILL.md)    → skill-permissions-gate
 PostToolUse      Write|Edit|MultiEdit (test/CI cfg)   → test-integrity-guard.sh
 PostToolUse      Write|Edit|MultiEdit (.py only)      → ruff-quality-gate-hook.sh
 PostToolUse      Write|Edit|MultiEdit (.ts/.js only)  → js-quality-gate-hook.sh
+PostToolUse      Write|Edit|MultiEdit (CLAUDE/AGENTS) → claudemd-edit-notice.sh
 PostToolUse      Bash                                 → revert-detect-hook.sh
 PostToolUse      Bash                                 → setup-buffer-hook.sh
 PostToolUse      Bash                                 → action-capture.sh
@@ -899,5 +934,5 @@ denies `git push*` outright where projects only deny force-push.
 
 **Matching rule for any guard hook:** parse the command into its structure (argv via `shlex`, URLs via a URL parser) and compare tokens exactly. Do not substring- or regex-match the rendered command text — that is defeated by re-rendering the same value, and `git-destructive-guard-hook.sh` shipped with exactly that bug until 2026-08-25.
 
-_Last synced: 2026-09-03_
+_Last synced: 2026-09-06_
 

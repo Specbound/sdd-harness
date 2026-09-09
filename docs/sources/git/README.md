@@ -808,3 +808,54 @@ VVAH's own README is what made the mechanism concrete rather than aspirational: 
 **Note, not an integration:** VVAH is runnable against this repo. The `taint.yaml` profile is login-only with S10/S11 off, so it needs no `ANTHROPIC_API_KEY` — which matters, since none exists here (`harness-llm-calls-use-subscription`). Two caveats: structured taint evidence exists only for Python, Java and C#, and this harness is mostly bash, so most of it would fall back to reachability seed paths; and a bare `scan` **edits source files in the target repo** at stage S10, making `--stop-after s9` mandatory for detection-only use.
 
 See also: [articles/README.md](../articles/README.md) — the other six sources in the same 2026-09-03 batch.
+
+---
+
+## humanlayer/skills and huggingface/funes — both surfaced by the 2026-09-06 batch, both rejected
+**URLs:**
+- https://github.com/humanlayer/skills — `plugins/show-me/skills/show-me/SKILL.md` (dexhorthy)
+- https://github.com/huggingface/funes — single-binary local memory layer for coding agents
+
+**Added:** 2026-09-06
+**Source / Author:** Neither repo was an input URL. Both were reached *through* the 2026-09-06 six-source batch — `humanlayer/skills` from Matt Pocock's X post, `funes` from its Hugging Face blog announcement. Logged here anyway so the rejections are findable in the index where someone would go looking for them.
+
+**Retrieval, stated honestly:** `humanlayer/skills` was fetched at the raw-file URL, but **WebFetch declined to reproduce the SKILL.md verbatim** and returned a structural description instead — so the evaluation below rests on a summary of the file, not the file. The `funes` repo itself was **never fetched**; everything known about it comes from the author's blog post. Neither rejection should be read as a code review.
+
+**What they're about:**
+- **`humanlayer/skills` → `show-me`** — a skill that picks a visual format to explain code: pseudocode for algorithms, call trees for runtime flow, component trees for UI, shallow file trees for refactors, Mermaid for interaction and data flow, `diff` blocks for changes against existing shape, whole blocks for mostly-new code, and a single focused HTML file for comparisons too dense for Mermaid. Its governing rule is "Pick the smallest view that makes the key point clear." One command: `open path/to/show-me-{description}.html`.
+- **`huggingface/funes`** — parses Claude Code, Codex, pi and Hermes traces into a shared turn-and-block shape, chunks and embeds them with a pinned local model into a Lance dataset, and answers queries by fusing vector and BM25 rankings, reranking with a cross-encoder, reweighting by recency and attaching neighbouring chunks. `recall` "returns the original text, not a summary," with provenance; "Nothing is distilled into a fact at write time." Optionally binds to a Hugging Face dataset the user owns, so memory travels between machines without becoming an account in someone else's service.
+
+**What we added:** nothing from either repo.
+
+**Rejected — `show-me`.** Four-way overlap with `diff-teach`, `mermaid-expert`, `artifact-diagramming` and `gitnexus-exploring`, in the saturated software-engineering domain (SkillsBench: 4.5pt lift there vs 51.9pt in model-weak domains). The right move if it is ever wanted is to install `humanlayer/skills` as an upstream plugin rather than vendor a copy — that keeps maintenance at zero and avoids a fifth artifact in a crowded corner. Recorded rather than dropped because the recommendation came from a high-signal source and will surface again.
+
+**Rejected — `funes`.** The tool is well-argued and its handoff-vs-recall benchmark is pointed: recall was **8x cheaper than a written handoff on one task and 4x on the other**, and compaction was the only channel that split — passing one task and failing the other, where "its summary had flattened the findings that mattered." It was rejected on fit, not quality. This harness already runs two memory stores that do not see each other (`.claude/memory/` and `~/.claude/projects/<slug>/memory/`), plus `ctx_knowledge` and headroom; a third store makes a known fragmentation problem worse. The companion proposal — rewriting `/kiro:save-session`'s written handoff into transcript recall — was rejected on evidence strength: n=2 tasks, author-run, on the author's own tool. What did survive is the dependency the benchmark exposes: recall over traces is impossible if the traces are deleted, and Claude Code's `cleanupPeriodDays` default of 30 days was silently doing exactly that. That setting is now pinned at 365 — see [articles/README.md](../articles/README.md).
+
+See also: [articles/README.md](../articles/README.md) and [x/README.md](../x/README.md) — same 2026-09-06 six-source batch.
+
+---
+
+## Three repositories from the 2026-09-09 eleven-source batch — all rejected
+**URLs:**
+- https://github.com/llm-as-a-verifier/llm-as-a-verifier
+- https://github.com/humanlayer/skills/blob/main/plugins/show-me/skills/show-me/SKILL.md
+- https://github.com/langgenius/dify
+
+**Added:** 2026-09-09
+
+**Retrieval:** All three via `ctx_url_read` rung 1. `show-me`'s SKILL.md came back **verbatim this time**, which matters: the 2026-09-06 rejection above rests on a structural description, and this one does not.
+
+**What they're about:**
+- **`llm-as-a-verifier`** — a general verification framework for agent output. Scores with fine-grained granularity, takes an expectation over the full logprob distribution of the verifier's score tokens, and scales through repeated evaluation and criteria decomposition. Ships best-of-N selection via a Probabilistic Pivot Tournament that ranks N trajectories in O(Nk) pairwise verifications instead of a full O(N²) round-robin, plus a `ProgressTracker` that scores an agent step by step while it runs so a hopeless rollout can be abandoned early. Reports Terminal-Bench V2 83.1% → 86.5% against a 92.1% oracle, SWE-Bench Verified 76.1% → 78.2% against 84.4%. A companion Claude Code plugin, TurboAgent, sits between the client and the model provider as a drop-in API proxy.
+- **`humanlayer/skills` → `show-me`** — see the entry above; unchanged on a second read.
+- **`langgenius/dify`** — 155k-star open-source platform for building LLM apps: visual workflow canvas, RAG pipeline, agent definitions over Function Calling or ReAct with 50+ built-in tools, model management across hundreds of providers, LLMOps, and a backend-as-a-service API layer.
+
+**What we added:** nothing from any of the three.
+
+**Rejected — `llm-as-a-verifier`.** The mechanism does not port. Scoring by expectation over a logprob distribution requires logprobs, and every harness LLM call goes through `claude --print` on a subscription, which returns none. What is left after removing that is repeated evaluation with criteria decomposition, which `skill-eval-gate` (`pass^3`) and `session-judge` (median of 3) already do. The pivot tournament solves ranking at N > 2; `better-call` compares exactly two candidates with an order flip, so it has no N to reduce. TurboAgent generates N candidate responses per turn, multiplying subscription spend in a harness where token cost is already tracked as a problem. The one uncovered idea, live progress scoring for early abandonment, would here reduce to a coarse single-shot LLM judgement made repeatedly — the failure mode already recorded as a durable memory.
+
+**Rejected — `show-me`, a second time and now on the file itself.** The four-way overlap holds: `diff-teach`, `mermaid-expert`, `artifact-diagramming`, `gitnexus-exploring`. Reading the real text sharpened one point rather than changing the verdict — its strongest idea is diff-shaped explanation, showing a change against the shape that already exists, and that is exactly `diff-teach`'s ground, where the predict-then-reveal drill does more work than a one-way explanation. Install upstream as a plugin if it is ever wanted.
+
+**Rejected — `dify`.** A product, not a technique. Nothing in it is portable to a shell-and-markdown harness. One incidental observation kept for provenance: it ships `.agents/skills` and `.claude` alongside both `CLAUDE.md` and `AGENTS.md`, so the dual-standard skills directory is spreading beyond agent-tooling repos.
+
+See also: [articles/README.md](../articles/README.md) — the full eleven-source batch, including the two integrations it produced. [x/README.md](../x/README.md) — the three X-archive mirrors from the same batch.

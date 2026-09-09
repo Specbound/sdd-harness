@@ -5380,7 +5380,7 @@ function herderSendReply(name) {
 
   var prompt = text;
   if (files.length) {
-    prompt += '\n\nFiles: ' + files.map(function(f) { return '@' + f; }).join(' ');
+    prompt += '\\n\\nFiles: ' + files.map(function(f) { return '@' + f; }).join(' ');
   }
 
   _hdFetch('/api/herder-prompt', {

@@ -113,6 +113,49 @@ testing scoped to the diff (`mutmut run --paths-to-mutate <changed>`, Stryker's
 `--since`) is minutes, not hours, and catches the assertion-less test at the moment it
 is written.
 
+**Structure (all ecosystems — a fourth, independent dimension)**:
+
+The first three dimensions all look *inside* one function or one file. Complexity
+caps how tangled a function is, type-evidence caps what it threw away, mutation
+testing caps what its tests prove. None of them looks **across** functions, and
+that is where agent-written code actually degrades.
+
+Nothing in a normal pipeline has a rule for "this block also exists in another
+file". Nothing knows which modules are allowed to import which. A helper nobody
+calls anymore lints clean and type-checks clean, because no call site disagrees
+with it. Before agents, the human reviewer caught this by reading the diff; agents
+produce diffs faster than they get read, so that part of review quietly stopped
+happening (codescan, "Ruff, mypy, pytest, and then what?" — see
+`docs/sources/articles/README.md`).
+
+The cost lands on the agent, not just the human. The source case: four
+near-identical normalization helpers accumulated across sessions, each written
+because the agent needed one and did not check whether an earlier session had
+already added it. When asked to change how a value was normalized, the agent had
+to read all four, guess which was canonical, patch one, then discover two call
+sites still used a different copy. Duplication in an agent-written codebase is a
+tax on every later turn.
+
+Audit for three checks:
+
+| Concern | Tool | Config marker |
+|---|---|---|
+| Duplicated code (clone groups) | `pyscn` (Python), `jscpd` (JS/TS + polyglot), `cargo-mutants` has no equivalent — use `jscpd` | `pyscn.toml`, `.jscpd.json`, or the tool in the CI workflow |
+| Dead code | `pyscn`, `vulture` (Python), `knip`, `ts-prune` (JS/TS) | `knip.config.*`, `[tool.vulture]`, tool in dev deps |
+| Dependency direction | `import-linter` (Python), ESLint `no-restricted-imports` / `eslint-plugin-boundaries` (JS/TS), `go-arch-lint` (Go) | `.importlinter`, `[importlinter]` in `setup.cfg`, boundary rules in the ESLint config |
+
+Report presence/absence as its own coverage line. Do **not** fold these into the
+complexity count — a project can be fully compliant on complexity and score zero
+here, which is the normal case.
+
+**Grade is not a trend line.** When a structural tool reports a health grade,
+audit the *average* complexity across snapshots as well, not the grade alone. In
+the source measurement, average cyclomatic complexity crept from 6.9 to 8.5 across
+five snapshots while the grade never left A, because no single function crossed
+into the high band. Eight functions sat in the medium band that the tool's own
+`check` threshold would have failed on — the project only ever looked at the grade.
+If a project tracks one number here, it should be the average over time.
+
 **Python (ruff/flake8)**:
 - `max-complexity` or `C901` rule enabled
 - `max-args` / `PLR0913`
@@ -159,11 +202,19 @@ Guardrails Audit
     mutation testing:         {CONFIGURED ({tool}) / MISSING}
     scoped-to-diff invocation:{PRESENT / NOT WIRED / N-A (no mutation tool)}
 
+  Structure:
+    clone detection:          {CONFIGURED ({tool}) / MISSING}
+    dead code:                {CONFIGURED ({tool}) / MISSING}
+    dependency contracts:     {CONFIGURED ({tool}) / MISSING / UNWRITTEN
+                               (architecture stated only in a doc)}
+    delta-gated:              {YES / NO (gates on whole-repo state) / N-A}
+    agent-callable:           {YES / NO (CI only)}
+
   Zero-Warning Tolerance:     {YES/NO/N/A}
 
   Coverage: {X}/{Y} recommended rules configured
-            (complexity only — type-evidence and assertion-strength are
-             reported separately above and are NOT counted in this ratio)
+            (complexity only — type-evidence, assertion-strength and structure
+             are reported separately above and are NOT counted in this ratio)
   Gaps:     {list of missing rules with recommended values}
 
   Message Quality: {N}/{M} custom rules carry an actionable message
@@ -188,6 +239,41 @@ violation without naming a fix. Report it as a WARN-level gap, never a hard fail
    for the ecosystem and the diff-scoped invocation, state the runtime cost honestly,
    and stop there. Do not add it to the lint script, CI, or a pre-commit hook — a
    minutes-to-hours check wired into a per-write gate makes the whole gate get bypassed.
+8. If no structural checks exist: propose them **delta-gated and agent-callable** (see below)
+
+##### Scaffolding structural checks
+
+Two rules decide whether this lands or gets switched off in a week.
+
+**Gate on the delta, never on the whole repository.** Fail when a change *adds* a
+clone group, *adds* a function over threshold, or *adds* an import that violates a
+contract. A whole-repo gate on an existing codebase reports hundreds of findings on
+its first run and gets disabled by lunchtime, which leaves the repo worse off than
+never adding it — the config is present, so it reads as covered, and nothing runs.
+Wire it against the diff: the changed paths, or the tool's own since-ref flag.
+
+**Give the checker to the agent, not only to CI.** The measured benefit came from
+the agent calling the checker itself, in the same session, before a human saw the
+diff — at that moment it still holds the context for why both copies exist and can
+collapse them. By the time a clone group reaches a reviewer, that context is gone
+and the fix is a chore nobody picks up. Name the one-line invocation in the project's
+`CLAUDE.md` or `AGENTS.md` so it is reachable mid-task:
+
+```bash
+uvx pyscn analyze .          # Python: clones, complexity, dead code, deps
+npx jscpd <changed-paths>    # JS/TS and polyglot: clones only
+```
+
+**Write dependency rules down as a contract, not as guidance.** Every project has an
+architecture in someone's head — this layer may not import that one, features do not
+reach across to each other. An agent reads a doc and mostly complies; a contract fails
+the build. Convert the rules a project already states informally into `import-linter`
+contracts (Python) or boundary rules (JS/TS), and give each one an actionable message
+per the section below. This is the same graduation path as the complexity rules, applied
+to architecture: the doc stays as the *why*, the contract becomes the *what*.
+
+Per the "Don't install packages" constraint below: surface the commands and the config
+they would add, let the human run them.
 
 ##### Scaffolding type-evidence rules (JS/TS)
 
@@ -321,6 +407,7 @@ Enforcement Maturity Report
   Details:
   - Linter config: {exists/missing}
   - Complexity rules: {X}/{Y} configured
+  - Structural checks: {clones/dead-code/deps — N of 3 configured}
   - Zero-warning tolerance: {yes/no}
   - Graduations file: {exists with N entries / missing}
   - Evolve trace entries: {N entries / no trace log}

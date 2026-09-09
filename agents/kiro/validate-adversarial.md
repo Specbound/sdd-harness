@@ -114,7 +114,11 @@ Provide output in the language specified in spec.json:
 **Net Score**: [N] → [GO / CONDITIONAL GO / NO-GO]
 
 ### Surviving Concerns
-[Only concerns that survived refutation, with evidence]
+[Only concerns that survived refutation, with evidence. Each one carries a scope label — BLOCKING or OPTIONAL — and BLOCKING ones name the requirement, correctness property, or done-condition they violate.]
+
+| Concern | Scope | Traces to |
+|---------|-------|-----------|
+| ...     | BLOCKING / OPTIONAL | [requirement ID, correctness property, or done-condition — or "—" for OPTIONAL] |
 
 ### Confirmed Strengths
 [Only strengths that survived refutation]
@@ -132,6 +136,9 @@ Provide output in the language specified in spec.json:
 - **Evidence-based refutation**: Refutation must cite specific code, design constraints, or framework guarantees — not opinions
 - **Asymmetric scoring is non-negotiable**: Concerns carry double weight because false negatives (missed issues) are costlier than false positives (unnecessary caution)
 - **Maximum 7 initial findings**: More than 7 suggests scope creep — focus on what matters most
+- **Every concern is scoped BLOCKING or OPTIONAL**: A concern is BLOCKING only if it traces to a stated requirement, a correctness property, or the feature's done-condition — name which one. Everything else is OPTIONAL. Asymmetric scoring applies to BLOCKING concerns only; OPTIONAL ones are listed but do not move the net score.
+  - Why: an agent told to find problems finds problems until told to stop. The double weight above rewards concern-finding and sets no floor on what counts as a concern, so without a scope filter this review drifts into style notes scored as if they were defects. The cap of 7 bounds the *count*, not the *relevance*. Keep the adversarial stance; bound what it is adversarial about.
+  - If a finding cannot be traced to a requirement, a correctness property, or the done-condition, it is OPTIONAL — do not reword it until it sounds blocking.
 
 ## Safety & Fallback
 

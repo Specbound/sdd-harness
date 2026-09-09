@@ -206,6 +206,47 @@ Rules:
 
 Log the result. If behavior-spec-agent errors, log `[routine-error]: behavior-spec-agent failed` and continue. This step is best-effort — it must never block trust score or gap detection.
 
+## Step 7 — Skill Eval Staleness
+
+`skill-eval-gate` measures a skill's lift once and writes `eval-verdict.json`
+beside its `SKILL.md`. That verdict is a joint fact about the instructions *and*
+the model that read them. `skill-validate-hook.sh` catches the first half — an
+edited `SKILL.md` — because a write is something a hook can fire on. A model
+change invalidates every verdict at once with no write anywhere, so it needs a
+scan on the tick instead.
+
+Run it with the exact model ID **you are running under**, taken from your own
+system prompt, not from a config file:
+
+```bash
+python3 .claude/scripts/skill-eval-staleness.py --current-model "<your exact model ID>"
+```
+
+There is no default and no auto-detection on purpose: a wrong guess marks every
+stale verdict as current, which is the one outcome this step exists to prevent.
+If you genuinely cannot name your model ID, log
+`[routine-error]: skill-eval-staleness skipped — model ID unknown` and move on.
+Do not pass a plausible-looking value.
+
+If the scan reports any flagged verdicts, append one observation:
+
+```
+- YYYY-MM-DD [routine-alert]: N skill eval verdicts stale (M stale-model, K unknown-model, J hash-mismatch) — re-run skill-eval-gate before trusting their lift
+```
+
+Do **not** re-run `skill-eval-gate` from here, and do not touch the flagged
+skills. Re-measuring one skill costs 12 agent spawns; doing it unattended for
+every skill on a model-change day would be the most expensive thing the nightly
+routine has ever done. This step reports; the user decides what is worth
+re-measuring.
+
+Skills with no `eval-verdict.json` at all are counted but never flagged — most
+installed skills are vendored and never went through the gate, so treating
+absence as a finding would bury the real ones.
+
+Best-effort like the steps above: on a non-zero exit other than a finding, log
+`[routine-error]: skill-eval-staleness failed` and continue.
+
 ---
 
 
@@ -245,6 +286,7 @@ Daily Maintenance complete — YYYY-MM-DD
 - Unresolved memory-gaps: 1 → [routine-alert] appended
 - Skills augmented: 2 (brainstorming: +1 anti-pattern, systematic-debugging: +1 learned pattern)
 - Behavior specs: 1 (verify-before-claiming-done: created — evidence: 2 recurring judge drains)
+- Eval staleness: 3 verdicts flagged (2 stale-model, 1 hash-mismatch), 41 never gated
 ```
 
 ## Notes

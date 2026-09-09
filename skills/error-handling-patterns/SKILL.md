@@ -40,6 +40,9 @@ LLM-generated semantic signals (finish_reason, tool_call_type) may be mislabeled
 ### ❌ Text scanning for error status classification
 Setting error status by checking if report text contains "error"/"failed" keywords falsely fails diagnostic agents. Use structured status fields only. (source: 2026-08-25 [friction, insight, enforceable])
 
+### ❌ Trusting exit code 0 as sole success signal
+Exit 0 ≠ success if errors print to stdout. Parse output for errors before marking done. (source: 2026-09-07 [friction, enforceable, escaped])
+
 ## Resources
 
 - `resources/implementation-playbook.md` for detailed patterns and examples.

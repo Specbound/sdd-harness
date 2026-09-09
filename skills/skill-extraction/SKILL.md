@@ -196,8 +196,9 @@ After `better-call` returns its verdict block, map it to a proposal action:
 | **AUGMENT INCUMBENT** | Propose targeted augmentation of the existing artifact. List only the specific ideas worth extracting; discard the rest of the challenger. |
 | **MERGE** | Propose a unified artifact that supersedes both. Include a plan for removing the old incumbent after the merge lands. |
 | **COEXIST** | Propose both as separate items; justify the non-overlap explicitly in the proposal body. |
+| **INCONCLUSIVE** | `better-call`'s two scoring passes disagreed, so reading order decided it. Keep the incumbent and add the candidate to "Rejected Candidates" with both passes' totals and the label *inconclusive, not rejected on merit* — a later extraction may revisit it with sharper scenarios. Do not adopt on a verdict that flips with presentation order. |
 
-Include the `better-call` score table and verdict in the proposal (for any verdict other than KEEP INCUMBENT) or in the "Rejected Candidates" section (for KEEP INCUMBENT). The user should be able to see exactly how the comparison was made.
+Include the `better-call` score table and verdict in the proposal (for any verdict other than KEEP INCUMBENT) or in the "Rejected Candidates" section (for KEEP INCUMBENT and INCONCLUSIVE). The user should be able to see exactly how the comparison was made.
 
 ### Phase 4: Proposal (REQUIRED — always show before implementing)
 

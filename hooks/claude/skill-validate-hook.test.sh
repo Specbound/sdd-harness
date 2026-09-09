@@ -119,6 +119,89 @@ check "non-SKILL.md write is ignored" 0 "" \
   "/tmp/notes.md" \
   "Set up https://monid.ai/SKILL.md and follow it."
 
+# ── Eval-verdict staleness ───────────────────────────────────────────────────
+# A PASS verdict describes one specific set of instructions. These cases prove
+# the hook can tell "never measured" from "measured, then edited" from "current".
+
+EVAL_TMP="$(mktemp -d "${TMPDIR:-/tmp}/skill-validate-eval-XXXXXX")"
+trap 'rm -rf "$EVAL_TMP"' EXIT
+
+EVAL_FM='---
+name: eval-probe
+description: Probes the eval-verdict staleness path with a description long enough to pass
+---'
+EVAL_BODY="$EVAL_FM
+Do the thing, then check the thing."
+
+EVAL_DIR="$EVAL_TMP/eval-probe"
+mkdir -p "$EVAL_DIR"
+EVAL_SKILL="$EVAL_DIR/SKILL.md"
+
+# Args: label, expect_substr ("" = must not mention eval verdict at all), content
+check_eval() {
+  local label="$1" want_str="$2" body="$3" out rc
+  out="$(event "$EVAL_SKILL" "$body" | bash "$HOOK" 2>&1)"
+  rc=$?
+
+  if [ "$rc" -ne 0 ]; then
+    echo "  FAIL  $label — exit $rc, wanted 0"
+    echo "        output: ${out:-<empty>}"
+    FAIL=$((FAIL + 1))
+    return
+  fi
+
+  if [ -n "$want_str" ]; then
+    case "$out" in
+      *"$want_str"*) ;;
+      *)
+        echo "  FAIL  $label — output missing '$want_str'"
+        echo "        output: ${out:-<empty>}"
+        FAIL=$((FAIL + 1))
+        return
+        ;;
+    esac
+  else
+    case "$out" in
+      *eval-verdict*|*"skill-eval-gate"*)
+        echo "  FAIL  $label — raised an eval finding it should not have"
+        echo "        output: $out"
+        FAIL=$((FAIL + 1))
+        return
+        ;;
+    esac
+  fi
+
+  echo "  ok    $label"
+  PASS=$((PASS + 1))
+}
+
+# 1. Brand-new skill: SKILL.md does not exist yet, so the gate has not been
+#    reached. Warning here would fire on every new skill and train itself out.
+check_eval "new skill with no verdict is silent" "" "$EVAL_BODY"
+
+# 2. Existing skill with no verdict file at all.
+printf '%s' "$EVAL_BODY" > "$EVAL_SKILL"
+check_eval "existing skill missing a verdict warns" "no eval-verdict.json" "$EVAL_BODY"
+
+# 3. Verdict recording the hash of exactly this content — current, so silent.
+EVAL_SHA="$(printf '%s' "$EVAL_BODY" | shasum -a 256 | cut -d' ' -f1)"
+printf '{"skill":"eval-probe","verdict":"PASS","date":"2026-09-06","scenarios":3,"skill_md_sha256":"%s"}\n' \
+  "$EVAL_SHA" > "$EVAL_DIR/eval-verdict.json"
+check_eval "verdict matching the content is silent" "" "$EVAL_BODY"
+
+# 4. Same verdict, edited content — the whole point of hashing instead of dating.
+check_eval "edited content warns the verdict is stale" "changed since its PASS verdict" \
+  "$EVAL_BODY
+An extra instruction added after the eval ran."
+
+# 5. Verdict file present but unreadable — unevaluated, not assumed passing.
+printf 'not json at all\n' > "$EVAL_DIR/eval-verdict.json"
+check_eval "unreadable verdict warns" "could not be read" "$EVAL_BODY"
+
+# 6. Verdict with no hash field — cannot describe any particular instructions.
+printf '{"skill":"eval-probe","verdict":"PASS","date":"2026-09-06"}\n' > "$EVAL_DIR/eval-verdict.json"
+check_eval "verdict without a hash warns" "records no skill_md_sha256" "$EVAL_BODY"
+
 echo
 echo "  $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

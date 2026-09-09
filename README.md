@@ -255,7 +255,7 @@ sdd-harness/
 │   │   └── raindrop-setup.sh         # Auto-installs raindrop-ai in virtualenvs
 │   ├── skill-listing-budget.py   #   Measures the aggregate skill-listing cost (every skill's name + description, paid on every session) against a 1%-of-context-window ceiling
 │   └── utils/                    #   Standalone utilities
-│       ├── dashboard.py          #     Local harness dashboard (14 sections, Workshop + Headroom + Herder tabs); token totals deduplicated on requestId before summing
+│       ├── dashboard.py          #     Local harness dashboard (14 sections, Workshop + Headroom + Herder tabs with live chat UI); token totals deduplicated on requestId before summing
 │       ├── herder.py             #     Spawns and supervises real interactive Claude Code sessions behind the dashboard's Herder tab (Herdr backend, JSON-only, no text pattern-matching); permission modes and model ids are discovered, never hardcoded, and each spawn is attributed to its own transcript
 │       ├── token-forensics.py    #     Where the tokens actually went, from ~/.claude/projects/**/*.jsonl — dedup, per-tool amplification, peak rolling 5h window, session shape, automation split
 │       ├── dashboard-usage-dedup.test.sh # Tests dashboard.py's usage dedup + a format-drift canary that fails if real transcripts stop showing duplicates

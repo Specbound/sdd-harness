@@ -60,6 +60,21 @@ Produce a score table:
 | **Total**               | **/30**    | **/30**   |
 ```
 
+### Step 2b: Score It Again With the Order Reversed
+
+Score the pair a second time, presenting the **incumbent first** — read it first, score it first, write its column first. Same six dimensions, same 1–5 scale, no reference to the first pass while scoring.
+
+Why: a pairwise judge anchors on whichever option it reads first. Google Cloud's AutoSxS neutralizes this by swapping answer order between runs and reporting a win rate across both orders, not a single verdict. This skill already guards *defender* bias (Key Principles); it did not guard *position* bias, and the two are independent. One presentation order is one sample — the same reason `session-judge` runs 3× and takes the median.
+
+Compare the two passes:
+
+| Both passes | Then |
+|---|---|
+| Same verdict | That verdict stands. Report both totals in the verdict block. |
+| Different verdicts | **INCONCLUSIVE.** The result is position-driven, not evidence-driven. |
+
+`INCONCLUSIVE` is a real outcome, not a failed run. Do not average the two passes into a middle verdict, and do not re-run until they agree. Either name the one dimension that moved and re-score only that with a stated reason, or return `INCONCLUSIVE` and let skill-extraction default to keeping the incumbent. Adopting on a verdict that flips with reading order is worse than adopting nothing.
+
 ### Step 3: Issue a Verdict
 
 Choose exactly one verdict based on the scores and narrative reasoning:
@@ -71,6 +86,7 @@ Choose exactly one verdict based on the scores and narrative reasoning:
 | **AUGMENT INCUMBENT** | Challenger scores higher on 1–2 dimensions only | Challenger has specific ideas worth grafting onto the existing artifact. Extract those ideas; discard the rest. |
 | **MERGE** | Both total within 4 pts of each other AND complementarity delta ≥ 3 | Both have distinct, non-overlapping value. Create a unified artifact that combines them. |
 | **COEXIST** | Complementarity delta = 5 AND both total ≥ 18/30 | Genuinely different domains or audiences. Both are warranted without conflict. Justify explicitly. |
+| **INCONCLUSIVE** | Step 2b's two passes reached different verdicts | Reading order decided it, not the artifacts. skill-extraction keeps the incumbent and records why. |
 
 If scores fall near a boundary, break ties with this tiebreaker priority:
 1. Automation potential (highest wins — the harness is self-sustaining by design)
@@ -97,7 +113,9 @@ Output a structured block that skill-extraction can consume directly:
 | Harness fit             |            |           |
 | **Total**               |            |           |
 
-**Verdict: [KEEP INCUMBENT / ADOPT CHALLENGER / AUGMENT INCUMBENT / MERGE / COEXIST]**
+**Order-reversed pass (Step 2b):** [totals from the second pass] → [same verdict / different verdict]
+
+**Verdict: [KEEP INCUMBENT / ADOPT CHALLENGER / AUGMENT INCUMBENT / MERGE / COEXIST / INCONCLUSIVE]**
 
 **Reasoning:** [2–4 sentences. What tipped the decision? What does the winning option do that the other doesn't? If AUGMENT or MERGE, what specifically should be extracted or fused?]
 
