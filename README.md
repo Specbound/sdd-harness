@@ -254,6 +254,7 @@ sdd-harness/
 │   │   ├── headroom-setup.sh         # Install headroom memory proxy
 │   │   └── raindrop-setup.sh         # Auto-installs raindrop-ai in virtualenvs
 │   ├── skill-listing-budget.py   #   Measures the aggregate skill-listing cost (every skill's name + description, paid on every session) against a 1%-of-context-window ceiling
+│   ├── skill-eval-staleness.py   #   Scans every eval-verdict.json against the model now running — flags hash-mismatch, stale-model, unknown-model. --current-model is required and has no default; skills with no verdict are counted, never flagged. Run by /kiro:daily-maintenance Step 7 (reports only)
 │   └── utils/                    #   Standalone utilities
 │       ├── dashboard.py          #     Local harness dashboard (14 sections, Workshop + Headroom + Herder tabs with live chat UI); token totals deduplicated on requestId before summing
 │       ├── herder.py             #     Spawns and supervises real interactive Claude Code sessions behind the dashboard's Herder tab (Herdr backend, JSON-only, no text pattern-matching); permission modes and model ids are discovered, never hardcoded, and each spawn is attributed to its own transcript
@@ -278,6 +279,7 @@ sdd-harness/
 │   │   ├── skill-permissions-gate.sh # PostToolUse(Write/Edit): soft gate on */skills/*/SKILL.md — prompts agent-permissions-design review
 │   │   ├── js-quality-gate-hook.sh #   PostToolUse(Write/Edit/MultiEdit): runs oxlint (or eslint) on .ts/.tsx/.js/.jsx writes — the JS half of the ruff gate; no-ops when neither linter is installed
 │   │   ├── todo-focus-hook.sh    #     PostToolUse(TodoWrite): names competing in_progress items when more than one is active (soft, exit 2)
+│   │   ├── claudemd-edit-notice.sh #   PostToolUse(Write/Edit/MultiEdit): says a just-written CLAUDE.md/CLAUDE.local.md/AGENTS.md is NOT active in the running session — instruction files are read once at session start (soft, exit 2). Basename match via jq, never substring. Opt out: SDD_SKIP_CLAUDEMD_NOTICE=1
 │   │   ├── headless-envelope-hook.sh # SessionStart: injects a stricter operating envelope, but only when SDD_HEADLESS=1 (unattended `claude --print` routine runs)
 │   │   ├── subagent-context-hook.sh #  SubagentStart: injects harness conventions into the child via JSON hookSpecificOutput.additionalContext
 │   │   ├── doc-parse-nudge.sh    #     UserPromptSubmit: nudges document-parsing skill on PDF/RAG/OCR prompts
@@ -778,6 +780,10 @@ The sibling of `ruff-quality-gate-hook.sh` for the other half of the languages t
 
 Fires on `PostToolUse` with matcher `TodoWrite`. `TodoWrite` accepts any number of concurrent `in_progress` entries and enforces nothing, which lets an agent start four items at once and finish none cleanly. When more than one is active the hook names the competing items and asks for one to be picked. Soft — the write already happened and the hook does not undo it — but it exits 2, because `PostToolUse` stdout is not injected into context at exit 0. Reads `.tool_input.todos[].status` as structured JSON via `jq`; it does not pattern-match free text. Requires `jq`; opt out with `SDD_SKIP_TODO_FOCUS=1`.
 
+### CLAUDE.md Edit Notice (`hooks/claude/claudemd-edit-notice.sh`)
+
+Fires on `PostToolUse` Write/Edit/MultiEdit and says that a just-written `CLAUDE.md`, `CLAUDE.local.md`, or `AGENTS.md` is **not active in the running session**. Instruction files are read once at session start and held in memory, so editing one mid-session changes the file on disk and changes nothing about the session that is running — and `harness-fix-agent`, `skill-augment-agent`, `claudemd-review` and `/kiro:evolve` all write `CLAUDE.md` mid-session and then continue as though the new rule were in force. The agent cannot observe its own stale context, so only something outside it can say so. Soft — the write already happened — but it exits 2, because `PostToolUse` stderr is never surfaced at exit 0. The remedy it names is `/compact`, `/clear`, or a restart. Reads `.tool_input.file_path` via `jq` and compares the **basename** against a literal three-name list, so `templates/CLAUDE.md.template` and `claude.md` do not fire. Requires `jq`; opt out with `SDD_SKIP_CLAUDEMD_NOTICE=1`.
+
 ### Session Exit Hook (`hooks/claude/stop-hook.sh`)
 
 Runs when a Claude Code session ends. Checks for:
@@ -1012,4 +1018,4 @@ The Model Cost section reads session data from `~/.claude/projects/*/`. Pricing 
 
 Private repository. Contact the maintainer for access.
 
-_Last synced: 2026-09-03_
+_Last synced: 2026-09-09_

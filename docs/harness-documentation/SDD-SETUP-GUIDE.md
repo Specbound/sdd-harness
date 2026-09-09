@@ -2,7 +2,7 @@
 
 > This file is managed by the SDD harness (`sdd-harness/docs/`).
 > It is the single source of truth — do not edit copies in individual projects.
-> _Last synced: 2026-09-06_
+> _Last synced: 2026-09-09_
 
 ---
 
@@ -27,6 +27,9 @@
 - `skill-eval-gate` — new **Phase 1c (compression-regression scenario)**: runs one soft-instruction scenario twice (verbatim vs. compressed `SKILL.md`) against the same check; a compressed-only failure is its own FAIL verdict, distinct from a capability gap
 - `skill-eval-gate` — new **Phase 6 (record the verdict)**: on PASS, writes `eval-verdict.json` beside the `SKILL.md` carrying the sha256 of the exact instructions that were measured (2026-09-06)
 - `better-call` — new **Step 2b (order-reversed second pass)**: scores the pair again with the incumbent presented first; a verdict that flips between orders is `INCONCLUSIVE`, not a win (2026-09-06)
+
+### Scripts
+- `scripts/skill-eval-staleness.py` **(new, 2026-09-09)** — Scans every `eval-verdict.json` against the model now running and reports the verdicts that no longer describe what they claim to. `skill-validate-hook.sh` catches the *other* invalidation (an edited `SKILL.md`) because a write is something a hook can fire on; a model change invalidates every verdict at once with no write anywhere, so it needs a scan. Three findings, worst first: `hash-mismatch`, `stale-model`, `unknown-model` — one per skill, since a changed `SKILL.md` has no valid verdict at all. **`--current-model` is required and has no default** (`SDD_CURRENT_MODEL` accepted); a wrong guess would mark every stale verdict as current, which is the failure the script exists to prevent. Skills with no verdict file are counted, never flagged. `--strict` exits 1 on any finding; `--json` for machine consumption; `--dir` for a non-default skill root. Run by `/kiro:daily-maintenance` Step 7, which **reports only** — re-measuring one skill costs 12 agent spawns. Tests: `scripts/skill-eval-staleness.test.sh` (27 offline cases)
 
 ### Context Rules
 - `rules/lean-ctx.md` — **Native→`ctx_*` mapping deleted** (MCP server states it); kept: native Grep/Glob policy denial, `ctx_read` mode table, advertised tools list (17 in standard profile), three-row risk gate (one check per edit type)
@@ -1608,5 +1611,5 @@ disown 2>/dev/null || true
 
 The Stop hook should only contain **passive checks** (e.g., nudging housekeeping when observations exceed a threshold). See `.claude/hooks/stop-hook.sh` for the reference implementation.
 
-_Last synced: 2026-09-06_
+_Last synced: 2026-09-09_
 

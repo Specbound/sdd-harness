@@ -143,3 +143,6 @@ Per-commit reattribution reaches 4.7pt under `-M -C` (e.g. 8df5ed3 93.6→98.3).
 
 ### ❌ Denominator spanning only surviving-HEAD paths
 The denominator must count all touched paths; deleted/renamed files are silently dropped from HEAD-only counts, yielding impossible keep-rate >100%.
+
+### ❌ Using os.path.exists on git ls-files output
+Use `os.path.isfile` when processing `git ls-files` output; worktree/gitlink entries are directories. (source: daa-llm-evaluation 2026-09-09 [keep-rate])

@@ -81,7 +81,7 @@ Averaging placeholders in is how a repo with one good session and two quiet days
 reports 3.3/5. Say "idle-routine window" in the text too, but the `--idle` flag is
 what the dashboard acts on.
 
-When marking idle on zero commits, check routine transcripts for auth errors; ~15-19-line transcripts can be legitimate short sessions. (source: 2026-08-31 [routine-error])
+When marking idle on zero commits, check routine transcripts for evidence of real work (tool use, assistant turns, terminal Stop hook) and for auth errors. Line count alone does not discriminate outages. (source: daa-llm-evaluation 2026-09-09 [session-quality])
 
 If score ≤ 2, also add a `[kaizen]` flag: `Investigate: [specific pattern observed]`
 
@@ -112,10 +112,10 @@ Do not use `--idle` on zero commits alone; prior-run output lands post-judge in 
 Check routine transcripts for hard-failure signature (~15 lines means died at auth); zero observations can hide outages indistinguishable from idle. (source: 2026-08-31 [routine-error])
 
 ### ❌ Single-channel coverage checks
-Check all four channels (observations.md, metrics.jsonl, markers, transcripts) before declaring idle. (source: 2026-09-08 [session-quality])
+Check all four channels (observations.md, metrics.jsonl, markers, transcripts) before declaring idle. (source: daa-llm-evaluation 2026-09-09 [session-quality])
 
 ### ❌ Absolute line count as auth-outage discriminator
-Line count fails—dead runs 15-16/66, live 18-34 lines. Use tail-distance: tail≤3=dead, tail≥24=real. (source: 2026-09-08 [session-quality])
+Line count fails—dead runs 15-16/66, live 18-34 lines. Use tail-distance: tail≤3=dead, tail≥24=real. (source: daa-llm-evaluation 2026-09-07 [debug, insight, enforceable])
 
 ### ❌ Completion sentinel stamped at routine start
-Stamping completion marker at start (not end) hides auth-outages: runs mark done before auth, suppressing retry. (source: 2026-09-08 [routine-error])
+Stamping completion marker at start (not end) hides auth-outages: runs mark done before auth, suppressing retry. (source: daa-llm-evaluation 2026-09-07 [debug, insight, enforceable])
