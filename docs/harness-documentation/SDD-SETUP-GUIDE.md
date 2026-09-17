@@ -877,11 +877,20 @@ Harness-internal rules and document templates live at `kiro/settings/` in the so
 
 | Path | Purpose |
 |---|---|
-| `kiro/settings/rules/*.md` | Behavioral rules referenced by commands/agents on demand — spec phases, task generation, agent output format, alignment scoring, steering principles, test backlinks, frontend anti-patterns, memory conventions, hook profiles |
+| `kiro/settings/rules/*.md` | Behavioral rules referenced by commands/agents on demand — spec phases, task generation, agent output format, alignment scoring, steering principles, test backlinks, frontend anti-patterns, memory conventions, hook profiles, deterministic enforcement |
 | `kiro/settings/templates/steering/` | Steering document templates used by `/kiro:steering` |
 | `kiro/settings/templates/steering-custom/` | Templates for `/kiro:steering-custom` domain docs |
 | `kiro/settings/templates/memory/` | Memory bootstrap templates copied into `.claude/memory/` (Step 12) |
 | `kiro/settings/templates/skill-extraction-plan.md` | Plan scaffold used by `/kiro:skill-extract` |
+
+### Deterministic enforcement (`kiro/settings/rules/deterministic-enforcement.md`)
+
+Principle: conventions that can be mechanically checked belong in a linter rule, not just steering/markdown — the markdown is the *why*, the linter is the *what*. Referenced by `/kiro:guardrails` and `guardrails-agent`.
+
+- **Complexity baselines** (per-function): `max-lines-per-function`, `complexity`, `max-depth`, `max-params`, `max-statements` (ESLint) / `max-complexity`, `max-args`, `C901` (ruff) / `cognitive_complexity`, `too_many_arguments` (clippy) / `gocyclo`, `funlen` (golangci-lint) — all run with zero-warning tolerance.
+- **Structural baselines** (cross-function, the checks no per-function linter can see): duplicated code (`pyscn`, `jscpd`), dead code (`pyscn`, `vulture`, `knip`, `ts-prune`), dependency direction (`import-linter`, `eslint-plugin-boundaries`, `go-arch-lint`). Two load-bearing constraints on wiring these in: **gate on the delta, not the whole repo** (a whole-repo first run reports hundreds of findings and gets disabled the same day), and **make them agent-callable, not CI-only** (the benefit is the agent running the checker in the session it wrote the code, while it still knows why two copies exist). Track the average, not the summary grade — a grade can hold steady while the underlying metric drifts. This is the "Structure" dimension in `guardrails-agent`'s four-dimension audit (complexity / type evidence / assertion strength / structure — see `/kiro:guardrails` in the Slash Commands table).
+- **Frontend design-token baselines** (Tailwind, gated on `tailwind.config.*` detection): `no-raw-colors`, `no-arbitrary-values`, `require-static-classes` — see `js-quality-gate-hook.sh`'s `tailwind_design_token_check()` in the Automated Hooks section for the enforcement path.
+- **Graduation path**: observation → recurring pattern (3+) → documented in steering/markdown → graduated into a linter rule → markdown becomes rationale only. `/kiro:evolve` identifies graduation candidates; `/kiro:guardrails` applies them.
 
 ### Hook profiles (`kiro/settings/rules/hook-profiles.md`)
 
