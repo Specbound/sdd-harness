@@ -541,6 +541,12 @@ install_project() {
   mkdir -p "$PROJECT_DIR/specs"
 
   # --- Copy harness files ---
+  # Clean any flat command duplicates from a re-run over an old, buggy install
+  # (see the matching cleanup in update.sh's do_update() for the full story).
+  for cmd_file in "$HARNESS_DIR/commands/kiro"/*.md; do
+    [ -f "$cmd_file" ] || continue
+    rm -f "$PROJECT_DIR/.claude/commands/$(basename "$cmd_file")"
+  done
   sync_dir "$HARNESS_DIR/commands/kiro" "$PROJECT_DIR/.claude/commands"
   sync_dir "$HARNESS_DIR/agents"        "$PROJECT_DIR/.claude"
   sync_dir "$HARNESS_DIR/kiro"          "$PROJECT_DIR/.claude"
@@ -565,7 +571,7 @@ install_project() {
 
   # --- chmod runtime scripts that need to be executable ---
   local s
-  for s in orchestration/daily-runner.sh routines/macro-eval-runner.sh routines/skill-curator-runner.sh routines/harness-health-runner.sh routines/tool-failure-review-runner.sh routines/startup-payload-audit.sh routines/code-review-learning-runner.sh session/write_handoff.py pr/detect_base_and_create.sh; do
+  for s in orchestration/daily-runner.sh routines/macro-eval-runner.sh routines/skill-curator-runner.sh routines/harness-health-runner.sh routines/tool-failure-review-runner.sh routines/startup-payload-audit.sh routines/code-review-learning-runner.sh routines/risk-zone-reseed-runner.sh routines/daily-briefing-runner.sh session/write_handoff.py pr/detect_base_and_create.sh quality/sloppiness-score.sh; do
     [ -f "$PROJECT_DIR/.claude/scripts/$s" ] && chmod +x "$PROJECT_DIR/.claude/scripts/$s"
   done
   [ -f "$PROJECT_DIR/.claude/scripts/utils/ollama_model_test.py" ] && chmod +x "$PROJECT_DIR/.claude/scripts/utils/ollama_model_test.py"

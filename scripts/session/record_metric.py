@@ -31,12 +31,14 @@ METRICS = {
     "session-quality": "Session score, 0–5. Set --idle for windows with no user session.",
     "keep-rate": "Percent of Claude-authored lines still present in HEAD.",
     "memory-gap": "Count of re-explanation hits in one session.",
+    "sloppiness": "Verbosity score (0-1) from sloppiness-score.sh. Put verdict/erosion in --meta.",
 }
 
 RANGES = {
     "session-quality": (0.0, 5.0),
     "keep-rate": (0.0, 100.0),
     "memory-gap": (0.0, float("inf")),
+    "sloppiness": (0.0, 1.0),
 }
 
 

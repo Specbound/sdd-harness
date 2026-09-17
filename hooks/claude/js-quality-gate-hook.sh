@@ -14,6 +14,38 @@
 # Advisory only — surfaces findings back into context, never blocks. Exits 0 always.
 set -uo pipefail
 
+Y="\033[1;33m"; B="\033[1m"; R="\033[0m"
+
+tailwind_design_token_check() {
+  # Regex-only, no lint plugin required — gated on the repo actually using
+  # Tailwind, so this never fires as noise on non-Tailwind projects. Runs
+  # independently of whether oxlint/eslint are installed. Rules are the
+  # shadcn-ui/lint baseline (see kiro/settings/rules/deterministic-enforcement.md
+  # for the full rationale + eslint-plugin-tailwindcss upgrade path).
+  local file="$1"
+  local tw_config=""
+  for cfg in tailwind.config.js tailwind.config.ts tailwind.config.mjs tailwind.config.cjs; do
+    [ -f "$cfg" ] && tw_config="$cfg" && break
+  done
+  [ -z "$tw_config" ] && return 0
+
+  local findings=""
+  if grep -nE 'className=.*#[0-9a-fA-F]{3,6}\b|className=.*\brgb\(' "$file" >/dev/null 2>&1; then
+    findings="${findings}  - no-raw-colors: raw hex/rgb color inside a className — use a design-token utility class instead\n"
+  fi
+  if grep -nE '\b[a-z-]+-\[[^]]+\]' "$file" >/dev/null 2>&1; then
+    findings="${findings}  - no-arbitrary-values: Tailwind arbitrary-value syntax (e.g. w-[13px]) — prefer a token from ${tw_config}\n"
+  fi
+  if grep -nE 'className=\{`[^`]*\$\{' "$file" >/dev/null 2>&1; then
+    findings="${findings}  - require-static-classes: className built from a template literal with interpolation — Tailwind's JIT scanner needs full static class names to see it\n"
+  fi
+
+  [ -z "$findings" ] && return 0
+  echo -e "${B}${Y}⚠  tailwind-design-tokens — $(basename "$file")${R}"
+  echo -e "$findings"
+  echo -e "${B}Advisory only.${R} Gated on ${tw_config} existing in this repo."
+}
+
 EVENT=$(cat)
 
 FILE_PATH=$(printf '%s' "$EVENT" | python3 -c "
@@ -44,6 +76,8 @@ case "$FILE_PATH" in
   */node_modules/*|*/dist/*|*/build/*|*/.next/*|*/coverage/*|*/vendor/*) exit 0 ;;
 esac
 
+tailwind_design_token_check "$FILE_PATH"
+
 # Best-effort wall-clock guard. eslint on a large project can take seconds; oxlint
 # cannot. Absent on stock macOS, in which case we just run unguarded.
 GUARD=""
@@ -68,7 +102,6 @@ if [[ -z "$OUTPUT" ]] || printf '%s' "$OUTPUT" | grep -qiE 'found 0 warnings and
   exit 0
 fi
 
-Y="\033[1;33m"; B="\033[1m"; R="\033[0m"
 echo -e "${B}${Y}⚠  js-quality-gate ($LINTER) — $(basename "$FILE_PATH")${R}"
 echo "$OUTPUT"
 echo ""
@@ -94,4 +127,6 @@ exit 0
 # Rules:   install dmmulroy/anti-slop into a repo with
 #          `npx skills add dmmulroy/anti-slop --skill install-anti-slop` — the rules
 #          are vendored per repo by design; this hook is only the enforcement point.
+# Tailwind: tailwind_design_token_check() runs independently of oxlint/eslint,
+#           gated on a tailwind.config.* file existing in the repo root.
 # Tests:   bash hooks/claude/js-quality-gate-hook.test.sh

@@ -18,6 +18,16 @@
 - Never commit SDD files — harness is local only
 - Maintain `ERRORS.md`: when an approach takes 2+ attempts, log what failed, what worked, and why
 
+## AI-Legible Code
+- **Blast radius**: prefer changes that touch ≤1 folder/module; if >1, scope down first
+- **Rule of Three**: no shared extraction until 3 real call sites exist — two similar = coincidence
+- **Vertical slices**: feature = one folder (routes/logic/data/types/tests); no cross-feature imports; no `shared/`, `utils/`, `common/`
+- **Fail fast**: validate at every public boundary; named exceptions; no bare `except`; no silent fallbacks
+- **Context rot**: AI coherence degrades past ~300k tokens — keep functions and PRs small
+- **Reviewer model mismatch**: use a separate session/model to review AI-generated code
+- **3rd patch, same function**: on a third patch to the same function, regenerate it from spec instead of layering another fix — patches stacking past two is how blast radius quietly outgrows the original ≤1-folder scope (kiro.dev — Frontier Engineering)
+- **Boundary tests outlive the code they check**: e2e, property, and load tests are the stable spec — when code under them gets regenerated (see the 3rd-patch rule above), the tests are what proves the regenerated version still behaves the same. Write boundary tests before regenerating, not after (kiro.dev — Frontier Engineering)
+
 ## Quality Gates (automated)
 - `ruff check`: on every `.py` file write
 - `oxlint` (or `eslint`): on every `.ts`/`.tsx`/`.js`/`.jsx` file write, when one is installed. A finding naming an anti-slop rule (`no-unknown-parameters`, `no-unsafe-dictionary-type`, `no-chained-type-assertions`, …) means type evidence was thrown away — recover the real type, never silence the rule

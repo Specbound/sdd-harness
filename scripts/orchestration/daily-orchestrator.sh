@@ -267,6 +267,39 @@ run_one() {
     fi
     rm -f "$rne_errbuf"
   fi
+
+  # Risk-zone reseed — refreshes .claude/steering/risk-zones.md from git churn +
+  # test-file presence + gitnexus impact. Consumed by risk-zone-edit-gate-hook.sh
+  # and pr-risk-tier-hook.sh. Self-paces to weekly (MIN_GAP_DAYS=7) since risk
+  # zones drift slowly. Applies to every repo. Opt out with SDD_SKIP_RISK_ZONE=1.
+  if [ "${SDD_SKIP_RISK_ZONE:-0}" != "1" ] && [ -f "$repo/.claude/scripts/routines/risk-zone-reseed-runner.sh" ]; then
+    local rz_start=$(date +%s)
+    local rz_errbuf; rz_errbuf=$(mktemp)
+    (cd "$repo" && bash .claude/scripts/routines/risk-zone-reseed-runner.sh) > /dev/null 2>"$rz_errbuf"
+    local rz_exit=$?
+    echo "$ts $repo risk-zone-reseed exit=$rz_exit duration=$(($(date +%s) - rz_start))s" >> "$LOG_FILE"
+    if [ "$rz_exit" -ne 0 ] && [ -s "$rz_errbuf" ]; then
+      { echo "--- $ts $repo risk-zone-reseed (exit=$rz_exit) ---"; cat "$rz_errbuf"; } >> "$ERR_LOG"
+    fi
+    rm -f "$rz_errbuf"
+  fi
+
+  # Daily briefing — synthesizes a prioritized status digest from
+  # .claude/memory/manager/{projects,people}.md plus connected live sources. Self-paces
+  # to daily (MIN_GAP_DAYS=1); the runner's own deterministic guard no-ops for free
+  # (no LLM call) until the ledger is bootstrapped interactively via /kiro:daily-briefing.
+  # Applies to every repo. Opt out with SDD_SKIP_DAILY_BRIEFING=1.
+  if [ "${SDD_SKIP_DAILY_BRIEFING:-0}" != "1" ] && [ -f "$repo/.claude/scripts/routines/daily-briefing-runner.sh" ]; then
+    local db_start=$(date +%s)
+    local db_errbuf; db_errbuf=$(mktemp)
+    (cd "$repo" && bash .claude/scripts/routines/daily-briefing-runner.sh) > /dev/null 2>"$db_errbuf"
+    local db_exit=$?
+    echo "$ts $repo daily-briefing exit=$db_exit duration=$(($(date +%s) - db_start))s" >> "$LOG_FILE"
+    if [ "$db_exit" -ne 0 ] && [ -s "$db_errbuf" ]; then
+      { echo "--- $ts $repo daily-briefing (exit=$db_exit) ---"; cat "$db_errbuf"; } >> "$ERR_LOG"
+    fi
+    rm -f "$db_errbuf"
+  fi
 }
 
 if [ -n "$SINGLE_REPO" ]; then

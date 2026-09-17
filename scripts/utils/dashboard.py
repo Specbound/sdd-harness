@@ -793,6 +793,18 @@ def _scheduled_task_registry(repo_dir=None):
             "scope":             "per-repo",
             "what_it_does":      "Compares pr-babysit reviews against real human review activity on merged PRs; promotes low-risk findings",
         },
+        {
+            "key":               "daily-briefing",
+            "name":              "Daily Briefing Synthesis",
+            "runner_log_token":  "daily-briefing",
+            "state_file":        base / ".claude" / "memory" / ".last-daily-briefing-run",
+            "artifact_glob":     str(base / ".claude" / "reports" / "daily-briefings" / "*.md"),
+            "artifact_label":    ".claude/reports/daily-briefings/<date>.md",
+            "schedule_human":    "Daily (MIN_GAP_DAYS=1)",
+            "interval_seconds":  86400,
+            "scope":             "per-repo",
+            "what_it_does":      "Synthesizes prioritized status digest from projects.md/people.md + connected live sources; no-ops until ledger is bootstrapped",
+        },
     ]
 
 
@@ -3038,6 +3050,35 @@ def render_session_quality(rd):
 
     recent = _render_gap_details(gaps, mg)
 
+    slop = metrics.get("sloppiness", [])
+    sloppiness_card = ""
+    sloppiness_glossary = ""
+    if slop:
+        avg_verbosity = sum(r["value"] for r in slop) / len(slop)
+        high_slop_days = sum(1 for r in slop if r.get("meta", {}).get("verdict") == "high-slop")
+        slc = ("#a6e3a1" if avg_verbosity < 0.15 else
+               "#f9e2af" if avg_verbosity < 0.33 else "#f38ba8")
+        sloppiness_card = f"""<div style="display:grid;grid-template-columns:repeat(2,1fr);
+                           gap:12px;margin-bottom:20px">
+    <div class="stat-card">
+      <div class="stat-val" style="color:{slc}">{avg_verbosity:.2f}</div>
+      <div class="stat-lbl">avg verbosity (sloppiness)</div></div>
+    <div class="stat-card">
+      <div class="stat-val" style="color:{'var(--red)' if high_slop_days else 'var(--green)'}">
+        {high_slop_days}</div>
+      <div class="stat-lbl">high-slop day{"s" if high_slop_days != 1 else ""}</div></div>
+  </div>"""
+        sloppiness_glossary = """<div style="background:var(--surface0);border-radius:6px;padding:10px 12px;font-size:11px;margin-top:10px">
+      <div style="color:var(--yellow);font-weight:600;margin-bottom:4px">🧹 Sloppiness (Verbosity)</div>
+      <div style="color:var(--subtext0);line-height:1.55">
+        Exact-line-dedup ratio of the last file written each day, scored by
+        <code style="font-size:10px">sloppiness-score.sh</code> — a non-LLM-judge proxy
+        for duplicated code, not a rigorous AST tool. Human baseline ~0.15, AI-agent
+        baseline ~0.33; days at/above the AI-agent baseline on either verbosity or
+        erosion count as high-slop. See the <code style="font-size:10px">clean-code</code> skill.
+      </div>
+    </div>"""
+
     glossary = """<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:20px">
     <div style="background:var(--surface0);border-radius:6px;padding:10px 12px;font-size:11px">
       <div style="color:var(--blue);font-weight:600;margin-bottom:4px">📊 Session Score (0–5)</div>
@@ -3069,8 +3110,8 @@ def render_session_quality(rd):
   </div>"""
     return f"""<div class="section-inner">
   <h2 class="section-title">Session Quality</h2>
-  {summary}{timeline}{recent}
-  {glossary}
+  {summary}{sloppiness_card}{timeline}{recent}
+  {glossary}{sloppiness_glossary}
 </div>"""
 
 def render_prompt_quality():

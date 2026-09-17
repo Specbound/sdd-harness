@@ -12,6 +12,12 @@
 set -u
 
 command -v gh >/dev/null 2>&1 || { echo "gh CLI not found — skipping PR automation." >&2; exit 0; }
+
+# Opt-in gate: only create/submit PRs from a worktree explicitly enabled via
+# `git config --worktree hooks.autopilot.enabled true` (requires
+# `git config extensions.worktreeConfig true` once, in the main worktree).
+# Ad hoc review/PR worktrees stay disabled by default — see git/post-commit.
+[ "$(git config --bool hooks.autopilot.enabled 2>/dev/null)" = "true" ] || exit 0
 git rev-parse --is-inside-work-tree >/dev/null 2>&1 || exit 0
 
 current_branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null)"

@@ -269,6 +269,8 @@ Hook output is injected into Claude's context as system messages — Claude read
 **Tests:** `hooks/claude/pr-evidence-hook.test.sh` — 36 cases (nudge, quiet, false-positive guard, and an exit-code-0 block proving it never blocks). Asserts on emitted text, not exit codes, because a soft gate's exit code is constant.
 
 **Location:** ships in `hooks/claude/`, copied to each project's `.claude/hooks/`; wired via `PreToolUse` matcher `Bash` in `templates/settings.json.template` and `templates/settings.harness.json.template`, alongside `git-destructive-guard-hook.sh` / `agent-commit-attribution-hook.sh`.
+
+---
 ### `pr-risk-tier-hook.sh`
 **Event:** `PostToolUse` — **Matcher:** `Bash`
 
@@ -534,7 +536,6 @@ Hook output is injected into Claude's context as system messages — Claude read
 
 ---
 
-<<<<<<< HEAD
 ### `ledger-append-only.sh`
 **Event:** `PreToolUse` — **Matcher:** `Write|Edit|MultiEdit`
 
@@ -556,7 +557,9 @@ Hook output is injected into Claude's context as system messages — Claude read
 **Why it is needed:** Without this hook, an agent under pressure to show improvement could quietly truncate or rewrite `trust-score.jsonl` or `learnings.jsonl` rather than earning the number honestly. The existing `protected-path-hook.sh` guards secrets, not the harness's own history.
 
 **Output:** `BLOCKED: ...` message to stderr, `exit 2`. No output on allow (silent).
-=======
+
+---
+
 ### `risk-zone-edit-gate-hook.sh`
 **Event:** `PreToolUse` — **Matcher:** `Write|Edit|MultiEdit` — _(soft gate, never blocks)_
 
@@ -567,7 +570,6 @@ Hook output is injected into Claude's context as system messages — Claude read
 **Output:** `╔══ Risk Zone: <zone> — <file> ══╗` banner naming the signal. See the `risk-zone-engine` skill.
 
 **Location:** ships in `hooks/claude/`, copied to each project's `.claude/hooks/`; wired via `PreToolUse` matcher `Write|Edit|MultiEdit` in `templates/settings.json.template`, alongside `memory-discipline-hook.sh` / `protected-path-hook.sh` / `skill-validate-hook.sh`.
->>>>>>> 2da2f71 (more)
 
 ---
 
@@ -926,11 +928,8 @@ PostToolUse      Write|Edit  (*/skills/*/SKILL.md)    → skill-permissions-gate
 PostToolUse      Write|Edit|MultiEdit (test/CI cfg)   → test-integrity-guard.sh
 PostToolUse      Write|Edit|MultiEdit (.py only)      → ruff-quality-gate-hook.sh
 PostToolUse      Write|Edit|MultiEdit (.ts/.js only)  → js-quality-gate-hook.sh
-<<<<<<< HEAD
 PostToolUse      Write|Edit|MultiEdit (CLAUDE/AGENTS) → claudemd-edit-notice.sh
-=======
 PostToolUse      Write|Edit|MultiEdit                 → sloppiness-warn-hook.sh
->>>>>>> 2da2f71 (more)
 PostToolUse      Bash                                 → revert-detect-hook.sh
 PostToolUse      Bash                                 → setup-buffer-hook.sh
 PostToolUse      Bash                                 → action-capture.sh
