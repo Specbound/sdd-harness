@@ -242,7 +242,7 @@ Hook output is injected into Claude's context as system messages — Claude read
 
 **Why it's needed:** Pairs with `pr-mention-nudge.sh` as the second trigger point for PR-babysitting automation — catches the common case of pushing a branch and expecting a PR to exist, without requiring the user to ask. Made possible by the `templates/settings.json.template` permission change that narrowed the deny rule from blanket `Bash(git push*)` to only force-push variants, so this hook can now observe successful ordinary pushes.
 
-**Output:** `[PR-AUTO-CREATED] PR #N opened against <base> (auto-detected base)` on success, or `[PR-AUTO-CREATED] PR #N already open...` if one exists. Silent (exit 0) on force pushes, failed pushes, outside a git tree, or if `gh` is not installed. If `.git/gh-stack` shows a stack is active for the branch (see `stacking-pull-requests` skill), runs `gh stack submit --auto` instead and outputs `[STACK-SUBMITTED] gh-stack layers submitted for <branch>` in place of the single-PR output.
+**Output:** `[PR-AUTO-CREATED] PR #N opened against <base> (auto-detected base)` on success, or `[PR-AUTO-CREATED] PR #N already open...` if one exists. Silent (exit 0) on force pushes, failed pushes, outside a git tree, if `gh` is not installed, or if `hooks.autopilot.enabled` is not `true` in git config — `detect_base_and_create.sh` itself gates on `git config --bool hooks.autopilot.enabled`, same opt-in flag as `pr-risk-tier-hook.sh` and the post-commit doc-sync push, so auto-creation defaults off in any worktree that hasn't run `git config --worktree hooks.autopilot.enabled true`. If `.git/gh-stack` shows a stack is active for the branch (see `stacking-pull-requests` skill), runs `gh stack submit --auto` instead and outputs `[STACK-SUBMITTED] gh-stack layers submitted for <branch>` in place of the single-PR output.
 
 **Location:** ships in `hooks/claude/`, copied to each project's `.claude/hooks/`; wired via `PostToolUse` matcher `Bash` in `templates/settings.json.template`, alongside `revert-detect-hook.sh` / `setup-buffer-hook.sh`.
 
@@ -271,6 +271,18 @@ Hook output is injected into Claude's context as system messages — Claude read
 **Location:** ships in `hooks/claude/`, copied to each project's `.claude/hooks/`; wired via `PreToolUse` matcher `Bash` in `templates/settings.json.template` and `templates/settings.harness.json.template`, alongside `git-destructive-guard-hook.sh` / `agent-commit-attribution-hook.sh`.
 
 ---
+### `cheap-model-delegation-hook.sh`
+**Event:** `PreToolUse` — **Matcher:** `Bash` — _(soft, never blocks)_
+
+**Purpose:** Fires when a single Bash command reads 6+ files at once — `cat`/`head`/`tail` with 6+ path-looking non-flag args, typically from a glob expansion. Suggests delegating to the `cheap-model-delegation` skill (a haiku-tier subagent) instead of doing bulk mechanical extraction at the primary model's rate.
+
+**Why it's needed:** Pulling one fact or summary per file across many files is mechanical work that doesn't need the primary model's reasoning budget. A `PreToolUse(Read)` hard gate already exists for single large files (`lean-ctx-nudge-hook.sh`), but bulk multi-file Bash reads can't be reliably judged as "extraction work" vs. "legitimate small multi-file read" from the command line alone, so this hook only nudges — it never blocks.
+
+**Output:** A boxed `cheap-model-delegation Opportunity` banner naming the file count and pointing at `Skill("cheap-model-delegation")`. Silent (exit 0) on non-`cat`/`head`/`tail` commands, non-Bash tool calls, or fewer than 6 file args.
+
+**Location:** ships in `hooks/claude/`, copied to each project's `.claude/hooks/`; wired via `PreToolUse` matcher `Bash` in `templates/settings.json.template`/`templates/settings.harness.json.template`. See the `cheap-model-delegation` skill.
+
+---
 ### `pr-risk-tier-hook.sh`
 **Event:** `PostToolUse` — **Matcher:** `Bash`
 
@@ -278,7 +290,7 @@ Hook output is injected into Claude's context as system messages — Claude read
 
 **Why it's needed:** A reviewer opening a PR has no signal about blast radius or test coverage until they read the diff themselves. Surfacing it as a label makes it visible before that, and gives `pr-babysit` a cue to read review feedback more carefully on red/yellow PRs instead of fast-pathing.
 
-**Output:** `[PR-RISK-TIER] PR #N labeled risk:<tier>. Touches: <file> (<zone>); ...` Silent (exit 0) on force pushes, no open PR, missing `gh`, or no `risk-zones.md`.
+**Output:** `[PR-RISK-TIER] PR #N labeled risk:<tier>. Touches: <file> (<zone>); ...` Silent (exit 0) on force pushes, no open PR, missing `gh`, no `risk-zones.md`, or when `hooks.autopilot.enabled` is not `true` in git config (see `git config --worktree hooks.autopilot.enabled true`, and `git config extensions.worktreeConfig true` once per repo) — this labeling step defaults off in any worktree that hasn't explicitly opted in.
 
 **Location:** ships in `hooks/claude/`, copied to each project's `.claude/hooks/`; wired via `PostToolUse` matcher `Bash` in `templates/settings.json.template`, alongside `pr-auto-create-hook.sh`. See the `risk-zone-engine` skill.
 
@@ -673,10 +685,11 @@ cases covering new/missing/current/stale/unreadable/hashless).
 2. Prefers `oxlint` (millisecond-scale, and the runner `dmmulroy/anti-slop` targets), falls back to `eslint`, no-ops silently when neither is installed.
 3. Suppresses the linters' "0 problems" summary so a clean write prints nothing.
 4. Adds an extra callout when the finding names an **anti-slop** rule (`no-chained-type-assertions`, `no-unknown-parameters/returns/type-aliases`, `no-unsafe-dictionary-type`, `no-known-value-widening`, `no-widen-then-assert`, `require-safety-comment-for-type-assertion`, `no-runtime-typeof`, `no-module-mocking`) — those mean type evidence was discarded, not that style drifted, so the fix is to recover the real type rather than silence the rule.
+5. Independently of 1–4 — and even when neither `oxlint` nor `eslint` is installed — runs `tailwind_design_token_check()` when a `tailwind.config.{js,ts,mjs,cjs}` exists at the repo root: regex-only checks (no lint plugin required) for raw hex/rgb colors inside `className`, Tailwind arbitrary-value syntax (`w-[13px]`), and template-literal class names built with interpolation (breaks the JIT scanner's static-string requirement). Rules are the shadcn-ui/lint baseline; see `kiro/settings/rules/deterministic-enforcement.md`.
 
 **Why it's needed:** Complexity linting and type-evidence linting are independent axes, and agent-written TypeScript fails the second far more often — reaching for a cast or `unknown` to quiet the compiler. Extracted from `github.com/dmmulroy/anti-slop`. The rules themselves are **vendored per repo by design** (`npx skills add dmmulroy/anti-slop --skill install-anti-slop`); this hook is only the enforcement point, and `guardrails-agent` is what proposes the rule set. Nothing is fabricated here — the hook runs whatever the repo actually configured.
 
-**Noise control:** Silent on non-JS/TS files, on declaration files, on vendored/build paths, on clean results, and on machines with no JS linter. Best-effort 20s wall-clock guard via `timeout`/`gtimeout` when present (eslint on a large project can be slow; oxlint cannot). Never blocks (exits 0 always).
+**Noise control:** Silent on non-JS/TS files, on declaration files, on vendored/build paths, on clean results, and on machines with no JS linter. The Tailwind check is separately gated on `tailwind.config.*` existing, so it stays silent on non-Tailwind repos regardless of linter availability. Best-effort 20s wall-clock guard via `timeout`/`gtimeout` when present (eslint on a large project can be slow; oxlint cannot). Never blocks (exits 0 always).
 
 **Output:** `⚠  js-quality-gate (oxlint|eslint) — <filename>` banner with raw linter findings, plus the anti-slop callout line when applicable. Silent on no findings.
 
@@ -904,10 +917,12 @@ UserPromptSubmit .*                                   → lean-ctx hook observe 
 PreToolUse       Bash                                 → git-destructive-guard-hook.sh
 PreToolUse       Bash                                 → agent-commit-attribution-hook.sh
 PreToolUse       Bash                                 → pr-evidence-hook.sh
+PreToolUse       Bash                                 → cheap-model-delegation-hook.sh
 PreToolUse       Bash|mcp__.*                         → tool-failure-recall.sh
 PreToolUse       Bash                                 → bash …  [global, lean-ctx shell allowlist]
 PreToolUse       Grep|Glob                            → …       [global, lean-ctx — denies native Grep/Glob]
 PreToolUse       Read                                 → …       [global, lean-ctx read gate]
+PreToolUse       Read                                 → lean-ctx-nudge-hook.sh  [project-local hard gate, distinct from the global lean-ctx read gate above]
 PreToolUse       Write|Edit                           → memory-discipline-hook.sh
 PreToolUse       Write|Edit                           → protected-path-hook.sh
 PreToolUse       Write|Edit                           → skill-validate-hook.sh
@@ -993,5 +1008,5 @@ denies `git push*` outright where projects only deny force-push.
 
 **Matching rule for any guard hook:** parse the command into its structure (argv via `shlex`, URLs via a URL parser) and compare tokens exactly. Do not substring- or regex-match the rendered command text — that is defeated by re-rendering the same value, and `git-destructive-guard-hook.sh` shipped with exactly that bug until 2026-08-25.
 
-_Last synced: 2026-09-09_
+_Last synced: 2026-09-17_
 

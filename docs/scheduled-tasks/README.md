@@ -94,6 +94,23 @@ Guards:
 
 ---
 
+### Risk-Zone Reseed
+**Runner:** `.claude/scripts/routines/risk-zone-reseed-runner.sh`
+**Prompt:** `.claude/scripts/routines/risk-zone-reseed-prompt.md`
+**Cadence:** Weekly (`RISK_ZONE_GAP_DAYS`, default 7; force with `RISK_ZONE_FORCE=1`) — zones drift slowly, unlike the daily briefing's cadence
+**Scope:** Every registered repo
+
+**What it does:**
+- Refreshes `.claude/steering/risk-zones.md`, the single data source consumed by `risk-zone-edit-gate-hook.sh` (edit-time gate) and `pr-risk-tier-hook.sh` (PR label tier)
+- Scores every file changed in the last 90 days on three signals: **churn** (commit count), a **test-coverage proxy** (does a matching `*.test.*`/`test_*` file exist), and **blast radius** via `gitnexus impact --direction upstream` on the file's top-level symbol when the `gitnexus` CLI is installed — skipped gracefully, and noted `(impact: not scored)`, when it isn't
+- Assigns each file a zone: **red** (HIGH/CRITICAL impact, or high churn with no test file), **yellow** (MEDIUM impact, or moderate churn with a test file), **green** (everything else)
+- Merges with the existing map rather than overwriting it — any row with a trailing `<!-- pinned -->` comment keeps its human-assigned zone regardless of the freshly computed score
+- Race-safe via `mkdir` lock (stale locks older than 2h auto-removed); skips with no write if `.claude/memory/` doesn't exist or the directory isn't a git repo; the cadence state file is only updated after a successful (exit 0) run
+
+**Opt-out:** `SDD_SKIP_RISK_ZONE=1` env var.
+
+---
+
 ### Startup Payload Audit
 **Runner:** `.claude/scripts/routines/startup-payload-audit.sh`
 **Cadence:** Every day (own state-file guard `.claude/memory/.last-startup-payload-audit`; deterministic — no LLM call)
@@ -282,5 +299,5 @@ The dashboard's **Scheduled Tasks** tab shows live status for each task, scoped 
 
 ---
 
-_Last synced: 2026-09-03_
+_Last synced: 2026-09-17_
 

@@ -774,7 +774,7 @@ The injected text carries a **BLAST RADIUS** block that names one check to run, 
 
 ### JS Quality Gate (`hooks/claude/js-quality-gate-hook.sh`)
 
-The sibling of `ruff-quality-gate-hook.sh` for the other half of the languages the harness installs into. Fires on `PostToolUse` Write/Edit/MultiEdit to `.ts/.tsx/.js/.jsx` (and `.mts/.cts/.mjs/.cjs`), preferring `oxlint` and falling back to `eslint`, skipping `.d.ts` and `node_modules`/`dist`/`build` paths. Advisory only — the write already happened. A finding naming an anti-slop low-evidence rule (`no-unknown-parameters`, `no-unsafe-dictionary-type`, `no-chained-type-assertions`, …) gets an extra callout: that means type evidence was thrown away, and the fix is to recover the real type rather than silence the rule. Silent no-op when neither linter is installed.
+The sibling of `ruff-quality-gate-hook.sh` for the other half of the languages the harness installs into. Fires on `PostToolUse` Write/Edit/MultiEdit to `.ts/.tsx/.js/.jsx` (and `.mts/.cts/.mjs/.cjs`), preferring `oxlint` and falling back to `eslint`, skipping `.d.ts` and `node_modules`/`dist`/`build` paths. Advisory only — the write already happened. A finding naming an anti-slop low-evidence rule (`no-unknown-parameters`, `no-unsafe-dictionary-type`, `no-chained-type-assertions`, …) gets an extra callout: that means type evidence was thrown away, and the fix is to recover the real type rather than silence the rule. Silent no-op when neither linter is installed. Independently of the linter check, and gated separately on a `tailwind.config.*` existing at the repo root, it also regex-scans for raw hex/rgb colors, Tailwind arbitrary-value syntax, and interpolated `className` template literals — no lint plugin required, and silent on non-Tailwind repos.
 
 ### Todo Focus (`hooks/claude/todo-focus-hook.sh`)
 
@@ -835,6 +835,10 @@ A `PreToolUse` hook in `~/.claude/settings.json` fires on every Bash tool call. 
 This is a global hook — it applies to every session and every project automatically. No per-project configuration needed.
 
 ### Git Post-Commit Hook (`hooks/git/post-commit`)
+
+`REPO_ROOT` is derived via `git rev-parse --show-toplevel`, not the hook script's own `BASH_SOURCE` location — a hook file lives under the main repo's `.git/hooks/`, but git invokes it with `cwd` set to whichever worktree triggered the commit, so resolving from `BASH_SOURCE` always pointed at the main repo and could commit/push docs against the wrong branch.
+
+Gated on `hooks.autopilot.enabled` being `true` in git config (`git config --worktree hooks.autopilot.enabled true`, requires `git config extensions.worktreeConfig true` once in the main worktree) — ad hoc review/PR worktrees created with `git worktree add` are disabled by default, so they can never auto-commit or push docs to the wrong place. The same flag gates `hooks/claude/pr-risk-tier-hook.sh` and `scripts/pr/detect_base_and_create.sh`: one switch for "this worktree may push/create/label things visible outside this session."
 
 Runs after every commit — except its own `docs: auto-sync (<date>)` commits, which it detects by commit subject and bails on immediately (before every stage, GitNexus reindex included) so an auto-sync commit cannot re-fire the agents. Otherwise it detects what needs syncing, then hands all of it to **one fully-detached background job** so `git commit` returns immediately:
 1. **Doc Sync** — If non-`.md` files changed, finds and updates affected documentation. The scan skips `.venv/`, `.git/`, `__pycache__/`, and `.claude/` — the installed `.claude/` mirror is regenerated output, so doc sync no longer edits it
@@ -1018,4 +1022,4 @@ The Model Cost section reads session data from `~/.claude/projects/*/`. Pricing 
 
 Private repository. Contact the maintainer for access.
 
-_Last synced: 2026-09-09_
+_Last synced: 2026-09-17_
