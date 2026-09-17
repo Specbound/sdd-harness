@@ -25,6 +25,7 @@ These are the minimum complexity guardrails every project should have:
 
 All linters should run with **zero-warning tolerance** (`--max-warnings=0` or equivalent).
 
+<<<<<<< HEAD
 ## Structural Baselines — the checks that look across functions
 
 Every rule above looks inside a single function. None of them can see that a block
@@ -58,6 +59,30 @@ leaving A, because no single function crossed the high band. A grade is a reason
 look, not a verdict.
 
 Source: codescan, "Ruff, mypy, pytest, and then what?" — `docs/sources/articles/README.md`.
+=======
+## Frontend Design-Token Baselines (Tailwind, gated on detection)
+
+For any project with a `tailwind.config.{js,ts,mjs,cjs}` present, add these to the
+JS/TS baseline (source: shadcn-ui/lint):
+
+| Rule | Catches | Why |
+|------|---------|-----|
+| `no-raw-colors` | `className="text-[#ff0000]"`, `rgb(...)` literals | Bypasses the design system's token palette — colors drift from the rest of the UI one component at a time |
+| `no-arbitrary-values` | Tailwind arbitrary-value syntax, e.g. `w-[13px]` | A one-off magic number instead of a spacing/sizing token — same drift risk as `no-raw-colors`, for layout instead of color |
+| `require-static-classes` | `className={\`p-2 ${dynamic}\`}` | Tailwind's JIT compiler statically scans source for class name strings; an interpolated template literal is invisible to it and the class silently never ships in the built CSS |
+
+**Enforcement path:**
+- **Minimal (built-in, zero extra deps):** `js-quality-gate-hook.sh`'s
+  `tailwind_design_token_check()` runs a regex-only version of these three checks,
+  gated on a `tailwind.config.*` file existing — advisory, no linter plugin required.
+- **Full (opt-in upgrade):** `eslint-plugin-tailwindcss` for AST-accurate detection
+  (handles conditional class construction, `clsx`/`cva` call sites, etc. that regex
+  can't safely parse) once a project wants harder enforcement than the built-in check.
+
+`guardrails-agent` detects Tailwind the same way (`tailwind.config.*` present, or
+`tailwindcss` in `package.json` dependencies) and includes these three rules in its
+JS/TS audit/scaffold report when detected.
+>>>>>>> 2da2f71 (more)
 
 ## Graduation Path
 

@@ -206,6 +206,23 @@ Rules:
 
 Log the result. If behavior-spec-agent errors, log `[routine-error]: behavior-spec-agent failed` and continue. This step is best-effort — it must never block trust score or gap detection.
 
+## Step 6c — AI-Surface Drift Check
+
+Best-effort, advisory only — see the `ai-surface-audit` skill. Skip silently if
+`npx` isn't on PATH or `.claude/memory/.ai-surface-scan.json` doesn't exist yet
+(no baseline to diff against — the initial scan is user-invoked, not run here).
+
+```bash
+if command -v npx >/dev/null 2>&1 && [ -f .claude/memory/.ai-surface-scan.json ]; then
+  npx --yes geiger-scan --strict --json --diff .claude/memory/.ai-surface-scan.json 2>/dev/null
+fi
+```
+
+If the diff shows a new capability on an existing server or a new server
+entirely, append a `[routine-alert]` observation naming it — otherwise stay
+silent. Never fails the pipeline: any `geiger-scan` error is logged as
+`[routine-error]: ai-surface-drift failed` and skipped.
+
 ## Step 7 — Skill Eval Staleness
 
 `skill-eval-gate` measures a skill's lift once and writes `eval-verdict.json`

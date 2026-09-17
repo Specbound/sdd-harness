@@ -31,6 +31,9 @@ You will receive:
    - Glob `go.mod` → Go
    - Glob `Makefile` → check contents for language clues
 3. If multiple ecosystems detected, handle each separately
+4. For JS/TS projects, also check for Tailwind: `tailwind.config.{js,ts,mjs,cjs}` present,
+   or `tailwindcss` in `package.json` dependencies. This is a sub-check within JS/TS, not
+   a separate ecosystem — it only affects which extra rules Steps 2–3 look for.
 
 ### Step 1: Find Existing Linter Config
 
@@ -156,6 +159,24 @@ into the high band. Eight functions sat in the medium band that the tool's own
 `check` threshold would have failed on — the project only ever looked at the grade.
 If a project tracks one number here, it should be the average over time.
 
+**JS/TS (Tailwind design tokens — only when Tailwind detected in Step 0)**:
+
+A third, independent dimension from complexity and type evidence — whether styling
+stays on the design system's token palette instead of drifting one raw value at a time.
+Source: shadcn-ui/lint. Full rationale in `kiro/settings/rules/deterministic-enforcement.md`.
+
+| Rule | Catches |
+|---|---|
+| `no-raw-colors` | Raw hex/rgb color literals inside `className` |
+| `no-arbitrary-values` | Tailwind arbitrary-value syntax, e.g. `w-[13px]` |
+| `require-static-classes` | `className` built from an interpolated template literal |
+
+The harness's own `js-quality-gate-hook.sh` already runs a regex-only, zero-dependency
+version of these three checks on every JS/TS write, gated on `tailwind.config.*`
+existing. Report that as the MINIMAL enforcement tier; `eslint-plugin-tailwindcss` is
+the FULL, AST-accurate upgrade path — recommend it the same additive way as anti-slop
+below, never auto-install it.
+
 **Python (ruff/flake8)**:
 - `max-complexity` or `C901` rule enabled
 - `max-args` / `PLR0913`
@@ -210,6 +231,10 @@ Guardrails Audit
     delta-gated:              {YES / NO (gates on whole-repo state) / N-A}
     agent-callable:           {YES / NO (CI only)}
 
+  Tailwind Design-Token Rules (JS/TS with Tailwind only):
+    enforcement tier:         {MINIMAL (hook regex) / FULL (eslint-plugin-tailwindcss) / N-A}
+    rules covered:            {N}/3 (no-raw-colors, no-arbitrary-values, require-static-classes)
+
   Zero-Warning Tolerance:     {YES/NO/N/A}
 
   Coverage: {X}/{Y} recommended rules configured
@@ -240,6 +265,9 @@ violation without naming a fix. Report it as a WARN-level gap, never a hard fail
    and stop there. Do not add it to the lint script, CI, or a pre-commit hook — a
    minutes-to-hours check wired into a per-write gate makes the whole gate get bypassed.
 8. If no structural checks exist: propose them **delta-gated and agent-callable** (see below)
+9. For JS/TS with Tailwind detected: confirm `js-quality-gate-hook.sh`'s regex check
+   covers the MINIMAL tier automatically (no scaffolding needed); recommend
+   `eslint-plugin-tailwindcss` only if the project wants the FULL AST-accurate tier
 
 ##### Scaffolding structural checks
 

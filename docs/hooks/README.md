@@ -269,6 +269,29 @@ Hook output is injected into Claude's context as system messages — Claude read
 **Tests:** `hooks/claude/pr-evidence-hook.test.sh` — 36 cases (nudge, quiet, false-positive guard, and an exit-code-0 block proving it never blocks). Asserts on emitted text, not exit codes, because a soft gate's exit code is constant.
 
 **Location:** ships in `hooks/claude/`, copied to each project's `.claude/hooks/`; wired via `PreToolUse` matcher `Bash` in `templates/settings.json.template` and `templates/settings.harness.json.template`, alongside `git-destructive-guard-hook.sh` / `agent-commit-attribution-hook.sh`.
+### `pr-risk-tier-hook.sh`
+**Event:** `PostToolUse` — **Matcher:** `Bash`
+
+**Purpose:** Same trigger as `pr-auto-create-hook.sh` — a non-force `git push` — but for a branch that already has an open PR. Diffs the PR's files against its base branch, looks each one up in `.claude/steering/risk-zones.md`, takes the worst zone found, and labels the PR `risk:red` / `risk:yellow` / `risk:green` via `gh pr edit --add-label` (creating the label with an appropriate color if it doesn't exist yet).
+
+**Why it's needed:** A reviewer opening a PR has no signal about blast radius or test coverage until they read the diff themselves. Surfacing it as a label makes it visible before that, and gives `pr-babysit` a cue to read review feedback more carefully on red/yellow PRs instead of fast-pathing.
+
+**Output:** `[PR-RISK-TIER] PR #N labeled risk:<tier>. Touches: <file> (<zone>); ...` Silent (exit 0) on force pushes, no open PR, missing `gh`, or no `risk-zones.md`.
+
+**Location:** ships in `hooks/claude/`, copied to each project's `.claude/hooks/`; wired via `PostToolUse` matcher `Bash` in `templates/settings.json.template`, alongside `pr-auto-create-hook.sh`. See the `risk-zone-engine` skill.
+
+---
+
+### `sloppiness-warn-hook.sh`
+**Event:** `PostToolUse` — **Matcher:** `Write|Edit|MultiEdit` — _(soft, never blocks)_
+
+**Purpose:** Scores the single file just written against `scripts/quality/sloppiness-score.sh`'s Verbosity (exact-line-dedup ratio) and Erosion (branch-density) metrics — a dependency-free, non-LLM-judge proxy for clone detection and cyclomatic mass. Records the verbosity value to `.claude/memory/metrics.jsonl` (`sloppiness` metric) on every scoreable write, and prints a warning only when the file's verdict is `high-slop` (at/above the published AI-agent baseline of verbosity 0.33 / erosion 0.68).
+
+**Why it's needed:** LLM-as-judge scoring of code quality on a 1-10 scale is close to random — see the `clean-code` skill's caution. A mechanical, deterministic proxy that fires automatically on every write catches duplicated blocks and deeply nested branches without asking a model to rate its own output, and feeds a trend the dashboard can plot over time.
+
+**Output:** `[SLOPPINESS] <file> scored high-slop (...): <json> — consider deduplicating repeated blocks or flattening nested branches before moving on. Advisory only.` Silent (exit 0) on non-code files, files the score script can't read, or `elevated`/`clean` verdicts.
+
+**Location:** ships in `hooks/claude/`, copied to each project's `.claude/hooks/`; wired via `PostToolUse` matcher `Write|Edit|MultiEdit` in `templates/settings.json.template`/`templates/settings.harness.json.template`, alongside `ruff-quality-gate-hook.sh`/`js-quality-gate-hook.sh`. See the `clean-code` skill and the "Session Quality" dashboard card.
 
 ---
 
@@ -381,19 +404,21 @@ Hook output is injected into Claude's context as system messages — Claude read
 ---
 
 ### `lean-ctx-nudge-hook.sh`
-**Event:** `PostToolUse` — **Matcher:** `Read`
+**Event:** `PreToolUse` — **Matcher:** `Read` (hard gate) — also **`PostToolUse`** — **Matcher:** `Write|Edit` (soft nudge, unchanged)
 
-**Purpose:** After every Read tool call on a large file (≥16 KB ≈ 4,000 tokens), prints a one-line suggestion for the optimal `ctx_read` mode from lean-ctx, along with the token cost context.
+**Purpose:** Dual-mode, same script. On `PreToolUse(Read)`, a native Read of a large file (≥16 KB ≈ 4,000 tokens) is hard-denied before it spends context, naming the exact `ctx_read` mode to use instead. On `PostToolUse(Write|Edit)`, prints the same one-line mode suggestion after editing a large file — advisory only, since the write already happened and can't be un-spent.
 
 **Mode selection logic:**
 - Code files (`.py`, `.ts`, `.js`, `.go`, `.rs`, etc.) → `signatures` mode (~3–5% of full-file tokens)
-- Prose / docs (`.md`, `.txt`, `.rst`) → `reference` mode (quote-ready excerpts)
+- Text / docs (`.md`, `.txt`, `.rst`) → `reference` mode (quote-ready excerpts)
 - Unknown types → `aggressive` mode (maximum compression)
 - Data formats (`.json`, `.yaml`, `.toml`, `.lock`) → silently skipped (lean-ctx intentionally skips these)
 
-**Why it's needed:** RTK handles Bash output compression automatically, and lean-ctx handles file reads — but only if Claude chooses `ctx_read` over the built-in Read tool. Without a nudge, Claude defaults to Read and pays full token cost for large files. This hook closes that gap by surfacing the right `ctx_read` mode immediately after an expensive Read, so the next re-read or similar file uses the efficient path. The mode guidance follows [Redis context pruning research](https://redis.io/blog/context-pruning-llm-tokens/): chunk-level for code, sentence-level for prose, query-aware (`task` mode) for precision work.
+**Why it's needed:** RTK handles Bash output compression automatically, and lean-ctx handles file reads — but only if Claude chooses `ctx_read` over the built-in Read tool. The original PostToolUse-only version was advisory-after-the-fact: the expensive Read had already happened by the time the nudge printed. Upgraded (2026-09, extraction pass) to a `PreToolUse` hard block on Read itself, closing that timing gap — modeled on Spotify Portal's "shunt" pattern ([engineering.atspotify.com](https://engineering.atspotify.com/2026/9/portal-by-spotify-cut-my-claude-code-token-usage-by-90)), but without Portal's second-model delegation: `ctx_read`'s deterministic compression modes already do the job locally, so no new model dependency was introduced. The mode guidance follows [Redis context pruning research](https://redis.io/blog/context-pruning-llm-tokens/): chunk-level for code, sentence-level for text, query-aware (`task` mode) for precision work.
 
-**Output:** `╔══ lean-ctx Opportunity (~N tokens) ══╗` banner with the recommended mode and alternatives. Exits silently for files under threshold.
+**Output:** PreToolUse — `{"hookSpecificOutput": {"permissionDecision": "deny", ...}}` naming the exact `ctx_read` call to retry with. PostToolUse — unchanged `╔══ lean-ctx Opportunity (~N tokens) ══╗` banner. Exits silently for files under threshold.
+
+**Escape hatch:** `LEAN_CTX_NUDGE_WARN_ONLY=1` downgrades the PreToolUse block to the same soft banner — for the rare case where native Read+Edit (not `ctx_read(mode="anchored")` → `ctx_patch`) is genuinely the right path for a large file.
 
 ---
 
@@ -452,6 +477,21 @@ Hook output is injected into Claude's context as system messages — Claude read
 
 ---
 
+### `verification-retry-hook.sh`
+**Event:** `Stop` — **Matcher:** _(all turns)_ — _(advisory by default, never blocks)_
+
+**Purpose:** A Verification processor (Spotify Backstage AiKA pattern — see the `behavioral-modes` skill's "Composable Processors" section): checks the *claim* made about code, not the code itself. Walks the current turn's transcript for explicit success language ("tests pass", "all passing", "verified working", ...) and cross-checks it against any test-runner Bash command (`pytest`, `npm test`, `jest`, `go test`, `cargo test`, ...) that actually ran this turn. Flags a mismatch when the claim exists but either no test command ran, or the last one that did exited non-zero.
+
+**Why it's needed:** Existing quality-gate hooks (`ruff-quality-gate-hook.sh`, `js-quality-gate-hook.sh`, `sloppiness-warn-hook.sh`) check code as it's written; nothing previously checked whether a stated "it works" claim at the end of a turn was actually backed by a passing verification step.
+
+**Why advisory by default:** this repo already tried an always-blocking Stop hook — `address-check-hook.sh` used to exit 2 on every turn missing "Husband" — and demoted it to a passive log because blocking cost a full extra turn every time it fired. `VERIFICATION_RETRY_WARN_ONLY=1` (default) logs `[VERIFICATION-RETRY] (warn-only) ...` instead of blocking. Set `VERIFICATION_RETRY_WARN_ONLY=0` to opt into the real auto-retry: the hook then emits `{"decision": "block", "reason": "..."}`, forcing Claude to continue instead of ending the turn.
+
+**Retry cap:** `VERIFICATION_RETRY_MAX` (default 2) rounds per user request, tracked in `.claude/memory/.verification-retry-state`. The counter resets on any turn that doesn't repeat the mismatch (verified, no claim made, or a fresh user message started); once the cap is hit, the hook gives up and logs `[VERIFICATION-RETRY] gave up after N round(s) ...` instead of blocking further, so a genuinely unfixable claim cannot loop forever.
+
+**Location:** ships in `hooks/claude/`, copied to each project's `.claude/hooks/`; wired via `Stop` (all turns) in `templates/settings.json.template`/`templates/settings.harness.json.template`, alongside `stop-hook.sh`/`address-check-hook.sh`.
+
+---
+
 ### `caveman-savings-hook.sh`
 **Event:** `Stop` — **Matcher:** _(all turns)_
 
@@ -494,6 +534,7 @@ Hook output is injected into Claude's context as system messages — Claude read
 
 ---
 
+<<<<<<< HEAD
 ### `ledger-append-only.sh`
 **Event:** `PreToolUse` — **Matcher:** `Write|Edit|MultiEdit`
 
@@ -515,6 +556,18 @@ Hook output is injected into Claude's context as system messages — Claude read
 **Why it is needed:** Without this hook, an agent under pressure to show improvement could quietly truncate or rewrite `trust-score.jsonl` or `learnings.jsonl` rather than earning the number honestly. The existing `protected-path-hook.sh` guards secrets, not the harness's own history.
 
 **Output:** `BLOCKED: ...` message to stderr, `exit 2`. No output on allow (silent).
+=======
+### `risk-zone-edit-gate-hook.sh`
+**Event:** `PreToolUse` — **Matcher:** `Write|Edit|MultiEdit` — _(soft gate, never blocks)_
+
+**Purpose:** Looks the target file up in `.claude/steering/risk-zones.md` (seeded weekly by `risk-zone-reseed-runner.sh` from git churn + test-file presence + `gitnexus impact`). If the file is flagged `red` or `yellow`, prints a banner naming the signal and asking Claude to check for characterization tests / run `gitnexus impact` before proceeding. Silent for `green` or unlisted files, or if the map doesn't exist yet.
+
+**Why it's needed:** Blast radius and test coverage are the two things worth knowing before touching a file, and neither is visible from the file itself. A soft, not hard, gate — stale or wrong zone data must never block real work, same tradeoff `protected-path-hook.sh` makes for sensitive files.
+
+**Output:** `╔══ Risk Zone: <zone> — <file> ══╗` banner naming the signal. See the `risk-zone-engine` skill.
+
+**Location:** ships in `hooks/claude/`, copied to each project's `.claude/hooks/`; wired via `PreToolUse` matcher `Write|Edit|MultiEdit` in `templates/settings.json.template`, alongside `memory-discipline-hook.sh` / `protected-path-hook.sh` / `skill-validate-hook.sh`.
+>>>>>>> 2da2f71 (more)
 
 ---
 
@@ -837,6 +890,7 @@ SessionStart     .*                                   → lean-ctx hook observe 
 Stop             (all)                                → stop-hook.sh
 Stop             (all)                                → address-check-hook.sh   [HARNESS-ONLY]
 Stop             (all)                                → caveman-savings-hook.sh
+Stop             (all)                                → verification-retry-hook.sh
 Stop             .*                                   → lean-ctx hook observe  [global]
 UserPromptSubmit (all)                                → prompt-hook.sh
 UserPromptSubmit (all)                                → doc-parse-nudge.sh
@@ -855,6 +909,7 @@ PreToolUse       Read                                 → …       [global, lea
 PreToolUse       Write|Edit                           → memory-discipline-hook.sh
 PreToolUse       Write|Edit                           → protected-path-hook.sh
 PreToolUse       Write|Edit                           → skill-validate-hook.sh
+PreToolUse       Write|Edit|MultiEdit                 → risk-zone-edit-gate-hook.sh
 PreToolUse       Write|Edit|MultiEdit|Bash            → ai-writing-guard-hook.sh
 PreToolUse       Read|Edit|MultiEdit                  → pre-tool-use-gitnexus.sh
 PreToolUse       Agent                                → gbrain-agent-spawn.sh
@@ -871,11 +926,16 @@ PostToolUse      Write|Edit  (*/skills/*/SKILL.md)    → skill-permissions-gate
 PostToolUse      Write|Edit|MultiEdit (test/CI cfg)   → test-integrity-guard.sh
 PostToolUse      Write|Edit|MultiEdit (.py only)      → ruff-quality-gate-hook.sh
 PostToolUse      Write|Edit|MultiEdit (.ts/.js only)  → js-quality-gate-hook.sh
+<<<<<<< HEAD
 PostToolUse      Write|Edit|MultiEdit (CLAUDE/AGENTS) → claudemd-edit-notice.sh
+=======
+PostToolUse      Write|Edit|MultiEdit                 → sloppiness-warn-hook.sh
+>>>>>>> 2da2f71 (more)
 PostToolUse      Bash                                 → revert-detect-hook.sh
 PostToolUse      Bash                                 → setup-buffer-hook.sh
 PostToolUse      Bash                                 → action-capture.sh
 PostToolUse      Bash                                 → pr-auto-create-hook.sh
+PostToolUse      Bash                                 → pr-risk-tier-hook.sh
 PostToolUse      Bash                                 → gitnexus-hook.cjs  [global]
 PostToolUse      Agent                                → agent-trace-hook.sh
 PostToolUse      Skill                                → skill-usage-tracker.sh

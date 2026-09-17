@@ -944,6 +944,7 @@ See also: [git/README.md](../git/README.md) and [x/README.md](../x/README.md) �
 
 ---
 
+<<<<<<< HEAD
 ## The New Rules of Context Engineering for Claude 5 Generation Models
 **URL:** https://claude.com/blog/the-new-rules-of-context-engineering-for-claude-5-generation-models
 **Added:** 2026-09-01
@@ -1171,3 +1172,102 @@ See also: [git/README.md](../git/README.md) — Visa VVAH, same 7-source batch, 
 **Rejected — Stripe's Kai, because the harness got there first.** Skill telemetry, the promote-and-demote loop for hot versus long-tail skills, and platform-driven suggestions for improving a skill map one-to-one onto `hooks/claude/skill-usage-tracker.sh`, `skill-curator`, and `skill-augment-agent`. Its "projects as a governance boundary that scopes which skills load" is a real answer to the measured listing-budget problem (`scripts/skill-listing-budget.py`), but `skill-curator` already proposes deletions from usage evidence behind an approval gate, so the delta is archiving rather than deleting — a nuance, not an artifact. Logged as the strongest external confirmation to date that the harness's skill-curation design is right.
 
 **Rejected — the 1M-requests-per-second video and Dify.** The video is a benchmarking and scaling walkthrough (CPU utilization arithmetic, autocannon, C++ over Node) with no agent, harness, or code-quality content. Dify is a product rather than a technique: visual workflow canvas, RAG pipeline, model management, LLMOps. One incidental observation from Dify worth recording — it ships `.agents/skills` and `.claude` alongside both `CLAUDE.md` and `AGENTS.md`, so the dual-standard skills directory is spreading.
+=======
+## Measuring Code Sloppiness
+**URL:** https://earendil.com/posts/measuring-code-sloppiness/ | **Added:** 2026-09-16 | **Source:** earendil.com
+
+**What it's about:** Proposes a deterministic sloppiness score for AI-generated diffs (dead code, redundant comments, needless abstraction, inconsistent style) as a lagging quality signal separate from test pass/fail.
+
+**What we added:**
+- Script: `scripts/quality/sloppiness-score.sh` — deterministic heuristic scorer over a diff/file set. Fixed 2026-09-16 for a bash-3.2 `mapfile` incompatibility (see `ERRORS.md`).
+
+---
+
+## Fat Agents vs. Narrow Agents
+**URL:** https://adlrocha.substack.com/p/adlrocha-fat-agents-vs-narrow-agents | **Added:** 2026-09-16 | **Source:** adlrocha (Substack)
+
+**What it's about:** Argues that a dispatched subagent task is only well-scoped once its input/output contract can be written down without running any code — "if you can't write the task's I/O contract in advance, you haven't decomposed it enough."
+
+**What we added:**
+- Skill: `skills/subagent-driven-development/SKILL.md` — new "Decomposition Check (before dispatching any task)" section between "The Process" and "Prompt Templates": input/output/boundary contract check, plus the corollary that per-stage eval sets follow from the same contract.
+
+---
+
+## kiro.dev — Frontier Engineering
+**URL:** https://kiro.dev/topics/frontier-engineering/ | **Added:** 2026-09-16 | **Source:** kiro.dev
+
+**What it's about:** Practices for keeping AI-assisted engineering coherent at scale.
+
+**What we added:**
+- `templates/CLAUDE.md.template` + live `CLAUDE.md`, AI-Legible Code section, "3rd patch, same function" rule — on a third patch to the same function, regenerate from spec instead of layering another fix. (This section previously existed only in the live installed `CLAUDE.md`, not the harness source template — fixed as part of this pass so it now ships to every project.)
+- `templates/CLAUDE.md.template` + live `CLAUDE.md`, "Boundary tests outlive the code they check" bullet — e2e/property/load tests are the stable spec; write them before regenerating a function under the 3rd-patch rule above, not after.
+- Skill enhancement: `skills/clean-code/SKILL.md` — new "Comments as Persistent Agent Memory" section: a comment recording *why* a non-obvious decision was made is memory a future agent session gets for free; scoped as an explicit exception to Section 3's "don't comment bad code, rewrite it" rule, not a replacement for it.
+- Skill enhancement: `skills/legacy-modernizer/SKILL.md` — new Approach item 6, "One prepared module at a time" — pick the next module only after the current one is fully migrated and tested; parallel migration loses the incremental safety the strangler-fig approach exists for.
+
+---
+
+## ALTK-Evolve: Closing the Consistency Gap
+**URL:** https://huggingface.co/blog/ibm-research/altk-evolve-consistency | **Added:** 2026-09-16 | **Source:** IBM Research (Hugging Face blog)
+
+**What it's about:** Black-box, per-step resampling (k=5) of a recorded agent trajectory's decision points to classify each as "sharp" (stable across resamples) or "flip-prone" (near-tied) — no logits, ground-truth, or live re-execution needed. Flip-prone steps become reusable "consistency guidelines" re-injected at inference time. Reported: Pass^5 53.0%→69.0%, Mean@5 77.4%→81.0%, gap 24.4pp→12.0pp; accuracy never dropped; +13pp generalization to related tasks.
+
+**What we added** (augmentation, not a new skill — `evaluation/macro` already does population-scale pattern discovery, this adds the missing metric):
+- Skill enhancement: `skills/evaluation/macro/SKILL.md` — new "Consistency Gap (Reliability vs. Capability)" section: `consistency_gap = mean_at_k − pass_hat_k` per repeated task signature; a large gap names a `flip_prone: <signature>` finding distinct from an ordinary failure `behavior_pattern`, diagnosed via the existing Phase 5 backward suspect-trace to isolate the specific varying decision step.
+- Pipeline enhancement: `commands/kiro/macro-eval-sweep.md` — new "Step 4b — Consistency Gap" (groups repeated task signatures with ≥3 runs, computes the gap, runs suspect-trace on the top flip-prone signature) and a "Consistency gap" table in the report template; hands off flip-prone steps to `skill-augment-agent` as guideline material rather than writing the guideline itself.
+- Prompt enhancement: `scripts/routines/macro-eval-prompt.md` — Rule #2 now explicitly requires the Consistency Gap step for any task signature with ≥3 repeated runs in the sweep window.
+
+---
+
+## Maintaining Context as a Manager (Parts 1–2)
+**URL:** https://softwareleads.substack.com/p/maintaining-context-as-a-manager (Part 1); https://softwareleads.substack.com/p/maintaining-context-as-a-manager-35c (Part 2) | **Added:** 2026-09-16 | **Source:** James Samuel (softwareleads.substack.com)
+
+**What it's about:** A manager's practice for tracking projects/people/decisions at scale without producing an unusable archive: a 3-part Capture Filter (enables future action / reveals a pattern over time / helps someone else), a Logseq-based Projects/People/Tasks/Misc structure, and a 3-file AI-agent pattern (`projects.md`/`people.md`/`daily.md`) enforcing signal-over-coverage, P0–P3 priority tiers, evidence-required wording (reported concern vs. confirmed issue), and dedup across sources — run as a scheduled 8am weekday agent task in the original.
+
+**What we added:**
+- Skill: `skills/synthesizing-daily-briefings/SKILL.md` — the Capture Filter, `.claude/memory/manager/{projects,people}.md` file structure, and the 5-phase workflow (load/bootstrap → gather signal → filter/tier/dedup → write briefing → update ledger). Never fabricates ledger entries on an empty first run — asks interactively instead.
+- Command: `commands/kiro/daily-briefing.md` (`/kiro:daily-briefing`) — the invokable pipeline; headless runs skip with a one-line note rather than bootstrap unattended.
+- Routine: `scripts/routines/daily-briefing-runner.sh` + `daily-briefing-prompt.md`, wired into `scripts/orchestration/daily-orchestrator.sh`. Deterministic (no LLM call) ledger-bootstrap guard — writes a `<date>-SKIPPED.md` note directly if the ledger doesn't exist yet, rather than spending an LLM call on a task that must no-op.
+- `skill-eval-gate` returned **FAIL/INCONCLUSIVE** (0/3 net lift — see `reports/skill-curation-report.md`'s 2026-09-16 override entry): the 3 scenarios authored for this skill turned out to test generic judgment a capable baseline model already has, not the skill's actual structural contribution. Installed anyway on an explicit, logged override; scenario replacement is open follow-up work for the next eval-gate re-run.
+
+---
+
+## Claude API Anti-Patterns and Effort Calibration
+**URL:** https://archive.codenewsletter.ai/2097369738968195513 | **Added:** 2026-09-17 | **Source:** Code Newsletter (archive.codenewsletter.ai)
+
+**What it's about:** Prompt-instruction anti-patterns that inflate Claude API cost/latency without improving output (verification rituals, thoroughness boosters, scratchpad scaffolds), plus an effort-calibration methodology — grid search over model × effort on a train split, confirmed on a held-out test split — for picking the cheapest configuration that still meets a quality bar.
+
+**What we added:**
+- Skill: `skills/claude-api/SKILL.md` — fills a pre-existing gap named by `cma-advisor/SKILL.md` and `cma-outcomes/SKILL.md` (both referenced a `claude-api` skill that didn't exist yet). Contains the anti-pattern table, the effort-calibration/hillclimb methodology, and a "Prompt Caching Cost Note" written to match specific TTL/cost figures already cited (as a forward reference) in `skills/context-optimization/SKILL.md`.
+
+---
+
+## Portal by Spotify: Cutting Claude Code Token Usage by 90%
+**URL:** https://engineering.atspotify.com | **Added:** 2026-09-17 | **Source:** Spotify Engineering Blog
+
+**What it's about:** How Spotify's internal Portal tool cut Claude Code token usage by delegating bulk, low-judgment multi-file reading/extraction work to a cheap-tier model instead of doing it inline at the primary model's rate.
+
+**What we added:**
+- Skill: `skills/cheap-model-delegation/SKILL.md` — when/how to delegate bulk multi-file extraction (skim N files, pull one fact each, no deep per-file reasoning) to a haiku-tier subagent with a tight tool allowlist. Deliberately scoped to exclude single large-file reads, which `hooks/claude/lean-ctx-nudge-hook.sh` already hard-gates separately.
+- Hook: `hooks/claude/cheap-model-delegation-hook.sh` (PreToolUse, matcher `Bash`) — advisory-only nudge (never blocks) firing when a `cat`/`head`/`tail` command reads 6+ files in one call, pointing at the new skill. Registered in `templates/settings.json.template` and the live project `.claude/settings.json`.
+
+---
+
+## Prompt Evals Are Useless (Mostly)
+**URL:** https://chrismdp.com/prompt-evals-are-useless/ | **Added:** 2026-09-17 | **Source:** Chris Parsons (chrismdp.com)
+
+**What it's about:** Argues most "eval" effort for LLM-product code should go into build-time regression tests, not after-the-fact production grading — a 3-layer pyramid (deterministic unit tests for everything that doesn't touch the model, replay cases that diff structurally rather than string-for-string against stored real request/response pairs, seeded-determinism scenario tests for anything with randomness) plus a narrowly-scoped narrative-quality judge as the exception, not the default.
+
+**What we added:**
+- Skill: `skills/evaluation/harness-testing-pyramid/SKILL.md` — new sub-skill in the `evaluation` family, distinct from `micro`/`macro`/`funnel`/`long-trajectory` (which all grade runs that already happened). Documents the 3+1 layer pyramid and a decision table for choosing the right layer for a new test.
+- Skill enhancement: `skills/evaluation/SKILL.md` — added `harness-testing-pyramid` row to the sub-skill router table.
+
+---
+
+## Loops, Graphs, and Harnesses: Getting Quality Out of a Software Factory
+**URL:** https://ivokund.com/loops-graphs-harnesses-getting-quality-out-of-a-software-factory/ | **Added:** 2026-09-17 | **Source:** Ivo Kund (ivokund.com)
+
+**What it's about:** Running a batch of independent tickets through a dependency graph — layered by unmet dependencies, fanned out to capped-concurrency worktrees per layer, each writer paired with an independent reviewer before merge to an integration branch, verified by a prod-equivalent smoke test once the whole batch lands.
+
+**What we added:**
+- Skill enhancement: `skills/loop-patterns/SKILL.md` — new named loop, "Ticket-Graph Batch Loop" (#12), composing primitives the skill already documents (capped-concurrency DAG fan-out from the higher-order-workspace pattern, writer/reviewer split from `gitnexus-pr-review`, the same Loop Guardrails already named elsewhere in the file) rather than introducing new principles — the missing piece was sequencing them across a whole batch of tickets at once.
+>>>>>>> 2da2f71 (more)

@@ -84,6 +84,32 @@ digraph process {
 }
 ```
 
+## Decomposition Check (before dispatching any task)
+
+Source: adlrocha. Run this check on every task *before* it's added to TodoWrite, not
+after a subagent struggles with it:
+
+> **If you can't write the task's I/O contract in advance, you haven't decomposed it
+> enough.**
+
+A task is ready to dispatch only when you can state, without running any code:
+- **Input**: what the implementer subagent receives (files, types, prior task outputs)
+- **Output**: what it must produce, concretely enough to write a test against
+- **Boundary**: what it must NOT touch (the same blast-radius scoping as everywhere
+  else in this harness)
+
+If you find yourself writing the contract as "implement X reasonably" or "make Y work,"
+that's the signal the task is still too large or too vague — split it until each piece
+has a contract you could hand to a stranger with no other context.
+
+**Per-stage eval sets follow from the same contract.** Once a task has a stated I/O
+contract, the spec compliance reviewer's job is mechanical: check the actual output
+against the contract, not against a fuzzy sense of "did this seem right." For tasks
+worth re-running across multiple implementer attempts (flaky task, high-risk task,
+task revisited after a failed review), keep a small eval set of input→expected-output
+pairs derived directly from the contract — this turns "spec reviewer subagent confirms
+code matches spec" from a one-off judgment call into a repeatable check.
+
 ## Prompt Templates
 
 - `./implementer-prompt.md` - Dispatch implementer subagent

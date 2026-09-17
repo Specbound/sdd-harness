@@ -162,6 +162,15 @@ Structure your review as:
 APPROVE / REQUEST CHANGES / NEEDS DISCUSSION
 ```
 
+## Hybrid Deterministic + Agent Review Pattern
+
+GitNexus's call-graph/impact-analysis approach is one way to separate mechanical work from judgment. A second, complementary split (source: `github.com/alibaba/open-code-review`) is worth applying regardless of which analysis backend is in use:
+
+- **Deterministic layer** (no model call): file selection/bundling (group changed files that belong to the same logical change before review, not one-file-at-a-time), rule-matching by file type (lint/style/security rules applied mechanically per extension), and comment-position/reflection verification (confirm every generated comment's line anchor still exists in the current diff — this harness already does this via `validate_review_json.py`'s anchor check).
+- **Agent layer** (model call): reserved for judgment that can't be reduced to a rule — correctness reasoning, blast-radius assessment, "is this the right approach" calls. Everything the deterministic layer can answer should never reach the model.
+
+**Benchmark the review agent on precision/recall/token-cost, not pass/fail.** A PR review agent that "ran without error" tells you nothing about review quality. Track: what fraction of its comments were real issues (precision), what fraction of real issues it caught (recall), and tokens spent per PR reviewed. Alibaba's own reported figure for this deterministic/agent split is roughly 9x token efficiency versus a general-purpose review agent doing everything through the model — treat that as a claim from the source, not a verified number for this harness, but it's the right kind of metric to track if this pattern is adopted here.
+
 ## Structured Output Contract (review.json)
 
 When invoked by an automated caller (e.g. `scripts/pr/log_review.sh`, or the
@@ -202,7 +211,10 @@ Rules:
 - Any suggested fix mentioned in a comment must first be checked against the
   repo's real build/lint/test tooling (not asserted from reading alone) before
   it's proposed.
-- After writing `review.json`, validate it: `python3 .claude/scripts/pr/validate_review_json.py <path>`.
+- After writing `review.json`, validate it: `python3 .claude/scripts/pr/validate_review_json.py <path> <pr_number>`.
+  The optional `pr_number` also runs a line-anchor sanity check — each
+  `comments[].line`/`start_line` must still exist in that PR's current diff, catching
+  anchors left stale by a force-push or amended commit between generation and posting.
   Fix and re-validate on any reported error.
 - **This skill NEVER runs `gh pr review`, `gh pr comment`, or `gh api .../reviews`.**
   Writing `review.json` is the entire task — a separate, write-permission-scoped

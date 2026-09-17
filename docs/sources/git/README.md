@@ -791,6 +791,7 @@ See also: [articles/README.md](../articles/README.md) and [x/README.md](../x/REA
 
 ---
 
+<<<<<<< HEAD
 ## visa/visa-vulnerability-agentic-harness (VVAH)
 **URL:** https://github.com/visa/visa-vulnerability-agentic-harness
 **Added:** 2026-09-03
@@ -859,3 +860,54 @@ See also: [articles/README.md](../articles/README.md) and [x/README.md](../x/REA
 **Rejected — `dify`.** A product, not a technique. Nothing in it is portable to a shell-and-markdown harness. One incidental observation kept for provenance: it ships `.agents/skills` and `.claude` alongside both `CLAUDE.md` and `AGENTS.md`, so the dual-standard skills directory is spreading beyond agent-tooling repos.
 
 See also: [articles/README.md](../articles/README.md) — the full eleven-source batch, including the two integrations it produced. [x/README.md](../x/README.md) — the three X-archive mirrors from the same batch.
+=======
+## github.com/Atomburstofficial/geiger
+**URL:** https://github.com/Atomburstofficial/geiger | **Added:** 2026-09-16
+
+**What it's about:** CLI that scans a repo for AI-generated-code fingerprints ("geiger counter" for slop) and emits a strict JSON diff report, runnable via `npx --yes geiger-scan`.
+
+**What we added:**
+- Already covered before this source was logged — `skills/ai-surface-audit/SKILL.md` (pre-existing, uncommitted WIP from an earlier session) already wraps `npx --yes geiger-scan --strict --json` and writes `.claude/memory/.ai-surface-scan.json`, wired into `commands/kiro/daily-maintenance.md` Step 6c ("AI-Surface Drift Check"). No new work — logging for attribution.
+
+---
+
+## github.com/shadcn-ui/lint
+**URL:** https://github.com/shadcn-ui/lint | **Added:** 2026-09-16
+
+**What it's about:** shadcn-ui's internal ESLint ruleset enforcing Tailwind design-token discipline — no raw hex/rgb colors in `className`, no arbitrary-value syntax (`w-[13px]`), static (non-interpolated) class names so the JIT scanner can see them.
+
+**What we added:**
+- Agent: `agents/kiro/guardrails-agent.md` — Step 0 Tailwind sub-check (detected via `tailwind.config.*` or `tailwindcss` in `package.json`), Step 2 new rule table (`no-raw-colors`, `no-arbitrary-values`, `require-static-classes`) with MINIMAL/FULL enforcement tiers, audit report block, scaffold action step.
+- Hook: `hooks/claude/js-quality-gate-hook.sh` — `tailwind_design_token_check()`, regex-only MINIMAL-tier enforcement of the same 3 rules, gated on Tailwind being detected in the repo.
+- Doc: `kiro/settings/rules/deterministic-enforcement.md` — rationale + `eslint-plugin-tailwindcss` FULL-tier upgrade path.
+
+---
+
+## github.com/anthropics/claude-code (issue #91870 — native Function Hooks)
+**URL:** https://github.com/anthropics/claude-code/issues/91870 | **Added:** 2026-09-16
+
+**What it's about:** Open feature request for first-class function-level hooks in Claude Code, as an alternative to the current shell-script PreToolUse/PostToolUse pattern.
+
+**What we added:**
+- Tracking only, not built — feature is unshipped. Logged in `skills/claude-code-guide/SKILL.md`'s new "Watch Items" section and `.claude/memory/hot-memory.md` System Notes. Re-evaluate whether `hooks/claude/*.sh` scripts should migrate if/when it ships.
+
+---
+
+## github.com/cathrynlavery/diagram-design
+**URL:** https://github.com/cathrynlavery/diagram-design | **Added:** 2026-09-17
+
+**What it is:** A workflow for generating branded, editorial-quality diagrams (HTML+SVG, styled from a target site's colors/fonts) rather than generic boxes-and-arrows.
+
+**What we added:**
+- Skill: `skills/diagram-design/SKILL.md` — 5-step workflow for producing publication/deck-ready diagrams, explicitly distinguished from `mermaid-expert` (syntax-only, not brand-styled). Includes an "Anti-Pattern: Mermaid Slop" section naming when the generic-diagram default is the wrong choice.
+
+---
+
+## github.com/alibaba/open-code-review
+**URL:** https://github.com/alibaba/open-code-review | **Added:** 2026-09-17
+
+**What it is:** A PR review architecture that splits mechanical work (file bundling, per-file-type rule matching, comment-anchor verification) into a deterministic layer with no model call, reserving the model call for judgment that can't be reduced to a rule — reported ~9x token efficiency versus a review agent doing everything through the model.
+
+**What we added:**
+- Skill enhancement: `skills/gitnexus-pr-review/SKILL.md` — new "Hybrid Deterministic + Agent Review Pattern" section, complementary to GitNexus's existing call-graph/impact-analysis split. Notes that this harness's `validate_review_json.py` anchor check already implements the deterministic comment-anchor-verification piece. The 9x token-efficiency figure is cited as the source's own claim, not a verified number for this harness — flagged as such in the skill text, along with the recommendation to benchmark any adoption on precision/recall/token-cost rather than pass/fail.
+>>>>>>> 2da2f71 (more)

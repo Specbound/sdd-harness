@@ -29,6 +29,8 @@
 - **Fail fast**: validate at every public boundary; named exceptions; no bare `except`; no silent fallbacks
 - **Context rot**: AI coherence degrades past ~300k tokens — keep functions and PRs small
 - **Reviewer model mismatch**: use a separate session/model to review AI-generated code
+- **3rd patch, same function**: on a third patch to the same function, regenerate it from spec instead of layering another fix — patches stacking past two is how blast radius quietly outgrows the original ≤1-folder scope (kiro.dev — Frontier Engineering)
+- **Boundary tests outlive the code they check**: e2e, property, and load tests are the stable spec — when code under them gets regenerated (see the 3rd-patch rule above), the tests are what proves the regenerated version still behaves the same. Write boundary tests before regenerating, not after (kiro.dev — Frontier Engineering)
 
 ## Quality Gates (automated)
 - `ruff check`: on every `.py` file write

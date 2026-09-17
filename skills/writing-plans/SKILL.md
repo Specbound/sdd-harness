@@ -28,6 +28,19 @@ Assume they are a skilled developer, but know almost nothing about our toolset o
 - "Run the tests and make sure they pass" - step
 - "Commit" - step
 
+## Plan Density = Autonomy Budget (low confidence, optional heuristic)
+
+Secondhand source, not independently verified — apply as a sanity check, not a rule:
+plan detail should scale with how long the agent will run unsupervised before the next
+human checkpoint, not with task size alone. A short task with a long unsupervised
+stretch before review (e.g. dispatched to a background/parallel session, or a task
+chain with no checkpoint until the end) earns the same bite-sized, fully-specified
+treatment as a large one — because there's no human nearby to catch ambiguity mid-task.
+Conversely, a task that gets reviewed within a couple of minutes can tolerate a looser
+plan, since a wrong assumption gets caught almost immediately. When deciding between
+this skill's full bite-sized format and `concise-planning`'s lighter checklist, use
+expected unsupervised runtime — not task size — as the deciding factor.
+
 ## Plan Document Header
 
 **Every plan MUST start with this header:**

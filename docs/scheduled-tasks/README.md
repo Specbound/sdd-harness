@@ -75,6 +75,25 @@ Guards:
 
 ---
 
+### Daily Briefing Synthesis
+**Runner:** `.claude/scripts/routines/daily-briefing-runner.sh`
+**Command:** `.claude/commands/kiro/daily-briefing.md` (`/kiro:daily-briefing`)
+**Prompt:** `.claude/scripts/routines/daily-briefing-prompt.md`
+**Cadence:** Every day (`DAILY_BRIEFING_GAP_DAYS`, default 1; force with `DAILY_BRIEFING_FORCE=1`)
+**Scope:** Every registered repo
+
+**What it does:**
+- Synthesizes a prioritized status digest from `.claude/memory/manager/{projects,people}.md` plus whatever live sources are actually connected this session (git, GitHub, Jira/Confluence, Slack)
+- Applies the `synthesizing-daily-briefings` skill's Capture Filter (enables future action / reveals a pattern over time / helps someone else), P0–P3 priority tiers, evidence-required wording (distinguishes a reported concern from a confirmed issue), and dedup across sources
+- Writes Logseq-ready markdown to `.claude/reports/daily-briefings/<date>.md` and appends durable findings back to `projects.md`/`people.md` for the next run
+- **Deterministic (no LLM call) ledger-bootstrap guard**: the ledger itself is only ever created interactively via `/kiro:daily-briefing`'s Phase 1 — if neither `projects.md` nor `people.md` exists yet, the runner writes a `<date>-SKIPPED.md` note directly and exits 0 rather than asking a headless session to invent a briefing from nothing
+- Race-safe via `mkdir` lock; a lock older than 2h (left by a killed run) is auto-removed on the next run
+- Retries automatically on failure — the state file is only written after a successful run (exit 0); full stdout is also tee'd to `.claude/memory/.last-daily-briefing-output.log` since the orchestrator wrapper that calls this runner redirects its stdout to `/dev/null` and only captures stderr
+
+**Opt-out:** `SDD_SKIP_DAILY_BRIEFING=1` env var.
+
+---
+
 ### Startup Payload Audit
 **Runner:** `.claude/scripts/routines/startup-payload-audit.sh`
 **Cadence:** Every day (own state-file guard `.claude/memory/.last-startup-payload-audit`; deterministic — no LLM call)
