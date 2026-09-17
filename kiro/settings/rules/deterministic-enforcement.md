@@ -25,7 +25,6 @@ These are the minimum complexity guardrails every project should have:
 
 All linters should run with **zero-warning tolerance** (`--max-warnings=0` or equivalent).
 
-<<<<<<< HEAD
 ## Structural Baselines — the checks that look across functions
 
 Every rule above looks inside a single function. None of them can see that a block
@@ -59,7 +58,7 @@ leaving A, because no single function crossed the high band. A grade is a reason
 look, not a verdict.
 
 Source: codescan, "Ruff, mypy, pytest, and then what?" — `docs/sources/articles/README.md`.
-=======
+
 ## Frontend Design-Token Baselines (Tailwind, gated on detection)
 
 For any project with a `tailwind.config.{js,ts,mjs,cjs}` present, add these to the
@@ -82,7 +81,6 @@ JS/TS baseline (source: shadcn-ui/lint):
 `guardrails-agent` detects Tailwind the same way (`tailwind.config.*` present, or
 `tailwindcss` in `package.json` dependencies) and includes these three rules in its
 JS/TS audit/scaffold report when detected.
->>>>>>> 2da2f71 (more)
 
 ## Graduation Path
 

@@ -944,7 +944,6 @@ See also: [git/README.md](../git/README.md) and [x/README.md](../x/README.md) �
 
 ---
 
-<<<<<<< HEAD
 ## The New Rules of Context Engineering for Claude 5 Generation Models
 **URL:** https://claude.com/blog/the-new-rules-of-context-engineering-for-claude-5-generation-models
 **Added:** 2026-09-01
@@ -1172,7 +1171,9 @@ See also: [git/README.md](../git/README.md) — Visa VVAH, same 7-source batch, 
 **Rejected — Stripe's Kai, because the harness got there first.** Skill telemetry, the promote-and-demote loop for hot versus long-tail skills, and platform-driven suggestions for improving a skill map one-to-one onto `hooks/claude/skill-usage-tracker.sh`, `skill-curator`, and `skill-augment-agent`. Its "projects as a governance boundary that scopes which skills load" is a real answer to the measured listing-budget problem (`scripts/skill-listing-budget.py`), but `skill-curator` already proposes deletions from usage evidence behind an approval gate, so the delta is archiving rather than deleting — a nuance, not an artifact. Logged as the strongest external confirmation to date that the harness's skill-curation design is right.
 
 **Rejected — the 1M-requests-per-second video and Dify.** The video is a benchmarking and scaling walkthrough (CPU utilization arithmetic, autocannon, C++ over Node) with no agent, harness, or code-quality content. Dify is a product rather than a technique: visual workflow canvas, RAG pipeline, model management, LLMOps. One incidental observation from Dify worth recording — it ships `.agents/skills` and `.claude` alongside both `CLAUDE.md` and `AGENTS.md`, so the dual-standard skills directory is spreading.
-=======
+
+---
+
 ## Measuring Code Sloppiness
 **URL:** https://earendil.com/posts/measuring-code-sloppiness/ | **Added:** 2026-09-16 | **Source:** earendil.com
 
@@ -1270,4 +1271,3 @@ See also: [git/README.md](../git/README.md) — Visa VVAH, same 7-source batch, 
 
 **What we added:**
 - Skill enhancement: `skills/loop-patterns/SKILL.md` — new named loop, "Ticket-Graph Batch Loop" (#12), composing primitives the skill already documents (capped-concurrency DAG fan-out from the higher-order-workspace pattern, writer/reviewer split from `gitnexus-pr-review`, the same Loop Guardrails already named elsewhere in the file) rather than introducing new principles — the missing piece was sequencing them across a whole batch of tickets at once.
->>>>>>> 2da2f71 (more)

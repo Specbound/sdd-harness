@@ -791,7 +791,6 @@ See also: [articles/README.md](../articles/README.md) and [x/README.md](../x/REA
 
 ---
 
-<<<<<<< HEAD
 ## visa/visa-vulnerability-agentic-harness (VVAH)
 **URL:** https://github.com/visa/visa-vulnerability-agentic-harness
 **Added:** 2026-09-03
@@ -860,7 +859,9 @@ See also: [articles/README.md](../articles/README.md) and [x/README.md](../x/REA
 **Rejected — `dify`.** A product, not a technique. Nothing in it is portable to a shell-and-markdown harness. One incidental observation kept for provenance: it ships `.agents/skills` and `.claude` alongside both `CLAUDE.md` and `AGENTS.md`, so the dual-standard skills directory is spreading beyond agent-tooling repos.
 
 See also: [articles/README.md](../articles/README.md) — the full eleven-source batch, including the two integrations it produced. [x/README.md](../x/README.md) — the three X-archive mirrors from the same batch.
-=======
+
+---
+
 ## github.com/Atomburstofficial/geiger
 **URL:** https://github.com/Atomburstofficial/geiger | **Added:** 2026-09-16
 
@@ -910,4 +911,3 @@ See also: [articles/README.md](../articles/README.md) — the full eleven-source
 
 **What we added:**
 - Skill enhancement: `skills/gitnexus-pr-review/SKILL.md` — new "Hybrid Deterministic + Agent Review Pattern" section, complementary to GitNexus's existing call-graph/impact-analysis split. Notes that this harness's `validate_review_json.py` anchor check already implements the deterministic comment-anchor-verification piece. The 9x token-efficiency figure is cited as the source's own claim, not a verified number for this harness — flagged as such in the skill text, along with the recommendation to benchmark any adoption on precision/recall/token-cost rather than pass/fail.
->>>>>>> 2da2f71 (more)
