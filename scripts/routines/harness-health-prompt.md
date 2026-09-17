@@ -80,10 +80,55 @@ If `reports/skill-curation-report.md` does not exist, note it and skip Phase 2.
 
 ---
 
+## Phase 3 — Token Spend Attribution
+
+**Goal:** Notice when harness overhead — routine cadence, agent fan-out width,
+an unbounded tool — starts dominating token spend, before a usage limit does it
+for you. Nothing else in the harness measures actual spend; every other
+token-related skill only gives advice about reducing it.
+
+Below is the output of `scripts/utils/token-forensics.py --days 14`, already run.
+Do **not** re-run it.
+
+```
+FORENSICS_PLACEHOLDER
+```
+
+Steps:
+
+1. **Check the parser first.** If the collapsed-duplicate count is zero across
+   many transcripts, the transcript format changed and the dedup is a no-op —
+   report exactly that and skip the rest of this phase. Do not quote inflated
+   numbers.
+2. Apply `Skill("auditing-token-spend")` Phase 2–3 to read the four signals and
+   name **one** cause, with the number that supports it.
+3. Honour the `method` line on the automation split. When it says
+   `proxy (sessions under 5min)`, subagent turns are not tagged in this
+   transcript format — call it a proxy, and never restate an unpopulated field
+   as a measured 0%.
+4. Report only what is anomalous. Compare against the previous run's line in
+   `reports/harness-health-report.md` if one exists. **A stable profile is a
+   one-line "no change" and nothing more** — a phase that always finds a problem
+   stops being read.
+5. Append to `reports/harness-health-report.md`:
+
+```
+## Token Spend — TODAY_PLACEHOLDER
+Total (dedup, 14d): N | peak 5h: N | automated: N% (method)
+Top amplified tool: <name> (~N tokens)
+Verdict: <no change | one named cause and the number behind it>
+Action: <where it was routed, or "none needed">
+```
+
+Do not change any code or cadence in this phase. It reports; the human decides.
+If the script is missing or exits non-zero, say so and skip — never invent figures.
+
+---
+
 ## Output
 
 Emit a single summary line:
 
 ```
-Harness health sweep complete: N repos reviewed, N skills repaired, N stalled
+Harness health sweep complete: N repos reviewed, N skills repaired, N stalled, token spend <ok|flagged>
 ```

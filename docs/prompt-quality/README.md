@@ -27,6 +27,19 @@ The dashboard **Session Health → Prompt Quality** tab reads the log file and v
 
 `correction_quality` returns N/A (not counted) for new tasks — only scored when the prompt contains correction language ("wrong", "incorrect", "instead", etc.).
 
+## Anti-Pattern Detection
+
+Separately from the 5 scored dimensions, `detect_anti_patterns()` flags named prompt anti-patterns by presence/absence rather than a 1-5 spectrum — these bloat or degrade a prompt without adding real signal:
+
+| Pattern | Trigger | Tip |
+|---|---|---|
+| `stale-few-shot` | 2+ `example:` / `e.g.` blocks | Verify the examples still match the current codebase, or drop them |
+| `mandatory-scratchpad` | "use a scratchpad" / "write your reasoning in" / "think step by step in a scratchpad" | Only ask for visible intermediate reasoning if the task genuinely needs it |
+| `maximally-thorough-phrasing` | "maximally thorough" / "as thorough as possible" / "leave no stone unturned" / "be extremely comprehensive" / "utmost thoroughness" | Name the actual completeness criterion instead (which files, which cases) |
+| `verification-ritual` | 3+ occurrences of verify/double-check/triple-check/"make sure to confirm" | State the one concrete check that matters instead of stacking synonyms |
+
+Findings are printed as a `🚩 Anti-patterns:` block in the hook output and logged under an `anti_patterns` array in each JSONL entry — they do not affect the `overall` score.
+
 ## Files
 
 | File | Purpose |
@@ -40,7 +53,7 @@ The dashboard **Session Health → Prompt Quality** tab reads the log file and v
 ## Log Format
 
 ```jsonl
-{"ts":"2026-06-11T12:34:56+00:00","overall":3.8,"dims":{"context_provision":3,"request_specificity":5,"scope_management":4,"information_timing":4,"correction_quality":null},"prompt_hash":"a1b2c3d4e5f6","word_count":42}
+{"ts":"2026-06-11T12:34:56+00:00","overall":3.8,"dims":{"context_provision":3,"request_specificity":5,"scope_management":4,"information_timing":4,"correction_quality":null},"prompt_hash":"a1b2c3d4e5f6","word_count":42,"anti_patterns":[]}
 ```
 
 ## Dashboard Tab
@@ -60,6 +73,8 @@ Located at **Session Health → Prompt Quality** (✨ tab). Shows:
   ⚠  scope_management: 2/5   →  state what NOT to change; specify output format
   ✅ information_timing: 4/5
   —  correction_quality: N/A
+  🚩 Anti-patterns:
+     - stale-few-shot: multiple example blocks — verify they still match the current codebase, or drop them
   ⬆  Consider improving flagged dimensions before spawning.
 ```
 

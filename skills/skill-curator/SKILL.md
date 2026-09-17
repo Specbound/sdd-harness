@@ -1,6 +1,6 @@
 ---
 name: skill-curator
-description: "Apply weekly curation report: run description-budget audit, propose and apply merges/compressions/deletions with user approval."
+description: "Apply weekly curation report: audit the aggregate skill-listing budget against its 1% ceiling plus per-skill descriptions, then propose and apply merges/compressions/deletions with user approval."
 risk: medium
 source: local
 ---
@@ -41,14 +41,39 @@ The automated runner already includes a description budget audit in its report. 
 3. Compute character count; estimate token cost: `ceil(chars / 4)`
 4. Build a table and flag descriptions over threshold
 
-**Thresholds:**
+**Thresholds (per skill):**
 - > 150 chars: ⚠️ consider compression
 - > 200 chars: 🔴 measurable system-reminder pressure — compress
+
+**Ceiling (aggregate) — run this first, before the per-skill table:**
+
+```bash
+python3 $SDD_HARNESS/scripts/skill-listing-budget.py --top 20
+```
+
+Per-skill thresholds alone cannot tell you whether the listing is affordable:
+every skill can sit under 150 chars and the total still be an order of magnitude
+over. Names and descriptions are paid on **every session unconditionally** (bodies
+load only on invocation), so the listing needs a budget the total is measured
+against — working figure is **1% of the context window** (Addy Osmani, "Audit
+your agent files" — see `docs/sources/articles/README.md`).
+
+Read the ratio, not the absolute. When the ratio is >2×, **skill count is the
+driver, not description length** — compression alone cannot close that gap, so
+route the finding to Phase 3's Usage Evidence passes (deprecate cold-30d, archive
+cold-90d) rather than proposing 200 description rewrites. Treat compression as
+the fix only when the ratio is near 1× and a handful of outliers explain it.
+
+The script also flags skills with **no description at all**. These are strictly
+worse than a long description: they still consume a listing slot while giving the
+router nothing to match on, so the skill effectively never fires. Propose a
+description for each, or deletion.
 
 **Report format:**
 ```
 ## Description Budget
 
+Listing budget: ~Y tokens vs 1% ceiling — R× (🔴 OVER | ✓ within)
 Total: N skills | X chars | ~Y tokens
 
 | Skill | Chars | Status |
@@ -69,7 +94,7 @@ Total: N skills | X chars | ~Y tokens
 Present all findings in one view before proposing any actions:
 
 1. **From weekly report:** duplicate pairs, quality scores below threshold, and the **Usage Evidence** section — deprecate candidates (no invocation in 30d) and archive candidates (90d), backed by real `logs/skill-usage.jsonl` fire data rather than file mtime
-2. **From Phase 2:** descriptions over the 150-char threshold
+2. **From Phase 2:** the aggregate listing-budget ratio (and whether it is over the 1% ceiling), descriptions over the 150-char threshold, and any skill with no description at all
 3. **Module-count audit:** for each skill, count distinct modules/components/reference-files bundled into its SKILL.md; flag any skill over 3 as a split candidate (SkillsBench, arXiv 2602.12670 — focused skills bundling ≤3 modules consistently outperform larger bundles in task pass-rate)
 4. **Continuous eval-gate drift check** (Phase 3.5 below) — new failure modes observed in live skill invocations that the skill's original `skill-eval-gate` scenario set didn't cover
 5. **From weekly report's `## Dependency Flags` section:** skills that are both a deletion/archive candidate AND cross-referenced by another skill, hook, agent, or command (per the runner's deterministic `skill-dependency-scan.sh` map). Treat this section as ground truth — do not re-derive it with your own search, and never propose a bare delete/merge for anything listed here.
@@ -149,10 +174,14 @@ Present a numbered list — **always wait for user approval before executing:**
 - Append the new scenario to whatever scenario table/list the target skill's own docs or eval history use for `skill-eval-gate` runs
 - Note in the curation log which live failure pattern prompted it, so the provenance stays traceable
 
-**After all changes:** Re-run Phase 2 and show the delta:
+**After all changes:** Re-run Phase 2 (script included) and show the delta:
 ```
 Description budget: 3,140 chars → 2,890 chars (−250, −63 tokens)
+Listing budget:     4.22× → 4.16× of the 1% ceiling (1M window)
 ```
+Report the ratio delta even when it is unimpressive. A compression pass that
+moves 4.22× to 4.16× has not solved the problem, and saying so is the point —
+it is the signal that the next pass has to remove skills, not shorten them.
 
 ### Phase 6: Update Source Log
 

@@ -41,6 +41,10 @@ specs/
 
 # SDD harness — local-only, never committed
 CLAUDE.md
+# Generated per machine: AGENTS.md by `lean-ctx setup`, ERRORS.md by the
+# 2+-attempts logging rule. Same class as CLAUDE.md — regenerated, not source.
+AGENTS.md
+ERRORS.md
 
 # Serena symbol index — regenerable per machine via `serena project index`
 .serena/
@@ -48,3 +52,6 @@ CLAUDE.md
 # Tool-written backups (e.g. `lean-ctx setup` saving the prior AGENTS.md).
 # Git history is the backup — a .bak in the tree is a second source of truth.
 *.bak
+
+# GitNexus index (local, regenerable)
+.gitnexus/

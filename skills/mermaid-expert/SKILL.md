@@ -50,6 +50,30 @@ gitGraph, journey, quadrantChart, timeline
 4. Add meaningful labels and descriptions
 5. Test rendering before delivery
 
+## Brand-Token Extraction
+
+Before styling a diagram, check whether the project already has a design system
+to draw from instead of picking colors ad hoc — `.claude/steering/tech.md`, a
+Tailwind config, a CSS `:root` token block, or a Storybook theme. Extract the
+actual hex/font values (`%%{init: {'theme': 'base', 'themeVariables': {...}}}%%`
+front-matter) rather than inventing a new palette per diagram — a repo's diagrams
+drift visually from its UI when every diagram author picks their own colors.
+
+## Redraw-Existing-Diagram Mode
+
+Use when asked to update or restyle a diagram that already exists (in Mermaid
+source, or a screenshot/image the user pastes), rather than drawing from scratch:
+
+1. Read the existing diagram's structure (nodes, edges, groupings) and preserve it
+   unless the user explicitly asked for a structural change — a restyle request is
+   not a content request.
+2. Extract the existing diagram's own styling (colors, shapes) as the baseline,
+   then apply only the specific requested change (brand tokens, a new node, a
+   layout direction change) on top of it.
+3. Diff the before/after in words ("kept the 4-stage flow, updated colors to
+   match `--primary`/`--accent`, widened the API-gateway node's label") so the
+   user can confirm intent was preserved before treating it as final.
+
 ## Output
 - Complete Mermaid diagram code
 - Rendering instructions/preview

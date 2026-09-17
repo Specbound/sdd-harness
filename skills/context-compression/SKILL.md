@@ -41,6 +41,36 @@ Traditional compression metrics target tokens-per-request. This is the wrong opt
 
 The right metric is tokens-per-task: total tokens consumed from task start to completion. A compression strategy saving 0.5% more tokens but causing 20% more re-fetching costs more overall.
 
+### When Compression Is Worse Than Useless
+
+The section above argues compression can be *inefficient*. It can also be *destructive*, and
+there is a controlled measurement of exactly that. SKILL.state (arXiv:2608.26263, Table 5)
+pinned every strategy to an identical ~1,800-token budget on a 100-step task:
+
+| Strategy at the same budget | Accuracy |
+|---|---|
+| Sliding-window truncation | **0.18** |
+| ReAct + LLMLingua (entropy-based compression) | **0.22** |
+| Summary-capped history | **0.52** |
+| Structured state object | **0.94** |
+| *(unbounded full history, for reference)* | 0.84 |
+
+Because the budget is held constant, this isolates the variable that matters: **the gain came
+from structure, not from spending fewer tokens.** Note that the structured form at 1,800 tokens
+also beat *unbounded* full history (0.94 vs 0.84) — more context was not better.
+
+LLMLingua is the instructive failure. A purpose-built compressor scored 0.22, barely above
+naive truncation, because entropy-based pruning deletes "seemingly redundant slot identifiers
+that are semantically vital." Identifiers, keys, and field names are individually low-information
+and collectively load-bearing: they are what later steps join on. Any compressor scoring tokens
+independently will drop them first.
+
+**Practical rule:** before compressing a span, ask whether it is relationally dense — does
+anything later have to *join* on an ID, path, key, or name in it? If yes, restructure it into a
+compact explicit form (a state object, a table) instead of summarizing or truncating it. If no,
+ordinary summarization is fine. This is the mechanism behind the artifact-trail failure below:
+file paths are exactly this kind of low-entropy, high-value token.
+
 ### The Artifact Trail Problem
 
 Artifact trail integrity is the weakest dimension across all compression methods, scoring 2.2-2.5 out of 5.0 in evaluations. Even structured summarization with explicit file sections struggles to maintain complete file tracking across long sessions.

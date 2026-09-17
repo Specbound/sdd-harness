@@ -153,6 +153,62 @@ In regulated domains, permission errors compound across interdependent systems (
 | Audit logs in observability stack only | Logs lost on infra change; not co-located with data | Write to SoR in-transaction |
 | Permission check at agent configuration time | Stale permissions; doesn't reflect role changes | Check at request-execution time |
 | Sub-agents inherit parent agent's full scope | Privilege escalation via delegation chain | Each sub-agent re-derives scope from SoR |
+| Guard matches the rendered string form of a structured value | Trivially bypassed by re-rendering the same value | Normalize before comparing (see below) |
+| "Ask the human" verdict emitted in a headless run | Unanswerable; degrades to a hang or an implicit allow | Degrade `ask` → `deny` when unattended |
+
+## Verdict Computation and Context-Dependence
+
+A permission decision has two halves that are usually conflated: **how the verdict is
+computed**, and **what the verdict means where it fires**. Both are load-bearing.
+
+### Normalize before comparing
+
+**Never match a guard rule against the rendered string form of a structured value.**
+Shell commands, URLs, IP addresses, and file paths all have many textual renderings of
+the same underlying value. A guard that greps the text can always be defeated by
+re-rendering — and the bypass looks nothing like an attack, so it will not be noticed.
+
+The canonical illustration: a rule blocking the literal string `169.254.169.254` does
+nothing about `curl http://2852039166/`, which is the same address in decimal form.
+The same class of bug lived in this harness's own `git-destructive-guard-hook.sh` until
+2026-08, where quote-stripping plus `grep -E` was defeated by every one of:
+
+```
+F=--force; git push $F        # value arrives via expansion
+bash -c 'git push --force'    # hidden inside a quoted wrapper
+git push --fo""rce            # token split by empty quotes
+cd sub && git push --force    # not the first command in the line
+```
+
+**The rule:** parse the input into its structure — argv via a real lexer, URLs via a URL
+parser, addresses into their numeric form — then compare fields and tokens *exactly*.
+Substring and regex matching over prose or command text is not a security control.
+(This harness additionally bans regex-parsing outright; emit or parse structured data.)
+
+**Fail closed on what you cannot resolve.** If a value arrives through an unresolvable
+expansion (`$VAR`, `$(...)`), the guard cannot prove it is safe. For a small set of
+high-stakes verbs, refuse and ask for the literal value — deliberate over-blocking on a
+narrow surface beats a guard that is confidently wrong.
+
+**Grant matching should be tiered.** If approvals are cached or reused, match secret- and
+credential-tier grants on *exact* command shape, and cheaper tiers loosely. Otherwise an
+approval granted for one command can be replayed by a rewrapped variant that smuggles
+something past — approve `curl X`, then reuse it for `cd t && curl X && echo $KEY`.
+*(Note: Claude Code exposes no persistent grant store a harness can control, so in this
+harness this half is design guidance for systems you build, not a mechanism you can wire.)*
+
+### An `ask` verdict is context-dependent
+
+`allow` / `ask` / `deny` is not a three-valued constant — `ask` only exists where a human
+is present to answer. In an unattended run there is nobody to prompt, so `ask` silently
+becomes either a hang or an implicit allow, which is the worst of both.
+
+**Rule: `ask` degrades to `deny` under headless execution.** Any guard reachable from a
+scheduled or background context needs to know which it is in. In this harness that means
+anything invoked via `scripts/orchestration/daily-orchestrator.sh` or `scripts/routines/*`
+— those runs have no interactive user, so a guard there must decide, not ask. Evaluate
+guards short-circuit and cheapest-deterministic-first, leaving any human prompt last: a
+human's attention is the most expensive thing a guard can spend.
 
 ## Delegation Ceiling (Checkability × Reversibility)
 

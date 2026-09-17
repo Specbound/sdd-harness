@@ -87,6 +87,23 @@ IF conflicts with your human partner's prior decisions:
 
 **your human partner's rule:** "External feedback - be skeptical, but check carefully"
 
+### Intent-Provenance Check (expands "Check: Reason for current implementation?")
+
+Before accepting or pushing back on a suggestion that touches existing code, classify why
+that code is the way it is into one of four buckets:
+
+1. **Requirement** — traces to an approved spec in `specs/` or an explicit user ask
+2. **Decision** — traces to a documented tradeoff (commit message, PR discussion, ADR)
+3. **Convention** — traces to a steering doc or house style (`.claude/steering/`, `CLAUDE.md`)
+4. **Unexplained guess** — no traceable reason found
+
+If you can't place it in 1–3 from memory, use `[[decision-archaeology]]` to dig it up
+(git blame → commit → PR/issue → project memory) before responding to the reviewer —
+"I don't know why this is here" and "I checked, and here's why" produce very different
+conversations. Only bucket 4 is a genuinely free changeable line; 1–3 mean the reviewer's
+suggestion needs to address the original requirement/decision/convention, not just the
+code as it looks today.
+
 ## YAGNI Check for "Professional" Features
 
 ```

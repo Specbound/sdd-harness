@@ -62,6 +62,21 @@ def score_correction_quality(t):
     if re.search(r'\b(should|expect|correct\s+version|instead\s+use|replace\s+with|the\s+right)\b', t): s += 1
     return min(s, 5)
 
+def detect_anti_patterns(t):
+    """Named prompt anti-patterns that bloat or degrade agent prompts without
+    adding real signal — flagged separately from the 1-5 dimension scores
+    above since these are presence/absence checks, not a spectrum."""
+    found = []
+    if len(re.findall(r'\bexample:|e\.g\.,?', t)) >= 2:
+        found.append(('stale-few-shot', 'multiple example blocks — verify they still match the current codebase, or drop them'))
+    if re.search(r'\b(use a scratchpad|write your reasoning in|think step by step in a scratchpad)\b', t):
+        found.append(('mandatory-scratchpad', 'forced scratchpad ritual — only ask for it if the task genuinely needs visible intermediate reasoning'))
+    if re.search(r'\b(maximally thorough|as thorough as possible|leave no stone unturned|be extremely comprehensive|utmost thoroughness)\b', t):
+        found.append(('maximally-thorough-phrasing', 'vague intensifier — name the actual completeness criterion instead (which files, which cases)'))
+    if len(re.findall(r'\b(verify|double[- ]check|triple[- ]check|make sure to confirm)\b', t)) >= 3:
+        found.append(('verification-ritual', 'repeated verify/check phrasing — state the one concrete check that matters instead of stacking synonyms'))
+    return found
+
 ctx    = score_context_provision(text_lower, words)
 spec   = score_request_specificity(text_lower, words)
 scope  = score_scope_management(text_lower, words)
@@ -95,6 +110,12 @@ print(dim_line('request_specificity', spec, 'request_specificity'))
 print(dim_line('scope_management',    scope, 'scope_management'))
 print(dim_line('information_timing',  timing, 'information_timing'))
 print(dim_line('correction_quality',  corr,  'correction_quality'))
+anti_patterns = detect_anti_patterns(text_lower)
+if anti_patterns:
+    print("  🚩 Anti-patterns:")
+    for name, tip in anti_patterns:
+        print(f"     - {name}: {tip}")
+
 if overall < 3.5:
     print("  ⬆  Consider improving flagged dimensions before spawning.")
 elif overall < 4.0:
@@ -117,6 +138,7 @@ entry = {
     },
     'prompt_hash': hashlib.sha256(prompt.encode()).hexdigest()[:12],
     'word_count': len(words),
+    'anti_patterns': [name for name, _ in anti_patterns],
 }
 with open(log_dir / 'pq-log.jsonl', 'a') as f:
     f.write(json.dumps(entry) + '\n')

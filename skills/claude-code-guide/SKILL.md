@@ -65,6 +65,13 @@ If the agent is stuck or behaving unexpectedly:
 2. **Iterative Development**: Ask for small changes, verify, then proceed.
 3. **Feedback Loop**: If the agent makes a mistake, correct it immediately and ask it to "add a lesson" to its memory (if supported) or `CLAUDE.md`.
 
+## Watch Items (tracking only — not yet built)
+
+- **Native Function Hooks** — `github.com/anthropics/claude-code/issues/91870`. If
+  Claude Code ships first-class function-level hooks (vs. this harness's current
+  shell-script PreToolUse/PostToolUse pattern), re-evaluate whether any `hooks/claude/*.sh`
+  scripts should migrate. No action until the feature actually ships — tracking only.
+
 ## Reference
 
 Based on [Claude Code Guide by zebbern](https://github.com/zebbern/claude-code-guide).

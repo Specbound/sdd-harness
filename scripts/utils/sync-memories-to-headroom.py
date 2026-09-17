@@ -22,12 +22,11 @@ import asyncio
 import sys
 from pathlib import Path
 
-import re
-
 from headroom import paths as headroom_paths
 from headroom.memory.backends.local import LocalBackend, LocalBackendConfig
 from headroom.memory.sync import sync
 from headroom.memory.sync_adapters.claude_code import ClaudeCodeAdapter
+
 
 def _harness_root() -> Path:
     for parent in Path(__file__).resolve().parents:
@@ -42,9 +41,12 @@ HARNESS_PATH = _harness_root()
 DB_PATH = headroom_paths.memory_db_path()  # ~/.headroom/memory.db
 
 
+_PROJECT_DIR_TRANSLATION = str.maketrans({"/": "-", "\\": "-", ".": "-"})
+
+
 def _claude_project_dir(project_path: Path) -> str:
     """Encode path as Claude Code does: replace / \\ and . all with -."""
-    return re.sub(r"[/\\.]", "-", str(project_path))
+    return str(project_path).translate(_PROJECT_DIR_TRANSLATION)
 
 
 MEMORY_DIR = Path.home() / ".claude" / "projects" / _claude_project_dir(HARNESS_PATH) / "memory"

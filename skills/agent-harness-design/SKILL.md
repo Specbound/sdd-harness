@@ -53,6 +53,50 @@ Apply this routing at the start of any diagnostic session before opening a compo
 2. Is the failure isolated to specific users or inputs? → context layer (check memory, personalization state)
 3. Is the failure present even with perfect harness and context? → escalate to model-layer consideration
 
+### The Distribution Test (own the layer, or keep the default?)
+
+The routing above decides *which layer to fix*. This decides *whether to own that layer
+at all* — when a custom harness component beats the model-native default.
+
+**The rule:** the closer the work sits to what frontier models were trained on, the
+better an off-the-shelf harness performs. The further out of distribution, the more you
+need your own orchestration. Start general — a stock harness is the fastest path to
+value — and add gates and custom structure only as you narrow onto a use case you need
+to be excellent at.
+
+**The non-obvious part — distribution is per-subtask, not per-mission.** A mission can
+be far out of distribution while its constituent subtasks sit squarely inside it. Legal
+AI is unusual; *editing a file* is not. So the correct shape is usually a custom harness
+around the out-of-distribution mission that still delegates in-distribution subtasks to
+the model-native tool.
+
+This matters more than it sounds, because models are RL'd on their *own* tool formats:
+OpenAI and Anthropic models were trained to edit files in different ways, and each is
+best at its own. LangChain's Deep Agents handles this with **model profiles** — swapping
+the edit-file implementation depending on which model is running, rather than imposing
+one house format on every model.
+
+**Decision procedure:**
+1. Decompose the mission into subtasks.
+2. For each, ask: is *this subtask* something frontier models were trained to do —
+   editing files, running shell commands, searching a repo, calling tools?
+3. In-distribution → keep the model-native tool. Wrapping it costs accuracy the model
+   already had.
+4. Out-of-distribution → custom orchestration is justified; that is where the harness
+   earns its maintenance.
+5. If you wrap an in-distribution subtask anyway, own the reason and the cost — and
+   re-check it when the model changes, since the distribution moves under you.
+
+> **Applies to this harness.** sdd-harness replaces model-native Read/Grep/Glob wholesale
+> with `ctx_*` wrappers. File reading and repo search are maximally in-distribution
+> subtasks, so that substitution is exactly the case this test flags: it is defensible
+> on token-compression grounds, but the trade is accuracy-the-model-already-had for
+> context budget, and it should be re-justified rather than assumed. Audit it when the
+> compression benefit is no longer the binding constraint.
+
+*Source: Harrison Chase (LangChain), "When to Build Your Own Agent Harness" —
+youtube.com/watch?v=HI2q3ci3Iuc, 2026-08.*
+
 ### ℛ — Reasoning Substrate
 
 The foundation model. Usually fixed, but affects what other components must compensate for.

@@ -11,7 +11,7 @@ Execute the seven steps below in order. Each is error-isolated — if one step f
 ## Step A — Daily Maintenance (trust-battery loop)
 
 Read `.claude/commands/kiro/daily-maintenance.md` and execute its pipeline:
-1. Judge — score the last 24h of observations using `kiro/settings/rules/session-quality-rubric.md`. Write the `[judge]` observation as usual, but **do NOT call `trust_score.py apply`** — scoring is handled in Step D (after session-quality and keep-rate are written).
+1. Judge — score the last 24h of observations using `kiro/settings/rules/session-quality-rubric.md`. Write **one** `[judge]` observation covering the run, but **do NOT call `trust_score.py apply`** — scoring is handled in Step D (after session-quality and keep-rate are written). `daily-maintenance.md` runs the judge three times and reconciles the deltas by median before calling `apply`; that reconciliation belongs to `apply`, which this routine does not use, so its three-sample spread gate never applies here. Whatever the run count, only one `[judge]` line is appended — Step D's `auto-score` counts tag occurrences, so a second appended `[judge]` line double-counts every tag it cites.
 2. Reflect — convert drains (especially [memory-gap] entries) into memory updates
 3. Housekeep — archive observations.md if >50 entries
 4. Alert — append `[routine-alert]` if any [memory-gap] entries remain unresolved after reflect
@@ -44,6 +44,8 @@ Run `python3 .claude/scripts/trust_score.py auto-score` from the repo root.
 Reads `observations.md` directly and scores mechanically from tagged signals
 (`[session-charge]`, `[memory-gap]`, `[session-quality]`, `[keep-rate]`).
 Idempotent — running it twice on the same day is safe.
+Deterministic, so it submits its total as a **single** sample: the multi-sample
+spread gate is skipped and the record reports `"spread": null`, not `0.0`.
 
 ## Step E — Skill Augmentation (Sleep-Phase Knowledge Seeding)
 
@@ -108,3 +110,5 @@ Daily maintenance complete: judge=<delta> session-quality=<N/5> keep-rate=<N%> t
 ```
 
 If any step was skipped or failed, replace the value with `skipped` or `failed`.
+
+_Last synced: 2026-09-03_

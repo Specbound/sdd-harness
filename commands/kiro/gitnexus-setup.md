@@ -70,9 +70,11 @@ If not present, append:
 
 ## Step 5: Register Editor Integration
 
-`gitnexus setup` also writes a managed MUST/NEVER block into `CLAUDE.md` that
-calls `gitnexus_*` tools, so gate it on index + MCP both being present, then
-reconcile the block:
+`gitnexus setup` also writes a managed MUST/NEVER block into `CLAUDE.md` (or
+`AGENTS.md`, if that's where the project keeps its conventions) that calls
+`gitnexus_*` tools, so gate it on index + MCP both being present, then
+reconcile the block — this also repairs skill paths and rewrites any bare
+`gitnexus_*` tool names to the `mcp__gitnexus__*` form the MCP server exposes:
 
 ```bash
 bash .claude/scripts/setup/gitnexus-reconcile.sh . --check \

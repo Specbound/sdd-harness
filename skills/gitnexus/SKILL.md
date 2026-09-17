@@ -201,6 +201,7 @@ When `.gitnexus/` exists, these activate without any commands:
 | `/kiro:spec-impl` | Blast radius scan before TDD cycle; tests cover downstream dependents |
 | `/kiro:debug` | Step 2 queries call chain instead of manual grep |
 | `/kiro:skill-extract-scan` | Seeds candidates from Leiden community clusters |
+| Weekly reseed | `risk-zone-reseed-runner.sh` uses `impact` risk levels as one of the signals scored into `.claude/steering/risk-zones.md` — see the `risk-zone-engine` skill |
 
 ---
 
