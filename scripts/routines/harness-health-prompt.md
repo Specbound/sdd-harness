@@ -63,7 +63,14 @@ Steps:
       - Compression ratio: ≤30% of the context it replaces
    c. **Validate** — re-score the repaired version; only write if the total score improved by ≥ 2 points
    d. If score delta ≤ 1 after repair, mark as **stalled** (don't write)
-3. Apply approved repairs by writing the updated SKILL.md files directly.
+3. Apply approved repairs with `.claude/scripts/routines/skill-write.sh <skill-name> <new-content-file>`
+   — write the repaired body to a temp file first, then pass it to the script.
+   Do NOT write SKILL.md directly with the Write/Edit tools: `update.sh`'s scheduled
+   sync overwrites `~/.claude/skills/<name>/` from `skills/<name>/` (harness source)
+   every 4h regardless of session activity, so a direct write to the installed copy
+   alone is erased by the next tick. The script updates source + installed together
+   and keeps a timestamped pre-repair backup under `.claude/memory/skill-repair-backups/`
+   for rollback — do not skip it even for a "quick" fix.
 
 Append to `reports/skill-curation-report.md`:
 

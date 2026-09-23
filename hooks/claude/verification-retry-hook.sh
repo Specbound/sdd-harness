@@ -43,17 +43,34 @@ STATE_FILE=".claude/memory/.verification-retry-state"
 HOOK_INPUT=$(cat)
 
 RESULT=$(python3 - "$MAX_ROUNDS" 2>/dev/null <<'PYEOF'
-import json, re, sys
+import json, sys
 from pathlib import Path
 
 max_rounds = int(sys.argv[1])
+
+
+def tokenize_words(text):
+    """Split into runs of alnum chars — a no-regex stand-in for \\w+ matching."""
+    words = []
+    current = []
+    for ch in text:
+        if ch.isalnum():
+            current.append(ch)
+        else:
+            if current:
+                words.append(''.join(current))
+                current = []
+    if current:
+        words.append(''.join(current))
+    return words
+
 
 def find_latest_transcript():
     base = Path.home() / ".claude" / "projects"
     if not base.is_dir():
         return None
     cwd = Path.cwd().resolve()
-    encoded = re.sub(r'/\.', '/-', str(cwd)).replace('/', '-')
+    encoded = str(cwd).replace('/.', '/-').replace('/', '-')
     project_dir = base / encoded
     if not project_dir.is_dir():
         candidates = [p for p in base.iterdir() if p.is_dir()]
@@ -92,17 +109,49 @@ def is_real_user_turn(rec):
         return not any(isinstance(b, dict) and b.get("type") == "tool_result" for b in content)
     return False
 
-TEST_CMD_RE = re.compile(
-    r'\b(pytest|py\.test|npm\s+(run\s+)?test|yarn\s+test|jest|vitest|go\s+test|'
-    r'cargo\s+test|mvn\s+test|rspec|dotnet\s+test|bundle\s+exec\s+rspec)\b'
-)
-CLAIM_RE = re.compile(
-    r'\ball\s+(tests?|checks?)\s+pass(ing|ed)?\b|'
-    r'\btests?\s+(are\s+)?pass(ing|ed)?\b|'
-    r'\bverified\s+working\b|'
-    r'\ball\s+passing\b',
-    re.IGNORECASE,
-)
+TEST_CMD_SINGLE_TOKENS = {"pytest", "py.test", "jest", "vitest", "rspec"}
+TEST_CMD_SEQUENCES = [
+    ("npm", "run", "test"), ("npm", "test"), ("yarn", "test"),
+    ("go", "test"), ("cargo", "test"), ("mvn", "test"), ("dotnet", "test"),
+    ("bundle", "exec", "rspec"),
+]
+
+
+def is_test_command(cmd):
+    """Case-sensitive, matching the original regex's lack of re.IGNORECASE."""
+    tokens = cmd.replace('&&', ' ').replace(';', ' ').replace('|', ' ').split()
+    for t in tokens:
+        if t in TEST_CMD_SINGLE_TOKENS:
+            return True
+    for seq in TEST_CMD_SEQUENCES:
+        n = len(seq)
+        for i in range(len(tokens) - n + 1):
+            if tuple(tokens[i:i + n]) == seq:
+                return True
+    return False
+
+
+PASS_WORDS = {"pass", "passing", "passed"}
+TESTCHECK_WORDS = {"test", "tests", "check", "checks"}
+
+
+def claims_success(text):
+    words = tokenize_words(text.lower())
+    n = len(words)
+    for i in range(n):
+        w = words[i]
+        if w == "all" and i + 2 < n and words[i + 1] in TESTCHECK_WORDS and words[i + 2] in PASS_WORDS:
+            return True
+        if w == "all" and i + 1 < n and words[i + 1] == "passing":
+            return True
+        if w == "verified" and i + 1 < n and words[i + 1] == "working":
+            return True
+        if w in TESTCHECK_WORDS:
+            if i + 1 < n and words[i + 1] in PASS_WORDS:
+                return True
+            if i + 2 < n and words[i + 1] == "are" and words[i + 2] in PASS_WORDS:
+                return True
+    return False
 
 # Walk backwards from the end, collecting the current turn: assistant text/tool_use
 # and their tool_results, stopping at the most recent real user message.
@@ -134,9 +183,9 @@ for rec in reversed(records):
                 tool_events.append(b)
 
 combined_text = " ".join(reversed(turn_texts))
-claims_success = bool(CLAIM_RE.search(combined_text))
+made_claim = claims_success(combined_text)
 
-if not claims_success:
+if not made_claim:
     print(json.dumps({"verdict": "no-claim"}))
     sys.exit(0)
 
@@ -144,7 +193,7 @@ if not claims_success:
 test_runs = []
 for tr in tool_events:
     cmd = tool_use_by_id.get(tr.get("tool_use_id"), "")
-    if not cmd or not TEST_CMD_RE.search(cmd):
+    if not cmd or not is_test_command(cmd):
         continue
     is_error = bool(tr.get("is_error"))
     test_runs.append((cmd, is_error))

@@ -151,27 +151,38 @@ Present a numbered list — **always wait for user approval before executing:**
 
 ### Phase 5: Execute Approved Changes
 
+**Every write or delete below goes through `$SDD_HARNESS/scripts/routines/skill-write.sh` /
+`skill-delete.sh` — never Write/Edit/rm the installed `~/.claude/skills/<name>/` copy directly.**
+Most skills here are synced from the harness repo's `skills/<name>/` by `update.sh` on a 4h
+launchd tick, independent of session activity. A write or delete that only touches the installed
+copy is silently reverted (or resurrected, for deletes) on the next tick — this is exactly how
+the 2026-09-18 Apply-Approved run lost its 19-skill description fix. `skill-write.sh` updates
+source + installed together and keeps a timestamped backup; `skill-delete.sh` removes both.
+
 **Compress description:**
-- Edit the `description:` line in the SKILL.md frontmatter
+- Read the full SKILL.md, edit the `description:` line in the in-memory copy, write to a temp
+  file, apply with `skill-write.sh <name> <temp-file>`
 - Print char count before/after
 
 **Merge:**
 - Read both SKILL.md files fully
 - Identify content in the merge-out skill not covered by the surviving skill
-- Append it to the surviving skill under `### From: [merged-skill-name]`
-- Show the surviving skill's new end section for review before deleting the other
+- Append it to the surviving skill under `### From: [merged-skill-name]`, write via
+  `skill-write.sh <surviving-name> <temp-file>`
+- Show the surviving skill's new end section for review, then remove the merged-out skill with
+  `skill-delete.sh <merged-out-name>` (not a bare `rm`/dashboard delete)
 
 **Delete:**
 - Show the full SKILL.md one final time
-- Delete the directory only after explicit confirmation ("yes, delete it")
+- After explicit confirmation ("yes, delete it"), run `skill-delete.sh <name>`
 
 **Delete + migrate references:**
 - **Hard rule:** if the target skill appears in the report's Dependency Flags section, do NOT delete or merge it until each listed referrer has been either (a) updated/edited to no longer depend on it, or (b) the user has explicitly confirmed it's safe to leave (e.g. that referrer is itself being removed in the same batch). A flagged skill is never a bare delete.
-- Show each referrer file/skill and the proposed edit (updated reference, or the logic folded into the surviving skill) before touching anything
-- Apply the referrer updates first, then delete the target directory, same confirmation gate as a plain Delete
+- Show each referrer file/skill and the proposed edit (updated reference, or the logic folded into the surviving skill) before touching anything. If a referrer is itself a skill (its file lives under `~/.claude/skills/<other-name>/`), apply that edit through `skill-write.sh <other-name> <temp-file>` too — the same clobber risk applies to referrer skills, not just the target.
+- Apply the referrer updates first, then delete the target with `skill-delete.sh <name>`, same confirmation gate as a plain Delete
 
 **Add eval scenario:**
-- Append the new scenario to whatever scenario table/list the target skill's own docs or eval history use for `skill-eval-gate` runs
+- Append the new scenario to whatever scenario table/list the target skill's own docs or eval history use for `skill-eval-gate` runs; write via `skill-write.sh <name> <temp-file>` (or the appropriate relative path if the scenario table lives in a sidecar file, not `SKILL.md` itself)
 - Note in the curation log which live failure pattern prompted it, so the provenance stays traceable
 
 **After all changes:** Re-run Phase 2 (script included) and show the delta:

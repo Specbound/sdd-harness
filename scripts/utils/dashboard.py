@@ -714,8 +714,8 @@ def _scheduled_task_registry(repo_dir=None):
             "name":              "Weekly Skill-Curator",
             "runner_log_token":  "skill-curator",
             "state_file":        HARNESS_DIR / ".claude" / "memory" / ".last-skill-curator-run",
-            "artifact_glob":     str(HARNESS_DIR / "docs" / "skill-curation-report.md"),
-            "artifact_label":    "docs/skill-curation-report.md",
+            "artifact_glob":     str(HARNESS_DIR / "reports" / "skill-curation-report.md"),
+            "artifact_label":    "reports/skill-curation-report.md",
             "schedule_human":    "Weekly (MIN_GAP_DAYS=7)",
             "interval_seconds":  7 * 86400,
             "scope":             "harness",
@@ -1183,14 +1183,11 @@ def parse_session_history(repo):
     return sorted(sessions)
 
 def read_skill_report():
-    report = HARNESS_DIR / "docs" / "skill-curation-report.md"
+    report = HARNESS_DIR / "reports" / "skill-curation-report.md"
     if not report.exists():
         return None, None
-    git_ts = run_cmd(
-        ["git", "log", "-1", "--format=%cI", "--", "docs/skill-curation-report.md"],
-        cwd=str(HARNESS_DIR)
-    )
-    return report.read_text(), (rel_time(git_ts) if git_ts else "unknown")
+    mtime = datetime.fromtimestamp(report.stat().st_mtime, tz=timezone.utc)
+    return report.read_text(), rel_time(mtime.isoformat())
 
 SKILL_PROPOSAL_PATH = HARNESS_DIR / ".claude" / "memory" / ".skill-curator-proposal.md"
 
@@ -4571,7 +4568,7 @@ def render_headroom(repo_path: "str | None" = None) -> str:
             label   = ts0
             dur_str = "?"
 
-        rows = ""
+        row_htmls = []
         prev_tok  = first_e.get("total_tokens_saved", 0)
         prev_cost = first_e.get("compression_savings_usd", 0.0)
         for chk in block[1:]:
@@ -4582,7 +4579,7 @@ def render_headroom(repo_path: "str | None" = None) -> str:
                 chk_str = chk_ts
             cur_tok  = chk.get("total_tokens_saved", 0)
             cur_cost = chk.get("compression_savings_usd", 0.0)
-            rows += (
+            row_htmls.append(
                 f'<tr style="border-bottom:1px solid var(--surface1)">'
                 f'<td style="padding:5px 10px;font-size:11px;color:var(--subtext0);font-family:monospace">{chk_str}</td>'
                 f'<td style="padding:5px 10px;font-size:12px;color:var(--green)">+{cur_tok-prev_tok:,}</td>'
@@ -4592,12 +4589,39 @@ def render_headroom(repo_path: "str | None" = None) -> str:
             )
             prev_tok, prev_cost = cur_tok, cur_cost
 
+        # Newest checkpoints matter most; a long session (600+ checkpoints) would
+        # otherwise dump its entire history into the DOM. Show the last 10, hide
+        # the rest behind a toggle.
+        MAX_VISIBLE_CHECKPOINTS = 10
+        if len(row_htmls) > MAX_VISIBLE_CHECKPOINTS:
+            hidden_rows  = row_htmls[:-MAX_VISIBLE_CHECKPOINTS]
+            visible_rows = row_htmls[-MAX_VISIBLE_CHECKPOINTS:]
+        else:
+            hidden_rows, visible_rows = [], row_htmls
+        rows = "".join(visible_rows)
+
         blk_id    = f"hr-blk-{bidx}"
         toggle_fn = (
             f"var d=document.getElementById('{blk_id}');"
             f"d.style.display=d.style.display==='none'?'block':'none';"
             f"this.querySelector('span.hr-arr').textContent=d.style.display==='none'?'▸ ':'▾ ';"
         )
+        more_tbody = ""
+        if hidden_rows:
+            more_id = f"hr-more-{bidx}"
+            more_fn = (
+                f"var d=document.getElementById('{more_id}');"
+                f"var showing=d.style.display!=='none';"
+                f"d.style.display=showing?'none':'table-row-group';"
+                f"this.querySelector('span').textContent=(showing?'▸ Show {len(hidden_rows)} earlier':'▾ Hide earlier');"
+            )
+            more_tbody = (
+                f'<tbody><tr onclick="{h(more_fn)}" style="cursor:pointer;border-bottom:1px solid var(--surface1)">'
+                f'<td colspan="4" style="padding:5px 10px;font-size:11px;color:var(--overlay0)">'
+                f'<span>▸ Show {len(hidden_rows)} earlier</span></td></tr></tbody>'
+                f'<tbody id="{more_id}" style="display:none">{"".join(hidden_rows)}</tbody>'
+            )
+
         detail_html = (
             f'<table style="width:100%;border-collapse:collapse">'
             f'<thead><tr style="background:var(--base)">'
@@ -4605,7 +4629,7 @@ def render_headroom(repo_path: "str | None" = None) -> str:
             f'<th style="padding:5px 10px;text-align:left;font-size:10px;color:var(--overlay0)">+TOKENS</th>'
             f'<th style="padding:5px 10px;text-align:left;font-size:10px;color:var(--overlay0)">+SAVED</th>'
             f'<th style="padding:5px 10px;text-align:left;font-size:10px;color:var(--overlay0)">CUMULATIVE</th>'
-            f'</tr></thead><tbody>{rows}</tbody></table>'
+            f'</tr></thead>{more_tbody}<tbody>{rows}</tbody></table>'
         ) if rows else '<div style="padding:10px 14px;font-size:11px;color:var(--overlay0)">Single checkpoint.</div>'
 
         accordion_items.append(
@@ -5111,7 +5135,7 @@ function _hdBox(a) {
   // Collapsed by default: the grid answers "what is running" at a glance, and the
   // disclosure answers "what is it doing" only for the one you open.
   return '' +
-  '<div style="background:var(--surface0);border-radius:8px;padding:11px;min-width:0">' +
+  '<div style="background:var(--surface0);border:1px solid var(--surface1);border-radius:8px;padding:11px;min-width:0">' +
     '<div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-bottom:5px">' +
       '<span style="font-family:monospace;font-size:11.5px;color:var(--text);overflow:hidden;' +
         'text-overflow:ellipsis;white-space:nowrap;max-width:140px">' + a.name + '</span>' +
@@ -5120,13 +5144,11 @@ function _hdBox(a) {
     '<div style="font-size:9.5px;color:var(--subtext0);margin-bottom:4px;overflow:hidden;' +
       'text-overflow:ellipsis;white-space:nowrap">' + meta.join(' · ') + '</div>' +
     '<div style="font-size:9.5px;color:var(--subtext0);margin-bottom:7px">' + spend + '</div>' +
-    '<div id="hdnow-' + a.name + '" style="font-size:10px;color:var(--overlay1);' +
-      'margin-bottom:8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">…</div>' +
     '<div style="display:flex;gap:5px;margin-bottom:7px">' +
       '<button onclick="herderStop(\\'' + a.workspace_id + '\\')" style="background:#f38ba822;color:#f38ba8;border:1px solid #f38ba855;border-radius:5px;padding:3px 9px;font-size:10.5px;cursor:pointer">stop</button>' +
     '</div>' +
-    '<div id="hdchat-' + a.name + '" style="background:var(--crust);border-radius:6px;' +
-      'padding:9px;font-size:10px;line-height:1.5;max-height:400px;overflow-y:auto;' +
+    '<div id="hdchat-' + a.name + '" style="background:var(--crust);border:1px solid var(--surface1);' +
+      'border-radius:6px;padding:9px;font-size:10px;line-height:1.5;max-height:400px;overflow-y:auto;' +
       'margin-bottom:8px;display:flex;flex-direction:column;gap:8px">loading…</div>' +
     '<div id="hdfiles-' + a.name + '" style="margin-bottom:6px;display:flex;flex-wrap:wrap;gap:4px;' +
       'font-size:9px"></div>' +
@@ -5218,27 +5240,6 @@ function herderRawPane(name) {
     .catch(function(e) { pre.textContent = String(e); });
 }
 
-// One-line "what is it doing right now" for a collapsed card, so the grid is
-// informative without expanding anything.
-function _hdUpdateNow(a) {
-  var el = document.getElementById('hdnow-' + a.name);
-  if (!el) { return; }
-  _hdFetch('/api/herder-stream?name=' + encodeURIComponent(a.name))
-    .then(function(r) { return r.json(); })
-    .then(function(d) {
-      if (d.pending) { el.textContent = 'starting…'; return; }
-      var evs = (d && d.events) || [];
-      if (!evs.length) { el.textContent = 'no activity yet'; return; }
-      var e = evs[evs.length - 1];
-      var label = e.t === 'tool'     ? '⚙ ' + e.name + ' ' + (e.summary || '')
-                : e.t === 'result'   ? (e.error ? '✗ ' : '✓ ') + e.name
-                : e.t === 'thinking' ? '· thinking'
-                :                      '▸ ' + e.text;
-      el.textContent = label;
-    })
-    .catch(function() {});
-}
-
 function herderRefresh() {
   var st = document.getElementById('herder-status');
   _hdFetch('/api/herder-status')
@@ -5281,9 +5282,6 @@ function herderRefresh() {
           if (d) { d.open = true; }
         });
       }
-
-      rows.forEach(function(a) { _hdUpdateNow(a); });
-
       var live = document.getElementById('hd-live');
       if (live && live.checked) {
         rows.forEach(function(a) {
@@ -5353,13 +5351,13 @@ function herderStop(ws) {
 var _hdChat = {};
 
 function _hdChatMessage(role, text) {
-  var bg = role === 'user' ? 'var(--mauve)' : 'var(--surface1)';
-  var color = role === 'user' ? 'var(--base)' : 'var(--text)';
-  var align = role === 'user' ? 'flex-end' : 'flex-start';
-  return '<div style="display:flex;justify-content:' + align + '">' +
-         '<div style="background:' + bg + ';color:' + color + ';' +
-         'border-radius:6px;padding:6px 9px;max-width:85%;word-break:break-word;' +
-         'font-size:10px;line-height:1.4">' + _hdEsc(text) + '</div>' +
+  var bg = role === 'user' ? '#89b4fa22' : '#a6e3a122';
+  var accent = role === 'user' ? '#89b4fa' : '#a6e3a1';
+  var label = role === 'user' ? 'question' : 'response';
+  return '<div style="background:' + bg + ';border-left:2px solid ' + accent + ';color:var(--text);' +
+         'border-radius:4px;padding:6px 9px;word-break:break-word;font-size:10px;line-height:1.4">' +
+         '<div style="font-size:8.5px;color:' + accent + ';margin-bottom:2px;text-transform:uppercase">' + label + '</div>' +
+         _hdEsc(text) +
          '</div>';
 }
 
@@ -5391,7 +5389,7 @@ function herderUpdateChat(name, force) {
       var msgs = [];
       for (var i = 0; i < evs.length; i++) {
         var e = evs[i];
-        if (e.t === 'text') { msgs.push({ role: 'assistant', text: e.text }); }
+        if (e.t === 'text') { msgs.push({ role: e.role === 'user' ? 'user' : 'assistant', text: e.text }); }
       }
 
       var html = msgs.map(function(m) { return _hdChatMessage(m.role, m.text); }).join('');
@@ -5764,7 +5762,7 @@ def _run_skill_curator_propose() -> None:
     terse proposal to SKILL_PROPOSAL_PATH instead of printing it to chat."""
     prompt = (
         "Use the skill-curator skill's Phase 1 (Load & Orient) through Phase 4 "
-        "(Propose Actions) logic to analyze docs/skill-curation-report.md. "
+        "(Propose Actions) logic to analyze reports/skill-curation-report.md. "
         "Cap each proposed item to 1-2 sentences of rationale — shorter than the "
         "skill's default Phase 4 format. Do NOT execute anything and do NOT print "
         f"the proposal to chat — instead write the numbered proposal as markdown to "
@@ -5813,7 +5811,7 @@ def _run_skill_curator_apply(instruction: str) -> None:
         "Read the pending proposal below and the user's approval instruction, then "
         "use the skill-curator skill's Phase 5 (Execute Approved Changes) and "
         "Phase 6 (Update Source Log) rules to execute only the approved subset and "
-        "append the curation log entry to docs/skill-curation-report.md. "
+        "append the curation log entry to reports/skill-curation-report.md. "
         f"Finally, delete {SKILL_PROPOSAL_PATH} so it can't be re-applied.\n\n"
         f"## Pending Proposal\n{proposal}\n\n"
         f"## User Approval Instruction\n{instruction}"

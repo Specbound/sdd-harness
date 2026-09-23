@@ -284,6 +284,23 @@ run_one() {
     rm -f "$rz_errbuf"
   fi
 
+  # Hook/MCP-config self-audit — sweeps the repo's own .claude/hooks/ and
+  # settings.json/.mcp.json for secrets (via scan-pii.sh), network-exfil
+  # patterns, and over-broad permission grants. Deterministic (no LLM call).
+  # Self-paces to weekly (MIN_GAP_DAYS=7). Applies to every repo. Opt out with
+  # SDD_SKIP_HOOK_CONFIG_AUDIT=1.
+  if [ "${SDD_SKIP_HOOK_CONFIG_AUDIT:-0}" != "1" ] && [ -f "$repo/.claude/scripts/routines/hook-config-audit-runner.sh" ]; then
+    local hca_start=$(date +%s)
+    local hca_errbuf; hca_errbuf=$(mktemp)
+    (cd "$repo" && bash .claude/scripts/routines/hook-config-audit-runner.sh) > /dev/null 2>"$hca_errbuf"
+    local hca_exit=$?
+    echo "$ts $repo hook-config-audit exit=$hca_exit duration=$(($(date +%s) - hca_start))s" >> "$LOG_FILE"
+    if [ "$hca_exit" -ne 0 ] && [ -s "$hca_errbuf" ]; then
+      { echo "--- $ts $repo hook-config-audit (exit=$hca_exit) ---"; cat "$hca_errbuf"; } >> "$ERR_LOG"
+    fi
+    rm -f "$hca_errbuf"
+  fi
+
   # Daily briefing — synthesizes a prioritized status digest from
   # .claude/memory/manager/{projects,people}.md plus connected live sources. Self-paces
   # to daily (MIN_GAP_DAYS=1); the runner's own deterministic guard no-ops for free

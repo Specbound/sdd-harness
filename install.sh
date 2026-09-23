@@ -216,6 +216,19 @@ ensure_windows_path_inherit() {
   fi
 }
 
+# ── verify_rtk_hook ───────────────────────────────────────────────────────────
+# `rtk init -g` patches ~/.claude/settings.json directly, and a later
+# lean-ctx/headroom setup pass can silently overwrite that same file without
+# preserving the rtk hook. Exit code alone doesn't catch that — grep for proof.
+verify_rtk_hook() {
+  local settings="$HOME/.claude/settings.json"
+  if [ -f "$settings" ] && grep -q "rtk hook" "$settings"; then
+    ok "Global hook active (verified in settings.json)"
+  else
+    warn "rtk init -g ran but hook not found in ~/.claude/settings.json — run 'rtk init -g --auto-patch' manually and check for conflicting hook patches"
+  fi
+}
+
 # ════════════════════════════════════════════════════════════════════════════════
 # install_global_tools
 # Install machine-wide tools needed by the harness. Interactive unless --yes.
@@ -306,14 +319,15 @@ install_global_tools() {
   elif command -v rtk >/dev/null 2>&1; then
     ok "RTK already installed  ($(rtk --version 2>&1 | head -1))"
     info "Re-wiring global hook to ensure it's active..."
-    rtk init -g --auto-patch 2>/dev/null && ok "Global hook active" || warn "rtk init -g failed — run it manually"
+    rtk init -g --auto-patch 2>/dev/null || warn "rtk init -g failed — run it manually"
+    verify_rtk_hook
   else
     case "$SDD_OS" in
       macos|linux|wsl)
         if confirm "Install RTK via Homebrew?"; then
           brew install rtk
           rtk init -g --auto-patch
-          ok "RTK installed and global hook wired"
+          verify_rtk_hook
         else
           warn "Skipped RTK"
         fi ;;
@@ -571,7 +585,7 @@ install_project() {
 
   # --- chmod runtime scripts that need to be executable ---
   local s
-  for s in orchestration/daily-runner.sh routines/macro-eval-runner.sh routines/skill-curator-runner.sh routines/harness-health-runner.sh routines/tool-failure-review-runner.sh routines/startup-payload-audit.sh routines/code-review-learning-runner.sh routines/risk-zone-reseed-runner.sh routines/daily-briefing-runner.sh session/write_handoff.py pr/detect_base_and_create.sh quality/sloppiness-score.sh; do
+  for s in orchestration/daily-runner.sh routines/macro-eval-runner.sh routines/skill-curator-runner.sh routines/harness-health-runner.sh routines/tool-failure-review-runner.sh routines/startup-payload-audit.sh routines/code-review-learning-runner.sh routines/risk-zone-reseed-runner.sh routines/daily-briefing-runner.sh routines/hook-config-audit-runner.sh session/write_handoff.py pr/detect_base_and_create.sh quality/sloppiness-score.sh; do
     [ -f "$PROJECT_DIR/.claude/scripts/$s" ] && chmod +x "$PROJECT_DIR/.claude/scripts/$s"
   done
   [ -f "$PROJECT_DIR/.claude/scripts/utils/ollama_model_test.py" ] && chmod +x "$PROJECT_DIR/.claude/scripts/utils/ollama_model_test.py"

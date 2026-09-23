@@ -828,10 +828,24 @@ def agent_stream(name: str, after: int = 0, limit: int = 60):
         except ValueError:
             continue
         msg = obj.get("message")
-        if not isinstance(msg, dict) or not isinstance(msg.get("content"), list):
+        if not isinstance(msg, dict):
+            continue
+        role = msg.get("role")
+        content = msg.get("content")
+
+        # A plain human-typed prompt is stored as a bare string, not the
+        # block-list shape assistant turns use — without this branch the
+        # question itself never reaches the events list at all.
+        if isinstance(content, str):
+            text = _clip(content, 600)
+            if text:
+                events.append({"t": "text", "role": role, "text": text})
             continue
 
-        for blk in msg["content"]:
+        if not isinstance(content, list):
+            continue
+
+        for blk in content:
             if not isinstance(blk, dict):
                 continue
             btype = blk.get("type")
@@ -842,7 +856,7 @@ def agent_stream(name: str, after: int = 0, limit: int = 60):
             elif btype == "text":
                 text = _clip(blk.get("text") or "", 600)
                 if text:
-                    events.append({"t": "text", "text": text})
+                    events.append({"t": "text", "role": role, "text": text})
             elif btype == "tool_use":
                 tname = blk.get("name") or "?"
                 tool_names[blk.get("id")] = tname

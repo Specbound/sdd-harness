@@ -40,6 +40,19 @@ if [ -f ".claude/settings.json" ] && [ -n "$SETTINGS_REPAIR" ] && [ -f "$SETTING
   fi
 fi
 
+# --- Headroom routing self-heal ---
+# headroom-setup.sh wires ANTHROPIC_BASE_URL into ~/.claude/settings.json only
+# after confirming the proxy is healthy, but nothing un-wires it if the proxy
+# dies afterward — and headroom's own SessionStart hook re-asserts that routing
+# every session, so a manual `unset`/edit does not stick. Probe bounded to
+# ~1.5s so a dead proxy never adds noticeable latency to session start; a slow
+# but healthy proxy is left alone (see headroom-unwire-if-dead.py).
+SELFHEAL="${SDD_ROOT:+$SDD_ROOT/scripts/utils/headroom-unwire-if-dead.py}"
+if [ -n "$SELFHEAL" ] && [ -f "$SELFHEAL" ] && [ -f "$HOME/.claude/settings.json" ] \
+   && command -v python3 >/dev/null 2>&1; then
+  python3 "$SELFHEAL" "$HOME/.claude/settings.json" 2>/dev/null || true
+fi
+
 OBS_FILE=".claude/memory/observations.md"
 today=$(date +%Y-%m-%d)
 
