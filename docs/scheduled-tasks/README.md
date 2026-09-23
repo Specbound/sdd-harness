@@ -142,6 +142,21 @@ Guards:
 
 ---
 
+### Weekly Hook/MCP-Config Audit
+**Runner:** `.claude/scripts/routines/hook-config-audit-runner.sh`
+**Cadence:** Weekly (`HOOK_CONFIG_AUDIT_GAP_DAYS`, default 7; deterministic — no LLM call)
+**Scope:** Every registered repo
+
+**What it does:**
+- Wraps `.claude/scripts/utils/hook-config-audit.py`, which sweeps a repo's own `.claude/hooks/` and `settings.json`/`settings.local.json`/`.mcp.json` — the harness's own hooks and MCP config, not user content — for three findings: (1) secrets, by shelling out to `scan-pii.sh`'s OPF engine per hook/config file; (2) network-exfil patterns, `curl`/`wget` calls in hook scripts to a host outside a small allowlist; (3) over-broad permission grants, a `permissions.allow`/`deny` entry with no scoping argument or an argument that is just `*`
+- Neither `hooks/claude/scan-pii.sh` (content-only) nor `hooks/claude/skill-permissions-gate.sh` (fires only on new `SKILL.md` writes) sweeps existing hooks/config, so nothing previously re-checked them as the hook count grew
+- Writes `.claude/reports/security/hook-config-audit.json`
+- Wired into `orchestration/daily-orchestrator.sh` `run_one()`
+
+**Opt-out:** `SDD_SKIP_HOOK_CONFIG_AUDIT=1` env var.
+
+---
+
 ### Macro-Eval Sweep
 **Runner:** `.claude/scripts/routines/macro-eval-runner.sh`
 **Prompt:** `.claude/scripts/routines/macro-eval-prompt.md`
@@ -205,11 +220,11 @@ This is the **review** stage of the tool-failure-memory loop (capture → recall
 1. **Skill quality audit** — scores all `~/.claude/skills/*/SKILL.md` against four SkillOS dimensions; flags low-quality candidates and duplicate pairs
 2. **Description budget audit** — measures description field length; flags >150 chars for compression
 3. **Memory governance health** — checks five compaction-discipline hook failure modes
-4. Writes `docs/skill-curation-report.md` (full weekly snapshot, replaced each run)
+4. Writes `reports/skill-curation-report.md` (full weekly snapshot, replaced each run)
 - Race-safe via `mkdir` lock; a lock older than 2h (left by a killed run) is auto-removed on the next run
 - Retries automatically on failure — `STATE_FILE` is only written after a successful run (exit 0), so a failed sweep doesn't consume the gap-days window; full stdout is also tee'd to `.claude/memory/.last-skill-curator-output.log` since the orchestrator wrapper that calls this runner redirects its stdout to `/dev/null` and only captures stderr
 
-**How to use:** After the routine runs, invoke `/skill-curator` locally to review findings and apply approved changes (merge/compress/delete) with human approval at every step. Alternatively, in the dashboard's companion mode, use the **Skill Changes** tab's "🔍 Analyze & Propose" / "✅ Apply Approved" buttons — propose writes a numbered proposal to `.claude/memory/.skill-curator-proposal.md` via a headless `claude --print` session (logged to `logs/skill-curator-propose.log`, polled every 3s by the dashboard); apply backs up `~/.claude/skills/` to `.dashboard/skill-backups/skills-<timestamp>.tar.gz` first, then executes the approved subset per the typed instruction (default `"apply all"`), logs to `logs/skill-curator-apply.log`, appends the curation log entry to `docs/skill-curation-report.md`, and deletes the pending proposal. A "🔍 Re-analyze" button re-runs propose once a proposal is showing.
+**How to use:** After the routine runs, invoke `/skill-curator` locally to review findings and apply approved changes (merge/compress/delete) with human approval at every step. Alternatively, in the dashboard's companion mode, use the **Skill Changes** tab's "🔍 Analyze & Propose" / "✅ Apply Approved" buttons — propose writes a numbered proposal to `.claude/memory/.skill-curator-proposal.md` via a headless `claude --print` session (logged to `logs/skill-curator-propose.log`, polled every 3s by the dashboard); apply backs up `~/.claude/skills/` to `.dashboard/skill-backups/skills-<timestamp>.tar.gz` first, then executes the approved subset per the typed instruction (default `"apply all"`), logs to `logs/skill-curator-apply.log`, appends the curation log entry to `reports/skill-curation-report.md`, and deletes the pending proposal. A "🔍 Re-analyze" button re-runs propose once a proposal is showing.
 
 **Opt-out:** `SDD_SKIP_SKILL_CURATOR=1` env var.
 
@@ -223,7 +238,7 @@ This is the **review** stage of the tool-failure-memory loop (capture → recall
 
 **What it does:**
 1. **CLAUDE.md review** — reads all repos in `$SDD_HARNESS/projects.txt`; audits for stale instructions, model-assumption drift, and over-constraining rules from pre-Claude-4.x habits; rates each repo `clean` / `minor` / `needs-update`; writes `docs/claudemd-review-report.md`. This is the *harness-wide* pass. Its *per-repo* counterpart is the `/claudemd-review` global command (`commands/global/claudemd-review.md`), which `session-start-hook.sh` fires when a single repo's `.claude/memory/.last-claudemd-review` is >14 days stale; that command audits only the current repo (adding a 200-line size budget, an "inferable from the manifest" filter, and an `@AGENTS.md` import/dedup check) and writes `.claude/memory/claudemd-review-report.md` — do not confuse the two report paths.
-2. **Iterative skill repair** — reads `docs/skill-curation-report.md` for low-quality flags; applies a Review→Repair→Validate loop (up to 3 skills per run, max 3 repair iterations per skill); writes repaired `SKILL.md` files directly; appends a `## Iterative Repair Run — [date]` section to the curation report
+2. **Iterative skill repair** — reads `reports/skill-curation-report.md` for low-quality flags; applies a Review→Repair→Validate loop (up to 3 skills per run, max 3 repair iterations per skill); writes repaired `SKILL.md` files directly; appends a `## Iterative Repair Run — [date]` section to the curation report
 3. **Token spend attribution** — the runner executes `scripts/utils/token-forensics.py --days 14` itself and substitutes the output into the prompt's `FORENSICS_PLACEHOLDER`, then has the session read it via the `auditing-token-spend` skill and name **one** cause. Catches harness overhead — routine cadence, agent fan-out width, an unbounded tool injecting large output early — before a usage limit does. Appends a `## Token Spend — [date]` block to `reports/harness-health-report.md`. Reports only what is anomalous: a stable profile is a one-line "no change", because a phase that always finds a problem stops being read. It changes no code and no cadence.
 - The script is run by the **runner**, not by the model. A headless session merely *told* to invoke a script can skip it silently, and the phase would then report on nothing while appearing to have run. A missing script or non-zero exit is substituted as a visible marker so the phase can say "no data" but can never fabricate figures.
 - The automation split in that output carries a `method` label. It currently reads `proxy (sessions under 5min)` because `isSidechain` is never `True` in this transcript format — subagent turns are not separable, so the figure is a stand-in and is labelled as one. It is never reported as a measured 0%.
@@ -299,5 +314,5 @@ The dashboard's **Scheduled Tasks** tab shows live status for each task, scoped 
 
 ---
 
-_Last synced: 2026-09-17_
+_Last synced: 2026-09-23_
 

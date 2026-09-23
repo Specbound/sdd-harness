@@ -1,6 +1,6 @@
 <!-- L0: Quick reference — all SDD commands with usage examples -->
 
-_Last synced: 2026-09-09_
+_Last synced: 2026-09-23_
 
 # SDD Usage Guide
 
@@ -627,7 +627,7 @@ Starts a local HTTP server at `http://localhost:4569` and opens the browser auto
 | 5 | 🪝 Hooks History | Hook name, event type, last activity, active/inactive badge |
 | 6 | 📅 Scheduled Tasks | OS scheduler health card — plus, when the scheduler's last launch failed, a full-width red banner **above** the routine cards naming TCC explicitly on exit 126, since a dead scheduler invalidates every calm `PENDING` badge below it — + per-routine cards (schedule, last run + exit code, artifact, diff vs. previous run, reasoning excerpt), scoped to whichever repo's dashboard is open — per-repo routines (including Tool-Failure Review and Code-Review Learning) show that repo's own state and log entries, harness-only routines always show the harness's. Includes the Daily Security Scan routine (`security-report-runner.sh`) which scans recent git changes for OWASP patterns, secrets, and injection sinks. |
 | 7 | 🧠 Memory Changes | Per-file cards for hot-memory, observations, and meta/patterns with day-over-day diffs ("since yesterday") computed from dated snapshots; full content expanded when a file is unchanged |
-| 8 | 🎯 Skill Changes | Skill usage stats (hot/cold from `skill-usage-tracker.sh` log — total/30d invocations, skills used, cold-skill count, top-skills bars, deprecate candidates) above the rendered skill-curation-report with audit age; in companion mode, adds "🔍 Analyze & Propose" and "✅ Apply Approved" buttons — propose spawns a headless `claude --print` session that writes a terse numbered proposal to `.claude/memory/.skill-curator-proposal.md` (`/api/skill-curator-propose`); apply backs up `~/.claude/skills/` to `.dashboard/skill-backups/`, then spawns a headless session to execute the approved subset and log it to `docs/skill-curation-report.md` (`/api/skill-curator-apply?instruction=...`) |
+| 8 | 🎯 Skill Changes | Skill usage stats (hot/cold from `skill-usage-tracker.sh` log — total/30d invocations, skills used, cold-skill count, top-skills bars, deprecate candidates) above the rendered skill-curation-report with audit age; in companion mode, adds "🔍 Analyze & Propose" and "✅ Apply Approved" buttons — propose spawns a headless `claude --print` session that writes a terse numbered proposal to `.claude/memory/.skill-curator-proposal.md` (`/api/skill-curator-propose`); apply backs up `~/.claude/skills/` to `.dashboard/skill-backups/`, then spawns a headless session to execute the approved subset and log it to `reports/skill-curation-report.md` (`/api/skill-curator-apply?instruction=...`) |
 | 9 | 📊 Session Quality | Score/keep-rate/memory-gap summary + 30-day chart; ✨ **Prompt Quality** sub-tab — per-dimension PQ trends (7-day avg, weakest dimension, rolling score chart); AI-adoption stat card (latest reading, a volume signal distinct from Keep Rate's durability signal) |
 | 10 | 💰 Model Cost | All-time and 30-day spend; 90-day daily cost bar chart; sessions table with model/tokens/cost; cross-provider "What if?" cost switcher; cache-cost stat card showing what share of session spend is cache reads/writes vs. fresh tokens |
 | 11 | 🧵 Context Health | Sessions per day trend + `/compact` recommendations; live context-usage card (color-coded %, from the open Claude Code session's statusline via `hooks/global/caveman-statusline.sh`, shown only while a session is open in the last 15 minutes) |
@@ -864,4 +864,4 @@ Four protocols extracted from [garrytan/gbrain](https://github.com/garrytan/gbra
 
 Full reference: `docs/gbrain-patterns/gbrain-patterns.md`
 
-_Last synced: 2026-09-09_
+_Last synced: 2026-09-23_

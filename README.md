@@ -239,7 +239,10 @@ sdd-harness/
 │   │   ├── skill-curator-runner.sh
 │   │   ├── harness-health-runner.sh
 │   │   ├── tool-failure-review-runner.sh
-│   │   └── security-report-runner.sh
+│   │   ├── security-report-runner.sh
+│   │   ├── hook-config-audit-runner.sh # Weekly self-audit of the harness's own hooks/settings.json/.mcp.json (secrets, network-exfil, over-broad permissions)
+│   │   ├── skill-write.sh        #     Single source of truth for writing any file inside a skill's directory (source + installed together)
+│   │   └── skill-delete.sh       #     Pairs with skill-write.sh — deletes both source and installed copies of a skill
 │   ├── session/                  #   Session signal processing
 │   │   ├── detect_reexplanation.py #   Haiku-based drain/charge classifier (via `claude --print`, subscription auth)
 │   │   ├── record_metric.py        #   Writes one measurement per day to .claude/memory/metrics.jsonl
@@ -255,6 +258,7 @@ sdd-harness/
 │   │   └── raindrop-setup.sh         # Auto-installs raindrop-ai in virtualenvs
 │   ├── skill-listing-budget.py   #   Measures the aggregate skill-listing cost (every skill's name + description, paid on every session) against a 1%-of-context-window ceiling
 │   ├── skill-eval-staleness.py   #   Scans every eval-verdict.json against the model now running — flags hash-mismatch, stale-model, unknown-model. --current-model is required and has no default; skills with no verdict are counted, never flagged. Run by /kiro:daily-maintenance Step 7 (reports only)
+│   ├── skill-quality-scan.py     #   Bulk deterministic (no LLM) SkillOS quality score for every installed skill — replaces the old one-at-a-time model-scored pass that burned a headless session's whole budget before it reached the report phase
 │   └── utils/                    #   Standalone utilities
 │       ├── dashboard.py          #     Local harness dashboard (14 sections, Workshop + Headroom + Herder tabs with live chat UI); token totals deduplicated on requestId before summing
 │       ├── herder.py             #     Spawns and supervises real interactive Claude Code sessions behind the dashboard's Herder tab (Herdr backend, JSON-only, no text pattern-matching); permission modes and model ids are discovered, never hardcoded, and each spawn is attributed to its own transcript
@@ -262,6 +266,8 @@ sdd-harness/
 │       ├── dashboard-usage-dedup.test.sh # Tests dashboard.py's usage dedup + a format-drift canary that fails if real transcripts stop showing duplicates
 │       ├── ollama_model_test.py  #     Zero-dependency Ollama model test runner
 │       ├── sync-memories-to-headroom.py # Bidirectional harness memory ↔ headroom sync
+│       ├── headroom-unwire-if-dead.py # Self-heal: strips ANTHROPIC_BASE_URL from settings.json when the routed headroom proxy refuses the connection; called by session-start-hook.sh every session
+│       ├── hook-config-audit.py  #     Weekly self-audit of the harness's own .claude/hooks/ + settings.json/settings.local.json/.mcp.json — secrets, network-exfil patterns, over-broad permission grants
 │       ├── check-no-hardcoded-paths.sh  # Verify no machine-specific paths in harness sources (*.sh, *.py, *.json, *.template + the generated .claude/settings.json); run by the harness repo's .git/hooks/pre-commit
 │       ├── check-no-regex.py    #     Extends the repo-wide regex ban to Python embedded in shell heredocs, where ruff's TID251 cannot reach. Runs in .git/hooks/pre-commit against a shrinking debt ledger
 │       ├── no-regex-debt.txt    #     The ledger check-no-regex.py reads. Listed files are known debt and do not fail; a file that is fixed but still listed DOES fail, so the ledger can only shrink
@@ -744,7 +750,7 @@ Install once with Homebrew (`brew install rtk && rtk init -g`) and the global ho
 
 ### Session Start Hook (`hooks/claude/session-start-hook.sh`)
 
-Runs when a Claude Code session starts (SessionStart). First reads `$HOME/.sdd-harness-root` — the single stored pointer to the harness — and, if it names a directory that no longer exists, prints `[HARNESS-POINTER-STALE]` with the dead path and the fix (`bash <harness>/update.sh`), since a moved harness silently deactivates every cross-repo hook on the machine. Then self-heals `.claude/settings.json` by running `scripts/setup/repair-settings-json.py` (located via that same pointer) against the current project, ahead of every other check — Claude Code silently drops a malformed settings file, so every permission rule and hook in it stops working with no in-session error. When the repair changes something it prints `[SETTINGS-REPAIRED]` plus a note that this session's rules are inactive until the next session start; a healthy or missing file produces no output. Then two modes: (1) if no local `daily-runner.sh` is installed — checks if today's `[judge]` sentinel is absent from `observations.md` and asks Claude to run `/kiro:daily-maintenance`; (2) if `daily-runner.sh` is installed and stale (>24h or never ran) — fires it in the background via `nohup` silently, without consuming session context. Also checks if the per-repo CLAUDE.md review is >2 weeks stale (`.claude/memory/.last-claudemd-review`) and asks Claude to run `/claudemd-review` if so. Also surfaces a fresh (<24h) session-handoff snapshot at `.claude/memory/handoff/latest.md` — written by `scripts/session/write_handoff.py` from `compaction-discipline-hook.sh` and `gbrain-agent-spawn.sh` — with a reminder to read it before responding. Additionally runs a background headroom memory sync (`scripts/utils/sync-memories-to-headroom.py`) when headroom is installed — bidirectional: harness memories to headroom SQLite and new headroom extractions to MEMORY.md.
+Runs when a Claude Code session starts (SessionStart). First reads `$HOME/.sdd-harness-root` — the single stored pointer to the harness — and, if it names a directory that no longer exists, prints `[HARNESS-POINTER-STALE]` with the dead path and the fix (`bash <harness>/update.sh`), since a moved harness silently deactivates every cross-repo hook on the machine. Then self-heals `.claude/settings.json` by running `scripts/setup/repair-settings-json.py` (located via that same pointer) against the current project, ahead of every other check — Claude Code silently drops a malformed settings file, so every permission rule and hook in it stops working with no in-session error. When the repair changes something it prints `[SETTINGS-REPAIRED]` plus a note that this session's rules are inactive until the next session start; a healthy or missing file produces no output. Next, a headroom routing self-heal: `headroom-setup.sh` wires `ANTHROPIC_BASE_URL` into `~/.claude/settings.json` only after confirming the proxy is healthy, but nothing un-wires it if the proxy dies afterward, and headroom's own SessionStart hook re-asserts that routing every session, so a manual unset/edit doesn't stick. `scripts/utils/headroom-unwire-if-dead.py` runs against `~/.claude/settings.json` (bounded ~1.5s connect probe, so a dead proxy adds no noticeable session-start latency), stripping `ANTHROPIC_BASE_URL` when the routed host refuses the connection; a healthy or unrouted proxy is a silent no-op. Then two modes: (1) if no local `daily-runner.sh` is installed — checks if today's `[judge]` sentinel is absent from `observations.md` and asks Claude to run `/kiro:daily-maintenance`; (2) if `daily-runner.sh` is installed and stale (>24h or never ran) — fires it in the background via `nohup` silently, without consuming session context. Also checks if the per-repo CLAUDE.md review is >2 weeks stale (`.claude/memory/.last-claudemd-review`) and asks Claude to run `/claudemd-review` if so. Also surfaces a fresh (<24h) session-handoff snapshot at `.claude/memory/handoff/latest.md` — written by `scripts/session/write_handoff.py` from `compaction-discipline-hook.sh` and `gbrain-agent-spawn.sh` — with a reminder to read it before responding. Additionally runs a background headroom memory sync (`scripts/utils/sync-memories-to-headroom.py`) when headroom is installed — bidirectional: harness memories to headroom SQLite and new headroom extractions to MEMORY.md.
 
 ### Context Priming Hook (`hooks/claude/prompt-hook.sh`)
 
@@ -1022,4 +1028,4 @@ The Model Cost section reads session data from `~/.claude/projects/*/`. Pricing 
 
 Private repository. Contact the maintainer for access.
 
-_Last synced: 2026-09-17_
+_Last synced: 2026-09-23_
