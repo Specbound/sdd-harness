@@ -1271,3 +1271,24 @@ See also: [git/README.md](../git/README.md) — Visa VVAH, same 7-source batch, 
 
 **What we added:**
 - Skill enhancement: `skills/loop-patterns/SKILL.md` — new named loop, "Ticket-Graph Batch Loop" (#12), composing primitives the skill already documents (capped-concurrency DAG fan-out from the higher-order-workspace pattern, writer/reviewer split from `gitnexus-pr-review`, the same Loop Guardrails already named elsewhere in the file) rather than introducing new principles — the missing piece was sequencing them across a whole batch of tickets at once.
+
+---
+
+## RRSI: Regularizing Recursive Self-Improvement Search
+**URL:** https://regularized-rsi.com/ | **Added:** 2026-09-24 | **Source:** Google Cloud AI Research, UNC-Chapel Hill, Stanford, Washington University in St. Louis
+
+**What it's about:** Self-improving agent harnesses that recursively edit themselves against a benchmark tend to memorize that benchmark instead of genuinely improving. RRSI regularizes the *search* rather than the harness — pairing proposal-side controls (annealed edit budget, evidence-aware credit) with selection-side controls (a leakage critic screening benchmark-specific edits, a noise-adjusted floor requiring gains to exceed baseline variance, a cost rule tying token cost to measured gain). Reports +3.4 pts average gain on six held-out benchmarks never optimized against, vs. gains shrinking/vanishing for prior methods once the benchmark changes.
+See also: [git/README.md](../git/README.md) (`langchain-ai/deepagents`'s `better-harness` example implements the analogous train/holdout split for harness optimization).
+
+**What we added:**
+- Skill enhancement: `skills/skill-eval-gate/SKILL.md` — new Phase 1d, "Reserve a Holdout Scenario." `skill-eval-gate` already had a noise floor (pass^3 splits scored INCONCLUSIVE) but nothing stopped an author from unconsciously tuning a skill's instructions to the exact scenarios used to certify it. Phase 1d requires at least one scenario be written after the skill is frozen and scored only once, at the final run.
+
+---
+
+## Harness Evals: Why Agent Builders Should Start Testing Early
+**Added:** 2026-09-24 | **Source:** Hrushikesh (@Hrushikeshhhh) on X, via codenewsletter.ai archive (https://archive.codenewsletter.ai/2099590015336808865)
+
+**What it's about:** A practitioner essay arguing agent builders should invest in harness evals early even if imperfect. Defines agent = Model + Harness, and a vocabulary (task/trial/transcript/outcome/grader/suite) for eval design. Key claims: 20-50 hand-written tasks pulled from real failures is a fine start; evals need a "negative half" testing over- as well as under-triggering, not just success cases; grade outcomes not exact tool-call sequences; LLM-as-judge needs calibration against human judgment and runs ~30-50% of inference cost.
+
+**What we added:**
+- Skill enhancement: `skills/skill-eval-gate/SKILL.md` — new Phase 1a, "Include a Negative (Non-Trigger) Scenario," plus a matching hard-gate row in the Phase 5 verdict table. The gate already measured whether a skill helps (with-vs-without lift); it had no check for a skill wrongly firing on adjacent prompts it shouldn't touch — the essay's "negative half" point named that exact gap.

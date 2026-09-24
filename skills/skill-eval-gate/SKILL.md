@@ -28,6 +28,14 @@ Write at least 3 concrete task scenarios the skill is meant to help with. Each s
 
 Scenarios must vary in difficulty or angle (not 3 near-duplicates) so the result isn't a single lucky/unlucky draw.
 
+### Phase 1a: Include a Negative (Non-Trigger) Scenario
+
+At least one of the ≥3 scenarios must be one where the skill should **not** fire — a prompt adjacent to the skill's domain where the correct behavior is to stay silent/unused. The pass condition is the treatment run *not* invoking the skill, not completing a task.
+
+Score it like any other scenario: treatment passes only if all 3 independent runs correctly stay out of it (same `pass^3` rule as Phase 3). A skill that reliably helps but also reliably over-triggers on adjacent prompts is not a net win — it can crowd out the skill that should have fired instead. Report a failure here as `over-triggers`, distinct from `under-helps`, so the two failure modes don't collapse into one FAIL bucket in Phase 5.
+
+Skip only when the skill's trigger is genuinely unambiguous (e.g., only reachable via an explicit slash command with no natural-language trigger); state that explicitly rather than omitting silently.
+
 ### Phase 1b: Calibrate Scenario Difficulty (before measuring anything)
 
 "Vary in difficulty" is unverifiable by inspection — every scenario looks reasonable
@@ -85,6 +93,14 @@ This is one scenario, not a fourth requirement on top of Phase 1's ≥3 — reus
 them. Skip only when the skill has no soft/conditional instructions at all (every step
 is an unconditional hard rule); state that explicitly rather than silently omitting
 the check.
+
+### Phase 1d: Reserve a Holdout Scenario
+
+At least one scenario must be written **after** the skill's instructions are frozen — never seen while drafting, testing, or fixing the skill under evaluation — and scored exactly once, at the final Phase 4/5 run. If a scenario failure during authoring led to editing the skill, that scenario is now a train scenario, not a holdout, even if it was the first one written; write a fresh one to replace it.
+
+This guards against the failure mode RRSI names (a self-improving harness learning the benchmark it's scored on) and the train/holdout split `deepagents`'s `better-harness` example enforces when one agent optimizes another's harness: an author iterating a skill against the same scenarios used to certify it will unconsciously tune the instructions to those exact prompts, and the resulting pass rate measures memorization of the eval, not the skill's general effect. See `docs/sources/articles/README.md` and `docs/sources/git/README.md`.
+
+Record which scenario was the holdout in the Phase 4 table (a `holdout` column or footnote) so a later re-run can tell whether a new holdout was actually drawn or the same one got reused.
 
 ### Phase 2: Run the No-Skill Baseline
 
@@ -178,6 +194,7 @@ into a percentage that makes a coin-flip look like 67% quality.
 | Phase 1b was skipped, or scenarios failed calibration (strong baseline passed / strong scored below weak) | **INCONCLUSIVE** | The delta is unreadable regardless of its size. Recalibrate the scenarios and re-run from Phase 2. |
 | An LLM rubric was used and Phase 3b's judge validation was skipped or failed | **INCONCLUSIVE** | Discard the scores. Fix the rubric, revalidate, re-run. |
 | Phase 1c's compressed run fails a check the verbatim run passed | **FAIL** | A compression regression, not a capability gap — do not treat it as an ordinary scenario failure. Pin the flattened qualifier with one explicit sentence and re-run from Phase 1c. |
+| Phase 1a's negative scenario fires the skill in ≥1 of its 3 runs | **FAIL** (`over-triggers`) | Hard gate — applies regardless of the other scenarios' majority result. Sharpen the skill's trigger conditions/exclusions and re-run from Phase 1a. |
 
 Report the verdict and the scenario table back to the calling skill (`skill-creator` Phase 4b or `skill-extraction` Phase 5b). A **FAIL** or **INCONCLUSIVE** verdict blocks that phase from passing — the calling skill must not proceed to installation/finalization until this gate returns PASS.
 

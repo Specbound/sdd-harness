@@ -911,3 +911,14 @@ See also: [articles/README.md](../articles/README.md) — the full eleven-source
 
 **What we added:**
 - Skill enhancement: `skills/gitnexus-pr-review/SKILL.md` — new "Hybrid Deterministic + Agent Review Pattern" section, complementary to GitNexus's existing call-graph/impact-analysis split. Notes that this harness's `validate_review_json.py` anchor check already implements the deterministic comment-anchor-verification piece. The 9x token-efficiency figure is cited as the source's own claim, not a verified number for this harness — flagged as such in the skill text, along with the recommendation to benchmark any adoption on precision/recall/token-cost rather than pass/fail.
+
+---
+
+## github.com/langchain-ai/deepagents — examples/better-harness
+**URL:** https://github.com/langchain-ai/deepagents/tree/main/examples/better-harness | **Added:** 2026-09-24
+
+**What it is:** An example where one Deep Agent (the "outer agent") automatically improves another agent's harness (the "inner agent") by editing whitelisted surfaces (prompt text, tool/skill files, middleware code + its wiring) in an isolated proposer workspace, then testing the change against `train` and `holdout` eval splits and keeping it only if combined pass counts improve. The outer agent only ever sees visible train failures and prior keep/discard history — never the holdout set.
+See also: [articles/README.md](../articles/README.md) (RRSI names the same overfitting risk this train/holdout split guards against).
+
+**What we added:**
+- Skill enhancement: `skills/skill-eval-gate/SKILL.md` — new Phase 1d, "Reserve a Holdout Scenario" (same augmentation logged under the RRSI entry in articles/README.md — this repo's train/holdout split was the concrete implementation pattern that made the abstract RRSI concern actionable as a gate rule).
