@@ -1327,6 +1327,8 @@ Add to your project's `CLAUDE.md` if using GitNexus:
 - `.gitnexus/` is gitignored and regenerable via `gitnexus analyze`
 ```
 
+GitNexus also **writes its own block into `CLAUDE.md`**, fenced by `<!-- gitnexus:start -->` / `<!-- gitnexus:end -->` and regenerated on reindex — do not hand-edit inside the markers. The 2026-09-24 regeneration in this repo refreshed the symbol/relationship/flow counts, switched the staleness remedy to `node .gitnexus/run.cjs analyze --index-only`, added `bunx`/`pnpm dlx` bootstrap alternatives, paired every MCP call with its `node .gitnexus/run.cjs …` CLI fallback, flattened the skill paths to `.claude/skills/gitnexus-*/SKILL.md`, and added two rules worth knowing: `risk: UNKNOWN` is unresolved rather than low (an empty caller set can mean unresolvable callers — dynamic dispatch, plain-object property access, cross-language calls — so confirm by text search before treating a symbol as unused), and `partial: true` / `truncated: true` on `detect_changes` is not a clean check. The hand-written `## Blast Radius` pointer above it takes precedence, because this block states its own rule without knowing Serena or lean-ctx exist.
+
 See `docs/gitnexus/README.md` for full details.
 
 ---
