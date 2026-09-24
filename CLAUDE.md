@@ -1,9 +1,5 @@
 # sdd-harness
 
-## Address
-- Always call the user "Husband" in every reply — no exceptions.
-- If you stop doing this, it signals CLAUDE.md is being ignored. A Stop hook (`address-check-hook.sh`) logs `[address-check] husband not found — compact needed` when the term is missing, but it no longer blocks the stop or feeds anything back to you — it is a passive signal for a human to act on, so /compact and re-read CLAUDE.md on your own.
-
 ## Context Resources (read on demand, not upfront)
 - `.claude/memory/hot-memory.md` — read at session start (current state, priorities)
 - `.claude/memory/meta/patterns.md` — read at session start (workflow patterns)
@@ -19,7 +15,7 @@
 - Features with clear correctness criteria need an approved spec in `specs/` before implementation — prefer an executable spec (failing test suite) or reference implementation over plain markdown. Markdown stays the default for open-ended/UX work. Bugfixes, perf work, and tooling do not need a spec.
 - Atomic commits per task (one task = one commit, code only)
 - Never skip the human review gate between spec phases
-- Never commit installed harness output — `.claude/`, `specs/`, `CLAUDE.md`, `AGENTS.md` and `ERRORS.md` are local (see `.gitignore`; the list is `SDD_GITIGNORE_ENTRIES` in `scripts/lib/project-gitignore.sh`). In this repo the top-level source tree (`agents/ commands/ hooks/ kiro/ scripts/ docs/ rules/ skills/ templates/`) IS the product and is committed normally
+- Never commit installed harness output — `.claude/`, `specs/`, `AGENTS.md` and `ERRORS.md` are local (see `.gitignore`). In this repo the top-level source tree (`agents/ commands/ hooks/ kiro/ scripts/ docs/ rules/ skills/ templates/`) IS the product and is committed normally, and so is this `CLAUDE.md` — a shared reference, so keep personal preferences in `CLAUDE.local.md`. Downstream projects keep their own `CLAUDE.md` local (`SDD_GITIGNORE_ENTRIES` in `scripts/lib/project-gitignore.sh`)
 - Maintain `ERRORS.md`: when an approach takes 2+ attempts, log what failed, what worked, and why
 
 ## AI-Legible Code
@@ -35,28 +31,19 @@
 ## Quality Gates (automated)
 - `ruff check`: on every `.py` file write
 - `oxlint` (or `eslint`): on every `.ts`/`.tsx`/`.js`/`.jsx` file write, when one is installed. A finding naming an anti-slop rule (`no-unknown-parameters`, `no-unsafe-dictionary-type`, `no-chained-type-assertions`, …) means type evidence was thrown away — recover the real type, never silence the rule
-- `pytest -x --ignore=tests/integration`: after each impl task, in projects that have a test suite — this repo has none; shell work is verified by `*.test.sh` scripts and throwaway-tree runs
+- No pytest suite; verify shell via `*.test.sh` + throwaway-tree runs
 - doc sync: automatically on every `git commit` via post-commit hook
 - lean-ctx enforces a shell allowlist: `bash`, `sh`, `zsh`, `uvx`, `claude` and `python3 -c` are refused by default. The "permanent restriction" wording is not a policy refusal — run `lean-ctx allow <cmd>` rather than abandoning the check
 
-## Blast Radius — one check, in this order
-This section takes precedence over the auto-generated GitNexus block below, which states its
-own rule without knowing about Serena or lean-ctx. Do not run all three; run the first that applies:
-1. **Python function/class** → `mcp__serena__find_referencing_symbols(symbol)`. LSP-accurate, authoritative.
-2. **Any other symbol** → `mcp__gitnexus__impact({target, direction: "upstream"})`.
-3. **Index broken/stale, or a non-symbol edit** (auth, DB schema, 3+ files) → `ctx_callgraph(action="callers")` + `ctx_graph`.
-
-Report HIGH/CRITICAL risk instead of proceeding silently. A tool that errors or reports a version
-mismatch has given **no answer** — it has not said there are no callers. Say the blast radius is
-unknown rather than treating a broken index as an all-clear. The GitNexus FTS index is stale right
-now (`version 42 vs 40`); until `node .gitnexus/run.cjs analyze` is run, step 2 is unavailable and
-step 3 is the real path.
+## Blast Radius
+The Risk Gate table in `.claude/rules/lean-ctx.md` is the one check, in order. It takes
+precedence over the auto-generated GitNexus block below, which states its own rule without
+knowing about Serena or lean-ctx.
 
 ## Serena (Python code intelligence — mandatory, not optional)
 - After editing any `.py` file: call `mcp__serena__get_diagnostics_for_file(path)` — real type/lint errors, not just ruff
-- Registered user-scope, so every project inherits it: `claude mcp add serena --scope user -- uvx --from git+https://github.com/oraios/serena serena start-mcp-server --context claude-code --open-web-dashboard False`
-- The `claude-code` context excludes `initial_instructions` — Serena loads silently with zero session overhead. There is no `ide-assistant` context any more
-- `--open-web-dashboard False` is load-bearing: user scope means every agent spawn starts its own Serena process, and each one otherwise opens a browser tab. The dashboard still runs — reach it at http://localhost:24282/dashboard/ (port climbs per extra instance). The machine-local equivalent is `web_dashboard_open_on_launch: false` in `~/.serena/serena_config.yml`, which does not travel between machines
+- Skip Serena's `initial_instructions` prompt — CLAUDE.md is the manual here
+- Install and dashboard flags: see `SDD-SETUP-GUIDE.md` (Serena entry)
 
 ## Post-Task Convention
 After any coding task, end with:
@@ -72,30 +59,30 @@ After any coding task, end with:
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **sdd-harness** (48505 symbols, 52417 relationships, 290 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **sdd-harness** (49128 symbols, 53926 relationships, 314 execution flows).
 
-> Index stale? Run `node .gitnexus/run.cjs analyze` from the project root — it auto-selects an available runner. No `.gitnexus/run.cjs` yet? `npx gitnexus analyze` (npm 11 crash → `npm i -g gitnexus`; #1939).
+> Index stale? Run `node .gitnexus/run.cjs analyze --index-only` from the project root — it auto-selects an available runner. No `.gitnexus/run.cjs` yet? Bootstrap with `npx`, `bunx`, or `pnpm dlx` — e.g. `bunx gitnexus@latest analyze` (npm 11 npx crash; #1939).
 
 ## Always Do
 
-- **MUST run impact analysis before editing any symbol.** Before modifying a function, class, or method, run `impact({target: "symbolName", direction: "upstream"})` and report the blast radius (direct callers, affected processes, risk level) to the user.
-- **MUST run `detect_changes()` before committing** to verify your changes only affect expected symbols and execution flows. For regression review, compare against the default branch: `detect_changes({scope: "compare", base_ref: "master"})`.
-- **MUST warn the user** if impact analysis returns HIGH or CRITICAL risk before proceeding with edits.
-- When exploring unfamiliar code, use `query({search_query: "concept"})` to find execution flows instead of grepping. It returns process-grouped results ranked by relevance.
-- When you need full context on a specific symbol — callers, callees, which execution flows it participates in — use `context({name: "symbolName"})`.
+- **MUST run impact before editing.** Use `impact({target: "symbolName", direction: "upstream"})` or `node .gitnexus/run.cjs impact "symbolName" --direction upstream --repo .`; report callers, processes, and risk. Never substitute grep for graph analysis.
+- **MUST analyze graph changes before committing.** Use `detect_changes({scope: "all"})` (MCP) or `node .gitnexus/run.cjs detect-changes --scope all --repo .` (CLI fallback). `partial: true` or `truncated: true` is not a clean check — a zero means unseen, not unaffected; re-run it. For regression review: `detect_changes({scope: "compare", base_ref: "master"})` or `node .gitnexus/run.cjs detect-changes --scope compare --base-ref "master" --repo .`.
+- MUST warn on HIGH/CRITICAL `risk` pre-edit; never use `riskSharedAxes` to waive a HIGH/CRITICAL `risk` warning. Compare File/symbol: MCP File omits axes; Graph-RAG expands File.
+- **MUST treat `risk: UNKNOWN` as unresolved, not as low.** An empty caller set is not evidence the symbol is unused — it can also mean the callers are not resolvable by the index (plain-object property access, dynamic dispatch, cross-language calls). `impact` pairs `UNKNOWN` with a `riskNote` saying so. Confirm with a text search before treating the symbol as safe to change or delete; do not proceed on the strength of a zero.
+- **MUST use `query({search_query: "concept"})` for concepts/flows, `context({name: "symbolName"})` for a named symbol, or `impact` for blast radius, on read-only callers, dependencies, imports, or execution flow.** Graph first; text search only for empty/`UNKNOWN`/literals.
 - For security review, `explain({target: "fileOrSymbol"})` lists taint findings (source→sink flows; needs `analyze --pdg`).
 
 ## Never Do
 
-- NEVER edit a function, class, or method without first running `impact` on it.
-- NEVER ignore HIGH or CRITICAL risk warnings from impact analysis.
+- NEVER edit a function, class, or method before MCP/CLI impact analysis.
+- NEVER ignore HIGH or CRITICAL risk warnings from impact analysis, and never read `UNKNOWN` as an all-clear — it means the walk could not answer, which is the one verdict that requires confirming by other means.
 - NEVER rename symbols with find-and-replace — use `rename` which understands the call graph.
-- NEVER commit changes without running `detect_changes()` to check affected scope.
+- NEVER commit before MCP/CLI graph change analysis.
 
 ## Resources
 
 | Resource | Use for |
-|----------|---------|
+| --- | --- |
 | `gitnexus://repo/sdd-harness/context` | Codebase overview, check index freshness |
 | `gitnexus://repo/sdd-harness/clusters` | All functional areas |
 | `gitnexus://repo/sdd-harness/processes` | All execution flows |
@@ -104,12 +91,12 @@ This project is indexed by GitNexus as **sdd-harness** (48505 symbols, 52417 rel
 ## CLI
 
 | Task | Read this skill file |
-|------|---------------------|
-| Understand architecture / "How does X work?" | `.claude/skills/gitnexus/gitnexus-exploring/SKILL.md` |
-| Blast radius / "What breaks if I change X?" | `.claude/skills/gitnexus/gitnexus-impact-analysis/SKILL.md` |
-| Trace bugs / "Why is X failing?" | `.claude/skills/gitnexus/gitnexus-debugging/SKILL.md` |
-| Rename / extract / split / refactor | `.claude/skills/gitnexus/gitnexus-refactoring/SKILL.md` |
-| Tools, resources, schema reference | `.claude/skills/gitnexus/gitnexus-guide/SKILL.md` |
-| Index, status, clean, wiki CLI commands | `.claude/skills/gitnexus/gitnexus-cli/SKILL.md` |
+| --- | --- |
+| Understand architecture / "How does X work?" | `.claude/skills/gitnexus-exploring/SKILL.md` |
+| Blast radius / "What breaks if I change X?" | `.claude/skills/gitnexus-impact-analysis/SKILL.md` |
+| Trace bugs / "Why is X failing?" | `.claude/skills/gitnexus-debugging/SKILL.md` |
+| Rename / extract / split / refactor | `.claude/skills/gitnexus-refactoring/SKILL.md` |
+| Tools, resources, schema reference | `.claude/skills/gitnexus-guide/SKILL.md` |
+| Index, status, clean, wiki CLI commands | `.claude/skills/gitnexus-cli/SKILL.md` |
 
 <!-- gitnexus:end -->

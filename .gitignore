@@ -39,10 +39,13 @@ reports/
 .claude/
 specs/
 
-# SDD harness — local-only, never committed
-CLAUDE.md
+# SDD harness — local-only, never committed.
+# This repo's CLAUDE.md IS committed as a shared reference for contributors;
+# personal preferences go in CLAUDE.local.md instead. Downstream projects still
+# ignore their CLAUDE.md via SDD_GITIGNORE_ENTRIES (scripts/lib/project-gitignore.sh).
+CLAUDE.local.md
 # Generated per machine: AGENTS.md by `lean-ctx setup`, ERRORS.md by the
-# 2+-attempts logging rule. Same class as CLAUDE.md — regenerated, not source.
+# 2+-attempts logging rule — regenerated, not source.
 AGENTS.md
 ERRORS.md
 
