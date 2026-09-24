@@ -2,7 +2,22 @@
 
 > This file is managed by the SDD harness (`sdd-harness/docs/`).
 > It is the single source of truth — do not edit copies in individual projects.
-> _Last synced: 2026-09-23_
+> _Last synced: 2026-09-24_
+
+---
+
+## Recent Changes (2026-09-24 — Harness Build 24)
+
+### Project Constitution (`CLAUDE.md`)
+- **The harness repo's own `CLAUDE.md` is now committed** — it was already tracked despite the `.gitignore` entry, so that state is now intentional: contributors get the project conventions on clone. `CLAUDE.md` is dropped from this repo's `.gitignore` and `CLAUDE.local.md` is ignored in its place. **Installed projects are unchanged** — `SDD_GITIGNORE_ENTRIES` in `scripts/lib/project-gitignore.sh` still lists `CLAUDE.md`, so every downstream project keeps its own local. See Step 1 for the full gitignore consequence, including the `^CLAUDE\.md$` post-commit trigger that can now actually fire here.
+- **Personal preferences moved to `CLAUDE.local.md`.** The `## Address` section (the "always call the user by name" rule and its passive `address-check-hook.sh` Stop-hook signal) left `CLAUDE.md` for the gitignored `CLAUDE.local.md`. Rule of thumb now that `CLAUDE.md` is shared: anything that only applies to one operator or one machine goes in `CLAUDE.local.md`; project conventions stay in `CLAUDE.md`.
+- **`## Blast Radius` collapsed to a pointer.** The three-step ordered list was a second copy of the Risk Gate table in `.claude/rules/lean-ctx.md`; `CLAUDE.md` now names that table as the one check and keeps only the precedence claim — that it outranks the auto-generated GitNexus block below it, which states its own rule without knowing about Serena or lean-ctx. Nothing was dropped from the check itself; see Step 5 and the `rules/lean-ctx.md` row in Context Engineering Rules.
+- **Serena section trimmed to the per-edit rules.** What stays in `CLAUDE.md` is the mandatory `mcp__serena__get_diagnostics_for_file(path)` call after any `.py` edit, plus "skip `initial_instructions` — CLAUDE.md is the manual here." The install command and the `--open-web-dashboard False` rationale now live in exactly one place: the **Serena** entry under Prerequisites in this guide.
+- **Quality Gates pytest line trimmed** to "No pytest suite; verify shell via `*.test.sh` + throwaway-tree runs" — a statement of fact about this repo, replacing a conditional `pytest -x --ignore=tests/integration` instruction that never applied here. Projects with a real suite should keep the `pytest` form from the Step 5 template.
+- **Stale index note removed.** The `## Blast Radius` block used to assert that the GitNexus FTS index was stale right now (`version 42 vs 40`) and that step 2 was therefore unavailable — a point-in-time fact frozen into a standing rule. The index was reindexed 2026-09-24 (49128 symbols, 53926 relationships, 314 execution flows; schema 4, gitnexus 1.6.12) and the auto-generated `<!-- gitnexus:start -->` block was regenerated with it: `analyze --index-only` for refresh, `bunx`/`pnpm dlx` bootstrap alternatives, CLI fallbacks alongside every MCP call, the `risk: UNKNOWN` rule (an empty caller set is not evidence of no callers — confirm by text search, never read it as an all-clear), the `partial`/`truncated` rule (a zero means unseen, not unaffected), and flattened `.claude/skills/gitnexus-*/SKILL.md` paths.
+
+### Prerequisites
+- The **Serena** entry is now the single source for Serena setup — `CLAUDE.md` points here instead of restating the install command and dashboard flags.
 
 ---
 
@@ -100,7 +115,7 @@ new Python/uv project.
 - **uv** — Python package manager (`uv --version`)
 - **git** — initialized repo (`git status`)
 - **impeccable** _(optional, for auto frontend scan)_ — `npm install -g impeccable`
-- **Serena** _(optional, for Python code intelligence)_ — `claude mcp add serena --scope user -- uvx --from git+https://github.com/oraios/serena serena start-mcp-server --context claude-code --open-web-dashboard False`. The `--open-web-dashboard False` flag is load-bearing at user scope: every agent spawn starts its own Serena process, and without it each one opens a browser tab. The dashboard still runs at `http://localhost:24282/dashboard/` (port climbs per extra instance).
+- **Serena** _(optional, for Python code intelligence)_ — `claude mcp add serena --scope user -- uvx --from git+https://github.com/oraios/serena serena start-mcp-server --context claude-code --open-web-dashboard False`. This entry is the canonical reference for Serena setup: `CLAUDE.md` points here rather than restating it (changed 2026-09-24). The `--open-web-dashboard False` flag is load-bearing at user scope: every agent spawn starts its own Serena process, and without it each one opens a browser tab. The dashboard still runs at `http://localhost:24282/dashboard/` (port climbs per extra instance). The machine-local equivalent is `web_dashboard_open_on_launch: false` in `~/.serena/serena_config.yml`, which does not travel between machines. The `claude-code` context excludes `initial_instructions`, so Serena loads silently with zero session overhead — there is no `ide-assistant` context any more.
 
 **Windows users:** The recommended setup is **WSL2** — run everything from a WSL2 terminal and Claude Code will use the Linux environment. If running Claude Code natively on Windows, see the notes in Steps 6 and 8 regarding bash hooks and path differences. See [FIRST-TIME-SETUP.md](FIRST-TIME-SETUP.md) for the platform support summary.
 
@@ -133,7 +148,7 @@ ERRORS.md
 
 One `.claude/` line replaces the previous per-subdirectory list (`.claude/hooks/`, `.claude/commands/`, `.claude/agents/`, `.claude/kiro/`, `.claude/steering/`, `.claude/settings.json`, `.claude/memory/**` + its `!` re-includes). Already-tracked `.claude/memory/**/.gitkeep` files persist as clone scaffolding — the broad ignore does not untrack them.
 
-`CLAUDE.md` is ignored again in the harness repo (under a `# SDD harness — local-only, never committed` header), matching the entries the harness writes into every project's `.gitignore` (`.claude/`, `specs/`, `CLAUDE.md`, `AGENTS.md`, `ERRORS.md`). Note that the git post-commit hook still lists `^CLAUDE\.md$` among the harness-updater triggers — that trigger simply never fires while the file is ignored.
+`CLAUDE.md` is ignored in every **installed project**, matching the entries the harness writes into their `.gitignore` (`.claude/`, `specs/`, `CLAUDE.md`, `AGENTS.md`, `ERRORS.md`). The **harness repo itself is the exception** (changed 2026-09-24): its own `CLAUDE.md` is committed as a shared reference so contributors get the project conventions, and `CLAUDE.local.md` is ignored in its place for personal preferences. The harness repo's `.gitignore` therefore carries `CLAUDE.local.md` under the `# SDD harness — local-only, never committed` header instead of `CLAUDE.md`; downstream projects are unaffected, since `SDD_GITIGNORE_ENTRIES` still lists `CLAUDE.md`. One consequence: the git post-commit hook's `^CLAUDE\.md$` harness-updater trigger now actually fires in this repo — previously it could never match, because the file was ignored.
 
 That list lives in one place, `scripts/lib/project-gitignore.sh` (`SDD_GITIGNORE_ENTRIES`), sourced by both `install.sh` and `update.sh`. `install.sh` runs once per project, so an entry added later would never reach an already-installed project; `update.sh` calls the same `ensure_gitignore` on every sync (git repos only), so new entries backfill automatically. Appending is idempotent — each entry is added only if an exact matching line is absent, and the `# SDD harness — local-only, never committed` header is written at most once.
 
@@ -226,7 +241,7 @@ Create `CLAUDE.md` at the repo root. Adapt for your project:
 - Features with clear correctness criteria need an approved spec in `specs/` before implementation — prefer an executable spec (failing test suite) or reference implementation over plain markdown. Markdown stays the default for open-ended/UX work. Bugfixes, perf work, and tooling do not need a spec
 - Atomic commits per task (one task = one commit, code only)
 - Never skip the human review gate between spec phases
-- Never commit SDD files — harness is local only
+- Never commit SDD files — harness is local only; keep operator-specific or machine-specific preferences in `CLAUDE.local.md` (gitignored), not in this file
 - Read `.claude/memory/hot-memory.md` and `meta/patterns.md` at session start
 - Observations are append-only; never edit past entries
 - Hot memory stays under 50 lines; patterns under 70 lines
@@ -242,18 +257,10 @@ Create `CLAUDE.md` at the repo root. Adapt for your project:
 - **3rd patch, same function**: on a third patch to the same function, regenerate it from spec instead of layering another fix — patches stacking past two is how blast radius quietly outgrows the original ≤1-folder scope (kiro.dev — Frontier Engineering)
 - **Boundary tests outlive the code they check**: e2e, property, and load tests are the stable spec — when code under them gets regenerated (see the 3rd-patch rule above), the tests are what proves the regenerated version still behaves the same. Write boundary tests before regenerating, not after (kiro.dev — Frontier Engineering)
 
-## Blast Radius — one check, in this order
-Takes precedence over the auto-generated GitNexus block further down, which states its own rule
-without knowing about Serena or lean-ctx. Replaces the standalone Serena "before renaming or
-deleting any Python function/class" bullet — three tools each claiming the check meant running
-all three or none. Run the first row that applies:
-1. **Python function/class** → `mcp__serena__find_referencing_symbols(symbol)`. LSP-accurate, authoritative.
-2. **Any other symbol** → `mcp__gitnexus__impact({target, direction: "upstream"})`.
-3. **Index broken/stale, or a non-symbol edit** (auth, DB schema, 3+ files) → `ctx_callgraph(action="callers")` + `ctx_graph`.
-
-Report HIGH/CRITICAL risk instead of proceeding silently. A tool that errors or reports a version
-mismatch has given **no answer** — it has not said there are no callers. Say the blast radius is
-unknown rather than treating a broken index as an all-clear.
+## Blast Radius
+The Risk Gate table in `.claude/rules/lean-ctx.md` is the one check, in order. It takes
+precedence over the auto-generated GitNexus block below, which states its own rule without
+knowing about Serena or lean-ctx.
 
 ## Quality Gates (automated)
 - `ruff check`: on every `.py` file write
@@ -265,7 +272,25 @@ unknown rather than treating a broken index as an all-clear.
 - memory housekeeping: when observations.md exceeds 50 entries
 ```
 
+The `## Blast Radius` section is a **pointer, not a summary** (changed 2026-09-24 — it used to
+restate the check as a three-step list, a second copy that could drift). The Risk Gate table it
+points at lives in `.claude/rules/lean-ctx.md`, installed into every project, and names one check
+per edit — run the first row that applies: a Python function/class → `mcp__serena__find_referencing_symbols(symbol)`
+(LSP-accurate, authoritative); any other symbol → `mcp__gitnexus__impact({target, direction: "upstream"})`;
+a broken/stale index or a non-symbol edit (auth, DB schema, 3+ files) → `ctx_callgraph(action="callers")`
+plus `ctx_graph` for file-level deps. Report HIGH/CRITICAL risk instead of proceeding silently, and
+treat a tool that errors or reports a version mismatch as **no answer** — it has not said there are
+no callers. Keeping the precedence claim in `CLAUDE.md` is the load-bearing part: the auto-generated
+GitNexus block further down states its own rule without knowing Serena or lean-ctx exist.
+
+The `pytest -x --ignore=tests/integration` gate above is conditional on the project having a suite.
+The harness repo's own `CLAUDE.md` replaced it with "No pytest suite; verify shell via `*.test.sh`
++ throwaway-tree runs" — state what your project actually does rather than carrying an instruction
+that never fires.
+
 > After creating this file, run `/codebase-legibility` inside Claude Code to complete the setup: subdirectory CLAUDE.md files for services and modules, `.claudeignore` for noise exclusion, and a codebase map if the repo has many top-level directories.
+
+> **`CLAUDE.md` vs `CLAUDE.local.md`.** `CLAUDE.md` is gitignored in installed projects (Step 1) but committed in the harness repo itself, so treat it as shared: project conventions only. Anything tied to one operator or one machine — forms of address, local paths, personal workflow nudges — belongs in `CLAUDE.local.md`, which is gitignored in both cases. Claude Code loads both.
 
 ---
 
@@ -1687,5 +1712,5 @@ disown 2>/dev/null || true
 
 The Stop hook should only contain **passive checks** (e.g., nudging housekeeping when observations exceed a threshold). See `.claude/hooks/stop-hook.sh` for the reference implementation.
 
-_Last synced: 2026-09-23_
+_Last synced: 2026-09-24_
 
