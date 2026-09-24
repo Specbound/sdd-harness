@@ -12,6 +12,15 @@ Each routine's stderr is captured to a per-run buffer; on a non-zero exit, the b
 
 The orchestrator itself is fail-loud: every non-dry-run invocation logs a `run started (mode=...)` line to `logs/orchestrator.log` and, via an `EXIT` trap, a `run finished exit=<code> repos=<count>` line — so a crash before the repo loop even starts (bad args, missing `projects.txt`) leaves a diagnosable trace in `logs/orchestrator-errors.log` instead of looking identical to a zero-work success.
 
+**Every routine below runs under a stricter behavioural envelope than an interactive session.** All of them invoke `SDD_HEADLESS=1 claude --print --permission-mode bypassPermissions`, which trips `headless-envelope-hook.sh` at `SessionStart`. That injects six constraints — one unit of work; no push, rewrite, or force git; writes confined to report files and `.claude/memory/`; a two-strike loop guard that escalates into the report instead of retrying a third time; honest partial reporting; no new dependencies.
+
+Two of those constraints defer to an explicit instruction in a routine's own prompt, so writing a new routine does not mean fighting the envelope:
+
+- **Committing** is allowed when the routine prompt says to commit. Pushing is not, under any prompt.
+- **Writing harness artifacts** (`skills/`, `agents/`, `hooks/`, `.claude/behaviors/`, …) is allowed when the routine prompt names that artifact class as its output — which is how *Bi-Weekly Harness Health* repairs `SKILL.md` files and how *Daily Maintenance* step E drafts `BEHAVIOR.md` specs. Permission for one class never extends to another.
+
+Full text and the `SDD_SKIP_HEADLESS_ENVELOPE=1` per-runner opt-out: [docs/hooks/README.md](../hooks/README.md#headless-envelope-hooksh).
+
 ---
 
 ### Fleet Harness Sync
@@ -37,10 +46,10 @@ Guards:
 **Scope:** Every registered repo
 
 **What it does (five steps, error-isolated):**
-- **A** — Judge + Reflect + Housekeep: score the previous day's observations via the session-quality rubric; convert drain entries into memory updates; archive `observations.md` if >50 entries
+- **A** — Judge + Reflect + Housekeep: score the previous day's observations via the session-quality rubric; convert drain entries into memory updates; archive `observations.md` if >50 entries. The interactive `/kiro:daily-maintenance` pipeline runs the judge **three times** and reconciles the deltas by median; the headless routine prompt still writes one `[judge]` observation and defers scoring to step D
 - **B** — Session Quality Assessment: collect git activity; score session 1–5; append `[session-quality]` observation
 - **C** — Keep Rate Evaluation: find Claude-co-authored commits older than 7 days; compute lines still in HEAD; append `[keep-rate]` observation
-- **D** — Trust Score update: run `trust_score.py auto-score` after B and C are written, so all signals (`[session-charge]`, `[memory-gap]`, `[session-quality]`, `[keep-rate]`) are visible to the scorer
+- **D** — Trust Score update: run `trust_score.py auto-score` after B and C are written, so all signals (`[session-charge]`, `[memory-gap]`, `[session-quality]`, `[keep-rate]`) are visible to the scorer. `auto-score` is deterministic and submits a **single** sample, so the multi-sample spread gate is skipped and the record reports `"spread": null` — the gate applies only when `apply` is given one `--delta` per judge run
 - **E** — Skill Augmentation (Sleep-Phase Knowledge Seeding): invoke `skill-augment-agent` with today's judge verdict. The agent collects `[seed-target:]` observations written by the `action-capture.sh` hook during the Wake phase (failed Bash commands), maps them to skill domains, and loads today's `type: feedback` memories (user corrections) as highest-trust evidence ranked above the LLM judge, generates synthetic worked examples (Dreaming), and applies up to 3 evidence-backed skill improvements. Logs each as `[skill-update]`. Idempotent — skips if `[skill-update]` entries already exist for today. This step closes the full Wake→Sleep cycle: struggles during active sessions automatically become targeted skill updates overnight.
 
 **Channel summary (optional):** after the run, `daily-runner.sh` posts the last ~20 lines of output to your chat channels via `scripts/integrations/channels/notify.py` (title `Daily maintenance — <repo> (exit=<code>)`). No-op unless `~/.env.channels` exists, so the call stays unconditional. Opt out with `SDD_SKIP_CHANNEL_NOTIFY=1`. See [docs/integrations/channels](../integrations/channels/README.md).
@@ -66,6 +75,42 @@ Guards:
 
 ---
 
+### Daily Briefing Synthesis
+**Runner:** `.claude/scripts/routines/daily-briefing-runner.sh`
+**Command:** `.claude/commands/kiro/daily-briefing.md` (`/kiro:daily-briefing`)
+**Prompt:** `.claude/scripts/routines/daily-briefing-prompt.md`
+**Cadence:** Every day (`DAILY_BRIEFING_GAP_DAYS`, default 1; force with `DAILY_BRIEFING_FORCE=1`)
+**Scope:** Every registered repo
+
+**What it does:**
+- Synthesizes a prioritized status digest from `.claude/memory/manager/{projects,people}.md` plus whatever live sources are actually connected this session (git, GitHub, Jira/Confluence, Slack)
+- Applies the `synthesizing-daily-briefings` skill's Capture Filter (enables future action / reveals a pattern over time / helps someone else), P0–P3 priority tiers, evidence-required wording (distinguishes a reported concern from a confirmed issue), and dedup across sources
+- Writes Logseq-ready markdown to `.claude/reports/daily-briefings/<date>.md` and appends durable findings back to `projects.md`/`people.md` for the next run
+- **Deterministic (no LLM call) ledger-bootstrap guard**: the ledger itself is only ever created interactively via `/kiro:daily-briefing`'s Phase 1 — if neither `projects.md` nor `people.md` exists yet, the runner writes a `<date>-SKIPPED.md` note directly and exits 0 rather than asking a headless session to invent a briefing from nothing
+- Race-safe via `mkdir` lock; a lock older than 2h (left by a killed run) is auto-removed on the next run
+- Retries automatically on failure — the state file is only written after a successful run (exit 0); full stdout is also tee'd to `.claude/memory/.last-daily-briefing-output.log` since the orchestrator wrapper that calls this runner redirects its stdout to `/dev/null` and only captures stderr
+
+**Opt-out:** `SDD_SKIP_DAILY_BRIEFING=1` env var.
+
+---
+
+### Risk-Zone Reseed
+**Runner:** `.claude/scripts/routines/risk-zone-reseed-runner.sh`
+**Prompt:** `.claude/scripts/routines/risk-zone-reseed-prompt.md`
+**Cadence:** Weekly (`RISK_ZONE_GAP_DAYS`, default 7; force with `RISK_ZONE_FORCE=1`) — zones drift slowly, unlike the daily briefing's cadence
+**Scope:** Every registered repo
+
+**What it does:**
+- Refreshes `.claude/steering/risk-zones.md`, the single data source consumed by `risk-zone-edit-gate-hook.sh` (edit-time gate) and `pr-risk-tier-hook.sh` (PR label tier)
+- Scores every file changed in the last 90 days on three signals: **churn** (commit count), a **test-coverage proxy** (does a matching `*.test.*`/`test_*` file exist), and **blast radius** via `gitnexus impact --direction upstream` on the file's top-level symbol when the `gitnexus` CLI is installed — skipped gracefully, and noted `(impact: not scored)`, when it isn't
+- Assigns each file a zone: **red** (HIGH/CRITICAL impact, or high churn with no test file), **yellow** (MEDIUM impact, or moderate churn with a test file), **green** (everything else)
+- Merges with the existing map rather than overwriting it — any row with a trailing `<!-- pinned -->` comment keeps its human-assigned zone regardless of the freshly computed score
+- Race-safe via `mkdir` lock (stale locks older than 2h auto-removed); skips with no write if `.claude/memory/` doesn't exist or the directory isn't a git repo; the cadence state file is only updated after a successful (exit 0) run
+
+**Opt-out:** `SDD_SKIP_RISK_ZONE=1` env var.
+
+---
+
 ### Startup Payload Audit
 **Runner:** `.claude/scripts/routines/startup-payload-audit.sh`
 **Cadence:** Every day (own state-file guard `.claude/memory/.last-startup-payload-audit`; deterministic — no LLM call)
@@ -79,6 +124,36 @@ Guards:
 - Enforces the harness's own "read on demand, not upfront" rule by measuring whether it's actually followed. See the `context-optimization` skill (Startup vs Runtime axis).
 
 **Opt-out:** `SDD_SKIP_STARTUP_AUDIT=1` env var. Force a run with `--force`.
+
+---
+
+### RTK Net-Effect
+**Runner:** `.claude/scripts/routines/rtk-net-effect-runner.sh`
+**Cadence:** Every day (own state-file guard `.claude/memory/.last-rtk-net-effect-run`; deterministic — no LLM call)
+**Scope:** Every registered repo
+
+**What it does:**
+- Wraps `.claude/scripts/utils/rtk-net-effect.py`, which measures RTK's **global** effect from `~/.claude/projects/**/*.jsonl`, not just its local savings: exact-match Bash rerun rate and Read reread rate within the same session — RTK's own figure is local savings on one command's output, and cannot see whether the agent, missing detail it needed, reran the command or re-read the file later
+- Writes `.claude/memory/rtk-net-effect.json`; on no data in the lookback window, leaves the prior snapshot in place rather than overwriting it with an empty one
+- Read by the dashboard's RTK layer note (Headroom tab), which appends both rates alongside its existing savings figure instead of reporting savings alone
+- Not a Scheduled Tasks tab card — it feeds the RTK layer note directly, not `_scheduled_task_registry()`
+
+**Opt-out:** `SDD_SKIP_RTK_NET_EFFECT=1` env var. Lookback window: `SDD_RTK_NET_EFFECT_DAYS` (default 30).
+
+---
+
+### Weekly Hook/MCP-Config Audit
+**Runner:** `.claude/scripts/routines/hook-config-audit-runner.sh`
+**Cadence:** Weekly (`HOOK_CONFIG_AUDIT_GAP_DAYS`, default 7; deterministic — no LLM call)
+**Scope:** Every registered repo
+
+**What it does:**
+- Wraps `.claude/scripts/utils/hook-config-audit.py`, which sweeps a repo's own `.claude/hooks/` and `settings.json`/`settings.local.json`/`.mcp.json` — the harness's own hooks and MCP config, not user content — for three findings: (1) secrets, by shelling out to `scan-pii.sh`'s OPF engine per hook/config file; (2) network-exfil patterns, `curl`/`wget` calls in hook scripts to a host outside a small allowlist; (3) over-broad permission grants, a `permissions.allow`/`deny` entry with no scoping argument or an argument that is just `*`
+- Neither `hooks/claude/scan-pii.sh` (content-only) nor `hooks/claude/skill-permissions-gate.sh` (fires only on new `SKILL.md` writes) sweeps existing hooks/config, so nothing previously re-checked them as the hook count grew
+- Writes `.claude/reports/security/hook-config-audit.json`
+- Wired into `orchestration/daily-orchestrator.sh` `run_one()`
+
+**Opt-out:** `SDD_SKIP_HOOK_CONFIG_AUDIT=1` env var.
 
 ---
 
@@ -124,7 +199,7 @@ This is the **review** stage of the tool-failure-memory loop (capture → recall
 **Scope:** Every registered repo (no-ops unless there's a merged PR with a logged automated review not yet processed)
 
 **What it does:**
-- Discovers merged PRs with a logged `.claude/memory/pr-reviews/pr-<n>.md` (written by `scripts/pr/log_review.sh` via the `gitnexus-pr-review` skill, backgrounded from `scripts/pr/detect_base_and_create.sh` when the PR is created) not yet processed, via `gh pr view --json state`
+- Discovers merged PRs with a logged `.claude/memory/pr-reviews/pr-<n>.md` (written by `scripts/pr/log_review.sh` via the `gitnexus-pr-review` skill, backgrounded from `scripts/pr/detect_base_and_create.sh` when the PR is created) not yet processed, via `gh pr view --json state`. `detect_base_and_create.sh` now reads the new PR's number back from `gh pr list --json number` instead of parsing it out of the printed URL — the URL is free text, the number is a field — and writes a placeholder `## Evidence` section into the PR body stating that no before/after probe was run, since this path fires headless on `git push` where none can be captured. `pr-evidence-hook.sh` cannot cover it: the `gh pr create` here runs inside the script, not as a Bash tool call, so no `PreToolUse` event fires. If the number cannot be read back, the script says so and exits without inventing one
 - For each: diffs the logged review against real human review activity (`gh api .../comments`, `.../reviews`) to find **missed** flags, **false positives**, or **convention gaps**
 - **Low-risk** findings (team conventions, dismissed-flag patterns) are written directly into `.claude/memory/` as `project`/`feedback` facts
 - **Higher-risk** findings (changes to the `code-reviewer` skill's methodology) are never auto-applied — only reported to `docs/code-review-learning-report.md` for human approval
@@ -145,11 +220,11 @@ This is the **review** stage of the tool-failure-memory loop (capture → recall
 1. **Skill quality audit** — scores all `~/.claude/skills/*/SKILL.md` against four SkillOS dimensions; flags low-quality candidates and duplicate pairs
 2. **Description budget audit** — measures description field length; flags >150 chars for compression
 3. **Memory governance health** — checks five compaction-discipline hook failure modes
-4. Writes `docs/skill-curation-report.md` (full weekly snapshot, replaced each run)
+4. Writes `reports/skill-curation-report.md` (full weekly snapshot, replaced each run)
 - Race-safe via `mkdir` lock; a lock older than 2h (left by a killed run) is auto-removed on the next run
 - Retries automatically on failure — `STATE_FILE` is only written after a successful run (exit 0), so a failed sweep doesn't consume the gap-days window; full stdout is also tee'd to `.claude/memory/.last-skill-curator-output.log` since the orchestrator wrapper that calls this runner redirects its stdout to `/dev/null` and only captures stderr
 
-**How to use:** After the routine runs, invoke `/skill-curator` locally to review findings and apply approved changes (merge/compress/delete) with human approval at every step. Alternatively, in the dashboard's companion mode, use the **Skill Changes** tab's "🔍 Analyze & Propose" / "✅ Apply Approved" buttons — propose writes a numbered proposal to `.claude/memory/.skill-curator-proposal.md` via a headless `claude --print` session (logged to `logs/skill-curator-propose.log`, polled every 3s by the dashboard); apply backs up `~/.claude/skills/` to `.dashboard/skill-backups/skills-<timestamp>.tar.gz` first, then executes the approved subset per the typed instruction (default `"apply all"`), logs to `logs/skill-curator-apply.log`, appends the curation log entry to `docs/skill-curation-report.md`, and deletes the pending proposal. A "🔍 Re-analyze" button re-runs propose once a proposal is showing.
+**How to use:** After the routine runs, invoke `/skill-curator` locally to review findings and apply approved changes (merge/compress/delete) with human approval at every step. Alternatively, in the dashboard's companion mode, use the **Skill Changes** tab's "🔍 Analyze & Propose" / "✅ Apply Approved" buttons — propose writes a numbered proposal to `.claude/memory/.skill-curator-proposal.md` via a headless `claude --print` session (logged to `logs/skill-curator-propose.log`, polled every 3s by the dashboard); apply backs up `~/.claude/skills/` to `.dashboard/skill-backups/skills-<timestamp>.tar.gz` first, then executes the approved subset per the typed instruction (default `"apply all"`), logs to `logs/skill-curator-apply.log`, appends the curation log entry to `reports/skill-curation-report.md`, and deletes the pending proposal. A "🔍 Re-analyze" button re-runs propose once a proposal is showing.
 
 **Opt-out:** `SDD_SKIP_SKILL_CURATOR=1` env var.
 
@@ -163,10 +238,13 @@ This is the **review** stage of the tool-failure-memory loop (capture → recall
 
 **What it does:**
 1. **CLAUDE.md review** — reads all repos in `$SDD_HARNESS/projects.txt`; audits for stale instructions, model-assumption drift, and over-constraining rules from pre-Claude-4.x habits; rates each repo `clean` / `minor` / `needs-update`; writes `docs/claudemd-review-report.md`. This is the *harness-wide* pass. Its *per-repo* counterpart is the `/claudemd-review` global command (`commands/global/claudemd-review.md`), which `session-start-hook.sh` fires when a single repo's `.claude/memory/.last-claudemd-review` is >14 days stale; that command audits only the current repo (adding a 200-line size budget, an "inferable from the manifest" filter, and an `@AGENTS.md` import/dedup check) and writes `.claude/memory/claudemd-review-report.md` — do not confuse the two report paths.
-2. **Iterative skill repair** — reads `docs/skill-curation-report.md` for low-quality flags; applies a Review→Repair→Validate loop (up to 3 skills per run, max 3 repair iterations per skill); writes repaired `SKILL.md` files directly; appends a `## Iterative Repair Run — [date]` section to the curation report
+2. **Iterative skill repair** — reads `reports/skill-curation-report.md` for low-quality flags; applies a Review→Repair→Validate loop (up to 3 skills per run, max 3 repair iterations per skill); writes repaired `SKILL.md` files directly; appends a `## Iterative Repair Run — [date]` section to the curation report
+3. **Token spend attribution** — the runner executes `scripts/utils/token-forensics.py --days 14` itself and substitutes the output into the prompt's `FORENSICS_PLACEHOLDER`, then has the session read it via the `auditing-token-spend` skill and name **one** cause. Catches harness overhead — routine cadence, agent fan-out width, an unbounded tool injecting large output early — before a usage limit does. Appends a `## Token Spend — [date]` block to `reports/harness-health-report.md`. Reports only what is anomalous: a stable profile is a one-line "no change", because a phase that always finds a problem stops being read. It changes no code and no cadence.
+- The script is run by the **runner**, not by the model. A headless session merely *told* to invoke a script can skip it silently, and the phase would then report on nothing while appearing to have run. A missing script or non-zero exit is substituted as a visible marker so the phase can say "no data" but can never fabricate figures.
+- The automation split in that output carries a `method` label. It currently reads `proxy (sessions under 5min)` because `isSidechain` is never `True` in this transcript format — subagent turns are not separable, so the figure is a stand-in and is labelled as one. It is never reported as a measured 0%.
 - Race-safe via `mkdir` lock; a lock older than 2h (left by a killed run) is auto-removed on the next run
 
-**How to use:** `git pull` after the routine runs, then read `docs/claudemd-review-report.md`. Stalled skills in the repair report need manual intervention — invoke the relevant skill locally with domain context the automated run couldn't supply.
+**How to use:** `git pull` after the routine runs, then read `docs/claudemd-review-report.md` and the Token Spend block in `reports/harness-health-report.md`. Stalled skills in the repair report need manual intervention — invoke the relevant skill locally with domain context the automated run couldn't supply. For an on-demand spend audit between runs, invoke `auditing-token-spend` directly.
 
 **Opt-out:** `SDD_SKIP_HARNESS_HEALTH=1` env var.
 
@@ -236,5 +314,5 @@ The dashboard's **Scheduled Tasks** tab shows live status for each task, scoped 
 
 ---
 
-_Last synced: 2026-08-20_
+_Last synced: 2026-09-23_
 

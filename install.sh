@@ -54,6 +54,8 @@ __here="$(cd -P "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 . "$__here/scripts/lib/harness-pointer.sh"
 # Where globally-installed CLIs actually live — asked of uv/pipx/brew, never guessed.
 . "$__here/scripts/lib/tool-paths.sh"
+# The local-only entry list written into each project's .gitignore.
+. "$__here/scripts/lib/project-gitignore.sh"
 
 # ── Flags ──────────────────────────────────────────────────────────────────────
 YES=false
@@ -150,30 +152,8 @@ sync_dir() {
   cp -r "$src" "$dst_parent/"
 }
 
-# ── ensure_gitignore <project_dir> ─────────────────────────────────────────────
-# Append the harness-local entries to the project's .gitignore, idempotently.
-# Harness files are local-only (see CLAUDE.md "Never commit SDD files"), so the
-# whole .claude/ tree, specs/, and CLAUDE.md stay untracked. Each entry is added
-# only if absent, so re-runs and pre-existing .gitignores are safe.
-ensure_gitignore() {
-  local project_dir="$1"
-  local gitignore="$project_dir/.gitignore"
-  local entry added=false
-  touch "$gitignore"
-  for entry in ".claude/" "specs/" "CLAUDE.md"; do
-    # Match the exact line to avoid false positives (e.g. ".claude/" vs ".claudeignore").
-    if ! grep -qxF "$entry" "$gitignore" 2>/dev/null; then
-      if [ "$added" = false ]; then
-        # Separate from prior content with a blank line + header, once.
-        [ -s "$gitignore" ] && printf '\n' >> "$gitignore"
-        echo "# SDD harness — local-only, never committed" >> "$gitignore"
-        added=true
-      fi
-      echo "$entry" >> "$gitignore"
-    fi
-  done
-  [ "$added" = true ] && echo "  Added harness entries to .gitignore (.claude/ specs/ CLAUDE.md)."
-}
+# ensure_gitignore() lives in scripts/lib/project-gitignore.sh — shared with
+# update.sh so installed projects pick up new entries on their next sync.
 
 # ── pkg_install <name> <brew_formula> <apt_pkg> <winget_id> ──────────────────
 # Pass "-" for any slot a manager genuinely can't satisfy.
@@ -233,6 +213,19 @@ ensure_windows_path_inherit() {
       && info "Set MSYS2_PATH_TYPE=inherit (Windows tools now visible in MSYS2 shells)" \
       || warn "Could not persist MSYS2_PATH_TYPE — set it manually"
     export MSYS2_PATH_TYPE_PERSISTED=1
+  fi
+}
+
+# ── verify_rtk_hook ───────────────────────────────────────────────────────────
+# `rtk init -g` patches ~/.claude/settings.json directly, and a later
+# lean-ctx/headroom setup pass can silently overwrite that same file without
+# preserving the rtk hook. Exit code alone doesn't catch that — grep for proof.
+verify_rtk_hook() {
+  local settings="$HOME/.claude/settings.json"
+  if [ -f "$settings" ] && grep -q "rtk hook" "$settings"; then
+    ok "Global hook active (verified in settings.json)"
+  else
+    warn "rtk init -g ran but hook not found in ~/.claude/settings.json — run 'rtk init -g --auto-patch' manually and check for conflicting hook patches"
   fi
 }
 
@@ -326,14 +319,15 @@ install_global_tools() {
   elif command -v rtk >/dev/null 2>&1; then
     ok "RTK already installed  ($(rtk --version 2>&1 | head -1))"
     info "Re-wiring global hook to ensure it's active..."
-    rtk init -g --auto-patch 2>/dev/null && ok "Global hook active" || warn "rtk init -g failed — run it manually"
+    rtk init -g --auto-patch 2>/dev/null || warn "rtk init -g failed — run it manually"
+    verify_rtk_hook
   else
     case "$SDD_OS" in
       macos|linux|wsl)
         if confirm "Install RTK via Homebrew?"; then
           brew install rtk
           rtk init -g --auto-patch
-          ok "RTK installed and global hook wired"
+          verify_rtk_hook
         else
           warn "Skipped RTK"
         fi ;;
@@ -561,6 +555,12 @@ install_project() {
   mkdir -p "$PROJECT_DIR/specs"
 
   # --- Copy harness files ---
+  # Clean any flat command duplicates from a re-run over an old, buggy install
+  # (see the matching cleanup in update.sh's do_update() for the full story).
+  for cmd_file in "$HARNESS_DIR/commands/kiro"/*.md; do
+    [ -f "$cmd_file" ] || continue
+    rm -f "$PROJECT_DIR/.claude/commands/$(basename "$cmd_file")"
+  done
   sync_dir "$HARNESS_DIR/commands/kiro" "$PROJECT_DIR/.claude/commands"
   sync_dir "$HARNESS_DIR/agents"        "$PROJECT_DIR/.claude"
   sync_dir "$HARNESS_DIR/kiro"          "$PROJECT_DIR/.claude"
@@ -577,13 +577,15 @@ install_project() {
   for hook in "$HARNESS_DIR/hooks/claude/"*.sh; do
     [ -f "$hook" ] || continue
     name="$(basename "$hook")"
+    # *.test.sh are harness-repo test suites, not runtime hooks — don't ship them
+    case "$name" in *.test.sh) continue ;; esac
     cp "$hook" "$PROJECT_DIR/.claude/hooks/$name"
     chmod +x "$PROJECT_DIR/.claude/hooks/$name"
   done
 
   # --- chmod runtime scripts that need to be executable ---
   local s
-  for s in orchestration/daily-runner.sh routines/macro-eval-runner.sh routines/skill-curator-runner.sh routines/harness-health-runner.sh routines/tool-failure-review-runner.sh routines/startup-payload-audit.sh routines/code-review-learning-runner.sh session/write_handoff.py pr/detect_base_and_create.sh; do
+  for s in orchestration/daily-runner.sh routines/macro-eval-runner.sh routines/skill-curator-runner.sh routines/harness-health-runner.sh routines/tool-failure-review-runner.sh routines/startup-payload-audit.sh routines/code-review-learning-runner.sh routines/risk-zone-reseed-runner.sh routines/daily-briefing-runner.sh routines/hook-config-audit-runner.sh session/write_handoff.py pr/detect_base_and_create.sh quality/sloppiness-score.sh; do
     [ -f "$PROJECT_DIR/.claude/scripts/$s" ] && chmod +x "$PROJECT_DIR/.claude/scripts/$s"
   done
   [ -f "$PROJECT_DIR/.claude/scripts/utils/ollama_model_test.py" ] && chmod +x "$PROJECT_DIR/.claude/scripts/utils/ollama_model_test.py"
@@ -912,6 +914,13 @@ install_globals() {
   # harness or cloning onto a new machine left 23 dead hook paths that failed silently.
   # For the harness repo $HARNESS_DIR *is* the project root, so relative and absolute
   # resolved to the same file anyway — the substitution bought nothing.
+  # Reconcile before generating: the harness template is derived from the project
+  # template plus an explicit harness-only allowlist. Without this the two drift,
+  # and the direction the drift takes is the harmful one — hooks end up firing in
+  # every installed repo while not firing in the repo where they are developed.
+  python3 "$HARNESS_DIR/scripts/setup/reconcile-settings-templates.py" --sync || \
+    echo "  WARNING: settings template reconciliation failed — templates may be drifted."
+
   cp "$HARNESS_DIR/templates/settings.harness.json.template" \
     "$HARNESS_DIR/.claude/settings.json"
   echo "  Harness settings.json generated (project-relative hook paths)."
@@ -1095,7 +1104,7 @@ echo ""
 echo "SDD harness installed successfully."
 echo ""
 echo "Done automatically:"
-echo "  ✓ .gitignore updated (.claude/ specs/ CLAUDE.md — local-only)"
+echo "  ✓ .gitignore updated (.claude/ specs/ CLAUDE.md AGENTS.md ERRORS.md — local-only)"
 echo "  ✓ CLAUDE.md created with the project name filled in"
 echo "  ✓ /kiro:steering queued — you'll be prompted to run it on your first Claude session"
 echo ""

@@ -37,6 +37,12 @@ Build resilient applications with robust error handling strategies that graceful
 ### ❌ Trusting LLM output labels without semantic validation
 LLM-generated semantic signals (finish_reason, tool_call_type) may be mislabeled independently of actual output content, causing false-positive error handlers and retry storms. Always validate signals against actual output structure before routing to error handlers. (source: 2026-07-29 ZORAAI-11493)
 
+### ❌ Text scanning for error status classification
+Setting error status by checking if report text contains "error"/"failed" keywords falsely fails diagnostic agents. Use structured status fields only. (source: 2026-08-25 [friction, insight, enforceable])
+
+### ❌ Trusting exit code 0 as sole success signal
+Exit 0 ≠ success if errors print to stdout. Parse output for errors before marking done. (source: 2026-09-07 [friction, enforceable, escaped])
+
 ## Resources
 
 - `resources/implementation-playbook.md` for detailed patterns and examples.

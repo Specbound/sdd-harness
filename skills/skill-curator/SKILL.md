@@ -1,6 +1,6 @@
 ---
 name: skill-curator
-description: "Apply weekly curation report: run description-budget audit, propose and apply merges/compressions/deletions with user approval."
+description: "Apply weekly curation report: audit the aggregate skill-listing budget against its 1% ceiling plus per-skill descriptions, then propose and apply merges/compressions/deletions with user approval."
 risk: medium
 source: local
 ---
@@ -41,14 +41,39 @@ The automated runner already includes a description budget audit in its report. 
 3. Compute character count; estimate token cost: `ceil(chars / 4)`
 4. Build a table and flag descriptions over threshold
 
-**Thresholds:**
+**Thresholds (per skill):**
 - > 150 chars: ⚠️ consider compression
 - > 200 chars: 🔴 measurable system-reminder pressure — compress
+
+**Ceiling (aggregate) — run this first, before the per-skill table:**
+
+```bash
+python3 $SDD_HARNESS/scripts/skill-listing-budget.py --top 20
+```
+
+Per-skill thresholds alone cannot tell you whether the listing is affordable:
+every skill can sit under 150 chars and the total still be an order of magnitude
+over. Names and descriptions are paid on **every session unconditionally** (bodies
+load only on invocation), so the listing needs a budget the total is measured
+against — working figure is **1% of the context window** (Addy Osmani, "Audit
+your agent files" — see `docs/sources/articles/README.md`).
+
+Read the ratio, not the absolute. When the ratio is >2×, **skill count is the
+driver, not description length** — compression alone cannot close that gap, so
+route the finding to Phase 3's Usage Evidence passes (deprecate cold-30d, archive
+cold-90d) rather than proposing 200 description rewrites. Treat compression as
+the fix only when the ratio is near 1× and a handful of outliers explain it.
+
+The script also flags skills with **no description at all**. These are strictly
+worse than a long description: they still consume a listing slot while giving the
+router nothing to match on, so the skill effectively never fires. Propose a
+description for each, or deletion.
 
 **Report format:**
 ```
 ## Description Budget
 
+Listing budget: ~Y tokens vs 1% ceiling — R× (🔴 OVER | ✓ within)
 Total: N skills | X chars | ~Y tokens
 
 | Skill | Chars | Status |
@@ -69,7 +94,7 @@ Total: N skills | X chars | ~Y tokens
 Present all findings in one view before proposing any actions:
 
 1. **From weekly report:** duplicate pairs, quality scores below threshold, and the **Usage Evidence** section — deprecate candidates (no invocation in 30d) and archive candidates (90d), backed by real `logs/skill-usage.jsonl` fire data rather than file mtime
-2. **From Phase 2:** descriptions over the 150-char threshold
+2. **From Phase 2:** the aggregate listing-budget ratio (and whether it is over the 1% ceiling), descriptions over the 150-char threshold, and any skill with no description at all
 3. **Module-count audit:** for each skill, count distinct modules/components/reference-files bundled into its SKILL.md; flag any skill over 3 as a split candidate (SkillsBench, arXiv 2602.12670 — focused skills bundling ≤3 modules consistently outperform larger bundles in task pass-rate)
 4. **Continuous eval-gate drift check** (Phase 3.5 below) — new failure modes observed in live skill invocations that the skill's original `skill-eval-gate` scenario set didn't cover
 5. **From weekly report's `## Dependency Flags` section:** skills that are both a deletion/archive candidate AND cross-referenced by another skill, hook, agent, or command (per the runner's deterministic `skill-dependency-scan.sh` map). Treat this section as ground truth — do not re-derive it with your own search, and never propose a bare delete/merge for anything listed here.
@@ -126,33 +151,48 @@ Present a numbered list — **always wait for user approval before executing:**
 
 ### Phase 5: Execute Approved Changes
 
+**Every write or delete below goes through `$SDD_HARNESS/scripts/routines/skill-write.sh` /
+`skill-delete.sh` — never Write/Edit/rm the installed `~/.claude/skills/<name>/` copy directly.**
+Most skills here are synced from the harness repo's `skills/<name>/` by `update.sh` on a 4h
+launchd tick, independent of session activity. A write or delete that only touches the installed
+copy is silently reverted (or resurrected, for deletes) on the next tick — this is exactly how
+the 2026-09-18 Apply-Approved run lost its 19-skill description fix. `skill-write.sh` updates
+source + installed together and keeps a timestamped backup; `skill-delete.sh` removes both.
+
 **Compress description:**
-- Edit the `description:` line in the SKILL.md frontmatter
+- Read the full SKILL.md, edit the `description:` line in the in-memory copy, write to a temp
+  file, apply with `skill-write.sh <name> <temp-file>`
 - Print char count before/after
 
 **Merge:**
 - Read both SKILL.md files fully
 - Identify content in the merge-out skill not covered by the surviving skill
-- Append it to the surviving skill under `### From: [merged-skill-name]`
-- Show the surviving skill's new end section for review before deleting the other
+- Append it to the surviving skill under `### From: [merged-skill-name]`, write via
+  `skill-write.sh <surviving-name> <temp-file>`
+- Show the surviving skill's new end section for review, then remove the merged-out skill with
+  `skill-delete.sh <merged-out-name>` (not a bare `rm`/dashboard delete)
 
 **Delete:**
 - Show the full SKILL.md one final time
-- Delete the directory only after explicit confirmation ("yes, delete it")
+- After explicit confirmation ("yes, delete it"), run `skill-delete.sh <name>`
 
 **Delete + migrate references:**
 - **Hard rule:** if the target skill appears in the report's Dependency Flags section, do NOT delete or merge it until each listed referrer has been either (a) updated/edited to no longer depend on it, or (b) the user has explicitly confirmed it's safe to leave (e.g. that referrer is itself being removed in the same batch). A flagged skill is never a bare delete.
-- Show each referrer file/skill and the proposed edit (updated reference, or the logic folded into the surviving skill) before touching anything
-- Apply the referrer updates first, then delete the target directory, same confirmation gate as a plain Delete
+- Show each referrer file/skill and the proposed edit (updated reference, or the logic folded into the surviving skill) before touching anything. If a referrer is itself a skill (its file lives under `~/.claude/skills/<other-name>/`), apply that edit through `skill-write.sh <other-name> <temp-file>` too — the same clobber risk applies to referrer skills, not just the target.
+- Apply the referrer updates first, then delete the target with `skill-delete.sh <name>`, same confirmation gate as a plain Delete
 
 **Add eval scenario:**
-- Append the new scenario to whatever scenario table/list the target skill's own docs or eval history use for `skill-eval-gate` runs
+- Append the new scenario to whatever scenario table/list the target skill's own docs or eval history use for `skill-eval-gate` runs; write via `skill-write.sh <name> <temp-file>` (or the appropriate relative path if the scenario table lives in a sidecar file, not `SKILL.md` itself)
 - Note in the curation log which live failure pattern prompted it, so the provenance stays traceable
 
-**After all changes:** Re-run Phase 2 and show the delta:
+**After all changes:** Re-run Phase 2 (script included) and show the delta:
 ```
 Description budget: 3,140 chars → 2,890 chars (−250, −63 tokens)
+Listing budget:     4.22× → 4.16× of the 1% ceiling (1M window)
 ```
+Report the ratio delta even when it is unimpressive. A compression pass that
+moves 4.22× to 4.16× has not solved the problem, and saying so is the point —
+it is the signal that the next pass has to remove skills, not shorten them.
 
 ### Phase 6: Update Source Log
 

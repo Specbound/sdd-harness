@@ -230,6 +230,35 @@ Behavior for creating and loading "Mental Model" summaries to preserve context b
 
 ## Combining Modes
 
+## Composable Processors (Spotify Backstage AiKA pattern)
+
+The modes above are monolithic instruction blocks — pick one, follow it for the
+turn. Spotify's AiKA decomposes "agent mode" further into small pre/post
+*processors* that any mode can opt into, rather than baking self-checks into
+each mode's prose separately. Two are worth naming explicitly:
+
+- **Verification processor** — a pass/fail check against a stated success
+  criterion, with an auto-retry loop up to N rounds when the check fails.
+  This harness's mechanical version is `verification-retry-hook.sh` (`Stop`
+  hook): when a turn's final text claims tests/checks pass but no test-runner
+  ran, or the last one that ran exited non-zero, it blocks the stop and forces
+  a retry — capped at `VERIFICATION_RETRY_MAX` (default 2) rounds per user
+  request, then gives up and flags it rather than looping forever. Existing
+  quality-gate hooks (`ruff-quality-gate-hook.sh`, `js-quality-gate-hook.sh`,
+  `sloppiness-warn-hook.sh`) check the *code*; this is the first processor
+  that checks the *claim* made about it.
+- **Confidence scoring** — flag unhedged claims made without corresponding
+  evidence in the same turn (a Bash test run, a Read confirming the change,
+  etc.) as lower-confidence. Not separately automated in this harness yet —
+  the Verification processor's test-claim check above is the concrete,
+  narrowly-scoped instance of it; a general confidence scorer would need a
+  much broader definition of "evidence" to avoid false positives on IMPLEMENT
+  or BRAINSTORM mode turns where no test run is expected.
+
+Any mode can adopt a processor without becoming a different mode: SHIP mode's
+"Run all tests" checklist item is exactly what the Verification processor
+makes mechanical instead of self-reported.
+
 ---
 
 ## Manual Mode Switching

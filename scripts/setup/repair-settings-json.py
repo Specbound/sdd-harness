@@ -15,11 +15,23 @@ Only touches files that fail to parse AND parse cleanly once the trailing
 comment block is removed. Anything else is reported for manual review.
 """
 import json
-import re
 import sys
 from pathlib import Path
 
-COMMENT_OR_BLANK = re.compile(r'^\s*(//.*)?$')
+
+def _is_comment_or_blank(line):
+    """True for an empty line or one whose only content is a `//` comment."""
+    stripped = line.strip()
+    return not stripped or stripped.startswith("//")
+
+
+def _strip_comment_marker(line):
+    """Drop a leading `// ` (or bare `//`) from one comment line."""
+    stripped = line.lstrip()
+    if not stripped.startswith("//"):
+        return line
+    body = stripped[2:]
+    return body.removeprefix(" ")
 
 
 class RepairError(Exception):
@@ -30,7 +42,7 @@ def split_trailing_comments(text):
     """Return (json_part, comment_part) by peeling // lines off the end."""
     lines = text.splitlines()
     cut = len(lines)
-    while cut > 0 and COMMENT_OR_BLANK.match(lines[cut - 1]):
+    while cut > 0 and _is_comment_or_blank(lines[cut - 1]):
         cut -= 1
     if cut == len(lines):
         raise RepairError("no trailing comment block found")
@@ -38,7 +50,7 @@ def split_trailing_comments(text):
 
 
 def comments_to_markdown(comment_block):
-    body = "\n".join(re.sub(r'^\s*// ?', '', line) for line in comment_block.splitlines())
+    body = "\n".join(_strip_comment_marker(line) for line in comment_block.splitlines())
     return (
         "# settings.json notes\n\n"
         "JSON allows no comments — Claude Code refuses to parse `.claude/settings.json`\n"

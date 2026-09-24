@@ -149,7 +149,9 @@ For each skill that passed 2/2 scoring, generate 1-2 synthetic worked examples t
 - **Positive worked example**: a short scenario showing the skill applied correctly that directly addresses the observed drain/gap
 - **Edge case / negative example**: a variant that looks like a correct application but isn't — the failure mode made concrete
 
-**Format** (write to `~/.claude/skills/<skill-name>/resources/examples/YYYY-MM-DD-examples.md`):
+**Format** — write the body below to a temp file, then apply with
+`.claude/scripts/routines/skill-write.sh <skill-name> <temp-file> resources/examples/YYYY-MM-DD-examples.md`
+(never Write/Edit directly — see Step 4's note on why):
 
 ```markdown
 # Session Examples — YYYY-MM-DD
@@ -163,17 +165,22 @@ Source: [observation or drain evidence citation]
 
 Rules:
 - Each example file ≤ 400 chars total
-- Only write if `resources/examples/` dir can be created (create it if needed)
 - Do not write examples for skills that scored < 2/2 — evidence-gated same as Step 3
 - Skip silently if no examples can be generated from the available evidence
 
 ### Step 4: Apply and Log
 
 For each approved skill update:
-1. Edit `~/.claude/skills/<skill-name>/SKILL.md`:
+1. Read the current `~/.claude/skills/<skill-name>/SKILL.md`, apply the edit to its full text
+   in memory, write the result to a temp file, then apply with
+   `.claude/scripts/routines/skill-write.sh <skill-name> <temp-file>`:
    - Anti-patterns go in an existing `## Anti-Patterns` section, or append one at the end
    - Learned patterns go in an existing `## Patterns` section, or append a `## Session-Learned Patterns` section at the end
    - "When to use" additions go in the existing when-to-use section
+   - **Never Edit/Write `~/.claude/skills/<name>/SKILL.md` directly.** Most skills here are
+     synced from this repo's `skills/<name>/` by `update.sh` on a 4h launchd tick, regardless
+     of session activity — a direct edit to the installed copy alone is silently reverted by
+     the next tick. `skill-write.sh` updates both copies and keeps a timestamped backup.
 
 2. Append a `[skill-update]` observation to `.claude/memory/observations.md`:
    ```

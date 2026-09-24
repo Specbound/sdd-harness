@@ -85,6 +85,27 @@ Use this skill when:
 - **Viscosity**: Hard to do the right thing.
 - **Needless Complexity/Repetition**.
 
+## 10. Measuring Sloppiness (non-LLM-judge)
+- **Don't score code quality 1-10 with an LLM judge**: LLM-as-judge scoring against a
+  vague rubric is close to random — it correlates weakly with real quality and gives
+  false confidence. Prefer deterministic, mechanical proxies over asking a model to
+  rate its own (or another model's) output.
+- **Verbosity & Erosion metrics**: `scripts/quality/sloppiness-score.sh` computes two
+  dependency-free proxies per file — Verbosity (exact-line-dedup ratio, a clone-detection
+  proxy) and Erosion (file-level branch-keyword density, a cyclomatic-mass proxy).
+  Published baselines (earendil.com "Measuring code sloppiness"): human ≈0.15/0.31,
+  AI-agent ≈0.33/0.68 (verbosity/erosion). Crossing the AI-agent baseline on either axis
+  flags `high-slop`.
+- **Automated via `sloppiness-warn-hook.sh`**: fires `PostToolUse(Write|Edit|MultiEdit)`,
+  scores only the file just written, warns (never blocks) when it verdicts `high-slop`.
+  Advisory only — soft thresholds on a bash/awk proxy, not a rigorous AST-based tool;
+  treat a warning as a nudge to look for duplicated blocks or flatten nested branches,
+  not as a hard failure.
+
+## 11. Comments as Persistent Agent Memory
+- **This supersedes Section 3's "don't comment bad code, rewrite it" for one specific case**: an AI agent's session context resets, but comments in the file don't. A comment explaining *why* a non-obvious decision was made (a workaround, a constraint from another system, a rejected alternative and why) is memory an agent in a future session gets for free — it never has to rediscover the same reasoning. This is about durable rationale, not narrating what the code does. (kiro.dev — Frontier Engineering)
+- Keep Section 3's rule for everything else: a comment that restates *what* the code does, or exists because the code is unclear, is still a smell — rewrite the code instead.
+
 ## 🛠️ Implementation Checklist
 - [ ] Is this function smaller than 20 lines?
 - [ ] Does this function do exactly one thing?

@@ -17,6 +17,8 @@ set -e
 __here="$(cd -P "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 . "$__here/scripts/lib/resolve-harness-dir.sh"
 . "$__here/scripts/lib/harness-pointer.sh"
+# The local-only entry list written into each project's .gitignore.
+. "$__here/scripts/lib/project-gitignore.sh"
 TARGET="${1:-}"
 
 # ---------------------------------------------------------------------------
@@ -81,6 +83,14 @@ do_update() {
     rm -rf "$proj/.claude/$name"
   done
   rm -rf "$proj/.claude/settings"  # was kiro/settings/ dumped at wrong level
+  # Flat command duplicates from the same bug, one level deeper: old cp runs
+  # dumped commands/kiro/*.md straight into .claude/commands/ instead of
+  # .claude/commands/kiro/. sync_dir's rm-then-copy only ever cleans the kiro/
+  # subfolder, so these flat copies go stale forever and never get removed.
+  for cmd_file in "$HARNESS_DIR/commands/kiro"/*.md; do
+    [ -f "$cmd_file" ] || continue
+    rm -f "$proj/.claude/commands/$(basename "$cmd_file")"
+  done
 
   # --- Sync harness directories (portable across macOS, Linux, WSL, Git Bash) ---
   sync_dir "$HARNESS_DIR/commands/kiro" "$proj/.claude/commands"
@@ -117,12 +127,14 @@ do_update() {
   for hook in "$HARNESS_DIR/hooks/claude/"*.sh; do
     [ -f "$hook" ] || continue
     name="$(basename "$hook")"
+    # *.test.sh are harness-repo test suites, not runtime hooks — don't ship them
+    case "$name" in *.test.sh) continue ;; esac
     cp "$hook" "$proj/.claude/hooks/$name"
     chmod +x "$proj/.claude/hooks/$name"
   done
 
   # --- chmod runtime scripts that need to be executable ---
-  for s in orchestration/daily-runner.sh routines/macro-eval-runner.sh routines/skill-curator-runner.sh routines/harness-health-runner.sh routines/tool-failure-review-runner.sh routines/startup-payload-audit.sh routines/code-review-learning-runner.sh session/write_handoff.py pr/detect_base_and_create.sh; do
+  for s in orchestration/daily-runner.sh routines/macro-eval-runner.sh routines/skill-curator-runner.sh routines/harness-health-runner.sh routines/tool-failure-review-runner.sh routines/startup-payload-audit.sh routines/code-review-learning-runner.sh routines/risk-zone-reseed-runner.sh routines/daily-briefing-runner.sh routines/hook-config-audit-runner.sh session/write_handoff.py pr/detect_base_and_create.sh quality/sloppiness-score.sh; do
     [ -f "$proj/.claude/scripts/$s" ] && chmod +x "$proj/.claude/scripts/$s"
   done
   [ -f "$proj/.claude/scripts/utils/ollama_model_test.py" ] && chmod +x "$proj/.claude/scripts/utils/ollama_model_test.py"
@@ -131,6 +143,10 @@ do_update() {
   if [ -d "$proj/.git" ]; then
     cp "$HARNESS_DIR/hooks/git/post-commit" "$proj/.git/hooks/"
     chmod +x "$proj/.git/hooks/post-commit"
+    # Entries added since this project was installed (e.g. AGENTS.md, ERRORS.md)
+    # land here — install.sh only runs once, update.sh runs every sync. Git repos
+    # only: a non-repo has nothing to ignore and shouldn't grow a .gitignore.
+    ensure_gitignore "$proj"
   fi
   # --- Sync harness skills + global commands (runs once per update, not per project) ---
   if [ "${_SDD_GLOBAL_SYNCED:-0}" != "1" ]; then
@@ -215,8 +231,15 @@ done
 for hook in "$HARNESS_DIR/hooks/claude/"*.sh; do
   [ -f "$hook" ] || continue
   name="$(basename "$hook")"
+  case "$name" in *.test.sh) continue ;; esac
   cp "$hook" "$HARNESS_DIR/.claude/hooks/$name"
   chmod +x "$HARNESS_DIR/.claude/hooks/$name"
+done
+# Same flat-command cleanup as do_update() above — the harness's own .claude/
+# accumulated this exact stale-duplicate set too.
+for cmd_file in "$HARNESS_DIR/commands/kiro"/*.md; do
+  [ -f "$cmd_file" ] || continue
+  rm -f "$HARNESS_DIR/.claude/commands/$(basename "$cmd_file")"
 done
 sync_dir "$HARNESS_DIR/commands/kiro" "$HARNESS_DIR/.claude/commands"
 sync_dir "$HARNESS_DIR/agents"        "$HARNESS_DIR/.claude"
@@ -235,6 +258,14 @@ find "$HARNESS_DIR/.claude/scripts" -name "*.sh" -exec chmod +x {} \;
 # install-time location into a generated file: moving the harness left 23 dead hook
 # paths that failed silently, and check-no-hardcoded-paths.sh could not see them
 # because it scanned neither JSON nor .claude/. Copy verbatim instead.
+# Keep the two templates from drifting BEFORE regenerating from one of them.
+# They had silently diverged: the harness template was missing 14 hooks the
+# project template shipped, so those hooks fired in every installed repo and not
+# in the one where they are written and tested. --sync derives the harness
+# template from the project template plus an explicit harness-only allowlist.
+python3 "$HARNESS_DIR/scripts/setup/reconcile-settings-templates.py" --sync || \
+  echo "  WARNING: settings template reconciliation failed — templates may be drifted."
+
 cp "$HARNESS_DIR/templates/settings.harness.json.template" \
   "$HARNESS_DIR/.claude/settings.json"
 echo "  Harness settings.json regenerated (portable hook paths)."

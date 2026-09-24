@@ -61,9 +61,9 @@ Then make it executable:
 chmod +x .git/hooks/pre-commit
 ```
 
-In a normal project the slot is free: the harness's own hardcoded-path guard (`hooks/git/pre-commit`) is deliberately never propagated downstream, and if `install.sh` / `update.sh` find a pre-commit they don't recognise they leave it alone.
+In a normal project the slot is free: the harness's own guards (`hooks/git/pre-commit` — the hardcoded-path check, and since 2026-09-03 the embedded-Python regex check alongside it) are deliberately never propagated downstream, and if `install.sh` / `update.sh` find a pre-commit they don't recognise they leave it alone.
 
-**In the harness repo itself**, `.git/hooks/pre-commit` is owned by that guard and is rewritten on every `install.sh` / `update.sh` run, so a `scan-pii.sh` line added there is lost at the next update. Add it to `hooks/git/pre-commit` in the source tree instead.
+**In the harness repo itself**, `.git/hooks/pre-commit` is owned by those guards and is rewritten on every `install.sh` / `update.sh` run, so a `scan-pii.sh` line added there is lost at the next update. Add it to `hooks/git/pre-commit` in the source tree instead. That file runs each guard only if its script is present and blocks the commit if either fails, printing both verdicts rather than stopping at the first — an added `scan-pii.sh` call should follow the same shape.
 
 ---
 
@@ -235,3 +235,5 @@ For CI pipelines on CPU-only runners, expect ~2–5s per file after model load.
 - [`gdpr-data-handling` skill](~/.claude/skills/gdpr-data-handling/) — GDPR consent, data subject rights, privacy-by-design
 - [`security-scanning-security-sast` skill](~/.claude/skills/security-scanning-security-sast/) — Static analysis with Semgrep, Bandit, CodeQL
 - [OpenAI Privacy Filter repo](https://github.com/openai/privacy-filter) — Source, model card, fine-tuning guide
+
+_Last synced: 2026-09-03_

@@ -81,6 +81,63 @@ When agents return:
 - Run full test suite
 - Integrate all changes
 
+---
+
+## Variant: Fan-Out for Planning (not for partitioned work)
+
+Everything above assumes the work **partitions** — three agents, three test files,
+no overlap. Planning does not partition. Every drafter is looking at the same
+problem, so fan-out buys nothing unless the drafts actually differ.
+
+They will not differ by default. Undifferentiated agents given the same prompt and
+the same context converge on the same plan — same decomposition, same ordering, same
+blind spots — and three agreeing drafts feel like corroboration while being one draft
+sampled three times. **Divergence has to be engineered.**
+
+### Assign each drafter an orthogonal bias
+
+Spawn at least three, each with a named, different optimization target:
+
+| Drafter | Bias | Optimizes for |
+|---|---|---|
+| A | **Fewest slices** | The smallest number of independently shippable pieces |
+| B | **Risk-first** | Ordering so the plan dies fast if a core assumption is wrong |
+| C | **Seam quality** | Clean boundaries between pieces, even at the cost of more of them |
+
+Rules that make this work:
+
+- **Keep them blind to each other.** Fresh context each, own worktree, no drafter
+  sees another's output. One shared draft collapses the whole exercise back to one
+  opinion.
+- **Diversify by vendor family, not by model tier.** Different families have
+  genuinely different priors. Dropping one drafter to a weaker model of the *same*
+  family does not buy independence — it buys a worse version of the same opinion,
+  and its disagreements are noise rather than signal.
+- **Give each the same problem and the same context.** Only the bias differs, or you
+  cannot tell whether divergence came from the bias or the briefing.
+
+### Synthesize, don't pick a winner
+
+The orchestrator's job is to build the canonical plan itself, using the drafts as
+evidence:
+
+- **Where drafts independently agree** → firm ground. Adopt it and stop thinking
+  about it.
+- **Where they disagree** → the load-bearing decisions. This is the map of where to
+  concentrate, and it is the actual product of the fan-out.
+
+Anointing one draft as the winner throws away exactly the information the fan-out was
+run to produce. The synthesized plan will usually match no single draft.
+
+Then re-inspect the highest-risk slice as its own feature. If it hides several
+unknowns at once, or contains any variant of "we'll figure that out during
+implementation," it is not a slice yet — reslice it and repeat.
+
+Before calling the plan done, sweep the conversation for decisions that exist only in
+chat and never made it into a written artifact, and mark superseded planning
+documents as superseded. A fresh agent reading a stale plan is misrouted by it, and
+it has no way to know.
+
 ## Agent Prompt Structure
 
 Good agent prompts are:

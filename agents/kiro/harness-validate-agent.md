@@ -57,6 +57,30 @@ Non-zero exit is a blocker: Claude Code drops every permission rule and hook in 
 malformed settings.json without warning, and a broken template propagates that to
 every project installed from it. Notes belong in `settings.notes.md`, not in JSON.
 
+Then check the two settings templates against each other (harness repo only):
+
+```
+python3 scripts/setup/reconcile-settings-templates.py --check
+```
+
+This asserts `hooks(harness template) == hooks(project template) + HARNESS_ONLY`.
+Non-zero exit is also a blocker: drift here means a hook fires in every installed
+repo but not in the one where it is written and tested, or the reverse. Permissions
+are excluded on purpose — the two templates *should* differ there. Fix by adding the
+shared hook to `templates/settings.json.template` and running `--sync`, never by
+editing the harness template directly.
+
+Neither check catches an **inert permission rule**. Claude Code consults `Edit(path)`
+only for file-permission decisions — `Write(path)` is never read, and `Edit(path)`
+already covers Write, Edit and MultiEdit — so a `Write(...)` entry is valid JSON, does
+not count as hook drift, and grants or denies nothing. Both templates had theirs
+removed on 2026-09-03. Report any `Write(...)` entry still present in a settings file
+or template as a finding, and point at `scripts/setup/fix-inert-write-rules.py`
+(dry-run by default) rather than deleting it by hand: an allow rule with an `Edit`
+twin is dropped, one without a twin is *renamed*, and a deny rule is always renamed
+and never dropped — deleting an inert deny confirms the protection gap instead of
+closing it.
+
 ### Step 4: Check Memory Caps
 
 If `.claude/memory/` exists:
@@ -193,3 +217,5 @@ Per in-scope feature (or "no complete specs to check"):
 - **Partial harness**: If only some components are installed, validate what exists
 
 **Note**: You execute tasks autonomously. Return final report only when complete.
+
+_Last synced: 2026-09-03_
