@@ -79,4 +79,4 @@ YYYY-MM-DD HH:MM | harness-validate | haiku | {outcome} | fast
 - This is a read-only operation — it reports issues but does not fix them
 - Tier 3 (Haiku) agent — this is mechanical validation work
 
-_Last synced: 2026-09-03_
+_Last synced: 2026-09-30_

@@ -1009,5 +1009,7 @@ denies `git push*` outright where projects only deny force-push.
 
 **Matching rule for any guard hook:** parse the command into its structure (argv via `shlex`, URLs via a URL parser) and compare tokens exactly. Do not substring- or regex-match the rendered command text — that is defeated by re-rendering the same value, and `git-destructive-guard-hook.sh` shipped with exactly that bug until 2026-08-25.
 
-_Last synced: 2026-09-23_
+**No regex, continued (2026-09-30).** `prompt-quality-check.sh` was rewritten off `re` onto the same literal-token pattern: the prompt is tokenized to lowercase words (apostrophes stay inside a word, every other non-alphanumeric character separates, so `double-check` is the two tokens `double check`) and phrases are matched on token boundaries. The rewrite was verified score-identical to the regex version on 94 real Agent prompts, and it added two anti-patterns — `think-instruction` and `show-reasoning-request`. `scripts/routines/startup-payload-audit.sh` lost its `@import` regex the same day in favour of a line-prefix parser. Both are off `scripts/utils/no-regex-debt.txt`; `action-capture.sh` and `stop-hook.sh` are the remaining hooks that regex-parse free text.
+
+_Last synced: 2026-09-30_
 

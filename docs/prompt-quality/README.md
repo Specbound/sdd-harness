@@ -1,6 +1,6 @@
 # Prompt Quality (PQ) System
 
-Heuristic scoring pipeline that measures and tracks the quality of every agent prompt spawned during Claude Code sessions. No external service or LLM required — runs locally, scores via regex heuristics, logs to `~/.code-insights/pq-log.jsonl`.
+Heuristic scoring pipeline that measures and tracks the quality of every agent prompt spawned during Claude Code sessions. No external service or LLM required — runs locally, scores via literal-token heuristics (no regex), logs to `~/.code-insights/pq-log.jsonl`.
 
 ## What It Does
 
@@ -98,3 +98,7 @@ Invoke the `prompt-quality-assess` skill before writing agent prompts. It provid
 ## Inspired By
 
 [github.com/melagiri/code-insights](https://github.com/melagiri/code-insights) — local session analytics tool that scores prompt quality with LLM analysis. This system replicates the 6-dimension schema as fast heuristics with no external dependencies.
+
+---
+
+_Last synced: 2026-09-30_
