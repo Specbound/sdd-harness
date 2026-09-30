@@ -14,7 +14,7 @@ All `/skill-extraction` sessions from harness inception through mid-May 2026. Or
 - `kiro/settings/templates/skill-extraction-plan.md` — structured plan template with candidate ranking table, score breakdown, relationship map
 - `agents/kiro/skill-extract-agent.md` — two-mode agent (SCAN → reviewable plan, GENERATE → SKILL.md)
 - `commands/kiro/skill-extract-scan.md` + `commands/kiro/skill-extract.md`
-- `docs/skill-extraction/README.md` — user guide with security model (shallow clone, read-only, no execution)
+- `docs/skills/skill-extraction/README.md` — user guide with security model (shallow clone, read-only, no execution)
 
 **Reasoning:** Translate the paper's 3-stage pipeline (structural analysis → semantic scoring → SKILL.md generation) into a repeatable harness workflow. Security was the main design constraint: shallow clone only, no code execution from source repos, default-unknown risk tags, source provenance mandatory.
 
@@ -38,7 +38,7 @@ All `/skill-extraction` sessions from harness inception through mid-May 2026. Or
 **What was added:**
 - `~/.claude/skills/prompt-master/SKILL.md` (v1.7.0) — JSON-structured prompt input, 30+ tool profiles, 14 templates, 38 anti-patterns, Opus 4.7 agentic guidance
 - `~/.claude/skills/prompt-master/references/templates.md` + `patterns.md` — lazy-loaded on demand
-- `docs/prompt-master/README.md` — when to use JSON vs prose, before/after gallery, key behaviors
+- `docs/prompts/prompt-master/README.md` — when to use JSON vs prose, before/after gallery, key behaviors
 
 **Reasoning:** Existing prompt skills were educational. prompt-master is an active prompt factory. Core insight: models guess when dimensions (tone, format, audience, length) are unspecified — JSON eliminates the guessing surface. Activated on ≥3 unspecified dimensions.
 
@@ -47,7 +47,7 @@ All `/skill-extraction` sessions from harness inception through mid-May 2026. Or
 ### 3. https://github.com/openai/privacy-filter
 
 **What was added:**
-- `docs/privacy-filter/README.md` — OPF setup, architecture (8-layer transformer + sparse MoE + Viterbi CRF), pre-commit integration, output modes, Python API, troubleshooting table, performance tuning
+- `docs/security/privacy-filter/README.md` — OPF setup, architecture (8-layer transformer + sparse MoE + Viterbi CRF), pre-commit integration, output modes, Python API, troubleshooting table, performance tuning
 
 **Reasoning:** Complement existing secrets-management and gdpr-data-handling skills with a runtime PII scanner. Graceful degradation pattern documented: exit code 2 when OPF missing so pre-commit warns rather than blocks.
 
@@ -164,6 +164,31 @@ All `/skill-extraction` sessions from harness inception through mid-May 2026. Or
 
 ---
 
+## Sep 30, 2026 — 18-Source Newsletter Batch (6 subagents × 3 links)
+
+**Sources:** 18 links from codenewsletter.ai, tldr, The Neuron and Superhuman newsletters. Each subagent ran Phases 0–3 read-only on 3 links; the parent merged the fragments into one proposal, and the user approved all 9 integrations. 16 sources were read in full; 2 partly (Cua thread, Dream-RSI).
+
+**What was added (all edits to existing artifacts, no new skills):**
+1. `skills/model-tiers/SKILL.md` — removed the false "this harness runs `high`" effort claim (Osmani, *What a task costs on Opus 5.5*)
+2. `skills/skill-eval-gate/SKILL.md` — infrastructure failures are missing runs, not FAILs; score-twice judge consistency check (Lance Martin, *Automating eval design and hillclimbing*)
+3. `scripts/utils/token-forensics.py` (+ test) and `skills/auditing-token-spend/SKILL.md` — per-hook injection tables (@ericzakariasson's token-efficiency audit prompt)
+4. `skills/auditing-token-spend/SKILL.md`, `skills/context-optimization/SKILL.md` — cache-breaker diagnosis, corrected cache lifetime (Osmani)
+5. `skills/synthesizing-daily-briefings/SKILL.md`, `scripts/routines/daily-briefing-prompt.md` — stalled-work sweep (Builder.io software-factory video)
+6. `scripts/routines/startup-payload-audit.sh` (+ new test), `scripts/utils/dashboard.py` — ceiling ratchet (claude.ai 3x faster post)
+7. `hooks/claude/prompt-quality-check.sh` (+ new test), `docs/prompt-quality/README.md` — `think-instruction` / `show-reasoning-request` anti-patterns (Getting the most out of Opus 5.5)
+8. `agents/kiro/autoresearch-agent.md` — REPAIR outcome for crashed runs (alphaXiv/OpenResearch)
+9. `skills/hook-design/SKILL.md` + `resources/hook-replay.py` (+ test) — replay recorded calls through old/new PreToolUse hooks (Dream-RSI)
+
+Side effect: #6 and #7 also paid down two entries of the no-regex debt ledger (`scripts/utils/no-regex-debt.txt`, 15 → 13).
+
+**Rejected (10 sources):** Cua jev-use thread (partial read, unbacked speed claim, no computer-use workload), Tunguz *Thinking in Systems* (thesis, loops already exist), Marina Wyss workflow video (the SDD flow already run), `rohitg00/ai-engineering-from-scratch` (course material), LangSmith Managed Deep Agents (multi-user memory/credentials, single-user harness), `wbopan/tastebench` (both-orders already `better-call` Step 2b; unparseable-as-wrong conflicts with missing ≠ zero), OpenRouter Jev Router thread (advice text only, no router layer), "30+ PRs a day" video (secondhand pstack), Cloudflare Forge (no OpenAPI to generate from), `dzhng/jevgrep` (third-party API key, sends code off-machine, overlaps lean-ctx/GitNexus/Serena).
+
+**Reasoning:** Default-skip held for 10 of 18. Every approved item extends an existing artifact rather than adding a competitor, so `better-call` was not run. Value is honestly low or unmeasured for #7 (prompt log stores only hashes), #8 (autoresearch usage unknown) and #9 (covers only commands already in history).
+
+**Open:** the harness's `skills/claude-api` shares its name with Anthropic's official `claude-api` skill and may shadow its `build-eval` / `hillclimb` sub-commands — unverified.
+
+---
+
 ## Summary Table
 
 | Date | URL | Skill/Artifact Created | Type |
@@ -183,3 +208,4 @@ All `/skill-extraction` sessions from harness inception through mid-May 2026. Or
 | May 18 | github/yvgude/lean-ctx | Context for hook candidate assessment enhancement | Context |
 | May 18 | raindrop-ai/workshop | 3 Raindrop skills + Workshop dashboard integration | Skill + Integration |
 | May 18 | huggingface.co/continuous_eval | `skill-extraction` SKILL.md updated (hook candidate assessment phase) | Skill update |
+| Sep 30 | 18-link newsletter batch | 9 augmentations: `model-tiers`, `skill-eval-gate`, `auditing-token-spend`, `synthesizing-daily-briefings`, `hook-design` (+ `hook-replay.py`), `autoresearch-agent`; `token-forensics.py`, `startup-payload-audit.sh`, `prompt-quality-check.sh` | Skill + Script + Hook updates |

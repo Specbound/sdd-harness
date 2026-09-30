@@ -43,6 +43,12 @@ This measures. Five analyses, all read-only, all from `~/.claude/projects/**/*.j
    is never populated means *unknown*, not zero, and printing 0% there would be
    a confident false negative on the exact question the analysis exists to answer.
 
+6. **Hook injection.** Hooks inject text on every prompt, session start and edit,
+   and that text is amplified exactly like a tool result. Read from transcript
+   `attachment` lines, split into two classes that are never summed:
+   `hook_additional_context` is confirmed to reach the model; `hook_success`
+   stdout reaches it only for some events. Mixing them would overstate the cost.
+
 Usage:
     python3 scripts/utils/token-forensics.py                  # last 30 days
     python3 scripts/utils/token-forensics.py --days 7
@@ -58,6 +64,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import shlex
 import statistics
 import sys
 from collections import defaultdict
@@ -100,6 +107,46 @@ CACHE_BUST_MIN_CREATE = 20_000
 # with 0 re-prefill. Anything in angle brackets is a placeholder, not a model.
 def is_real_model(name: str) -> bool:
     return bool(name) and not name.startswith("<")
+
+
+# Attachment classes that carry hook output. Only the first is confirmed to
+# reach the model on every event; the second is stdout that reaches it for some
+# events (UserPromptSubmit, SessionStart) and not others.
+HOOK_CLASSES = ("hook_additional_context", "hook_success")
+SCRIPT_SUFFIXES = (".sh", ".py", ".js", ".cjs", ".mjs", ".ts")
+
+
+def hook_label(att: dict) -> str:
+    """Event plus the script that ran, so hooks sharing an event stay separate.
+
+    `hookName` alone ("SessionStart:startup") lumps every hook on that event
+    together, which cannot tell you which one to trim.
+    """
+    name = att.get("hookName") or att.get("hookEvent") or "?"
+    command = att.get("command")
+    if not isinstance(command, str) or not command:
+        return name
+    try:
+        tokens = shlex.split(command)
+    except ValueError:
+        tokens = command.split()
+    scripts = [t for t in tokens if t.endswith(SCRIPT_SUFFIXES)]
+    pick = scripts[-1] if scripts else (tokens[0] if tokens else "")
+    return f"{name} {Path(pick).name}" if pick else name
+
+
+def hook_injection(obj: dict, cutoff) -> tuple[tuple[str, str], int] | None:
+    """((class, label), chars) for a hook attachment line in the window, else None."""
+    att = obj.get("attachment")
+    if not isinstance(att, dict) or att.get("type") not in HOOK_CLASSES:
+        return None
+    ts = parse_ts(obj.get("timestamp"))
+    if cutoff and ts and ts < cutoff:
+        return None
+    chars = block_size(att.get("content"))
+    if not chars:
+        return None
+    return (att["type"], hook_label(att)), chars
 
 
 def parse_ts(value):
@@ -175,6 +222,10 @@ class Analysis:
         self.session_tokens = defaultdict(int)
         self.cache_busts = []         # model switches mid-session, with re-prefill cost
         self.models_seen = defaultdict(int)   # model -> requests
+        # (hook class, hook label) -> chars / chars * requests_after / events
+        self.hook_injected = defaultdict(int)
+        self.hook_amplified = defaultdict(int)
+        self.hook_events = defaultdict(int)
 
     # ── ingest ────────────────────────────────────────────────────────────────
 
@@ -188,11 +239,18 @@ class Analysis:
         order = []          # request keys in timestamp order
         pending_results = []  # (tool_name, chars, position_at_time_of_result)
         pending_tool_names = {}  # tool_use_id -> tool name
+        pending_hooks = []    # (hook key, chars, position_at_time_of_injection)
 
         for lineno, line in enumerate(lines):
             try:
                 obj = json.loads(line)
             except ValueError:
+                continue
+
+            if obj.get("type") == "attachment":
+                hook = hook_injection(obj, cutoff)
+                if hook:
+                    pending_hooks.append((*hook, len(order)))
                 continue
 
             msg = obj.get("message")
@@ -253,6 +311,10 @@ class Analysis:
         for name, chars, position in pending_results:
             requests_after = max(total_requests - position, 0)
             self.tool_amplified[name] += chars * requests_after
+        for key, chars, position in pending_hooks:
+            self.hook_injected[key] += chars
+            self.hook_events[key] += 1
+            self.hook_amplified[key] += chars * max(total_requests - position, 0)
 
         last_model = {}   # session -> model on the previous request
         for key in order:
@@ -366,6 +428,17 @@ class Analysis:
     def total(self):
         return sum(self.totals[f] for f, _ in USAGE_FIELDS)
 
+    def hooks_by_amplified(self, cls: str, top: int):
+        """Hooks of one class, ranked by what they caused. Classes are never mixed."""
+        rows = [
+            {"hook": label, "events": self.hook_events[(c, label)],
+             "injected_chars": self.hook_injected[(c, label)],
+             "amplified_chars": amp}
+            for (c, label), amp in self.hook_amplified.items() if c == cls
+        ]
+        rows.sort(key=lambda r: (-r["amplified_chars"], -r["injected_chars"]))
+        return rows[:top]
+
     def weighted_cost(self):
         """Spend in input-token-equivalents, using the real per-class price ratios.
 
@@ -428,6 +501,7 @@ def main() -> int:
     split = a.automation_split()
 
     amplified = sorted(a.tool_amplified.items(), key=lambda kv: -kv[1])[:args.top]
+    hooks = {cls: a.hooks_by_amplified(cls, args.top) for cls in HOOK_CLASSES}
 
     if args.json:
         print(json.dumps({
@@ -454,6 +528,7 @@ def main() -> int:
                  "returned_chars": a.tool_returned[t], "calls": a.tool_calls[t]}
                 for t, c in amplified
             ],
+            "hooks_by_amplified_chars": hooks,
         }, indent=2))
         return 0
 
@@ -551,6 +626,25 @@ def main() -> int:
     for tool, chars in amplified:
         print(f"| {tool} | {a.tool_calls[tool]:,} | {a.tool_returned[tool]:,} "
               f"| {chars // CHARS_PER_TOKEN:,} |")
+    print()
+    print("### Hooks by AMPLIFIED cost")
+    print()
+    print("Same amplification as tools: text a hook injects is re-sent on every later")
+    print("turn. Two classes, reported separately and never summed —")
+    print("`hook_additional_context` is confirmed to reach the model; `hook_success`")
+    print("stdout reaches it only for some events, so treat that table as an upper bound.")
+    for cls in HOOK_CLASSES:
+        print()
+        print(f"#### {cls}")
+        if not hooks[cls]:
+            print("None in this window.")
+            continue
+        print()
+        print("| Hook | Events | Injected (chars) | Amplified (~tokens) |")
+        print("|---|---:|---:|---:|")
+        for row in hooks[cls]:
+            print(f"| {row['hook']} | {row['events']:,} | {row['injected_chars']:,} "
+                  f"| {row['amplified_chars'] // CHARS_PER_TOKEN:,} |")
     return 0
 
 

@@ -519,7 +519,7 @@ The ticket ID is captured at prompt time and stored in `~/.claude/state/active_j
 The state is single-fire — subsequent pushes in the same session don't double-post.
 
 **Prerequisites**: `~/.env.jira` with `JIRA_URL` and `JIRA_PAT` (or `JIRA_USERNAME` + `JIRA_API_TOKEN`).
-See `.claude/docs/SDD-SETUP-GUIDE.md` → "Jira Integration" for full setup.
+See `.claude/docs/harness-documentation/SDD-SETUP-GUIDE.md` → "Jira Integration" for full setup.
 
 ---
 
@@ -543,7 +543,7 @@ Reads `program.md`, iterates on `train.py` (~5 min per experiment), keeps improv
 
 **Prerequisites**: `uv` installed, `program.md` + `train.py` + `prepare.py` in project root. Run `uv run prepare.py` once before starting the loop.
 
-See `docs/autoresearch/README.md` for full details.
+See `docs/research/autoresearch/README.md` for full details.
 
 ---
 
@@ -574,7 +574,7 @@ Every new skill passes quality gates and a companion check before it is logged t
 - **Phase 5c — Identity Alignment Check**: invokes `agent-identity` Mode B — validates description specificity, trigger sharpness, behavioral concreteness, and explicit exclusions. Vague skill identities cause the wrong skill to fire; this gate prevents them from entering the harness.
 - **Phase 5d — Verification Companion Check**: asks whether the skill's domain involves manual checks a human would run after Claude's work (visual inspection, sampling output, checking logs). If yes, invokes `verification-skill-authoring` to create a companion `<domain>-verify` skill before proceeding.
 
-See `docs/skill-extraction/README.md` for full details on scoring, workflow, and security.
+See `docs/skills/skill-extraction/README.md` for full details on scoring, workflow, and security.
 
 ### `/kiro:gitnexus-setup` — Install and configure GitNexus code intelligence
 
@@ -602,7 +602,7 @@ Browse symbols, call chains, process flows, and community clusters in a WebGL gr
 
 Maps changed code to affected execution flows with HIGH/MEDIUM/LOW risk classification. Falls back to grep-based tracing if GitNexus is not installed.
 
-See `docs/gitnexus/README.md` for full details.
+See `docs/integrations/gitnexus/README.md` for full details.
 
 ---
 

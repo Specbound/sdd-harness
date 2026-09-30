@@ -30,9 +30,20 @@ else
   cd proof-sdk
   npm install
 fi
+
+# Editor bundle: without it the page says "Editor not built".
+cd "$HOME/.claude/tools/proof-sdk"
+[ -f dist/assets/editor.js ] || npm run build
+
+# The server serves static files only from public/, but dist/index.html loads
+# ./assets/editor.js — link the missing bundle files in (links survive rebuilds).
+for f in dist/assets/*; do
+  b=$(basename "$f")
+  [ -e "public/assets/$b" ] || ln -s "../../dist/assets/$b" "public/assets/$b"
+done
 ```
 
-`node_modules` presence is the install signal — never run `npm install` again after first setup.
+`node_modules` presence is the install signal — never run `npm install` again after first setup. The build and symlink steps are idempotent and safe to re-run.
 
 ### Step 2: Start the Server (If Not Running)
 
@@ -44,7 +55,9 @@ if curl -sf "$PROOF_URL/health" > /dev/null 2>&1; then
   echo "Server already running"
 else
   cd "$HOME/.claude/tools/proof-sdk"
-  npm run serve &
+  # Collab runs on the main port; without this flag the session API tells the
+  # browser to dial port+1 (ws://localhost:4001) and the doc never loads.
+  COLLAB_EMBEDDED_WS=1 npm run serve &
   echo $! > /tmp/proof-server.pid
 
   # Wait for readiness (up to 15s)
@@ -63,11 +76,11 @@ fi
 ```bash
 RESPONSE=$(curl -sf -X POST "$PROOF_URL/documents" \
   -H "Content-Type: application/json" \
-  -d "{\"content\": $(jq -Rs . < artifact.md), \"title\": \"Review: [artifact name]\"}")
+  -d "{\"markdown\": $(jq -Rs . < artifact.md), \"title\": \"Review: [artifact name]\"}")
 
 SLUG=$(echo "$RESPONSE" | jq -r '.slug')
 OWNER_SECRET=$(echo "$RESPONSE" | jq -r '.ownerSecret')
-SHARE_URL="$PROOF_URL/doc/$SLUG"
+SHARE_URL="$PROOF_URL/d/$SLUG"
 
 echo "Review URL: $SHARE_URL"
 ```
@@ -117,6 +130,8 @@ echo "$FINAL_MARKDOWN" > final_artifact.md
 
 This is the human-adjusted version. Use it as the approved artifact for the next SDD phase.
 
+Proof re-serializes markdown (`-` bullets become `*`, table separators get padded, some characters get backslash-escaped), so a raw `diff` against the original is mostly noise. Diff after normalizing those forms. If nothing but formatting changed, keep the original file rather than overwriting it with Proof's formatting.
+
 ### Step 7: Tear Down the Server
 
 ```bash
@@ -133,7 +148,7 @@ Only kill if Claude started it (PID file exists). If the server was already runn
 
 | Method | Endpoint | Purpose |
 |--------|----------|---------|
-| `POST /documents` | Create document | Body: `{content, title}` |
+| `POST /documents` | Create document | Body: `{markdown, title}` (`content` is rejected with `MISSING_MARKDOWN`) |
 | `GET /documents/:slug/state` | Get current content | Returns `{content}` |
 | `POST /documents/:slug/ops` | Submit operation | Body: `{type, ...}` |
 | `GET /documents/:slug/events/pending?after=<id>` | Poll events | Returns `{events[]}` |
@@ -154,4 +169,4 @@ Set `PROOF_SERVER_URL` env var to point at a remote Proof instance (default: `ht
 - Install once, run many times — always check `node_modules` before running `npm install`
 - Only tear down what you started — check for `/tmp/proof-server.pid` before killing
 - Never log `ownerSecret` — store in a variable, use inline, discard after the session
-- The final state from Step 6 is the source of truth — not the original artifact
+- The final state from Step 6 is the source of truth for content — not the original artifact. Formatting-only differences don't count as edits

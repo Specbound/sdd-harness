@@ -149,6 +149,8 @@ Present a numbered list — **always wait for user approval before executing:**
 **Apply all? Or specify (e.g. "1 and 3", "skip 2", "only compressions"):**
 ```
 
+**BEFORE approving:** Audit citations — use `(source: repo-name date [tag])` not `(source: date [tag])`. (source: sdd-harness 2026-09-28 [insight, enforceable])
+
 ### Phase 5: Execute Approved Changes
 
 **Every write or delete below goes through `$SDD_HARNESS/scripts/routines/skill-write.sh` /

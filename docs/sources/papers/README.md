@@ -31,7 +31,7 @@ Scientific papers (primarily arXiv) that informed skills or methodology in this 
 **What it's about:** Framework for automatically extracting procedural skills from open-source agentic repositories and encoding them into standardized formats that augment LLM capabilities without retraining. Shows that procedural knowledge mined from repos can achieve 40% gains in knowledge transfer efficiency compared to conventional methods, enabling scalable skill acquisition for autonomous systems.
 
 **What we added:**
-- Methodology: The entire `/skill-extraction` pipeline (`docs/skill-extraction/README.md`) — three-stage process (structural analysis → semantic identification → artifact generation), scoring rubric (4 criteria, 0–12 scale, threshold ≥6), and the `/kiro:skill-extract` + `/kiro:skill-extract-scan` commands are based on this framework.
+- Methodology: The entire `/skill-extraction` pipeline (`docs/skills/skill-extraction/README.md`) — three-stage process (structural analysis → semantic identification → artifact generation), scoring rubric (4 criteria, 0–12 scale, threshold ≥6), and the `/kiro:skill-extract` + `/kiro:skill-extract-scan` commands are based on this framework.
 
 ---
 
@@ -168,3 +168,20 @@ See also: [articles/README.md](../articles/README.md) — 14-source sweep batch 
 **Rejected:** the core mechanism itself — SKILL.state works by rebuilding the prompt from scratch each turn, and no hook, skill, or command can delete prior turns from a Claude Code context; the runtime owns the prompt. The paper's own limitation #3 also excludes this harness explicitly: it fails where "the task objective is defined over the historical trajectory itself (e.g. auditing, debugging provenance, or explaining past actions), where interaction history is the target output rather than operational overhead" — which describes `agents/kiro/session-judge.md`, `scripts/utils/token-forensics.py`, and `hooks/claude/agent-trace-hook.sh`. Discarding reasoning after a state update — same runtime constraint. Domain schema authored once — `skills/planning-with-files/SKILL.md` and `skills/compiled-truth-pattern/SKILL.md` already do this. Deterministic validation outside the model — already the entire `hooks/claude/*-quality-gate-hook.sh` family. `tested_hypotheses` to prevent repeated failed commands — `hooks/claude/tool-failure-capture.sh` + `tool-failure-recall.sh` is the same idea and stronger, being cross-session rather than per-episode. Merge-not-overwrite patch semantics — the harness's memory is markdown and append-only JSONL, not a merged JSON object, so the 68%-of-failures overwrite mode does not apply. Small-model structured-output taxonomy (68/20/12 split, Gemma-4-31B) — about a model class this harness never runs. Immediate override on contradicting observation — `skills/verification-before-completion` and the injected "a non-zero probe exit is an ANSWER" rule already cover it.
 
 See also: [articles/README.md](../articles/README.md) — same 6-source batch, 2026-09-01.
+
+---
+
+## Dream-RSI: Recursive Self-Improvement through Evolving Worlds
+**arXiv:** 2609.14858 (project page https://dream-rsi.com/; repo github.com/zhengkid/Dream-RSI, code "being prepared")
+**Added:** 2026-09-30
+
+**Retrieval:** partial. The project page and repo README were read; the paper PDF was not, and WebFetch paraphrased the highlighted passage rather than returning it verbatim.
+
+**What it's about:** Every finished run leaves a tree of decisions with their real outcomes attached, and that tree works as an exact replay simulator. Thousands of candidate policies are scored by replaying the history ("dreaming") without executing anything. The current policy is always one of the candidates, so the chosen one can never score worse than what it replaces. Stated limit: it can only test paths the history covers. Also reports that advice from past runs placed in the prompt did worse than replay alone.
+
+**What we added:**
+- Augmentation + script: `skills/hook-design/SKILL.md` "Replay Before Ship" and `skills/hook-design/resources/hook-replay.py` (+ `hook-replay.test.sh`). Replays recorded tool calls from `~/.claude/projects/*/*.jsonl` through the old and new version of a PreToolUse hook and reports `newly_blocked` / `newly_allowed` / `new_errors`, with the old hook as baseline. Counts only by default because transcripts hold secrets; `--fail-on-change` for use inside a hook's `*.test.sh`; zero recorded calls exits 2 rather than passing. Smoke run on the rewritten `prompt-quality-check.sh`: 150 recorded Agent calls, no flips.
+
+**Rejected:** replaying the daily-maintenance reflect loop (its inputs are free-text observations, nothing exact to replay); "only replace the incumbent if the candidate scores better" (already `harness-health-prompt.md` step c).
+
+See also: [articles/README.md](../articles/README.md) — same 18-source batch, 2026-09-30.

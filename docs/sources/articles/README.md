@@ -1292,3 +1292,67 @@ See also: [git/README.md](../git/README.md) (`langchain-ai/deepagents`'s `better
 
 **What we added:**
 - Skill enhancement: `skills/skill-eval-gate/SKILL.md` — new Phase 1a, "Include a Negative (Non-Trigger) Scenario," plus a matching hard-gate row in the Phase 5 verdict table. The gate already measured whether a skill helps (with-vs-without lift); it had no check for a skill wrongly firing on adjacent prompts it shouldn't touch — the essay's "negative half" point named that exact gap.
+
+---
+
+## How We Made claude.ai 3x Faster in Two Weeks
+**URL:** https://claude.dev/blog/how-we-made-claude-ai-faster/ | **Added:** 2026-09-30 | **Source:** Wang, Attard, G. (claude.dev, 2026-09-23)
+
+**What it's about:** A two-week, Claude-driven sprint cut latency 3.1x (geometric mean) across 13 user journeys. Each deterministic proxy benchmark (Valgrind `Ir`, React commit counts, layout counts) first had to show it moved real wall-clock time, and then was ratcheted: a PR that raised a count failed CI, and a daily job lowered each ceiling to the new value.
+See also: [x/README.md](../x/README.md) (eric zakariasson's token-efficiency audit prompt, same batch, points at the same "static tokens" metric).
+
+**What we added:**
+- Augmentation: `scripts/routines/startup-payload-audit.sh` — the fixed 8000-token budget only caught growth past 8000; creep below it went unnoticed. It now keeps a per-repo ceiling that only goes down, flags growth above it (`over_ceiling`, `delta`) and accepts intended growth with `--rebaseline`. The token estimate is deterministic (chars/4), which is the proxy-plus-ratchet shape the article describes. Warns rather than blocks — this harness has no CI. New `startup-payload-audit.test.sh`; the dashboard's Startup Payload card shows the ceiling and delta.
+
+**Rejected:** the web-performance techniques themselves (domain knowledge for web apps; the harness is shell and Python), Valgrind `Ir` as a CI gate (no CI), feature-flag ramps (no product surface).
+
+---
+
+## Build an Agentic Software Factory: Deep Dive
+**URL:** https://www.youtube.com/watch?v=pNmfMi-yjZk | **Added:** 2026-09-30 | **Source:** Steve (Builder.io), full transcript via youtube-transcript-api
+
+**What it's about:** A local scheduled loop — collect → babysit PR → review against an approval policy → ship, with anything outside policy going to a human. Two extras: a "watchdog" that runs ~4×/day and nudges work that was actionable but never reached its next step, and a weekly lookback for issues that came back after a fix.
+
+**What we added:**
+- Augmentation: `skills/synthesizing-daily-briefings/SKILL.md` — Phase 2b, a stalled-work sweep: open PRs with no activity for `STALL_DAYS`, and drafts still carrying the Evidence placeholder `scripts/pr/detect_base_and_create.sh` writes. Reads structured `gh pr list --json` fields only. The briefing only reported what *changed*, so stopped work was invisible by construction — the source's point: "I've wasted a lot of time … thinking something was worked on when it wasn't." `scripts/routines/daily-briefing-prompt.md` runs it on the existing schedule.
+
+**Rejected:** the weekly lookback (`tool-failure-capture.sh` already reopens recurring ledger entries; no product telemetry for the rest), the YAML triage policy (`issue-triage-routing`, `jira-solve`), auto-merge approval policy (`pr-risk-tier-hook.sh`).
+
+---
+
+## Getting the Most Out of Opus 5.5 in Claude and Claude Code
+**URL:** https://claude.dev/blog/getting-the-most-out-of-opus-5-5/ | **Added:** 2026-09-30 | **Source:** Anthropic (claude.dev). WebFetch returned a condensed version, so wording here is paraphrase, not quotation.
+
+**What it's about:** Opus 5.5 always reasons before replying, so "think carefully" lines only slow it down, and requests to show its reasoning in the reply can be flagged and declined. Say what "done" looks like, which pauses you want, check subagent evidence, and keep a task file that survives compaction.
+
+**What we added:**
+- Augmentation: `hooks/claude/prompt-quality-check.sh` — two new anti-patterns, `think-instruction` and `show-reasoning-request`, on every Agent spawn. The existing `mandatory-scratchpad` check only caught scratchpad wording. The same edit rewrote the hook's four regex checks as literal token matching and removed it from `scripts/utils/no-regex-debt.txt` (score-identical to the old version on 94 real Agent prompts). New `prompt-quality-check.test.sh`. Hit rate is unmeasured: the log stores only a prompt hash.
+
+**Rejected:** "keep going when a step doesn't need me" as a template rule (clashes with the human review gate), a compaction-proof task file (`planning-with-files`, `feature-list-primitive`), a Blocked/Changed/Found closing format (the Post-Task Convention covers it).
+
+---
+
+## What a Task Costs on Opus 5.5
+**URL:** https://claude.dev/blog/what-a-task-costs-on-opus-5-5/ | **Added:** 2026-09-30 | **Source:** Addy Osmani (claude.dev, 2026-09-25)
+
+**What it's about:** You pay per task, not per token: turns × resent context, cache share, output (5× input, thinking included) and model. Opus 5.5 defaults to medium effort and thinks more than Opus 5 at the same level; ~20K extra thinking tokens cost about what a ten-turn retry loop does. Lists what breaks the cache in Claude Code.
+
+**What we added:**
+- Correction: `skills/model-tiers/SKILL.md` — removed "this harness runs `high`" (no effort setting exists in global settings, project settings or the template). Now: the harness sets none, Opus 5.5 defaults to `medium`, raise effort only when it saves a retry.
+- Augmentation: `skills/auditing-token-spend/SKILL.md` — Phase 3 rows for a low cache-read share (the Claude Code cache-breakers: pause past the cache lifetime — 1h on a subscription, 5m on an API key — model switch, MCP connect/disconnect, effort change via a gateway, first fast-mode use, compaction) and for large output on a small change. `skills/context-optimization/SKILL.md` now says its 5-minute TTL is the API default, not the subscription one.
+
+**Rejected:** price tables and calculators (go stale, no behavior), subagent `model:` advice (`model-tiers`, `cheap-model-delegation`), agent teams / opusplan (experimental).
+
+---
+
+## Automating Eval Design and Hillclimbing with Claude
+**URL:** https://claude.dev/blog/automating-eval-design-and-hillclimbing/ | **Added:** 2026-09-30 | **Source:** Lance Martin (claude.dev, 2026-09-28)
+
+**What it's about:** Four properties of a good eval (tasks reflect production, stronger models score higher, headroom at the frontier, low variance) and the `/claude-api build-eval` and `hillclimb` workflows: cheapest grader, validate the grader, run it twice, separate infrastructure noise; random train/test split, keep a patch only if both improve.
+
+**What we added:**
+- Augmentation: `skills/skill-eval-gate/SKILL.md` — (a) a run that timed out, hit an API/tool error or was cut off is a *missing* run: re-run it, record it `ERRORED`, never score it as a FAIL in `pass^3`; two errors on one scenario stop the gate with an infrastructure report. (b) Phase 3b judge validation adds a self-consistency check — score one output twice, discard the run if the verdict flips.
+
+**Rejected:** train/test split (already `claude-api` Hillclimb Methodology and `skill-eval-gate` Phase 1d), "stronger model scores higher" (Phase 1b), a new build-eval skill (duplicates `skill-eval-gate`, `raindrop-eval-loop`, `macro-eval-sweep`).
+
+**Open finding (unverified):** the harness's own `skills/claude-api` has the same name as Anthropic's `claude-api` skill, which the article says provides the `build-eval` / `hillclimb` / `prompt-audit` sub-commands. The local skill may shadow the official one; not checked.

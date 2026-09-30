@@ -131,6 +131,14 @@ fewer scenarios, not fewer runs per scenario. A gate that greens on 1-of-3 is no
 Score every treatment run against the same Phase 1 pass/fail check used for the baseline.
 Record all 3 results per scenario — a 2/3 is a finding, not a rounding error.
 
+**An infrastructure failure is a missing run, not a failed one.** A run that timed out,
+hit an API/tool error, or was cut off before producing its output never tested the skill.
+Re-run it; do not score it as a FAIL in `pass^3`. Record it as `ERRORED` alongside the
+three scored runs so the retry is visible. If the same scenario errors twice, stop and
+report the infrastructure problem instead of the verdict — a gate that cannot run the
+scenario has no verdict for it (Lance Martin, *Automating eval design and hillclimbing
+with Claude* — see `docs/sources/articles/README.md`).
+
 ### Phase 3b: Validate the Judge (only when scoring uses an LLM rubric)
 
 Skip this when every Phase 1 check is deterministic — a grep, an exit code, and a
@@ -147,6 +155,10 @@ Validate it before trusting a single score:
 3. **If the judge does not rank the good one strictly above the bad one, discard the
    entire run.** Fix the rubric and start over. Scores from an unvalidated judge are
    not weak evidence; they are no evidence.
+4. **Score one real treatment output twice** with the same rubric and model. If the
+   verdict flips between the two, the judge is noise at this rubric — discard the run,
+   tighten the rubric, and revalidate. Ranking good above bad proves the judge can see
+   the difference; agreeing with itself proves its scores are stable enough to count.
 
 **Pair every quality judgement with a completeness judgement.** A skill can win on
 any "is this lean / clean / focused" rubric by producing less — declining work,

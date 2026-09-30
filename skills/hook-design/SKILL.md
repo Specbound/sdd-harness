@@ -101,6 +101,26 @@ For each capability extracted from a resource, ask:
 
 If yes to any → propose a hook. Pick the event from the table above, choose soft gate vs. hard block based on whether the action is ever legitimate.
 
+## Replay Before Ship (PreToolUse changes)
+
+Hand-written `*.test.sh` cases cover the calls you thought of. Before changing what a PreToolUse hook blocks, replay the calls the agent actually made through the old and new versions:
+
+```bash
+git show HEAD:hooks/claude/my-hook.sh > /tmp/old-hook.sh
+python3 $SDD_HARNESS/skills/hook-design/resources/hook-replay.py \
+  --old /tmp/old-hook.sh --new hooks/claude/my-hook.sh --tool Bash
+```
+
+It reports `newly_blocked`, `newly_allowed` and `new_errors`. The old hook is the baseline, so every flip is a decision the change has to justify — a false block on a routine command is the most common way a hook change goes wrong here.
+
+- **Counts only by default.** Transcripts hold secrets; `--samples N` prints truncated calls when you need to see which ones flipped.
+- **Wire it into the hook's `*.test.sh`** with `--fail-on-change` once the intended flips are accepted, so a later edit that flips more fails the test.
+- **Coverage limit:** it can only test calls in the history. A command nobody has run yet is invisible to it, so keep the hand-written edge cases too.
+- **Side effects:** each run gets a throwaway `HOME`; a hook that writes into the repo or `/tmp` is not isolated.
+- A run with zero recorded calls exits 2 — nothing tested is not a pass.
+
+Tests: `bash skills/hook-design/resources/hook-replay.test.sh`. (Source: Dream-RSI, arXiv 2609.14858 — score a candidate policy by replaying recorded history, with the incumbent as the baseline.)
+
 ## Observer Loop Prevention
 
 A hook that fires on Write/Edit can itself cause writes (state files, linters, formatters), re-triggering the same hook — an infinite loop. Prevent this with three patterns, applied in order:

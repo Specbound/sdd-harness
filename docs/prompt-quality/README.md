@@ -37,8 +37,14 @@ Separately from the 5 scored dimensions, `detect_anti_patterns()` flags named pr
 | `mandatory-scratchpad` | "use a scratchpad" / "write your reasoning in" / "think step by step in a scratchpad" | Only ask for visible intermediate reasoning if the task genuinely needs it |
 | `maximally-thorough-phrasing` | "maximally thorough" / "as thorough as possible" / "leave no stone unturned" / "be extremely comprehensive" / "utmost thoroughness" | Name the actual completeness criterion instead (which files, which cases) |
 | `verification-ritual` | 3+ occurrences of verify/double-check/triple-check/"make sure to confirm" | State the one concrete check that matters instead of stacking synonyms |
+| `think-instruction` | "think carefully" / "think step by step" / "think hard(er)" / "think deeply", unless it is a scratchpad request (that is `mandatory-scratchpad`) | The model always reasons before replying — drop it, or raise the effort level instead |
+| `show-reasoning-request` | "show your reasoning" / "show your thinking" / "reveal your reasoning" / "show/include your chain of thought" | Such requests can be declined — ask for a short explanation of the chosen approach instead |
+
+The last two come from Anthropic's "Getting the most out of Opus 5.5" guidance (2026-09). Their hit rate is unmeasured: the log keeps only a prompt hash, so the only count available is the `anti_patterns` field from here on.
 
 Findings are printed as a `🚩 Anti-patterns:` block in the hook output and logged under an `anti_patterns` array in each JSONL entry — they do not affect the `overall` score.
+
+Matching is literal — the prompt is split into word tokens and phrases are checked on token boundaries, with no regex (repo-wide ban; see `scripts/utils/no-regex-debt.txt`). The rewrite was checked score-identical to the old regex version on 94 real Agent prompts. Tests: `bash hooks/claude/prompt-quality-check.test.sh`.
 
 ## Files
 

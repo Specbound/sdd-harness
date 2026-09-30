@@ -311,8 +311,8 @@ The deliberate non-goals above are stable. If any of these come up in a future r
 ## Related Documentation
 
 - [`docs/memory/README.md`](../../memory/README.md) — the memory tier architecture the battery loop plugs into
-- [`docs/SDD-USAGE.md`](../../harness-documentation/SDD-USAGE.md#daily-maintenance-automated) — user-facing usage of `/kiro:daily-maintenance`
-- [`docs/SDD-SETUP-GUIDE.md`](../../harness-documentation/SDD-SETUP-GUIDE.md#automated-hooks) — hook and Routine registration flow
+- [`docs/harness-documentation/SDD-USAGE.md`](../../harness-documentation/SDD-USAGE.md#daily-maintenance-automated) — user-facing usage of `/kiro:daily-maintenance`
+- [`docs/harness-documentation/SDD-SETUP-GUIDE.md`](../../harness-documentation/SDD-SETUP-GUIDE.md#automated-hooks) — hook and Routine registration flow
 - [`kiro/settings/rules/session-quality-rubric.md`](../../../kiro/settings/rules/session-quality-rubric.md) — the full rubric the Judge applies
 - [`kiro/settings/rules/anti-rationalization.md`](../../../kiro/settings/rules/anti-rationalization.md) — rule the "rationalized rule-skip" drain enforces
 

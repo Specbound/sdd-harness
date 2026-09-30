@@ -589,3 +589,17 @@ See also: [articles/README.md](../articles/README.md) — the full six-source ba
 **Rejected — source 3.** Its philosophy is already this harness's philosophy: enforcement lives in hooks, not in prompts, which is why `hooks/claude/` has 50-plus files. The mechanism needs a per-tool-call model-routing proxy that Claude Code does not expose, so it cannot be built here. The nearest implementable shape, a read-size gate pushing large reads to `ctx_read` map or signatures mode, is already occupied by `lean-ctx-nudge-hook.sh`. Secondhand as well, so the 90% figure was never treated as measured.
 
 See also: [articles/README.md](../articles/README.md) — the full eleven-source batch and the two integrations it produced. [git/README.md](../git/README.md) — the three repositories from the same batch.
+
+---
+
+## @ericzakariasson — "Improve this agent harness's token efficiency" audit prompt
+**URL:** https://archive.codenewsletter.ai/2102853511637774551 (mirror of x.com/ericzakariasson/status/2102853511637774551) | **Added:** 2026-09-30 | **Source:** eric zakariasson (Cursor)
+
+**What it's about:** An 8-step audit prompt aimed at price-weighted token cost per completed task: baseline by source × billing type, prune the system prompt, offload tools, lay out cache breakpoints, file-back large tool outputs, keep compaction short, fit instructions to the model, A/B test. One named trap: injected extras such as lint output after every edit.
+
+**What we added:**
+- Augmentation: `scripts/utils/token-forensics.py` — per-hook injection tables read from transcript `attachment` lines, ranked by amplified cost (chars × requests that followed). Two classes, never summed: `hook_additional_context` (confirmed to reach the model) and `hook_success` stdout (reaches it only for some events, so an upper bound). Before this the script had no hook attribution at all. First real run (7 days, this repo): `UserPromptSubmit prompt-hook.sh` injected 424k chars over 50 prompts, far above any other hook. `token-forensics.test.sh` 14 → 19 cases; `skills/auditing-token-spend/SKILL.md` gained the matching signal and a "one hook dominates" diagnosis row.
+
+**Rejected:** cache-breakpoint layout (Claude Code owns prompt assembly), tool offloading (already deferred), online A/B testing (nothing here to A/B), porting the prompt as a command (repeats `auditing-token-spend` and `/context-budget`).
+
+See also: [articles/README.md](../articles/README.md) — same 18-source batch, 2026-09-30. Two other X posts in the batch (Cua jev-use, OpenRouter's Jev Router) yielded nothing and are recorded in `docs/skills/skill-extraction/extraction-history.md`.

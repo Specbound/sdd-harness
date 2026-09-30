@@ -13,7 +13,7 @@ GitHub repositories that were passed to `/skill-extraction` and turned into harn
 - Command: `/kiro:autoresearch-init` — interactive 8-question interview that generates all 3 required files (`program.md`, `train.py`, `prepare.py`) from a user description
 - Command: `/kiro:autoresearch [N]` — runs the autonomous experiment loop (N iterations or continuous)
 - Agents: `autoresearch-init-agent` (interview → file generation), `autoresearch-agent` (experiment loop executor)
-- Docs: `docs/autoresearch/README.md` — loop diagram, file roles, use cases, example `program.md`
+- Docs: `docs/research/autoresearch/README.md` — loop diagram, file roles, use cases, example `program.md`
 
 ---
 
@@ -27,7 +27,7 @@ GitHub repositories that were passed to `/skill-extraction` and turned into harn
 - Integration: Post-commit hook auto-reindex — `hooks/git/post-commit` re-indexes the repo after every commit so the knowledge graph stays fresh. Its own `docs: auto-sync` commits are exempt: a self-commit guard at the top of the hook exits before the reindex stage.
 - Integration wired into: `verify-agent` (Stage 0 risk detection), `spec-impl` (blast radius scan before TDD), `debug-agent` (Step 2 call chain tracing), `skill-extract-agent` (Leiden community cluster seeding)
 - Command: `/kiro:gitnexus-explore` — launches GitNexus Web UI (localhost:4747) for visual repo exploration
-- Docs: `docs/gitnexus/README.md`
+- Docs: `docs/integrations/gitnexus/README.md`
 
 ---
 
@@ -39,7 +39,7 @@ GitHub repositories that were passed to `/skill-extraction` and turned into harn
 **What we added:**
 - Skill: `prompt-master` v1.7.0 — JSON input detection, 9-dimension extraction framework, 30+ tool profiles across 11 categories, 14 templates, 38 anti-patterns (including 7 agentic credit-killers). Activates when ≥3 dimensions unspecified in a prose prompt.
 - Lazy-load references: `references/templates.md` + `references/patterns.md` (loaded on demand to avoid context bloat)
-- Docs: `docs/prompt-master/README.md` — JSON vs prose decision matrix, before/after gallery, key behaviors, tool profiles table
+- Docs: `docs/prompts/prompt-master/README.md` — JSON vs prose decision matrix, before/after gallery, key behaviors, tool profiles table
 
 ---
 
@@ -50,7 +50,7 @@ GitHub repositories that were passed to `/skill-extraction` and turned into harn
 
 **What we added:**
 - Hook: `hooks/claude/scan-pii.sh` — pre-commit git hook that runs OPF on staged files; exits 2 (warn, don't block) when OPF is missing; exits 1 on high-severity PII detection
-- Docs: `docs/privacy-filter/README.md` — architecture diagram, graceful degradation pattern, output modes, Python API, performance tuning (`OPF_TORCH_COMPILE=1` for ~20% speedup), troubleshooting table. Links to: `secrets-management`, `gdpr-data-handling`, `security-sast`
+- Docs: `docs/security/privacy-filter/README.md` — architecture diagram, graceful degradation pattern, output modes, Python API, performance tuning (`OPF_TORCH_COMPILE=1` for ~20% speedup), troubleshooting table. Links to: `secrets-management`, `gdpr-data-handling`, `security-sast`
 
 ---
 
@@ -249,7 +249,7 @@ GitHub repositories that were passed to `/skill-extraction` and turned into harn
 **What we added:**
 - Script: `ollama_model_test.py` — full OMT script added to `scripts/`; propagates to every project's `.claude/scripts/` via update.sh. chmod +x wired into install.sh and update.sh.
 - Skill: `local-llm-eval` — guided workflow for offline prompt evaluation: pre-flight check, parameter selection, single/multi-model run patterns (shell loop), result interpretation, and prompt iteration loop. Fills gap between abstract `llm-evaluation` skill and actual local execution.
-- Docs: `docs/local-llm-eval/README.md` — quick start, flag reference, output schema, common patterns (model comparison, variance audit, temperature sweep), related skills.
+- Docs: `docs/evaluation/local-llm-eval/README.md` — quick start, flag reference, output schema, common patterns (model comparison, variance audit, temperature sweep), related skills.
 
 ---
 
@@ -278,7 +278,7 @@ GitHub repositories that were passed to `/skill-extraction` and turned into harn
 - Augment: `agents/kiro/spec-requirements.md` — `[NEEDS CLARIFICATION]` discipline: step 3 now marks every assumed value, unstated intent, or unclear constraint with an explicit inline marker + a step 4 that surfaces all markers to the user for resolution before requirements are approved.
 - Augment: `agents/kiro/spec-tasks.md` — Output Description now includes "Parallel Execution Groups" section listing safe concurrent invocation groups, first sequential gate after each group, enabling users to dispatch parallel `/kiro:spec-impl` calls without reading the dependency chain.
 - Augment: `commands/kiro/spec-impl.md` — Phase -1 Pre-Implementation Gates added before TDD subagent invocation: Simplicity Gate (≤3 components, no speculative tasks), Anti-Abstraction Gate (direct framework use, single model), Integration-First Gate (contracts in design.md, integration test task before unit-only tasks). Soft gate — user can override.
-- Docs: `docs/kiro/README.md` — updated command table entries for `spec-requirements`, `spec-tasks`, and `spec-impl` to reflect new behaviors.
+- Docs: `docs/workflow/kiro/README.md` — updated command table entries for `spec-requirements`, `spec-tasks`, and `spec-impl` to reflect new behaviors.
 
 ---
 
@@ -290,7 +290,7 @@ GitHub repositories that were passed to `/skill-extraction` and turned into harn
 
 **What we added:**
 - Skill: `structured-web-dataset` — implements BigSet's pipeline natively in Claude Code (no Docker, no external APIs). Covers both Web mode (parallel Agent() fan-out per entity → verified rows from live sources) and Synthetic mode (schema + distribution rules → generated rows with controlled edge cases). Fills the gap between `deep-research` (prose reports) and raw data needs — output is always a typed, deduplicated table/CSV.
-- Docs: `docs/structured-web-dataset/README.md` — workflow diagram, design decisions, related skills.
+- Docs: `docs/research/structured-web-dataset/README.md` — workflow diagram, design decisions, related skills.
 
 ---
 
@@ -922,3 +922,17 @@ See also: [articles/README.md](../articles/README.md) (RRSI names the same overf
 
 **What we added:**
 - Skill enhancement: `skills/skill-eval-gate/SKILL.md` — new Phase 1d, "Reserve a Holdout Scenario" (same augmentation logged under the RRSI entry in articles/README.md — this repo's train/holdout split was the concrete implementation pattern that made the abstract RRSI concern actionable as a gate rule).
+
+---
+
+## github.com/alphaXiv/OpenResearch
+**URL:** https://github.com/alphaXiv/OpenResearch | **Added:** 2026-09-30
+
+**What it is:** A local-first Rust workspace (`orx`) that wraps coding agents for autoresearch. Each research line runs in its own worktree, experiments form a git branch tree with an immutable commit per run, results go to SQLite. Its skill file sets four rules, including that a node is frozen once a run has answered it and a crashed run that answered nothing is repaired rather than counted.
+
+**What we added:**
+- Augmentation: `agents/kiro/autoresearch-agent.md` — a REPAIR outcome. A crash caused by the change's own bug (typo, import error, shape mismatch) is fixed and re-run under the same hypothesis and logged ERRORED; ERRORED runs no longer count toward the "reverted 2+ times, pivot" rule; two errors after repair revert and move on. New constraint: a crash is not a result, a disappointing result is — don't re-tweak a hypothesis whose run completed and lost. Before this a crash was logged like a failed idea and could trigger a pivot, discarding hypotheses that were never tested.
+
+**Rejected:** installing `orx` (default-on telemetry, unauthenticated remote mode, overlaps `/kiro:autoresearch`), the worktree-per-branch experiment tree (too heavy for the single-file keep/revert loop).
+
+See also: [articles/README.md](../articles/README.md) — same 18-source batch, 2026-09-30. Three other repos in the batch (`rohitg00/ai-engineering-from-scratch`, `wbopan/tastebench`, `dzhng/jevgrep`) yielded nothing; see `docs/skills/skill-extraction/extraction-history.md`. `dzhng/skills` is logged separately above.

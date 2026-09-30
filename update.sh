@@ -120,6 +120,13 @@ do_update() {
     bash "$HARNESS_DIR/scripts/setup/gitnexus-reconcile.sh" "$proj" || true
   fi
 
+  # --- Reconcile Serena's per-project language list ---
+  # .serena/ is gitignored, and Serena's auto-detection can drop Python, which
+  # silently breaks the Risk Gate's Python row. Adds missing languages only.
+  if [ -f "$HARNESS_DIR/scripts/setup/serena-reconcile.sh" ]; then
+    bash "$HARNESS_DIR/scripts/setup/serena-reconcile.sh" "$proj" || true
+  fi
+
   # --- Sync ALL hooks from canonical source ($HARNESS_DIR/hooks/claude/) ---
   # Every .sh in hooks/claude/ is propagated unconditionally to every project.
   # The harness is the source of truth; user-chosen wiring lives in settings.json.
@@ -165,6 +172,10 @@ do_update() {
         cp "$cmd_file" "$HOME/.claude/commands/"
       done
       echo "  Global commands synced to ~/.claude/commands/"
+    fi
+    # Serena is registered user-scope; pin it once per update, not per project.
+    if [ -f "$HARNESS_DIR/scripts/setup/serena-reconcile.sh" ]; then
+      bash "$HARNESS_DIR/scripts/setup/serena-reconcile.sh" --global || true
     fi
     export _SDD_GLOBAL_SYNCED=1
   fi

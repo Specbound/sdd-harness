@@ -102,5 +102,5 @@ Enhanced agents:
   /kiro:verify             — Now includes optional Stage 0 (impact detection)
   /kiro:skill-extract-scan — Now seeds from GitNexus community clusters
 
-Documentation: .claude/docs/gitnexus/README.md
+Documentation: .claude/docs/integrations/gitnexus/README.md
 ```

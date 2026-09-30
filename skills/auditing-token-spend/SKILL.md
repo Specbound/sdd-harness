@@ -90,6 +90,15 @@ This is why the table ranks by what a tool **caused**, not what it **returned**.
 A tool with modest returned-chars can top the amplified column purely by firing
 early and often — and that is the one worth bounding.
 
+**Per-hook amplified cost.** Hooks inject text the same way tools do, on every
+prompt, session start and edit, so the same amplification applies. The script
+reports hooks as `event script` (e.g. `UserPromptSubmit prompt-hook.sh`) in two
+tables that are never summed: `hook_additional_context` is confirmed to reach
+the model; `hook_success` stdout reaches it only for some events, so read that
+table as an upper bound. A hook that fires on every prompt tops the table even
+with modest output — that is the injected-extras trap (lint output after every
+edit, a status banner on every prompt).
+
 ### Phase 3: Name the Cause
 
 State one cause, with the number that supports it. Not a list of observations.
@@ -101,6 +110,9 @@ State one cause, with the number that supports it. Not a list of observations.
 | High automation share + many short sessions | Routine cadence or fan-out width | Every fresh session pays full cache-creation on turn one — reduce spawn count before run length |
 | High cache-create vs cache-read | Sessions too short to amortize the prompt | Fewer, longer sessions; check for a loop restarting the agent |
 | High cache-read, flat output | Long sessions carrying a large early payload | Compact sooner, or stop injecting the payload |
+| One hook dominates the hook table | Hook output injected on every prompt/edit | Trim the hook's output, or gate it to the events that need it (`hook-design`) |
+| Low cache-read share (cache-create high relative to reads) | Something broke the prompt cache | Check the Claude Code cache-breakers: a pause longer than the cache lifetime (1h on a subscription, 5m on an API key or usage credits), a model switch, an MCP server connecting or disconnecting, an effort change through a gateway, first use of fast mode, compaction. Only the model switch is visible in transcripts |
+| Large output on a small change | Effort too high, or retries | Check the session for repeated attempts before raising or lowering effort (`model-tiers` → Effort Level) |
 
 ### Phase 4: Act or Say Nothing
 

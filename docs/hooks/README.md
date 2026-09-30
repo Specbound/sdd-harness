@@ -931,7 +931,7 @@ PreToolUse       Write|Edit|MultiEdit                 → risk-zone-edit-gate-ho
 PreToolUse       Write|Edit|MultiEdit|Bash            → ai-writing-guard-hook.sh
 PreToolUse       Read|Edit|MultiEdit                  → pre-tool-use-gitnexus.sh
 PreToolUse       Agent                                → gbrain-agent-spawn.sh
-PreToolUse       Agent                                → prompt-quality-check.sh  [no dedicated section below yet]
+PreToolUse       Agent                                → prompt-quality-check.sh  [see docs/prompt-quality/README.md]
 PreToolUse       mcp__…claude-mem…save_observation    → gbrain-memory-write.sh
 PreToolUse       mcp__raindrop__                      → raindrop-best-practices.sh
 PreToolUse       WebFetch|WebSearch                   → gbrain-external-search.sh

@@ -3265,10 +3265,22 @@ def _startup_payload_card(repo_path):
     ghosts  = data.get("ghosts", []) or []
     files   = data.get("files", []) or []
     gen     = data.get("generated", "")
+    # Ratchet fields — absent in reports written before the ceiling existed.
+    ceiling      = data.get("ceiling")
+    delta        = data.get("delta")
+    over_ceiling = data.get("over_ceiling", False)
 
-    status_color = "#f38ba8" if over else "#a6e3a1"
+    status_color = "#f38ba8" if over else ("#f9e2af" if over_ceiling else "#a6e3a1")
     status_text  = f"over budget ({budget:,})" if over else f"within budget ({budget:,})"
     status_badge = badge(status_text, "missed" if over else "ok")
+    if over_ceiling:
+        status_badge += badge(f"above ceiling ({delta:+,})", "missed")
+
+    if ceiling is None:
+        ceiling_val, ceiling_lbl = "—", "ceiling (not yet set)"
+    else:
+        ceiling_val = f"{ceiling:,}"
+        ceiling_lbl = "ceiling" if delta is None else f"ceiling · {delta:+,} vs last"
 
     # Top files by token weight
     rows = ""
@@ -3311,9 +3323,11 @@ def _startup_payload_card(repo_path):
     RTK/lean-ctx/Headroom don't cover this; reduce it by structuring what auto-loads
     (<code style="font-size:10px">read on demand, not upfront</code>).
   </div>
-  <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px">
+  <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px">
     <div class="stat-card"><div class="stat-val" style="color:{status_color}">{total:,}</div>
       <div class="stat-lbl">tokens at startup</div></div>
+    <div class="stat-card"><div class="stat-val" style="color:{'#f9e2af' if over_ceiling else 'var(--subtext1)'}">{ceiling_val}</div>
+      <div class="stat-lbl">{h(ceiling_lbl)}</div></div>
     <div class="stat-card"><div class="stat-val" style="color:var(--subtext1)">{fcount}</div>
       <div class="stat-lbl">files loaded</div></div>
     <div class="stat-card"><div class="stat-val" style="color:{'#f9e2af' if stale else 'var(--subtext1)'}">{stale}</div>

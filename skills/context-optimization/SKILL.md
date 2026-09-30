@@ -293,6 +293,8 @@ Use before: batch processing jobs, request spikes, first request of a new server
 
 Default TTL is 5 minutes. Extended TTL (1 hour) is available on request. Design retry logic and session handling around the 5-minute default — a cache miss after TTL expiry costs the same as a cold request.
 
+This is the API default. Claude Code sessions on a subscription get a 1-hour cache; on an API key or usage credits it is 5 minutes. For what breaks the cache inside Claude Code, see `auditing-token-spend` → Phase 3.
+
 ### Usage Monitoring
 
 The API response includes `cache_creation_input_tokens` and `cache_read_input_tokens` in the usage block. Track these to measure cache hit rate and verify placement is working. A low `cache_read_input_tokens` ratio with high `cache_creation_input_tokens` indicates misplaced breakpoints or content too dynamic to cache.

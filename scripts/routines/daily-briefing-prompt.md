@@ -21,6 +21,9 @@ Critical rules:
 3. For each source (git, GitHub, Jira/Confluence, Slack), check it's actually reachable
    this session before using it. If unreachable, say so plainly in the briefing rather
    than silently omitting that project/person's updates.
-4. Write the dated report to `.claude/reports/daily-briefings/TODAY_PLACEHOLDER.md`.
+4. Run the skill's Phase 2b stalled-work sweep (`gh pr list --author @me --json ...`)
+   even when nothing else changed — stalled work is exactly what a changes-only pass
+   misses. Report it under `## Stalled`, or state why the sweep was skipped.
+5. Write the dated report to `.claude/reports/daily-briefings/TODAY_PLACEHOLDER.md`.
 
 End with a 2-line summary: number of P0/P1 items, and the report file path.

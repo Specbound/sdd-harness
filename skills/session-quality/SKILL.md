@@ -109,13 +109,22 @@ Example: loop-debt on 2026-06-21 was recognized as idle-routine artifact, not re
 Do not use `--idle` on zero commits alone; prior-run output lands post-judge in this window. (source: 2026-08-26 [session-quality])
 
 ### ❌ Assuming routine idleness on zero observations
-Check routine transcripts for hard-failure signature (~15 lines means died at auth); zero observations can hide outages indistinguishable from idle. (source: 2026-08-31 [routine-error])
+Check transcripts for the hard-failure signature (use the tail-distance rule below, not line count); zero observations hide outages as idle. (source: daa-llm-evaluation 2026-09-24 [insight, enforceable])
 
 ### ❌ Single-channel coverage checks
 Check all four channels (observations.md, metrics.jsonl, markers, transcripts) before declaring idle. (source: daa-llm-evaluation 2026-09-09 [session-quality])
 
 ### ❌ Absolute line count as auth-outage discriminator
-Line count fails—dead runs 15-16/66, live 18-34 lines. Use tail-distance: tail≤3=dead, tail≥24=real. (source: daa-llm-evaluation 2026-09-07 [debug, insight, enforceable])
+Dead = tail≤3 AND ≤25 lines. Tail marks where a run ENDED, not whether it worked: 80ab4e0a (375 lines, tail=3) did real subagent work. (source: daa-llm-evaluation 2026-09-24 [insight, enforceable])
 
 ### ❌ Completion sentinel stamped at routine start
-Stamping completion marker at start (not end) hides auth-outages: runs mark done before auth, suppressing retry. (source: daa-llm-evaluation 2026-09-07 [debug, insight, enforceable])
+Stamping at routine-start hides outages. `claude --print` exits 0 on OAuth, 502 gateway failures. Gate on artifact. (source: daa-llm-evaluation 2026-09-28 [judge])
+
+### ❌ Scheduler no-show vs true idle
+Never-fired run leaves zero artifacts, indistinguishable from idle. Check cadence before marking idle. (source: 2026-09-27 [routine-error, insight])
+
+### ❌ Census-hole detection for scheduler never-fire
+Zero transcripts+observations+metrics across BOTH repos for one day indicates scheduler never-fire, not idle. Sentinel check alone misses this. (source: daa-llm-evaluation 2026-09-30 [judge])
+
+### ❌ Reading the subagent scratch dir as the transcript channel
+Transcripts live in ~/.claude/projects/<slug>/; /private/tmp/claude-*/<slug>/ is subagent scratch. An empty tasks/ there is normal, not a dead session. (source: 2026-09-30 [session-quality])

@@ -119,11 +119,12 @@ Guards:
 **What it does:**
 - Measures the **fixed per-session token tax** — the layered `CLAUDE.md` + `@imports` + `.claude/rules/*` + auto-loaded `MEMORY.md` that load before you do anything. RTK/lean-ctx/Headroom only reduce *runtime* cost and never see this startup payload.
 - Estimates per-file tokens and age, flags files over the budget (`SDD_STARTUP_PAYLOAD_BUDGET`, default 8000), stale files (`SDD_STARTUP_STALE_DAYS`, default 45), and **ghost references** (`@paths` in CLAUDE.md that don't resolve)
+- **Ratchet (2026-09-30):** keeps a per-repo ceiling in `.claude/reports/context/startup-payload-ceiling.json` that only goes down. A run at or under the ceiling lowers it to the new total; a run above it is flagged `over_ceiling` with a `delta`, a warning goes to stderr, and the ceiling stays put. The fixed budget still applies as an absolute cap; the ceiling catches creep below it. Accept intended growth with `--rebaseline`. A corrupt ceiling file fails the run rather than silently rebaselining
 - Writes `.claude/reports/context/startup-payload.json`
 - Surfaced in the dashboard **Budget & Efficiency → Context Health** tab as a Startup Payload card (tokens, budget status, stale/ghost counts, top files) and as a card on the **Scheduled Tasks** tab
 - Enforces the harness's own "read on demand, not upfront" rule by measuring whether it's actually followed. See the `context-optimization` skill (Startup vs Runtime axis).
 
-**Opt-out:** `SDD_SKIP_STARTUP_AUDIT=1` env var. Force a run with `--force`.
+**Opt-out:** `SDD_SKIP_STARTUP_AUDIT=1` env var. Force a run with `--force`; accept growth with `--rebaseline`. Tests: `scripts/routines/startup-payload-audit.test.sh`.
 
 ---
 

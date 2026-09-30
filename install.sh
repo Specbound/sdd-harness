@@ -650,6 +650,9 @@ install_project() {
   # --- Ignore harness files in the project repo (local-only) ---
   ensure_gitignore "$PROJECT_DIR"
 
+  # --- Serena project config: every tracked language listed (see script header) ---
+  bash "$HARNESS_DIR/scripts/setup/serena-reconcile.sh" "$PROJECT_DIR" || true
+
   # --- Queue steering bootstrap for the first Claude session ---
   # /kiro:steering is an interactive slash command (it interviews you about
   # product/tech/structure), so it can't run from this shell. Drop a sentinel;
@@ -837,6 +840,9 @@ PYEOF
 # Raindrop tracing wiring, headroom, liteparse, and the OS-level daily orchestrator.
 # ════════════════════════════════════════════════════════════════════════════════
 install_globals() {
+  # --- Serena MCP server: user scope, pinned release (see script header) ---
+  bash "$HARNESS_DIR/scripts/setup/serena-reconcile.sh" --global || true
+
   # --- Install harness skills globally ---
   if [ -d "$HARNESS_DIR/skills" ]; then
     mkdir -p "$HOME/.claude/skills"

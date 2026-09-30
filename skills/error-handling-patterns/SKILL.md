@@ -43,6 +43,9 @@ Setting error status by checking if report text contains "error"/"failed" keywor
 ### ❌ Trusting exit code 0 as sole success signal
 Exit 0 ≠ success if errors print to stdout. Parse output for errors before marking done. (source: 2026-09-07 [friction, enforceable, escaped])
 
+### ❌ Substring-matching injected content in serialized output
+Checking for error substrings in responses with injected content (hot-memory.md, interpolated variables) causes false positives. Validate actual status fields, not text content. (source: 2026-09-28 [judge])
+
 ## Resources
 
 - `resources/implementation-playbook.md` for detailed patterns and examples.

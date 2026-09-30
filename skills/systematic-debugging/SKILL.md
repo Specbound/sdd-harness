@@ -294,6 +294,9 @@ These techniques are part of systematic debugging and available in this director
 ### ❌ Symptom-Layer Fixes in Multi-Layer Systems
 When fixing governance/operational issues (governance rules, memory writes, throttling), fixing the symptom layer (e.g., restricting writes) without identifying the root decision layer that emits the problem leaves enforcement conflicts unresolved. Example: restricting memory writes without fixing the routine that decides to write bloats the blocker list, not the source. (source: 2026-06-23 ineffective-shipped-work drain)
 
+### ❌ Using filesystem metadata to identify structured records
+Date records by primary data fields (`timestamp`), not filesystem mtime. Metadata lags; data is truth. (source: 2026-09-24 [debug, insight])
+
 ## Real-World Impact
 
 From debugging sessions:

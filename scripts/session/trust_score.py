@@ -5,7 +5,7 @@ Trust Score helper for the SDD harness.
 Single-user cumulative score over a rolling window. Reads/writes a JSONL
 history and rewrites the "Harness Trust Score" line at the top of
 `.claude/memory/hot-memory.md`. The score is observability only — it never
-gates harness behavior (see docs/SDD-USAGE.md).
+gates harness behavior (see docs/harness-documentation/SDD-USAGE.md).
 
 Usage:
     # Apply today's delta (from session-judge). Repeat --delta once per judge

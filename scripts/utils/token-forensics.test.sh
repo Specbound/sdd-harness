@@ -52,10 +52,27 @@ print(json.dumps({
 }))' "$1" "$2" "$3" "$4" "$5" "$NOW"
 }
 
+# Emit one hook attachment line. Args: class, hookName, command, content
+hook() {
+  python3 -c '
+import json, sys
+cls, name, command, content, ts = sys.argv[1:6]
+att = {"type": cls, "hookName": name, "hookEvent": name.split(":")[0], "content": content}
+if command:
+    att["command"] = command
+print(json.dumps({"type": "attachment", "timestamp": ts, "attachment": att}))' \
+    "$1" "$2" "$3" "$4" "$NOW"
+}
+
 # Session A: opus → haiku mid-session, with a large re-prefill. One real bust.
+# Also carries one hook of each class, at known positions, so amplification
+# (chars x requests that followed) has an exact expected value.
 {
+  hook hook_additional_context SessionStart "" "$(printf 'x%.0s' $(seq 1 100))"
   line 1 sessA claude-opus-5 1000 5000
   line 2 sessA claude-opus-5 500 6000
+  hook hook_success UserPromptSubmit \
+    'bash "/tmp/hooks/prompt-quality-check.sh"' "$(printf 'y%.0s' $(seq 1 40))"
   line 3 sessA claude-haiku-4-5-20251001 50000 100
 } > "$PROJ/sessA.jsonl"
 
@@ -112,6 +129,19 @@ check "output weight is 5" "true" "$(jqv '.cost_weights.output == 5')"
 check "cache_create weight is 2" "true" "$(jqv '.cost_weights.cache_create == 2')"
 check "breakdown percentages sum to ~100" "100" \
   "$(printf '%s' "$OUT" | jq -r '[.cost_breakdown[].pct_of_cost] | add | round')"
+
+# ── Hook injection attribution ───────────────────────────────────────────────
+# additional_context: 100 chars before request 1 → 3 requests follow → 300.
+# success: 40 chars after request 2 → 1 request follows → 40.
+check "additional_context hook counted" "100" \
+  "$(jqv '.hooks_by_amplified_chars.hook_additional_context[0].injected_chars')"
+check "additional_context amplified by requests after it" "300" \
+  "$(jqv '.hooks_by_amplified_chars.hook_additional_context[0].amplified_chars')"
+check "hook_success labelled with its script" "UserPromptSubmit prompt-quality-check.sh" \
+  "$(jqv '.hooks_by_amplified_chars.hook_success[0].hook')"
+check "hook_success amplified by requests after it" "40" \
+  "$(jqv '.hooks_by_amplified_chars.hook_success[0].amplified_chars')"
+check "hook lines do not change token totals" "true" "$(jqv '.weighted_cost == 108480')"
 
 echo
 echo "  $PASS passed, $FAIL failed"

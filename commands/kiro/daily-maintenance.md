@@ -311,4 +311,4 @@ Daily Maintenance complete — YYYY-MM-DD
 - Intended cadence: **nightly, per repo** — registered by `install.sh` as a Claude Code Routine.
 - Manual invocation (`/kiro:daily-maintenance`) is fine; the same-day guard makes it safe.
 - Same-day guard uses the `[judge]` observation as the sentinel. Deleting that entry re-enables the pipeline (intentional escape hatch).
-- See `docs/SDD-USAGE.md` — "Daily Maintenance" section for the full model.
+- See `docs/harness-documentation/SDD-USAGE.md` — "Daily Maintenance" section for the full model.

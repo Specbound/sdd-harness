@@ -80,6 +80,24 @@ never silently omit:
 | Jira/Confluence | Atlassian MCP tools, if authenticated this session |
 | Slack/other chat | whatever MCP/integration is actually configured |
 
+### Phase 2b — Sweep for Stalled Work
+
+Phase 2 only sees what *changed*, so work that stopped moving is invisible to it by
+construction — the costly case is believing something is being worked on when it isn't.
+Sweep for it explicitly, from structured fields only (no free-text parsing):
+
+```bash
+gh pr list --author @me --state open --json number,title,isDraft,updatedAt,body,url
+```
+
+- **Stalled PR** — `updatedAt` older than `STALL_DAYS` (default 3).
+- **Unevidenced draft** — `isDraft` is true and `body` still contains the placeholder
+  `scripts/pr/detect_base_and_create.sh` writes (`Not captured — this PR was opened
+  automatically on push`). Match that fixed literal with a substring test, not a pattern.
+
+Skip the sweep and say so if `gh` is unavailable or unauthenticated. Each item is
+evidenced by its PR URL, so it passes Phase 3's evidence rule as-is.
+
 ### Phase 3 — Filter, Tier, Dedup
 
 - **Signal over coverage** — only include items needing a decision, approval,
@@ -97,7 +115,9 @@ never silently omit:
 Write Logseq-ready markdown to `.claude/reports/daily-briefings/<date>.md`: linked dates,
 project names, and people names, with `TODO` markers for anything needing action. Answer
 the guiding question directly: **what changed since I last looked, what matters, and
-what do I need to do about it.**
+what do I need to do about it.** Put Phase 2b's results in their own `## Stalled`
+section, after P0/P1 — omit the section only when the sweep ran and found nothing, and
+say `Stalled sweep skipped: <reason>` when it did not run.
 
 ### Phase 5 — Update the Ledger
 

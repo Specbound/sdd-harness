@@ -58,6 +58,8 @@ For best results per anti-patterns, build a blame map once over all text files i
 
 **Keep Rate for commit** = `lines_still_in_HEAD / lines_added_by_Claude`
 
+If the calculator script is missing, rebuild it from this Step — the recipe is complete, so do not re-invent a method. (source: daa-llm-evaluation 2026-09-24 [keep-rate])
+
 ### Step 3 — Aggregate
 
 - Per-commit keep rate
@@ -146,3 +148,20 @@ The denominator must count all touched paths; deleted/renamed files are silently
 
 ### ❌ Using os.path.exists on git ls-files output
 Use `os.path.isfile` when processing `git ls-files` output; worktree/gitlink entries are directories. (source: daa-llm-evaluation 2026-09-09 [keep-rate])
+
+### ❌ Empty cohort as 0% rate
+When 'last 30 days' window empties (all commits older), Keep Rate is undefined not 0%. (source: 2026-09-27 [keep-rate])
+
+### ❌ Writing generated scripts only to ~/.claude/scripts
+Generated scripts must be written to /Users/user/GitHub/sdd-harness/scripts/ first; ~/.claude/ bulk reinstalls wipe all scripts. (source: daa-llm-evaluation 2026-09-28 [judge])
+
+### ❌ Rebuilding calculator when harness source copy exists
+If _keep_rate_calc.py is missing from .claude/scripts/session/, check ~/GitHub/sdd-harness/scripts/session/ first — it's the canonical source. .claude/ is gitignored and bulk-reinstalls wipe all scripts. (source: 2026-09-28 [keep-rate])
+
+### ❌ Comparing keep-rate across calculator implementation changes
+Calculator methodology changes (clamp logic, reattribution rules) invalidate comparability same as blame-flag changes do. Record methodology version/hash when changes occur. (source: 2026-09-28 [keep-rate])
+
+## Session-Learned Patterns
+
+### ✓ Durable script path verified
+Write to sdd-harness/scripts/session/ first, copy to .claude/. Verified at 2026-09-30 358-file reinstall. Still untracked, unsafe from git clean. (source: daa-llm-evaluation 2026-09-30 [keep-rate])
