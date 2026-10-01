@@ -10,9 +10,9 @@ Framework derived from Anthropic's Claude Code team restructuring — shifting b
 
 **Use when:** Asked about AI workflow adoption, team process redesign, or measuring Claude Code impact at team scale.
 
-**Do not use when:** The question is about code-level discipline (use `karpathy-guidelines`), PR review mechanics for a specific PR (use `code-review-excellence`), individual AI feature design (use `progressive-complexity-ladder`), or individual developer productivity without org scope.
+**Do not use when:** The question is about code-level discipline (use `karpathy-guidelines`), PR review mechanics for a specific PR (use `code-reviewer`), individual AI feature design (use `progressive-complexity-ladder`), or individual developer productivity without org scope.
 
-**Related skills:** `karpathy-guidelines` (code-level discipline), `code-review-excellence` (review mechanics), `progressive-complexity-ladder` (AI feature design).
+**Related skills:** `karpathy-guidelines` (code-level discipline), `code-reviewer` (review mechanics), `progressive-complexity-ladder` (AI feature design).
 
 ---
 

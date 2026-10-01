@@ -2,7 +2,7 @@
 
 Semantic layer for AI data agents using [ktx](https://github.com/Kaelio/ktx) (Kaelio, Apache 2.0). Invoke when building any agent that queries a warehouse or when LLM-generated SQL is hallucinating joins and metric definitions.
 
-**Skill file:** `~/.claude/skills/ktx-data-context/SKILL.md`
+**Skill file:** `~/.claude/skill-library/ktx-data-context/SKILL.md`
 
 ---
 

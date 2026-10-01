@@ -68,6 +68,23 @@ impact_score = prevalence_share × Σ(severity_weight over members)
 
 Rank patterns descending. Successful-only patterns are context, not findings.
 
+## Step 4b — Consistency Gap
+
+Follow `evaluation/macro`'s "Consistency Gap" section. Group the window's runs by task
+signature (same invoked skill/command + same or near-identical initial request, not just
+same behavior_pattern cluster). For any signature with ≥3 runs, compute:
+
+```
+mean_at_k  = pass_count / total_runs
+pass_hat_k = 1 if every run of this signature passed else 0
+gap        = mean_at_k - pass_hat_k
+```
+
+List signatures with `gap > 0` as `flip_prone: <signature>` — a separate line item from
+the Phase 4 leaderboard, even if the same runs also belong to a named behavior_pattern.
+For the top flip-prone signature (if any), run the Phase 5 backward-suspect method to
+name the specific decision step that varies across the repeated runs' state digests.
+
 ## Step 5 — Suspect trace (Phase 5)
 
 For the **top 3** impactful failing patterns: take 2 representative member runs, `get_run_outline`, identify the focus event (first error span or awaiting-review marker), walk `parent_span_id` backward, and name the most likely suspect step (`suspect_score = 0.4·proximity + 0.3·frequency + 0.2·bridge + 0.1·role`). Report it as an **inspection guide, not proof.**
@@ -85,6 +102,12 @@ Window: last <DAYS> days · Population: <N> runs · Filter: <filter or "all">
 |------|------------------|------|-------------|--------|--------------|
 | 1 | ... | n | x fail / y esc | 0.00 | ... |
 
+## Consistency gap
+<!-- Omit this section entirely if no task signature in the window had ≥3 repeated runs. -->
+| Task signature | Runs | Mean@k | Pass^k | Gap | Flip-prone step |
+|---|---|---|---|---|---|
+| ... | n | 0.00 | 0/1 | 0.00 | ... |
+
 ## Diagnoses (top 3)
 ### <pattern> — impact 0.00
 - Members: <run ids>
@@ -95,6 +118,12 @@ Window: last <DAYS> days · Population: <N> runs · Filter: <filter or "all">
 ## Delta vs previous sweep
 <compare to the most recent prior report in this dir; note new/worsening/resolved patterns. If none exists, write "first sweep — no baseline.">
 ```
+
+**Hand off flip-prone steps** — if Step 4b found any `flip_prone` signature, this is
+input for `skill-augment-agent` (not this sweep) to write as a stability guideline into
+the relevant `SKILL.md` on its own next run. Do not write the guideline yourself here;
+just make sure the flip-prone step and signature are named plainly enough in the report
+for that agent to find.
 
 **Annotate Workshop** — for each confirmed recurring failure pattern, post durable annotations:
 - Run-level: `annotate(run_id, kind='issue', note='<pattern>: suspect <step>')` on each member run of the top patterns (cap at ~5 runs per pattern to avoid noise; note the cap in the report).

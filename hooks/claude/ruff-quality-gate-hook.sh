@@ -24,6 +24,9 @@ except Exception:
 [[ "$FILE_PATH" != *.py ]] && exit 0
 [[ ! -f "$FILE_PATH" ]] && exit 0
 
+# CLAUDE.md's Serena rule (diagnostics after every .py edit) had no enforcement — nudge it here.
+echo "serena: run mcp__serena__get_diagnostics_for_file(\"$FILE_PATH\") — ruff alone misses type errors."
+
 command -v ruff >/dev/null 2>&1 || exit 0
 
 OUTPUT=$(ruff check "$FILE_PATH" 2>/dev/null || true)

@@ -28,7 +28,6 @@ Exit:   0 = declared or already present or skipped, 1 = failed to write
 
 from __future__ import annotations
 
-import re
 import sys
 from pathlib import Path
 
@@ -37,9 +36,53 @@ HARNESS_REQ_FILE = "requirements-harness.txt"
 MARKER = "# managed by sdd-harness (scripts/setup/declare-repo-deps.py) — do not hand-prune"
 
 
+_SPEC_DELIMITERS = frozenset("<>=!~[; ")
+
+
 def _pkg_name(spec: str) -> str:
     """Bare distribution name from a pip spec ('raindrop-ai>=1.2' -> 'raindrop-ai')."""
-    return re.split(r"[<>=!~\[; ]", spec, maxsplit=1)[0].strip()
+    for i, ch in enumerate(spec):
+        if ch in _SPEC_DELIMITERS:
+            return spec[:i].strip()
+    return spec.strip()
+
+
+def _iter_lines(text: str, begin: int = 0):
+    """Yield (start_offset, end_offset, line_without_newline) from `begin` onward."""
+    pos = begin
+    while pos <= len(text):
+        nl = text.find("\n", pos)
+        end = len(text) if nl == -1 else nl
+        yield pos, end, text[pos:end]
+        if nl == -1:
+            return
+        pos = nl + 1
+
+
+def _section_header_end(text: str, header: str) -> int | None:
+    """Offset just past the `[header]` line, or None when the section is absent."""
+    for _, end, line in _iter_lines(text):
+        if line.strip() == header:
+            return end
+    return None
+
+
+def _quoted_strings(text: str) -> list[str]:
+    """Contents of each non-empty '…' or \"…\" literal, in order."""
+    found = []
+    i = 0
+    while i < len(text):
+        ch = text[i]
+        if ch in "\"'":
+            close = text.find(ch, i + 1)
+            if close == -1:
+                break
+            if close > i + 1:
+                found.append(text[i + 1:close])
+            i = close + 1
+            continue
+        i += 1
+    return found
 
 
 def _validate_toml(text: str) -> bool:
@@ -59,22 +102,35 @@ def _existing_group(text: str) -> tuple[int, int, list[str]] | None:
 
     Returns (start_offset, end_offset, current_entries) or None when absent.
     """
-    sec = re.search(r"^\[dependency-groups\]\s*$", text, re.M)
-    if not sec:
+    section_end = _section_header_end(text, "[dependency-groups]")
+    if section_end is None:
         return None
+
     # Section body ends at the next top-level table header, or EOF.
-    nxt = re.search(r"^\[", text[sec.end():], re.M)
-    body_end = sec.end() + (nxt.start() if nxt else len(text) - sec.end())
-    key = re.search(rf"^{GROUP_NAME}\s*=\s*\[", text[sec.end():body_end], re.M)
-    if not key:
-        return None
-    start = sec.end() + key.start()
-    close = text.find("]", sec.end() + key.end() - 1)
-    if close == -1:
-        raise ValueError("unterminated dependency-groups array in pyproject.toml")
-    end = close + 1
-    entries = re.findall(r"[\"']([^\"']+)[\"']", text[start:end])
-    return start, end, entries
+    body_end = len(text)
+    for start, _, line in _iter_lines(text, min(section_end + 1, len(text))):
+        if line.startswith("["):
+            body_end = start
+            break
+
+    for start, _, line in _iter_lines(text, min(section_end + 1, len(text))):
+        if start >= body_end:
+            break
+        if not line.startswith(GROUP_NAME):
+            continue
+        after_name = line[len(GROUP_NAME):].lstrip()
+        if not after_name.startswith("="):
+            continue
+        after_eq = after_name[1:].lstrip()
+        if not after_eq.startswith("["):
+            continue
+        bracket = start + len(line) - len(after_eq)
+        close = text.find("]", bracket)
+        if close == -1:
+            raise ValueError("unterminated dependency-groups array in pyproject.toml")
+        end = close + 1
+        return start, end, _quoted_strings(text[start:end])
+    return None
 
 
 def declare_in_pyproject(path: Path, specs: list[str]) -> str:
@@ -88,14 +144,14 @@ def declare_in_pyproject(path: Path, specs: list[str]) -> str:
         return f"already declared in pyproject.toml [dependency-groups].{GROUP_NAME}"
 
     rendered = f"{GROUP_NAME} = [" + ", ".join(f'"{s}"' for s in merged) + "]"
-    section = re.search(r"^\[dependency-groups\]\s*$", original, re.M)
+    section_end = _section_header_end(original, "[dependency-groups]")
     if found:
         # Key exists — replace the array in place, preserving everything around it.
         start, end, _ = found
         updated = original[:start] + rendered + original[end:]
-    elif section:
+    elif section_end is not None:
         # Section exists but the key does not — insert right after the header.
-        updated = original[: section.end()] + f"\n{MARKER}\n{rendered}" + original[section.end():]
+        updated = original[:section_end] + f"\n{MARKER}\n{rendered}" + original[section_end:]
     else:
         sep = "" if original.endswith("\n\n") else ("\n" if original.endswith("\n") else "\n\n")
         updated = f"{original}{sep}[dependency-groups]\n{MARKER}\n{rendered}\n"

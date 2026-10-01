@@ -33,7 +33,10 @@ metadata:
 
 **liteparse is already installed** in the harness-owned venv (built by
 `scripts/setup/liteparse-setup.sh` on install/update — a pinned Python ≥3.10, so
-no `pip`/PEP-668 fuss). Use that interpreter and CLI directly:
+no `pip`/PEP-668 fuss). That install goes through `pip_cooldown_install`
+(`scripts/lib/pip-cooldown.sh`), so it skips any `liteparse` release uploaded
+within `SDD_PIP_MIN_AGE` (default `P2D`); set `SDD_PIP_MIN_AGE=off` to take a
+same-day release. Use that interpreter and CLI directly:
 
 ```bash
 HARNESS="${SDD_HARNESS_HOME:-$HOME/.claude/sdd-harness}"   # symlinks to the harness root

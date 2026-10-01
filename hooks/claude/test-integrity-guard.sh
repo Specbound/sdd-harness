@@ -6,45 +6,79 @@
 # is edited, it flags weakening signals (added skips, stubbed assertions, lowered
 # thresholds, removed asserts) and asks Claude to confirm it's a real spec change.
 # Does NOT block — outputs a reminder; Claude/user decides. Exits 0 always.
+#
+# NO REGEX (2026-09-03). This hook used `import re` for every check below, which
+# put it in violation of the repo-wide ban in ruff.toml — a ban TID251 could not
+# actually enforce here, because ruff only reads `.py` files and this Python lives
+# in a shell heredoc. It is now literal token membership plus pathlib, which is
+# what the ban asks for: no pattern can silently match the wrong span of text.
+#
+# The tradeoff is deliberate and worth stating. Literal matching cannot express
+# "an added skip marker at a word boundary", so `describe.skipBecause(` would
+# match the `.skip(` probe. For a soft advisory that prints a reminder and always
+# exits 0, a rare extra prompt costs a line of output; a regex that silently
+# matches the wrong span costs a missed weakened test. Erring loud is correct here.
 set -euo pipefail
 
-EVENT=$(cat)
+EVENT_FILE="$(mktemp)"
+cat > "$EVENT_FILE"
+trap 'rm -f "$EVENT_FILE"' EXIT
 
-python3 -c '
-import json, sys, re, os
+EVENT_FILE="$EVENT_FILE" python3 - <<'PY' 2>/dev/null || true
+import json, os
+from pathlib import PurePosixPath
 
 try:
-    e = json.load(sys.stdin)
+    with open(os.environ["EVENT_FILE"], encoding="utf-8") as fh:
+        e = json.load(fh)
 except Exception:
-    sys.exit(0)
+    raise SystemExit(0)
 
 tool = e.get("tool_name", "")
 if tool not in ("Write", "Edit", "MultiEdit"):
-    sys.exit(0)
+    raise SystemExit(0)
 
 inp = e.get("tool_input", {}) or {}
 path = inp.get("file_path", inp.get("path", "")) or ""
 if not path:
-    sys.exit(0)
+    raise SystemExit(0)
 
-base = os.path.basename(path)
-low = path.replace("\\", "/").lower()
+p = PurePosixPath(path.replace("\\", "/"))
+base = p.name
+low_name = base.lower()
+parts_low = {seg.lower() for seg in p.parts}
 
 # --- Is this a test file or a CI/coverage config? ---
-TEST_FILE = bool(
-    re.search(r"(^|/)test_[^/]+$", low) or
-    re.search(r"_test\.[a-z0-9]+$", low) or
-    re.search(r"\.(spec|test)\.[a-z0-9]+$", low) or
-    re.search(r"(^|/)(tests?|__tests__|spec)/", low)
+# Structure, not pattern: a stem/suffix decision plus a directory-membership test.
+stem = low_name
+for _ in range(len(p.suffixes)):
+    stem = stem.rsplit(".", 1)[0] if "." in stem else stem
+
+TEST_DIRS = {"test", "tests", "__tests__", "spec"}
+TEST_STEM_PREFIXES = ("test_",)
+TEST_STEM_SUFFIXES = ("_test", ".test", ".spec", "_spec")
+
+TEST_FILE = (
+    bool(parts_low & TEST_DIRS)
+    or stem.startswith(TEST_STEM_PREFIXES)
+    or stem.endswith(TEST_STEM_SUFFIXES)
+    # `foo.test.ts` / `foo.spec.js` — the marker is the second-to-last suffix.
+    or (len(p.suffixes) >= 2 and p.suffixes[-2].lower() in (".test", ".spec"))
 )
-CONFIG_FILE = base in (
+
+CONFIG_NAMES = {
     "pytest.ini", "tox.ini", "setup.cfg", "pyproject.toml",
     ".coveragerc", "jest.config.js", "jest.config.ts",
-    "vitest.config.js", "vitest.config.ts",
-) or bool(re.search(r"\.github/workflows/.*\.ya?ml$", low)) or low.endswith((".gitlab-ci.yml",))
+    "vitest.config.js", "vitest.config.ts", ".gitlab-ci.yml",
+}
+IN_WORKFLOWS = ".github" in parts_low and "workflows" in parts_low
+CONFIG_FILE = (
+    low_name in CONFIG_NAMES
+    or (IN_WORKFLOWS and low_name.endswith((".yml", ".yaml")))
+)
 
 if not (TEST_FILE or CONFIG_FILE):
-    sys.exit(0)
+    raise SystemExit(0)
 
 # --- Gather the NEW text introduced by this edit, plus OLD text when available ---
 new_text, old_text = "", ""
@@ -59,57 +93,79 @@ elif tool == "MultiEdit":
         old_text += (ed.get("old_string", "") or "") + "\n"
 
 if not new_text.strip():
-    sys.exit(0)
+    raise SystemExit(0)
 
 signals = []
 
-# 1. Added skip / xfail / disabled markers (python, js/ts, go, junit)
-SKIP_PATS = [
-    (r"@pytest\.mark\.(skip|xfail)", "pytest skip/xfail marker"),
-    (r"pytest\.skip\(", "pytest.skip() call"),
-    (r"@unittest\.skip", "unittest skip decorator"),
-    (r"\b(xit|xdescribe)\s*\(", "disabled JS test (xit/xdescribe)"),
-    (r"\b(it|test|describe)\.(skip|todo)\s*\(", "JS test .skip/.todo"),
-    (r"\bt\.Skip\(", "Go t.Skip()"),
-    (r"@Disabled", "JUnit @Disabled"),
-    (r"@Ignore", "JUnit @Ignore"),
+# 1. Added skip / xfail / disabled markers (python, js/ts, go, junit).
+#    Each probe is a literal that only appears in the construct it names.
+SKIP_TOKENS = [
+    ("@pytest.mark.skip",  "pytest skip marker"),
+    ("@pytest.mark.xfail", "pytest xfail marker"),
+    ("pytest.skip(",       "pytest.skip() call"),
+    ("@unittest.skip",     "unittest skip decorator"),
+    ("xit(",               "disabled JS test (xit)"),
+    ("xdescribe(",         "disabled JS suite (xdescribe)"),
+    ("it.skip(",           "JS it.skip"),
+    ("test.skip(",         "JS test.skip"),
+    ("describe.skip(",     "JS describe.skip"),
+    ("it.todo(",           "JS it.todo"),
+    ("test.todo(",         "JS test.todo"),
+    ("t.Skip(",            "Go t.Skip()"),
+    ("@Disabled",          "JUnit @Disabled"),
+    ("@Ignore",            "JUnit @Ignore"),
 ]
-for pat, label in SKIP_PATS:
-    if re.search(pat, new_text) and not re.search(pat, old_text):
+for token, label in SKIP_TOKENS:
+    if token in new_text and token not in old_text:
         signals.append("added " + label)
 
-# 2. Stubbed / tautological assertions
-STUB_PATS = [
-    (r"assert\s+True\b", "assert True"),
-    (r"assert\s+1\s*(==\s*1)?\s*$", "assert 1"),
-    (r"expect\(\s*true\s*\)\.toBe(Truthy)?\(\s*true?\s*\)", "expect(true).toBe(true)"),
-    (r"\bpass\s*#\s*TODO", "pass # TODO stub"),
+# 2. Stubbed / tautological assertions.
+#    Whitespace variants are enumerated rather than expressed as a pattern —
+#    the set is small, closed, and reads as exactly what it matches.
+STUB_TOKENS = [
+    ("assert True",                  "assert True"),
+    ("assert  True",                 "assert True"),
+    ("assert 1 == 1",                "assert 1 == 1"),
+    ("assert 1==1",                  "assert 1==1"),
+    ("expect(true).toBe(true)",      "expect(true).toBe(true)"),
+    ("expect(true).toBeTruthy()",    "expect(true).toBeTruthy()"),
+    ("assert.ok(true)",              "assert.ok(true)"),
+    ("pass  # TODO",                 "pass # TODO stub"),
+    ("pass # TODO",                  "pass # TODO stub"),
 ]
-for pat, label in STUB_PATS:
-    if re.search(pat, new_text, re.MULTILINE):
+seen_stub = set()
+for token, label in STUB_TOKENS:
+    if token in new_text and label not in seen_stub:
+        seen_stub.add(label)
         signals.append("tautological/stub assertion (" + label + ")")
 
-# 3. Lowered coverage / threshold knobs (flag any touch — reviewer confirms direction)
-COV_PATS = [
-    (r"--cov-fail-under", "--cov-fail-under"),
-    (r"\bfail_under\b", "fail_under"),
-    (r"coverageThreshold", "jest coverageThreshold"),
-    (r"\bminimum_coverage\b", "minimum_coverage"),
+# 3. Touched coverage / threshold knobs (flag any touch — reviewer confirms direction).
+COV_TOKENS = [
+    ("--cov-fail-under",   "--cov-fail-under"),
+    ("fail_under",         "fail_under"),
+    ("coverageThreshold",  "jest coverageThreshold"),
+    ("minimum_coverage",   "minimum_coverage"),
 ]
-for pat, label in COV_PATS:
-    if re.search(pat, new_text):
+for token, label in COV_TOKENS:
+    if token in new_text:
         signals.append("touched coverage threshold (" + label + ")")
 
-# 4. Removed assertions (Edit/MultiEdit only — compare counts old vs new)
+# 4. Removed assertions (Edit/MultiEdit only — compare counts old vs new).
+#    str.count over a fixed token list; no capture groups, nothing to mis-span.
+ASSERT_TOKENS = ("assert", "expect", "assert_that", "require.")
+
+
+def assert_count(text):
+    return sum(text.count(tok) for tok in ASSERT_TOKENS)
+
+
 if old_text:
-    def asserts(t):
-        return len(re.findall(r"\b(assert|expect|assert_that|require\.)", t))
-    removed = asserts(old_text) - asserts(new_text)
+    removed = assert_count(old_text) - assert_count(new_text)
     if removed > 0:
         signals.append("removed %d assertion(s)" % removed)
 
 if not signals:
-    sys.exit(0)
+    raise SystemExit(0)
 
 Y = "\033[1;33m"; B = "\033[1m"; R = "\033[0m"
 print(B + Y + "⚠  test-integrity-guard — " + base + R)
@@ -120,7 +176,7 @@ print(B + "Gradient-descent-to-green check:" + R + " the cheapest path to a pass
 print("build is often to weaken the test, not fix the code. Confirm each change above is")
 print("a deliberate spec change — not a shortcut to make a failing test pass. If the code")
 print("is wrong, fix the code itself. Never soften the assertion or skip the test.")
-' <<< "$EVENT" 2>/dev/null || true
+PY
 
 exit 0
 

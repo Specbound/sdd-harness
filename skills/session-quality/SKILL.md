@@ -28,6 +28,8 @@ git log --since="24 hours ago" --format="%s" | grep -i "revert\|undo\|rollback\|
 git log --since="24 hours ago" --name-only --format="" | sort | uniq -c | sort -rn | head -10
 ```
 
+If commits are zero, check sibling repos — activity may be invisible if `.claude/` is gitignored or work lands in a parallel directory. (source: 2026-09-01 [session-quality])
+
 ### Step 2 — Collect signals from observations
 
 Read `.claude/memory/observations.md` for today's entries. Look for:
@@ -52,11 +54,34 @@ Also assess:
 - **Spec quality**: Were requirements clear? (frequent scope changes suggest spec issue)
 - **Tool reliability**: Any tool errors or unexpected failures?
 
-### Step 4 — Record observation
+### Step 4 — Record the score twice: once for humans, once for the dashboard
+
+Prose observation (context, nuance, root-cause hint):
 
 ```
 - YYYY-MM-DD [session-quality]: Score=X/5. Signals: [reverts: N, rework files: N, forward commits: N]. Root cause hint: [context gap / spec ambiguity / tool issue / none]. 
 ```
+
+Structured measurement — the dashboard reads **only** this, never the prose:
+
+```bash
+.claude/scripts/session/record_metric.py --metric session-quality --value X \
+  --meta '{"reverts": N, "rework_files": N, "forward_commits": N}'
+```
+
+**Idle windows.** If there was no user session in the window (routine ran on a stale
+repo — no commits, no transcript), the score is a placeholder, not a judgement. Pass
+`--idle` so it is excluded from the average:
+
+```bash
+.claude/scripts/session/record_metric.py --metric session-quality --value 3 --idle
+```
+
+Averaging placeholders in is how a repo with one good session and two quiet days
+reports 3.3/5. Say "idle-routine window" in the text too, but the `--idle` flag is
+what the dashboard acts on.
+
+When marking idle on zero commits, check routine transcripts for evidence of real work (tool use, assistant turns, terminal Stop hook) and for auth errors. Line count alone does not discriminate outages. (source: daa-llm-evaluation 2026-09-09 [session-quality])
 
 If score ≤ 2, also add a `[kaizen]` flag: `Investigate: [specific pattern observed]`
 
@@ -79,3 +104,27 @@ Not all metric signals indicate real problems. **Idle-routine artifacts** fire o
 - Repeating signal with same anchor date (not escalating)? Likely artifact.
 - Signal fires only in zero-charge judge windows? Filter before alerting.
 Example: loop-debt on 2026-06-21 was recognized as idle-routine artifact, not regression. (source: 2026-06-21 insight, pattern)
+
+### ❌ Marking `--idle` on zero commits alone
+Do not use `--idle` on zero commits alone; prior-run output lands post-judge in this window. (source: 2026-08-26 [session-quality])
+
+### ❌ Assuming routine idleness on zero observations
+Check transcripts for the hard-failure signature (use the tail-distance rule below, not line count); zero observations hide outages as idle. (source: daa-llm-evaluation 2026-09-24 [insight, enforceable])
+
+### ❌ Single-channel coverage checks
+Check all four channels (observations.md, metrics.jsonl, markers, transcripts) before declaring idle. (source: daa-llm-evaluation 2026-09-09 [session-quality])
+
+### ❌ Absolute line count as auth-outage discriminator
+Dead = tail≤3 AND ≤25 lines. Tail marks where a run ENDED, not whether it worked: 80ab4e0a (375 lines, tail=3) did real subagent work. (source: daa-llm-evaluation 2026-09-24 [insight, enforceable])
+
+### ❌ Completion sentinel stamped at routine start
+Stamping at routine-start hides outages. `claude --print` exits 0 on OAuth, 502 gateway failures. Gate on artifact. (source: daa-llm-evaluation 2026-09-28 [judge])
+
+### ❌ Scheduler no-show vs true idle
+Never-fired run leaves zero artifacts, indistinguishable from idle. Check cadence before marking idle. (source: 2026-09-27 [routine-error, insight])
+
+### ❌ Census-hole detection for scheduler never-fire
+Zero transcripts+observations+metrics across BOTH repos for one day indicates scheduler never-fire, not idle. Sentinel check alone misses this. (source: daa-llm-evaluation 2026-09-30 [judge])
+
+### ❌ Reading the subagent scratch dir as the transcript channel
+Transcripts live in ~/.claude/projects/<slug>/; /private/tmp/claude-*/<slug>/ is subagent scratch. An empty tasks/ there is normal, not a dead session. (source: 2026-09-30 [session-quality])
