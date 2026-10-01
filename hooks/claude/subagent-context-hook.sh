@@ -89,7 +89,9 @@ SCOPE
 - Change size: prefer changes touching <=1 folder/module.
 - No shared extraction until 3 real call sites exist.
 - Do not commit .claude/, specs/, CLAUDE.md, AGENTS.md, or ERRORS.md — they are
-  installed harness output and gitignored. The top-level source tree IS the product.
+  installed harness output and gitignored. Exception: in sdd-harness itself,
+  CLAUDE.md is a committed shared reference (CLAUDE.local.md stays local).
+  The top-level source tree IS the product.
 
 REPORTING
 - Address the user as "Husband" in any user-facing text you produce.
