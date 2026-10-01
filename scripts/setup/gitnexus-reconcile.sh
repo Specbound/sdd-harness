@@ -1,6 +1,6 @@
 #!/bin/bash
 # ──────────────────────────────────────────────────────────────────────────────
-# gitnexus-reconcile.sh <project_dir> [--wire|--check]
+# gitnexus-reconcile.sh <project_dir> [--wire|--check] | gitnexus-reconcile.sh --global
 #
 # Keeps a project's GitNexus state self-consistent. `npx gitnexus setup` writes a
 # managed block into CLAUDE.md or AGENTS.md containing MUST/NEVER rules that call
@@ -15,6 +15,15 @@
 #   --wire    write the MCP server config (idempotent), then report
 #   (none)    reconcile the block: strip it when the tools are not callable,
 #             or repair its skill paths and bare tool names when they are
+#   --global  pin the global `gitnexus` CLI to GITNEXUS_VERSION (npm -g), and on
+#             macOS make sure Homebrew openssl@3 is present first — 1.6.12's
+#             LadybugDB binary dlopens libssl.3.dylib from the Homebrew openssl@3
+#             prefix, and every command fails without it. Pinning matters beyond the
+#             crash: the managed block is version-dependent output, and an older
+#             CLI rewrites it with a template that drops rules (risk: UNKNOWN,
+#             partial/truncated) the committed copy carries.
+#
+# The pinned version lives here and nowhere else; SDD_GITNEXUS_VERSION overrides.
 #
 # The block is looked for in CLAUDE.md first, then AGENTS.md (a project may
 # keep its conventions in AGENTS.md and have CLAUDE.md just `@`-import it).
@@ -24,11 +33,49 @@
 # ──────────────────────────────────────────────────────────────────────────────
 set -u
 
+GITNEXUS_VERSION="${SDD_GITNEXUS_VERSION:-1.6.12}"
+
+# ── Global: the CLI itself and its native dependency ──────────────────────────
+reconcile_global() {
+  if [ "$(uname -s)" = "Darwin" ]; then
+    if ! command -v brew >/dev/null 2>&1; then
+      echo "  WARNING: Homebrew not found — GitNexus needs openssl@3 (https://brew.sh)."
+    elif ! brew list --versions openssl@3 >/dev/null 2>&1; then
+      echo "  Installing openssl@3 (required by GitNexus's LadybugDB binary)..."
+      brew install openssl@3 >/dev/null 2>&1 || \
+        echo "  WARNING: brew install openssl@3 failed — gitnexus will not load."
+    fi
+  fi
+
+  if ! command -v npm >/dev/null 2>&1; then
+    echo "  WARNING: npm not found — cannot pin gitnexus@$GITNEXUS_VERSION."
+    return 0
+  fi
+  local cur
+  cur="$(gitnexus --version 2>/dev/null | head -1 || true)"
+  if [ "$cur" = "$GITNEXUS_VERSION" ]; then
+    echo "  GitNexus already pinned at $GITNEXUS_VERSION."
+    return 0
+  fi
+  echo "  Pinning gitnexus ${cur:-<absent>} -> $GITNEXUS_VERSION (npm install -g)..."
+  if npm install -g "gitnexus@$GITNEXUS_VERSION" >/dev/null 2>&1; then
+    echo "  GitNexus pinned at $GITNEXUS_VERSION."
+  else
+    echo "  WARNING: npm install -g gitnexus@$GITNEXUS_VERSION failed."
+  fi
+  return 0
+}
+
+if [ "${1:-}" = "--global" ]; then
+  reconcile_global
+  exit 0
+fi
+
 PROJ="${1:-}"
 MODE="${2:-}"
 
 if [ -z "$PROJ" ] || [ ! -d "$PROJ" ]; then
-  echo "usage: gitnexus-reconcile.sh <project_dir> [--wire|--check]" >&2
+  echo "usage: gitnexus-reconcile.sh <project_dir> [--wire|--check] | gitnexus-reconcile.sh --global" >&2
   exit 2
 fi
 

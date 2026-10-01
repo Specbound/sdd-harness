@@ -380,23 +380,16 @@ install_global_tools() {
     warn "Skipping GitNexus  (--skip-gitnexus)"
   elif command -v gitnexus >/dev/null 2>&1; then
     ok "GitNexus already installed  ($(gitnexus --version 2>&1 | head -1))"
-  elif npx gitnexus --version >/dev/null 2>&1; then
-    ok "GitNexus available via npx"
-    if confirm "Install GitNexus globally?  (npm install -g gitnexus)"; then
-      npm install -g gitnexus
-      refresh_tool_path
-      ok "GitNexus installed"
-    else
-      warn "Skipped GitNexus"
-    fi
+    # Re-pin an existing install too — an off-version CLI rewrites the managed
+    # CLAUDE.md block with a different template, and 1.6.12 needs openssl@3.
+    bash "$HARNESS_DIR/scripts/setup/gitnexus-reconcile.sh" --global || true
+    refresh_tool_path
+  elif confirm "Install GitNexus globally?  (pinned npm install -g + openssl@3 on macOS)"; then
+    bash "$HARNESS_DIR/scripts/setup/gitnexus-reconcile.sh" --global || true
+    refresh_tool_path
+    command -v gitnexus >/dev/null 2>&1 && ok "GitNexus installed" || warn "GitNexus install failed"
   else
-    if confirm "Install GitNexus globally?  (npm install -g gitnexus)"; then
-      npm install -g gitnexus
-      refresh_tool_path
-      ok "GitNexus installed"
-    else
-      warn "Skipped GitNexus"
-    fi
+    warn "Skipped GitNexus"
   fi
 
   # Raindrop Workshop CLI

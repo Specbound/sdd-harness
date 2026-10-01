@@ -119,7 +119,25 @@ cp "$P/.claude/settings.json" "$ROOT/broken-before.json"
 bash "$RECON" "$P" --wire >/dev/null 2>&1
 check "settings untouched"   "" "$(diff "$ROOT/broken-before.json" "$P/.claude/settings.json")"
 
-echo "=== 9. bad usage ==="
+echo "=== 9. --global pins the CLI (stubbed npm/gitnexus/brew, no network) ==="
+STUB="$ROOT/stub-bin"; mkdir -p "$STUB"
+printf '#!/bin/bash\necho "%s"\n' "\${FAKE_GN_VER:-1.0.0}" > "$STUB/gitnexus"
+printf '#!/bin/bash\necho "npm $*" >> "%s"\n' "$ROOT/calls.log" > "$STUB/npm"
+printf '#!/bin/bash\necho "brew $*" >> "%s"\n[ "$1" = list ] && exit 1\nexit 0\n' "$ROOT/calls.log" > "$STUB/brew"
+chmod +x "$STUB"/*
+: > "$ROOT/calls.log"
+PATH="$STUB:$PATH" FAKE_GN_VER=1.0.0 SDD_GITNEXUS_VERSION=9.9.9 bash "$RECON" --global >/dev/null
+check "off-version -> npm install pinned" "1" \
+  "$(grep -c 'npm install -g gitnexus@9.9.9' "$ROOT/calls.log")"
+if [ "$(uname -s)" = "Darwin" ]; then
+  check "missing openssl@3 -> brew install" "1" "$(grep -c 'brew install openssl@3' "$ROOT/calls.log")"
+fi
+: > "$ROOT/calls.log"
+PATH="$STUB:$PATH" FAKE_GN_VER=9.9.9 SDD_GITNEXUS_VERSION=9.9.9 bash "$RECON" --global >/dev/null
+check "on-version -> no npm call" "0" "$(grep -c '^npm' "$ROOT/calls.log")"
+PATH="$STUB:$PATH" bash "$RECON" --global >/dev/null; check "--global exits 0" "0" "$?"
+
+echo "=== 10. bad usage ==="
 bash "$RECON" 2>/dev/null; check "no args -> 2" "2" "$?"
 bash "$RECON" "$ROOT/does-not-exist" 2>/dev/null; check "bad dir -> 2" "2" "$?"
 

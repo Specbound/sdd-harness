@@ -177,6 +177,10 @@ do_update() {
     if [ -f "$HARNESS_DIR/scripts/setup/serena-reconcile.sh" ]; then
       bash "$HARNESS_DIR/scripts/setup/serena-reconcile.sh" --global || true
     fi
+    # Same for the global gitnexus CLI: pinned version + openssl@3 on macOS.
+    if [ -f "$HARNESS_DIR/scripts/setup/gitnexus-reconcile.sh" ]; then
+      bash "$HARNESS_DIR/scripts/setup/gitnexus-reconcile.sh" --global || true
+    fi
     export _SDD_GLOBAL_SYNCED=1
   fi
 
