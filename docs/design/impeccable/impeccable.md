@@ -35,10 +35,10 @@ The skill audits across all 7 domains and outputs a structured report with PASS 
 
 ## CLI Setup (for the hook)
 
-The PostToolUse hook runs `impeccable detect` automatically after writing frontend files. It requires a one-time install:
+The PostToolUse hook runs `impeccable detect` automatically after writing frontend files. It requires a one-time install, pinned to the version `install.sh` installs (`IMPECCABLE_VERSION`) — npm 10 has no min-release-age cooldown, so the pin is the only supply-chain guard here:
 
 ```bash
-npm install -g impeccable
+npm install -g impeccable@3.6.0
 ```
 
 Verify: `impeccable --version`

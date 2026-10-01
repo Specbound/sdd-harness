@@ -729,13 +729,13 @@ The integration adds three artifacts:
 
 ```bash
 # One-time CLI setup (enables the auto-scan hook)
-npm install -g impeccable
+npm install -g impeccable@3.6.0
 
 # On-demand audit
 /impeccable-audit [component name or "focus: motion"]
 ```
 
-The hook exits silently if the CLI is not installed — nothing blocks. Once installed, violations surface immediately after writing frontend files, before the next action.
+The version is pinned: `install.sh` installs `impeccable@$IMPECCABLE_VERSION` (3.6.0), because npm 10 offers no release-age cooldown and an unpinned global install takes whatever was published that day. The hook exits silently if the CLI is not installed — nothing blocks. Once installed, violations surface immediately after writing frontend files, before the next action.
 
 Key anti-patterns caught: `background-clip: text` gradient text, `backdrop-filter` glassmorphism, colored left borders, identical card grids, nested cards, pure white backgrounds (`#ffffff`), gray text on colored backgrounds, `ease-in`/`ease-out` easing, missing `:focus-visible` states.
 

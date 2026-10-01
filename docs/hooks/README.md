@@ -162,7 +162,7 @@ Hook output is injected into Claude's context as system messages — Claude read
 
 **Why it's needed:** Frontend anti-patterns (e.g., CSS property ordering, accessible-name violations, layout anti-patterns) accumulate silently across edits. Catching them at write time, rather than at PR review, costs far fewer tokens and less rework.
 
-**Output:** Anti-pattern warnings with severity; green check if clean. Fails silently if Impeccable is not installed — install with `npm install -g impeccable`.
+**Output:** Anti-pattern warnings with severity; green check if clean. Fails silently if Impeccable is not installed — install with `npm install -g impeccable@3.6.0` (the version `install.sh` pins; npm 10 has no release-age cooldown, so the pin is the guard).
 
 ---
 

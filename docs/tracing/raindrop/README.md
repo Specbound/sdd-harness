@@ -25,7 +25,7 @@ Capturing traces is **free** — no tokens consumed. The self-healing eval loop 
 
 1. Adds `RAINDROP_LOCAL_DEBUGGER=http://localhost:5899` to `~/.claude/settings.json` env so all Claude-spawned subprocesses pick it up.
 2. Adds the same export to `~/.bashrc` so all interactive shell sessions (where you run `uvicorn`, `python`, etc.) inherit it.
-3. Detects each registered repo's virtualenv (`.venv/`, `venv/`, or `uv`-managed) and runs `pip install raindrop-ai` inside it.
+3. Detects each registered repo's virtualenv (`.venv/`, `venv/`, or `uv`-managed) and installs `raindrop-ai` inside it via `repo_pip_install` (`scripts/lib/repo-venv.sh`). That install carries the release-age cooldown from `scripts/lib/pip-cooldown.sh` on both its pip and `uv pip` paths: a release uploaded within `SDD_PIP_MIN_AGE` (ISO 8601 duration, default `P2D`) is not considered, since `raindrop-ai` is installed unpinned. Set `SDD_PIP_MIN_AGE=off` when you need a same-day release. A pip too old for `--uploaded-prior-to` installs without the cooldown and says so on stderr.
 
 **One additional manual step** — install the Raindrop CLI itself (global binary, not Python):
 

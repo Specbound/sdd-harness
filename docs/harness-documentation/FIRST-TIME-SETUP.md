@@ -130,7 +130,7 @@ curl -fsSL https://raindrop.sh/install | bash
 
 The harness wires this automatically via `raindrop-setup.sh` during `install.sh` / `update.sh`. It:
 
-- Installs `raindrop-ai` in each registered repo's virtualenv (`.venv/`, `venv/`, or `uv`-managed)
+- Installs `raindrop-ai` in each registered repo's virtualenv (`.venv/`, `venv/`, or `uv`-managed), with the `SDD_PIP_MIN_AGE` release-age cooldown (default `P2D`) from `scripts/lib/pip-cooldown.sh`
 - Adds `RAINDROP_LOCAL_DEBUGGER=http://localhost:5899` to `~/.claude/settings.json` (Claude env)
 - Adds the same export to `~/.bashrc` (shell env for user-run servers)
 
@@ -210,7 +210,7 @@ which impeccable && impeccable --version
 
 **If not found:**
 ```bash
-npm install -g impeccable
+npm install -g impeccable@3.6.0   # pinned — `install.sh` installs this same version via IMPECCABLE_VERSION
 ```
 
 That's it — the hook in `.claude/hooks/impeccable-detect-hook.sh` picks it up automatically on the next frontend file write.
@@ -434,7 +434,7 @@ Run through this on a fresh machine:
 | Permission dialog on every Bash call | Stale legacy hook from a prior token-compression tool still present in `~/.claude/settings.json` | Remove the old hook entry and run `rtk init -g` to install the current `rtk hook claude` entry |
 | Hook not firing at all | `rtk init -g` not run | Run `rtk init -g --auto-patch` |
 | GitNexus context missing in Claude | MCP not in `settings.json` or repo not indexed | Run `/kiro:gitnexus-setup` |
-| impeccable scans not appearing | Binary not in PATH | `npm install -g impeccable` |
+| impeccable scans not appearing | Binary not in PATH | `npm install -g impeccable@3.6.0` |
 | Local daily maintenance not running (macOS) | LaunchAgent not loaded | `launchctl list com.sdd.daily-orchestrator` to check; re-run `install.sh` or `update.sh` to re-register |
 | Local daily maintenance not running (macOS) **while the LaunchAgent is loaded** | launchd holds no Full Disk Access, so it is refused at exec time (`Operation not permitted`, exit 126) when the harness lives under a TCC-protected folder — `~/Documents`, `~/Desktop`, `~/Downloads`. `launchctl list` shows the job as present the whole time | Run `bash $SDD_HARNESS/scripts/orchestration/setup-mac-orchestrator.sh --force`; its preflight reproduces the failure and names the cause. Fix by moving the harness somewhere unprotected (e.g. `~/GitHub/`) and re-running `install.sh`, or by granting Full Disk Access to `/bin/bash` in System Settings → Privacy & Security. The grant is per-machine and never travels with a clone |
 | Harness cross-repo hooks stopped firing everywhere | `~/.sdd-harness-root` points at a directory that no longer exists — the harness was moved or renamed | Session start and session end now print `[HARNESS-POINTER-STALE]` naming the dead path. Re-run `bash <harness>/update.sh` from the new location to rewrite the pointer |

@@ -729,8 +729,8 @@ Use before committing UI work, or when a component "looks AI-generated."
 If `impeccable` is installed globally, every Write/Edit to a frontend file (`.tsx`, `.jsx`, `.css`, `.vue`, `.svelte`, `.html`) is automatically scanned and violations are surfaced inline. No extra commands needed.
 
 ```bash
-# One-time setup
-npm install -g impeccable
+# One-time setup (pinned — same version install.sh installs)
+npm install -g impeccable@3.6.0
 ```
 
 ### Key anti-patterns flagged
