@@ -565,7 +565,9 @@ Hook output is injected into Claude's context as system messages — Claude read
 
 **What it does not block:** every real producer of these files appends via `>>`/`echo` from a Bash-run hook or routine script — a different tool (`Bash`), never seen by this matcher. Only Claude's own Write/Edit/MultiEdit tool calls against these exact files are blocked.
 
-**Tests:** `hooks/claude/ledger-append-only.test.sh` (12 cases: block per protected file across all three tools, absolute-path match, allow on unrelated memory files and non-Write/Edit tools, and the rotate escape hatch).
+**Fail-closed on its own failures (2026-10-01):** if `python3` is missing or the event is malformed, the parse exits non-zero instead of collapsing to an empty path and `exit 0`. The hook then blocks whenever the raw event names a protected ledger (literal substring match) and allows everything else, so a broken interpreter cannot silently disable the block without also blocking every unrelated Write.
+
+**Tests:** `hooks/claude/ledger-append-only.test.sh` (17 cases: block per protected file across all three tools, absolute-path match, allow on unrelated memory files and non-Write/Edit tools, the rotate escape hatch, and five fail-closed cases — malformed event, non-object `tool_input`, and `python3` off PATH).
 
 **Why it is needed:** Without this hook, an agent under pressure to show improvement could quietly truncate or rewrite `trust-score.jsonl` or `learnings.jsonl` rather than earning the number honestly. The existing `protected-path-hook.sh` guards secrets, not the harness's own history.
 
@@ -750,6 +752,10 @@ cases covering new/missing/current/stale/unreadable/hashless).
 
 **Default mode:** MONITOR ONLY — logs the finding and warns to stderr, always exits 0. Set `SDD_AGENT_GUARD_ENFORCE` to a comma-separated list of rule names (`network_indicator`, `persistence`, `chained_secret_egress`) or `all` to make matching rules hard-block (exit 2), mirroring numbat's monitor→enforce promotion without its rule-file machinery.
 
+**Enforce mode fixed 2026-10-01:** until then the script ended in a bare `exit 0` that discarded the Python's exit code, so enforce mode logged `"mode": "enforce"` findings but **never blocked anything**. The Python's exit code is now the verdict. With any rule enforced, the guard also fails closed on its own failures (malformed event, `python3` missing, crash → exit 2); in monitor mode those stay silent.
+
+**Tests:** `hooks/claude/agent-behavior-guard.test.sh` — 13 cases: each rule blocking under enforce, chained egress scoped to its session, enforce scoped to the named rule, monitor never blocking, and fail-closed vs. monitor on a malformed event and with `python3` off PATH. Runs the hook from a throwaway cwd so it never touches the repo's findings ledger.
+
 **Output / side effect:** Appends one JSON line per finding (monitor or enforce) to `.claude/memory/agent-security-findings.jsonl`. Secret-access events for the chained-egress rule are recorded in `.claude/memory/.agent-behavior-guard-secret-access.jsonl`, keyed by `session_id`.
 
 ---
@@ -767,6 +773,8 @@ The previous implementation regex-stripped quoted segments and then `grep -E`'d 
 
 **Fail-closed behavior:** if the command cannot be parsed (unbalanced quotes) or a destructive-capable verb carries an unresolved expansion (`$VAR`, `$(...)`, backtick) that could expand to a flag, the hook blocks and asks for the literal value. This deliberately over-blocks on a narrow set of high-stakes verbs — `git push`, `git branch`, `git rebase`, `gh repo` — and nowhere else.
 
+The guard also fails closed on **its own** failures (2026-10-01). If `python3` is missing, the event is malformed, or the analyzer crashes, the hook blocks any event that mentions `git` or `gh ` and allows the rest. Before this, both parse steps swallowed errors (`|| echo ""`, `|| REASON=""`) and fell through to `exit 0`, so a broken interpreter silently disabled the only hard-block on destructive git.
+
 **No `ask` verdict, by design:** the hook only ever allows or hard-blocks. The harness's routine runners (`scripts/orchestration/daily-orchestrator.sh`, `scripts/routines/*`) run headless, where a prompt-the-human verdict is unanswerable and silently degrades to a hang or an implicit allow.
 
 **Quoted text still safe:** `git commit -m "document git push --force risks"` is not blocked — `shlex` keeps the message as a single token and the verb resolves to `commit`, which is not checked.
@@ -775,7 +783,7 @@ The previous implementation regex-stripped quoted segments and then `grep -E`'d 
 
 **Output / side effect:** `BLOCKED: ...` to stderr with reason and the offending command, exit 2. Silent (exit 0) on anything else.
 
-**Tests:** `hooks/claude/git-destructive-guard-hook.test.sh` — 46 cases covering baseline blocks, the four regex-era bypasses above, and a false-positive guard block (normal pushes, commit messages that mention `--force`, `git status`, `gh repo view`). Run `bash hooks/claude/git-destructive-guard-hook.test.sh`.
+**Tests:** `hooks/claude/git-destructive-guard-hook.test.sh` — 52 cases covering baseline blocks, the four regex-era bypasses above, six fail-closed cases (malformed event, non-string command, `python3` off PATH), and a false-positive guard block (normal pushes, commit messages that mention `--force`, `git status`, `gh repo view`). Run `bash hooks/claude/git-destructive-guard-hook.test.sh`.
 
 ---
 

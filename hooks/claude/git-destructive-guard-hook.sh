@@ -45,14 +45,34 @@
 
 EVENT=$(cat)
 
+# FAIL-CLOSED applies to the hook's own failures too, not only to the command's.
+# If python3 is missing or the event is not the JSON shape expected, the parse
+# exits non-zero. An empty COMMAND from a *failed* parse is not the same as an
+# event with no command, so it must not fall through to `exit 0` — that turned
+# a broken interpreter into a silent allow. Narrowed to events that mention git
+# or gh at all (the same rule check_text applies to unbalanced quotes), so a
+# broken python3 does not take down every Bash call. Literal glob, not regex.
+# (Perplexity, "How we engineer safer agents", 2026-09-29: "A safeguard the
+# agent can decline to invoke, or reconfigure, is not a safeguard.")
+fail_closed() {
+  case "$EVENT" in
+    *git*|*"gh "*) ;;
+    *) exit 0 ;;
+  esac
+  echo "BLOCKED: git-destructive-guard-hook.sh could not verify this command" >&2
+  echo "Reason: $1" >&2
+  echo "Fix the guard's environment (python3 on PATH, well-formed event) rather than working around it." >&2
+  exit 2
+}
+
 COMMAND=$(printf '%s' "$EVENT" | python3 -c "
 import json, sys
-try:
-    e = json.load(sys.stdin)
-    print(e.get('tool_input', {}).get('command', ''))
-except Exception:
-    print('')
-" 2>/dev/null || echo "")
+e = json.load(sys.stdin)
+command = e.get('tool_input', {}).get('command', '')
+if not isinstance(command, str):
+    raise SystemExit('tool_input.command is not a string')
+print(command)
+" 2>/dev/null) || fail_closed "could not parse the hook event (python3 missing or malformed JSON)"
 
 [ -z "$COMMAND" ] && exit 0
 
@@ -244,7 +264,7 @@ def check_text(text):
 reason = check_text(RAW)
 print(reason if reason else "")
 PYEOF
-) || REASON=""
+) || fail_closed "the command analyzer crashed before reaching a verdict"
 
 if [ -n "$REASON" ]; then
   echo "BLOCKED: destructive git/gh operation refused by git-destructive-guard-hook.sh" >&2

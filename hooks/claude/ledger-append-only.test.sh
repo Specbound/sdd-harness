@@ -85,5 +85,43 @@ allows "no file_path"                "Write"     ""
 allows_rotate "rotate bypasses block" "Write" ".claude/memory/trust-score.jsonl"
 
 echo
+echo "== fail-closed on the guard's own failures =="
+# A PATH holding only `cat` — python3 is unreachable. A failed parse must not
+# read as "allow" when the event names a protected ledger.
+NOPY_BIN="$(mktemp -d)"
+ln -s "$(command -v cat)" "$NOPY_BIN/cat"
+trap 'rm -rf "$NOPY_BIN"' EXIT
+
+expect_rc() {
+    local label="$1" want="$2" rc="$3"
+    if [ "$rc" = "$want" ]; then
+        printf '  ok    rc=%s %-44s\n' "$want" "$label"
+        PASS=$((PASS + 1))
+    else
+        printf '  FAIL  rc=%s %-44s got exit %s\n' "$want" "$label" "$rc"
+        FAIL=$((FAIL + 1))
+    fi
+}
+
+run_raw() {
+    printf '%s' "$1" | env -u SDD_LEDGER_ROTATE bash "$HOOK" >/dev/null 2>&1
+    echo $?
+}
+
+run_nopy() {
+    python3 -c '
+import json, sys
+print(json.dumps({"tool_name": "Write", "tool_input": {"file_path": sys.argv[1]}}))
+' "$1" | env -u SDD_LEDGER_ROTATE PATH="$NOPY_BIN" /bin/bash "$HOOK" >/dev/null 2>&1
+    echo $?
+}
+
+expect_rc "malformed event naming a ledger"   2 "$(run_raw 'not json .claude/memory/metrics.jsonl')"
+expect_rc "malformed event, no ledger"        0 "$(run_raw 'not json scripts/foo.py')"
+expect_rc "tool_input not an object"          2 "$(run_raw '{"tool_name": "Write", "tool_input": ".claude/memory/learnings.jsonl"}')"
+expect_rc "python3 missing, ledger write"     2 "$(run_nopy '.claude/memory/trust-score.jsonl')"
+expect_rc "python3 missing, unrelated write"  0 "$(run_nopy 'scripts/foo.py')"
+
+echo
 echo "== $PASS passed, $FAIL failed =="
 [ "$FAIL" = "0" ]

@@ -107,5 +107,44 @@ allows "echo with force text"        'echo "never use git push --force here"'
 allows "push with branch var"        'git push origin main --set-upstream'
 
 echo
+echo "== fail-closed on the guard's own failures =="
+# A PATH holding only `cat` — python3 is unreachable, as on a machine where it
+# is off the non-interactive PATH. The guard must not read that as "allow".
+NOPY_BIN="$(mktemp -d)"
+ln -s "$(command -v cat)" "$NOPY_BIN/cat"
+trap 'rm -rf "$NOPY_BIN"' EXIT
+
+expect_rc() {
+  local label="$1" want="$2" rc="$3"
+  if [ "$rc" = "$want" ]; then
+    printf '  ok    rc=%s   %-44s\n' "$want" "$label"
+    PASS=$((PASS + 1))
+  else
+    printf '  FAIL  rc=%s   %-44s got exit %s\n' "$want" "$label" "$rc"
+    FAIL=$((FAIL + 1))
+  fi
+}
+
+run_raw() {
+  printf '%s' "$1" | bash "$HOOK" >/dev/null 2>&1
+  echo $?
+}
+
+run_nopy() {
+  python3 -c '
+import json, sys
+print(json.dumps({"tool_name": "Bash", "tool_input": {"command": sys.argv[1]}}))
+' "$1" | PATH="$NOPY_BIN" /bin/bash "$HOOK" >/dev/null 2>&1
+  echo $?
+}
+
+expect_rc "malformed event mentioning git"   2 "$(run_raw 'not json: git push --force')"
+expect_rc "malformed event, no git/gh"       0 "$(run_raw 'not json: ls -la')"
+expect_rc "command field not a string"       2 "$(run_raw '{"tool_input": {"command": ["git", "push"]}}')"
+expect_rc "python3 missing, force push"      2 "$(run_nopy 'git push --force')"
+expect_rc "python3 missing, benign git"      2 "$(run_nopy 'git status')"
+expect_rc "python3 missing, non-git command" 0 "$(run_nopy 'ls -la')"
+
+echo
 printf 'passed %d, failed %d\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ] || exit 1

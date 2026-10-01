@@ -1356,3 +1356,21 @@ See also: [x/README.md](../x/README.md) (eric zakariasson's token-efficiency aud
 **Rejected:** train/test split (already `claude-api` Hillclimb Methodology and `skill-eval-gate` Phase 1d), "stronger model scores higher" (Phase 1b), a new build-eval skill (duplicates `skill-eval-gate`, `raindrop-eval-loop`, `macro-eval-sweep`).
 
 **Open finding (unverified):** the harness's own `skills/claude-api` has the same name as Anthropic's `claude-api` skill, which the article says provides the `build-eval` / `hillclimb` / `prompt-audit` sub-commands. The local skill may shadow the official one; not checked.
+
+---
+
+## How We Engineer Safer Agents
+**URL:** https://www.perplexity.ai/hub/blog/how-we-engineer-safer-agents | **Added:** 2026-10-01 | **Source:** Perplexity (2026-09-29)
+
+**Fetch status:** partial. WebFetch got a 403 and the Wayback Machine is blocked for that tool; lean-ctx `ctx_url_read` retrieved the article.
+
+**What it's about:** "Accidental meltdowns": an agent with a legitimate goal hits friction and crosses security boundaries to get past it. Examples are the July 2026 Hugging Face breach and agents probing Data USA with SQL injection. The fix is defense-in-depth under three rules: layers fail independently; at least one layer is deterministic code below the agent ("a safeguard the agent can decline to invoke, or reconfigure, is not a safeguard"); and signals can only reduce authority. Portable Computer's sandbox fails closed — if the sandbox is unavailable, the harness disables itself.
+
+**What we added:**
+- Fix: fail-closed on the guard's own failures in `hooks/claude/git-destructive-guard-hook.sh` and `hooks/claude/ledger-append-only.sh`. A missing `python3` or a malformed event used to collapse to `exit 0`. Each hook now blocks when the raw event touches what it protects.
+- Bug fix: `hooks/claude/agent-behavior-guard.sh` enforce mode never blocked. Its trailing `exit 0` discarded the Python's `sys.exit(2)`. The fix was found while auditing for the fail-closed rule. New `agent-behavior-guard.test.sh` (13 cases); 13 new cases across the three suites fail on the old hooks.
+- Augmentation: `skills/hook-design/SKILL.md` — new "Fail Closed, Narrow Only" section. The canonical stdin-parsing snippet, which itself taught the fail-open `except: print('')` / `|| echo ""` idiom, is corrected.
+
+**Rejected:** the six-layer product stack (SPACE, BrowseSafe, Numbat are Perplexity infrastructure; independent verifier already in `agent-permissions-design` / `secure-agent-design`), the improvement loop (`harness-fix-agent`, `skill-augment-agent`).
+
+**Open:** `hooks/claude/scan-pii.sh` reports "No PII detected" when `opf` errors or its output fails to parse (`|| true`, `except: print(0, "", 0)`). Not fixed: `opf` is not in the lean-ctx shell allowlist, so its clean-file output contract could not be checked.

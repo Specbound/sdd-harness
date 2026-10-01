@@ -58,6 +58,29 @@ Use soft gates when the action is sometimes legitimate. Use hard blocks only for
 
 > **Enforcement scope:** `settings.json` `deny` rules are unreliable — even Claude's own tool calls can bypass them (proven by fa1ce38: a `git push --force` executed successfully despite a matching deny entry). Use a PreToolUse hard-block hook (exit 2) as the actual enforced mitigation. GitHub branch protection provides an independent remote-layer guard. (fa1ce38, 2026-07-30)
 
+## Fail Closed, Narrow Only (blocking hooks)
+
+Two rules for any hook that can exit 2. Neither applies to advisory hooks that always exit 0.
+
+**1. Fail closed.** A blocking hook whose own machinery fails must not allow the call. That covers `python3` off PATH, malformed event JSON, and an analyzer crash. The fail-open shape is `|| echo ""` or `except: print('')` followed by `[ -z "$X" ] && exit 0`. It turns a broken interpreter into a silent allow. Scope the failure block so a broken dependency does not take down every tool call. Block only when the raw event mentions what the hook protects, using a literal glob:
+
+```bash
+fail_closed() {
+  case "$EVENT" in
+    *git*|*"gh "*) ;;          # the hook's protected surface, literal match
+    *) exit 0 ;;
+  esac
+  echo "BLOCKED: <hook> could not verify this call — $1" >&2
+  exit 2
+}
+```
+
+Propagate the verdict too. If a heredoc'd `python3` does `sys.exit(2)` and the script then ends in a bare `exit 0`, the block is discarded. Capture `RC=$?` and exit with it. Worked examples: `git-destructive-guard-hook.sh`, `ledger-append-only.sh`, and `agent-behavior-guard.sh`. The last one's enforce mode never blocked anything until 2026-10-01 for exactly this reason. Every blocking hook's `*.test.sh` needs a malformed-event case and a python3-off-PATH case (a `PATH` holding only `cat`). Without them, a fail-open regression passes the suite.
+
+**2. Signals only narrow.** A hook's verdict may block, warn, pause or revoke. It never grants. No hook returns `permissionDecision: "allow"` or writes allow-rules. A detection that can widen access can be steered by whoever controls its input. Approval to widen access belongs to the human.
+
+(Source: Perplexity, "How we engineer safer agents", 2026-09-29: "A safeguard the agent can decline to invoke, or reconfigure, is not a safeguard" and "No risk signal should ever grant additional access.")
+
 ## Harness Hook Conventions
 
 - Hook source files live in `$SDD_HARNESS/hooks/` and get installed to `<project>/.claude/hooks/`
@@ -72,14 +95,13 @@ Use soft gates when the action is sometimes legitimate. Use hard blocks only for
 EVENT=$(cat)
 FILE_PATH=$(echo "$EVENT" | python3 -c "
 import json, sys
-try:
-    e = json.load(sys.stdin)
-    inp = e.get('tool_input', {})
-    print(inp.get('file_path', inp.get('path', '')))
-except Exception:
-    print('')
-" 2>/dev/null || echo "")
+e = json.load(sys.stdin)
+inp = e.get('tool_input', {})
+print(inp.get('file_path', inp.get('path', '')))
+" 2>/dev/null) || fail_closed "could not parse the hook event"
 ```
+
+Let a parse failure exit non-zero and handle it. Don't swallow it into `''`. An empty field and a failed parse mean different things, and only the first one may fall through to `exit 0`. For `fail_closed`, see "Fail Closed, Narrow Only" below.
 
 ## Adoption Order (low to high complexity)
 
