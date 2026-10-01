@@ -1,6 +1,6 @@
 You are running the local daily maintenance loop for this repository. This invocation runs LOCALLY (not in Anthropic cloud), so you have access to:
 
-- `~/.claude/skills/` via the Skill tool
+- `~/.claude/skills/` via the Skill tool (listed tier only — the `Skill()` tool resolves nothing in `~/.claude/skill-library/`; read those by path instead)
 - The full repo file tree (you are already in the repo's working directory)
 - All slash commands defined in `.claude/commands/`
 
@@ -111,4 +111,4 @@ Daily maintenance complete: judge=<delta> session-quality=<N/5> keep-rate=<N%> t
 
 If any step was skipped or failed, replace the value with `skipped` or `failed`.
 
-_Last synced: 2026-09-03_
+_Last synced: 2026-10-01_

@@ -192,6 +192,8 @@ This indexes the repo (`.gitnexus/`), adds the MCP server to `.claude/settings.j
 
 Option A now does the MCP wiring itself: `install.sh --with-gitnexus` calls `scripts/setup/gitnexus-reconcile.sh <project> --wire` instead of printing a note asking you to paste the `mcpServers` JSON by hand, and it only runs `gitnexus setup` once a `--check` confirms both the index and the MCP server exist. If that check fails it says so and sends you to Option B — that gate exists because `gitnexus setup` writes a MUST/NEVER block into `CLAUDE.md` (or `AGENTS.md`, if that's where the project keeps its conventions), and an unwired install left the agent ordered to call `gitnexus_*` tools that did not exist.
 
+After `gitnexus setup` succeeds, the reconciler runs once more and **compacts** that block: the upstream version costs ~900 tokens on every API call (each rule written twice, in MCP and CLI form, plus tables the skill listing already carries), so it is replaced by the harness's compact rule set, which keeps every MUST/NEVER rule. Set `SDD_GITNEXUS_FULL_BLOCK=1` if you want the upstream block left verbatim.
+
 ---
 
 ## Step 4: impeccable (Frontend Design QA)
@@ -446,4 +448,4 @@ Run through this on a fresh machine:
 | `headroom` proxy silently crash-loops (`Error: Deployment '<profile>' did not become ready after start`, launchd shows nonzero `last exit code` with no stdout/stderr) | A proxy dependency is missing from the running uv tool env (seen so far: `mcp`, `magika`) — the real error (`No module named 'X'`) is written only to `~/.headroom/deploy/<profile>/runner.log`, never to launchd's own logs | Check `~/.headroom/deploy/<profile>/runner.log` first, always — it has the real reason launchd's silence hides. Fix: `uv tool install "headroom-ai[proxy]" --python 3.12 --force`, then `headroom install apply --preset persistent-service --memory --profile <profile>`. headroom-setup.sh installs via the `[proxy]` extra (not a hand-maintained requirements list) precisely so this stops recurring release over release |
 | `ANTHROPIC_BASE_URL` points at a dead headroom proxy and won't stay unset | headroom's own SessionStart hook (`headroom init hook ensure`) re-asserts routing every session, so editing `settings.json`/shell rc by hand doesn't stick | Nothing to do manually — `session-start-hook.sh` now probes the routed URL every session (`scripts/utils/headroom-unwire-if-dead.py`) and strips it automatically when the proxy is unreachable; routing resumes on its own once the proxy is healthy again. If a VS Code terminal specifically still shows the stale value after that, fully quit VS Code (Cmd+Q, not Reload Window) and relaunch — it caches resolved shell env once per app launch |
 
-_Last synced: 2026-09-23_
+_Last synced: 2026-10-01_

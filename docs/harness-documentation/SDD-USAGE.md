@@ -1,6 +1,6 @@
 <!-- L0: Quick reference — all SDD commands with usage examples -->
 
-_Last synced: 2026-09-30_
+_Last synced: 2026-10-01_
 
 # SDD Usage Guide
 
@@ -647,15 +647,19 @@ The **cache-cost stat card** shows what share of a session's token spend was cac
 
 Backed by [Herdr](https://herdr.dev) via `scripts/utils/herder.py`. `herdr server` is a headless daemon needing no TTY, and every `herdr workspace|tab|pane|agent` subcommand answers with JSON on stdout, so nothing in this path pattern-matches terminal text. It is used instead of the `claude --print` primitive the skill-curator endpoints use because `--print` is a one-shot pipe with nothing to attach to; a Herdr-started session can be joined from a terminal mid-run with `herdr agent attach <name>`.
 
-The API endpoints (`/api/herder-status`, `-list`, `-options`, `-spawn`, `-prompt`, `-read`, `-stream`, `-stop`) are guarded by **two independent checks**, either of which alone is bypassable: a per-process `X-Herder-Token` that only the page served by this process holds, and an `Origin` allowlist. An *absent* Origin is allowed (browsers send none on same-origin GET/POST) while a *present but foreign* one is rejected, so a page that somehow learned the token still cannot drive the dashboard from another site.
+The API endpoints (`/api/herder-status`, `-list`, `-options`, `-spawn`, `-prompt`, `-read`, `-stream`, `-stop`, `-complete`) are guarded by **two independent checks**, either of which alone is bypassable: a per-process `X-Herder-Token` that only the page served by this process holds, and an `Origin` allowlist. An *absent* Origin is allowed (browsers send none on same-origin GET/POST) while a *present but foreign* one is rejected, so a page that somehow learned the token still cannot drive the dashboard from another site.
 
 **Talking to an agent (chat, not a popup).** Each agent card holds the conversation inline: a scrolling message feed, a reply `textarea` (Enter sends, Shift+Enter inserts a newline), a 📎 button that attaches `@filename` chips, and `send`. Attached files are appended to the outgoing prompt as a trailing `Files: @a @b` line, then the chips clear. The feed auto-scrolls only when you were already at the bottom, so reading back through history is not yanked forward by the next message. It renders assistant **text** events from `/api/herder-stream`; reasoning and tool-call events are not shown in the chat. Sending posts to `/api/herder-prompt` refreshes the feed immediately and again after 1s. With the **live tail** checkbox on, every card's feed refreshes on the 5s roster poll, not just an opened one.
+
+Agent text is rendered as **markdown** — headings, lists, fenced code, inline `code`, tables — because agents answer in markdown and escaped plain text read as one run-on paragraph. Parsing is line- and character-scanning only (no regex, per the repo-wide ban), and every piece of agent text still passes through `_hdEsc` before it reaches `innerHTML`. Chat text is clipped at 20,000 characters (`CHAT_TEXT_LIMIT`) rather than folded onto one line, so a long answer keeps its list and fence structure.
+
+**Prompt-box completion.** Both the spawn prompt and each reply box complete the way Claude Code's own input does: `/` at the start completes a skill or command, `@` at the start of any word completes a repo path. Candidates come from `/api/herder-complete` → `herder.complete()`, which reads the target repo off disk (project `.claude/` → user `~/.claude/` → plugins, namespaced `plugin:name`; nested commands as `/kiro:spec-init`) and lists files via `git ls-files --cached --others --exclude-standard`, so gitignored paths are never offered. Results are cached 30s per repo, ranked like a fuzzy finder with shallower-then-shorter tie-breaking, and capped at 50.
 
 The raw pane sits below the chat in a collapsed `raw pane` disclosure. Opening it populates the `<pre>` with the full raw session output via `herderUpdateChat` (refreshes on disclosure open and on live-tail 5s polls).
 
 Two undocumented Herdr behaviours are handled here. A spawned pane inherits `CLAUDE_CODE_CHILD_SESSION`, which turns transcript saving **off** — that would make every herder-spawned session invisible to `scripts/utils/token-forensics.py` and to `agents/kiro/session-judge.md`, so it is scrubbed both in the server env and per-workspace via `--env`. And `herdr agent read` returns raw pane text rather than a JSON envelope, with failures arriving as JSON on stderr, so both are handled separately from the normal JSON path.
 
-Known limitation: spawning into a repo Claude Code has never been opened in fails with `agent_not_ready`, because Claude stops on its first-run "do you trust the files in this folder?" prompt. Open that repo by hand once.
+Known limitation: spawning into a repo Claude Code has never been opened in fails with `agent_not_ready`, because Claude stops on an interactive startup dialog — the first-run "do you trust the files in this folder?" prompt, or "New MCP server found" when the repo's `.mcp.json` registers a server that has not been approved yet (seen 2026-10-01 right after GitNexus setup wrote one). The pane is read **before** the failed workspace is closed, so the error names the actual dialog and the card shows the captured prompt text in a red block instead of a bare `agent_not_ready`. Open that repo by hand once with `claude` and answer it.
 
 See `docs/workflow/superpowers/specs/2026-05-14-harness-dashboard-design.md` for the full section spec (gitignored — local only).
 
@@ -864,4 +868,4 @@ Four protocols extracted from [garrytan/gbrain](https://github.com/garrytan/gbra
 
 Full reference: `docs/gbrain-patterns/gbrain-patterns.md`
 
-_Last synced: 2026-09-30_
+_Last synced: 2026-10-01_

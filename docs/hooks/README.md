@@ -82,6 +82,23 @@ Hook output is injected into Claude's context as system messages — Claude read
 
 ---
 
+### `prompt-hook.sh`
+**Event:** `UserPromptSubmit` — **Matcher:** _(all prompts)_
+
+**Purpose:** Injects `.claude/memory/hot-memory.md` into the prompt as `--- Active Context (hot-memory) ---` … `--- End Active Context ---`.
+
+**Cadence (not every prompt):** hot-memory is ~2k tokens and every injection stays in the transcript, so injecting on each prompt re-sends one more copy on every later API call. It now injects on the **1st prompt of a session**, then **every `SDD_HOT_MEMORY_EVERY` prompts** (default `10`), and on the **first prompt after a compaction** (the summary may have dropped it). Compactions are counted by scanning the transcript at `transcript_path` for `"compact_boundary"`; a change in that count resets the cadence to 1.
+
+**Counter:** `.claude/memory/.prompt-hook/<session_id>.json` holds `{"n": …, "compacts": …}`. On the first prompt of a session the hook drops counter files untouched for 7 days. A `session_id` containing `/`, or one that is absent, is not used as a filename.
+
+**Fail-open:** any failure to read the hook event, parse `SDD_HOT_MEMORY_EVERY`, read a corrupt counter, or write the counter **injects** — a missed injection is invisible, an extra one costs 2k tokens. The reason is printed to stderr as `[prompt-hook] <why> — injecting hot-memory`. A corrupt counter file is reset rather than left to inject forever. Exits silently when `hot-memory.md` is missing or empty.
+
+**Decision logic** runs in an inline `python3` heredoc (stdlib only, no regex) and prints `inject` or `skip`; the shell wrapper only concatenates the file.
+
+**Tests:** `hooks/claude/prompt-hook.test.sh`.
+
+---
+
 ### `frontend-security-nudge.sh`
 **Event:** `UserPromptSubmit` — **Matcher:** _(all prompts, keyword-gated)_
 
@@ -185,11 +202,11 @@ Hook output is injected into Claude's context as system messages — Claude read
 | Command contains | Inferred domain |
 |-----------------|----------------|
 | `pip`, `npm`, `yarn`, `poetry`, `uv` | `dependency-management` |
-| `docker`, `kubectl`, `helm` | `deployment-engineer` |
+| `docker`, `kubectl`, `helm` | `deployment-pipeline-design` |
 | `git` | `git-advanced-workflows` |
 | `curl`, `wget`, `http` | `api-patterns` |
 | `python`, `.py` | `python-pro` |
-| `node`, `npm`, `.ts`, `.tsx` | `nodejs-best-practices` |
+| `node`, `npm`, `.ts`, `.tsx` | `nodejs-backend-patterns` |
 | _(default)_ | `systematic-debugging` |
 
 **Design principle:** "Memory from what agents DO, not just what they say" — extracted from Memori's architecture. The struggle extension adds automatic capture without requiring Claude to decide.

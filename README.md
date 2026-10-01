@@ -780,7 +780,7 @@ Runs when a Claude Code session starts (SessionStart). First reads `$HOME/.sdd-h
 
 ### Context Priming Hook (`hooks/claude/prompt-hook.sh`)
 
-Runs before every user prompt (UserPromptSubmit). Injects the contents of `hot-memory.md` into context so the agent always has current priorities, active specs, and recent decisions.
+Runs on UserPromptSubmit and injects the contents of `hot-memory.md` into context so the agent has current priorities, active specs, and recent decisions — but **not on every prompt**. hot-memory is ~2k tokens and each injection stays in the transcript, so injecting every time re-sends one more copy on every later API call. It injects on the first prompt of a session, then every `SDD_HOT_MEMORY_EVERY` prompts (default 10), and on the first prompt after a compaction (the summary may have dropped it). The per-session counter lives in `.claude/memory/.prompt-hook/<session_id>.json`, and counters untouched for a week are pruned on each new session. Fails **open**: an unreadable hook event, a bad `SDD_HOT_MEMORY_EVERY`, or a counter it cannot read or write all inject with the reason on stderr, because a missed injection is invisible while an extra one only costs tokens. No-ops if hot-memory is missing or empty. Tests: `hooks/claude/prompt-hook.test.sh`.
 
 ### Frontend Security Nudge (`hooks/claude/frontend-security-nudge.sh`)
 
@@ -1054,4 +1054,4 @@ The Model Cost section reads session data from `~/.claude/projects/*/`. Pricing 
 
 Private repository. Contact the maintainer for access.
 
-_Last synced: 2026-09-30_
+_Last synced: 2026-10-01_

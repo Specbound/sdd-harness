@@ -1,6 +1,6 @@
 # Skill Hierarchy — two tiers + domain routers
 
-The harness ships ~570 skills. Listing every one in every prompt cost ~13k tokens per
+The harness ships 589 skills, 559 of them named in `scripts/setup/skill-library.txt`. Listing every one in every prompt cost ~13k tokens per
 API call, so skills are split into two install tiers, with 14 "master" skills that route
 to the rest. This is the single reference for where a skill goes and how to register one.
 
@@ -9,7 +9,7 @@ to the rest. This is the single reference for where a skill goes and how to regi
 | Tier | Install path | Listed in every prompt? | For |
 |---|---|---|---|
 | **Listed** | `~/.claude/skills/<name>/` | yes | the 14 masters + a small pinned set |
-| **Library** | `~/.claude/skill-library/<name>/` | no | everything else (~560), reached on demand |
+| **Library** | `~/.claude/skill-library/<name>/` | no | everything else (559), reached on demand |
 
 Repo source for **both** tiers stays in `skills/<name>/`. The split happens at install:
 `scripts/setup/sync-skills.sh` (called by `install.sh` and `update.sh`) reads
@@ -64,4 +64,6 @@ If a caller needs a Library skill, point it at the path — `Read ~/.claude/skil
 
 Measured per-call skill-listing cost: ~13.3k (all listed) → ~5.0k (29 listed). The masters
 preserve discovery — an agent still finds any sub-skill by routing through its domain — while
-the ~560 Library skills cost nothing until read. See the master bodies for the live routing tables.
+the Library skills cost nothing until read. See the master bodies for the live routing tables.
+
+_Last synced: 2026-10-01_
