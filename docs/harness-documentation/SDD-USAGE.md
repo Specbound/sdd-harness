@@ -567,7 +567,7 @@ Generates skills from an approved extraction plan, or runs the full pipeline wit
 /kiro:skill-extract https://github.com/org/repo -y
 ```
 
-Output: `~/.claude/skills/<name>/SKILL.md` for each extracted skill.
+Output: `~/.claude/skill-library/<name>/SKILL.md` for each extracted skill (Library tier; a row is added to the owning domain master — see `docs/skills/SKILL-HIERARCHY.md`).
 
 Every new skill passes quality gates and a companion check before it is logged to the sources index:
 - **Phase 5b — SkillOS Quality Gate**: task relevance, operational validity, content quality, compression (≤5,000 words). Failures block completion.
@@ -693,7 +693,7 @@ Traces emit whenever an instrumented agent processes a request:
 
 Triggered manually from the dashboard. Claude reads Workshop traces, writes `pytest` assertions from them, runs the tests, and auto-fixes failures (max 3 cycles). Budget ~5k–30k tokens.
 
-Skill: `~/.claude/skills/raindrop-eval-loop/SKILL.md`
+Skill: `~/.claude/skill-library/raindrop-eval-loop/SKILL.md`
 
 ### Instrumenting a new repo
 
@@ -849,18 +849,18 @@ Four protocols extracted from [garrytan/gbrain](https://github.com/garrytan/gbra
 
 ### The four patterns
 
-**Memory-First Lookup** (`~/.claude/skills/memory-first-lookup/`) — Always run `mcp__plugin_claude-mem_mcp-search__search` before reaching for external APIs. The lookup chain: keyword search → semantic search → get_observations → external only if memory is empty.
+**Memory-First Lookup** (`~/.claude/skill-library/memory-first-lookup/`) — Always run `mcp__plugin_claude-mem_mcp-search__search` before reaching for external APIs. The lookup chain: keyword search → semantic search → get_observations → external only if memory is empty.
 
-**Model Tiers** (`~/.claude/skills/model-tiers/`) — Match model to task type:
+**Model Tiers** (`~/.claude/skill-library/model-tiers/`) — Match model to task type:
 - `haiku-4-5` (`claude-haiku-4-5-20251001`) for classification, validation, dedup (utility)
 - `sonnet-5` (`claude-sonnet-5`) for generation, synthesis, agent work (default)
 - `opus-5` (`claude-opus-5`) only for deep multi-step reasoning (upgrade when sonnet consistently fails)
 - `fable-5` for long, multi-sitting autonomous sessions (`/model fable`)
 - Subagents always use `sonnet`, not opus — latency compounds in tool loops
 
-**Background Work Routing** (`~/.claude/skills/background-work-routing/`) — Stay inline unless a pain signal fires: gateway restart, state drop, parallel > 3, runtime > 5 min, or user frustration. Offer the switch explicitly; never switch silently.
+**Background Work Routing** (`~/.claude/skill-library/background-work-routing/`) — Stay inline unless a pain signal fires: gateway restart, state drop, parallel > 3, runtime > 5 min, or user frustration. Offer the switch explicitly; never switch silently.
 
-**Compiled Truth Pattern** (`~/.claude/skills/compiled-truth-pattern/`) — Every memory observation has two zones: `## State` (rewrite in place when evidence changes, each fact cited) and `## Evidence / Timeline` (append-only dated log, never edited).
+**Compiled Truth Pattern** (`~/.claude/skill-library/compiled-truth-pattern/`) — Every memory observation has two zones: `## State` (rewrite in place when evidence changes, each fact cited) and `## Evidence / Timeline` (append-only dated log, never edited).
 
 Full reference: `docs/gbrain-patterns/gbrain-patterns.md`
 

@@ -15,7 +15,7 @@
 
 | Integration | Location | Purpose |
 |---|---|---|
-| `impeccable-audit` skill | `~/.claude/skills/impeccable-audit/SKILL.md` | Load Impeccable's full rule set for design reviews |
+| `impeccable-audit` skill | `~/.claude/skill-library/impeccable-audit/SKILL.md` | Load Impeccable's full rule set for design reviews |
 | `frontend-anti-patterns.md` rule | `kiro/settings/rules/frontend-anti-patterns.md` | Deterministic enforcement in `/kiro:validate-design` and adversarial agent |
 | `impeccable-detect-hook.sh` | `.claude/hooks/impeccable-detect-hook.sh` | Auto-scan frontend files on Write/Edit (requires CLI install) |
 

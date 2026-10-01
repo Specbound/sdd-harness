@@ -14,7 +14,8 @@
 #   --check   quiet; exit 0 when index AND MCP server are both present
 #   --wire    write the MCP server config (idempotent), then report
 #   (none)    reconcile the block: strip it when the tools are not callable,
-#             or repair its skill paths and bare tool names when they are
+#             or compact it (unless SDD_GITNEXUS_FULL_BLOCK=1) and repair its
+#             skill paths and bare tool names when they are
 #   --global  pin the global `gitnexus` CLI to GITNEXUS_VERSION (npm -g), and on
 #             macOS make sure Homebrew openssl@3 is present first — 1.6.12's
 #             LadybugDB binary dlopens libssl.3.dylib from the Homebrew openssl@3
@@ -200,6 +201,63 @@ fix_tool_names() {
   fi
 }
 
+# ── Replace the block body with the harness's compact rule set ────────────────
+# The upstream block is ~900 tokens loaded on every API call: each rule written
+# twice (MCP + CLI form), a resources table and a skill-path table the skill
+# listing already carries. This keeps every MUST/NEVER rule and states the CLI
+# fallback once. The repo name is carried over from the upstream block (it is
+# GitNexus's registry name, not always the directory name). Idempotent; set
+# SDD_GITNEXUS_FULL_BLOCK=1 to keep the upstream block untouched.
+compact_block() {
+  [ "${SDD_GITNEXUS_FULL_BLOCK:-0}" = "1" ] && return 0
+  # Unterminated block: splicing would swallow the rest of the file.
+  grep -qF '<!-- gitnexus:end -->' "$TARGET_MD" || return 0
+  local name
+  name="$(awk '
+    index($0, "<!-- gitnexus:start -->") { inblock = 1 }
+    # "GitNexus as **x**" upstream, "Indexed as **x**" once compacted.
+    inblock && index($0, "ndexed") && index($0, " as **") {
+      rest = substr($0, index($0, " as **") + 6)
+      print substr(rest, 1, index(rest, "**") - 1); exit
+    }
+    index($0, "<!-- gitnexus:end -->") { exit }
+  ' "$TARGET_MD")"
+  [ -n "$name" ] || name="$(basename "$PROJ")"
+
+  local body="$TARGET_MD.gitnexus.body" tmp="$TARGET_MD.gitnexus.tmp"
+  cat > "$body" <<EOF
+<!-- gitnexus:start -->
+# GitNexus — Code Intelligence
+
+Indexed as **$name**. Tools below are MCP; if MCP is down, use the CLI with kebab-case verbs and flags, e.g. \`node .gitnexus/run.cjs detect-changes --scope all --repo .\`. Stale index: \`node .gitnexus/run.cjs analyze --index-only\`.
+
+- **MUST run \`impact({target, direction: "upstream"})\` before editing any function, class or method**; report callers, processes, risk.
+- **MUST run \`detect_changes({scope: "all"})\` before committing.** \`partial: true\` / \`truncated: true\` is not clean — a zero means unseen; re-run. Regression review: \`scope: "compare", base_ref: "<default branch>"\`.
+- **HIGH/CRITICAL risk: warn before editing, never proceed silently.** \`riskSharedAxes\` never waives it (MCP File omits axes; Graph-RAG expands File).
+- **\`risk: UNKNOWN\` is unresolved, not low.** Empty callers can mean unresolvable callers (dynamic dispatch, property access, cross-language) — confirm with text search before changing or deleting.
+- Read-only questions — graph first: \`query({search_query})\` for concepts/flows, \`context({name})\` for a symbol, \`impact\` for blast radius. Text search only for empty/UNKNOWN results or literals.
+- **NEVER rename with find-and-replace** — use \`rename\`.
+- Security review: \`explain({target})\` lists taint flows (needs \`analyze --pdg\`).
+- How-to detail: skills \`gitnexus-exploring\`, \`gitnexus-impact-analysis\`, \`gitnexus-debugging\`, \`gitnexus-refactoring\`, \`gitnexus-guide\`, \`gitnexus-cli\`.
+<!-- gitnexus:end -->
+EOF
+  awk -v body="$body" '
+    index($0, "<!-- gitnexus:start -->") && !done {
+      while ((getline l < body) > 0) print l
+      skip = 1; next
+    }
+    skip { if (index($0, "<!-- gitnexus:end -->")) { skip = 0; done = 1 }; next }
+    { print }
+  ' "$TARGET_MD" > "$tmp"
+  rm -f "$body"
+  if cmp -s "$tmp" "$TARGET_MD"; then
+    rm -f "$tmp"
+  else
+    mv "$tmp" "$TARGET_MD"
+    echo "  GitNexus block in $(basename "$TARGET_MD") compacted"
+  fi
+}
+
 # ── Warn about skills the block references that are not installed ─────────────
 warn_missing_skills() {
   local missing=""
@@ -260,6 +318,7 @@ elif ! has_mcp; then
   strip_block
   echo "  Removed dead GitNexus block from CLAUDE.md (MCP server could not be wired)."
 else
+  compact_block
   fix_skill_paths
   fix_tool_names
   warn_missing_skills

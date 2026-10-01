@@ -19,7 +19,14 @@ if [ -z "$SKILL_NAME" ]; then
 fi
 
 SRC_DIR="skills/$SKILL_NAME"
-INSTALLED_DIR="$HOME/.claude/skills/$SKILL_NAME"
+# A library skill installs to ~/.claude/skill-library/; delete from there, not from the
+# listed ~/.claude/skills/. Also drop its manifest line and master-router row (below).
+MANIFEST="scripts/setup/skill-library.txt"
+if [ -f "$MANIFEST" ] && grep -qxF "$SKILL_NAME" "$MANIFEST"; then
+  INSTALLED_DIR="$HOME/.claude/skill-library/$SKILL_NAME"
+else
+  INSTALLED_DIR="$HOME/.claude/skills/$SKILL_NAME"
+fi
 BACKUP_DIR=".claude/memory/skill-repair-backups/$SKILL_NAME"
 TIMESTAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 
@@ -34,6 +41,14 @@ mkdir -p "$BACKUP_DIR/$TIMESTAMP-deleted"
 [ -d "$INSTALLED_DIR" ] && cp -r "$INSTALLED_DIR" "$BACKUP_DIR/$TIMESTAMP-deleted/installed"
 
 rm -rf "$SRC_DIR" "$INSTALLED_DIR"
+
+# Drop the manifest line so a later sync doesn't route a skill that no longer exists.
+# (The master-router row that points at it, if any, must be removed by hand — grep the
+#  masters for the name. A dead row is a dangling path, not a crash.)
+if [ -f "$MANIFEST" ] && grep -qxF "$SKILL_NAME" "$MANIFEST"; then
+  grep -vxF "$SKILL_NAME" "$MANIFEST" > "$MANIFEST.tmp" && mv "$MANIFEST.tmp" "$MANIFEST"
+  echo "removed from library manifest: $SKILL_NAME"
+fi
 
 echo "deleted: $SRC_DIR + $INSTALLED_DIR"
 echo "backup: $BACKUP_DIR/$TIMESTAMP-deleted/"

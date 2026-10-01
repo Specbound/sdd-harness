@@ -10,7 +10,7 @@ source: community
 
 ## Purpose
 
-Guide the creation of new Claude Code skills end-to-end: collaborative brainstorming, file generation, quality validation, and installation into `~/.claude/skills/`.
+Guide the creation of new Claude Code skills end-to-end: collaborative brainstorming, file generation, quality validation, and installation into the two-tier skill hierarchy (`docs/skills/SKILL-HIERARCHY.md` — Library by default, registered under a domain master).
 
 ## When to Use This Skill
 
@@ -35,6 +35,16 @@ Ask the user:
 4. **One-sentence description** for the frontmatter (will be shown in skill lists — keep under 200 chars)
 
 Capture responses before moving on.
+
+**Size the skill before writing it** — pick the lightest tier that fits, to avoid over-building:
+| Tier | Shape | When |
+|---|---|---|
+| Simple | Single `SKILL.md`, <200 lines | One technique, one trigger, no bundled files |
+| Expanded | `SKILL.md` + a few `resources/` files | Multiple related concepts, 200-1000 lines total |
+| Platform | `SKILL.md` dispatcher + many reference files | 10+ sub-areas that genuinely don't fit in one file |
+
+Most skills should be Simple or Expanded — reach for Platform only when the domain is
+actually that large.
 
 ### Phase 2: Prompt Enhancement (Optional)
 
@@ -92,12 +102,20 @@ source: local
 
 **Writing rules:**
 - Imperative / infinitive style ("Read the file", not "You should read the file")
-- Named workflow phases, not unstructured prose
+- Named workflow phases, not unstructured running text
 - Concrete steps, not descriptions of what steps would look like
 - Keep SKILL.md under 2,000 words (ideal) / 5,000 words (maximum)
 - Move anything longer (examples, templates, reference tables) into `resources/`
 - Reference files stay **one level deep**: SKILL.md may link to a file in `resources/`, but that file must not link to further nested reference files — a reference chain invites partial `head -100` reads that miss content
 - Any reference file over 100 lines gets a table of contents near the top
+- Description reads as "Use when X" (trigger-first), never a workflow summary — it's the
+  only thing the agent sees before deciding whether to load the skill, so it must predict
+  WHEN to fire, not just describe what the skill contains
+- Don't bundle `README.md`, `CHANGELOG.md`, or installation guides into the skill dir —
+  agents don't need meta-docs, only `scripts/` (deterministic/repeated code),
+  `references/` (detail loaded on demand), and `assets/` (output templates/boilerplate)
+- No `@` force-loading inside cross-references between skills — it defeats progressive
+  disclosure by pulling full content in regardless of whether it's needed
 
 ### Phase 4: Validation
 
@@ -172,16 +190,32 @@ If YES → invoke `Skill("verification-skill-authoring")` to create a companion 
 
 If NO (pure logic, already covered by CI, or the skill itself IS a verification skill) → skip and proceed.
 
-### Phase 5: Installation
+### Phase 5: Installation (two-tier hierarchy)
 
-The skill is written to `~/.claude/skills/<skill-name>/SKILL.md` directly — no symlinks needed for Claude Code.
+Skills install into one of two tiers — see `docs/skills/SKILL-HIERARCHY.md` for the full
+rules. **Default a new skill to the Library tier** so it costs no per-prompt context; only
+pin it to the Listed tier if a hook/command will load it by name via `Skill("<name>")`.
 
-Confirm the file was written:
+1. Write the skill to the repo source: `skills/<skill-name>/SKILL.md` (both tiers live here).
+2. Register it under a master (Library default):
+   - Pick the owning domain from the 14 masters (`backend-dev`, `frontend-dev`, `languages`,
+     `data-and-db`, `ai-ml-agents`, `devops-infra`, `observability-incident`, `security`,
+     `code-quality`, `cloud-sdks`, `product-growth`, `integrations`, `docs-knowledge`,
+     `harness-meta`).
+   - Add one row to `skills/<master>/SKILL.md`'s table:
+     `` | `<skill-name>` | <one-line what + when> | `~/.claude/skill-library/<skill-name>/SKILL.md` | ``
+   - Add `<skill-name>` on its own line to `scripts/setup/skill-library.txt`.
+3. Install: `bash scripts/setup/sync-skills.sh "$PWD"` (routes by the manifest).
+
+Confirm it landed in the Library:
 ```bash
-ls ~/.claude/skills/<skill-name>/
+ls ~/.claude/skill-library/<skill-name>/
 ```
 
-If the skill is also useful in a specific project, note that the user can copy or symlink it to `<project>/.claude/skills/<skill-name>/` for project-scoped availability.
+**Pin to Listed instead** (skip the manifest step, so it installs to `~/.claude/skills/`)
+ONLY when a hook or command hard-invokes it via `Skill("<name>")`. Keep the Listed set small.
+Anything that merely *references* a Library skill should `Read ~/.claude/skill-library/<name>/SKILL.md`,
+never `Skill("<name>")`.
 
 ### Phase 6: Completion
 
@@ -191,7 +225,8 @@ Show a summary:
 Skill created successfully.
 
   Name:     <skill-name>
-  Location: ~/.claude/skills/<skill-name>/SKILL.md
+  Location: ~/.claude/skill-library/<skill-name>/SKILL.md   (Library tier)
+  Master:   <owning-master>  (row added to its router table)
   Words:    <word count>
 
 Files:
@@ -199,7 +234,7 @@ Files:
   ✅ resources/ (if created)
 
 Next steps:
-  1. Test it: mention the trigger phrases in a new conversation
+  1. Test it: open the <owning-master> skill, confirm the new row routes to it
   2. Add examples or templates to resources/ if useful
   3. If it references other skills, verify those exist
 ```

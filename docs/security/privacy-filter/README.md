@@ -231,8 +231,8 @@ For CI pipelines on CPU-only runners, expect ~2–5s per file after model load.
 
 ## Related
 
-- [`secrets-management` skill](~/.claude/skills/secrets-management/) — Vault, AWS Secrets Manager, HashiCorp patterns
-- [`gdpr-data-handling` skill](~/.claude/skills/gdpr-data-handling/) — GDPR consent, data subject rights, privacy-by-design
+- [`secrets-management` skill](~/.claude/skill-library/secrets-management/) — Vault, AWS Secrets Manager, HashiCorp patterns
+- [`gdpr-data-handling` skill](~/.claude/skill-library/gdpr-data-handling/) — GDPR consent, data subject rights, privacy-by-design
 - [`security-scanning-security-sast` skill](~/.claude/skills/security-scanning-security-sast/) — Static analysis with Semgrep, Bandit, CodeQL
 - [OpenAI Privacy Filter repo](https://github.com/openai/privacy-filter) — Source, model card, fine-tuning guide
 

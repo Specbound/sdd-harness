@@ -158,12 +158,7 @@ do_update() {
   # --- Sync harness skills + global commands (runs once per update, not per project) ---
   if [ "${_SDD_GLOBAL_SYNCED:-0}" != "1" ]; then
     if [ -d "$HARNESS_DIR/skills" ]; then
-      mkdir -p "$HOME/.claude/skills"
-      for skill_dir in "$HARNESS_DIR/skills"/*/; do
-        [ -d "$skill_dir" ] || continue
-        sync_dir "${skill_dir%/}" "$HOME/.claude/skills"
-      done
-      echo "  Harness skills synced to ~/.claude/skills/"
+      bash "$HARNESS_DIR/scripts/setup/sync-skills.sh" "$HARNESS_DIR"
     fi
     if [ -d "$HARNESS_DIR/commands/global" ]; then
       mkdir -p "$HOME/.claude/commands"

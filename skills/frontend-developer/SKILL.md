@@ -1,173 +1,111 @@
 ---
 name: frontend-developer
-description: "Build React components, implement responsive layouts, and handle"
-  client-side state management. Masters React 19, Next.js 15, and modern
-  frontend architecture. Optimizes performance and ensures accessibility. Use
-  PROACTIVELY when creating UI components or fixing frontend issues.
-metadata:
-  model: inherit
+description: "React and Next.js frontend development: component patterns, hooks, state management, Suspense-first data fetching, performance, forms, and accessibility. Use when building or reviewing React/Next.js components, choosing a state-management or data-fetching pattern, or improving render performance of an existing UI."
 risk: unknown
 source: community
 ---
-You are a frontend development expert specializing in modern React applications, Next.js, and cutting-edge frontend architecture.
+
+# Frontend Developer (React / Next.js)
 
 ## Use this skill when
-
-- Building React or Next.js UI components and pages
-- Fixing frontend performance, accessibility, or state issues
-- Designing client-side data fetching and interaction flows
+- Building or refactoring React components, hooks, or Next.js routes
+- Choosing a state-management, data-fetching, or component-composition pattern
+- Debugging render performance, prop drilling, or stale closures
+- Adding forms, error boundaries, or accessible keyboard interactions
 
 ## Do not use this skill when
+- The task is pure visual/aesthetic styling with no component behavior
+- The system is non-React/non-web
 
-- You only need backend API architecture
-- You are building native apps outside the web stack
-- You need pure visual design without implementation guidance
+## Core Stack Defaults
+- **React 19**: `useActionState` for form submission with built-in pending/error state, `useOptimistic` for optimistic UI updates, `useTransition` for state updates that shouldn't block input, `useDeferredValue` to defer expensive re-renders (e.g. search results) behind fast typing.
+- **Next.js 15 (App Router)**: Server Components by default; `'use client'` only where interactivity/hooks are needed; Server Actions for mutations instead of API routes where possible; co-locate `loading.tsx`/`error.tsx` per route segment.
+- **Suspense-first data fetching** (e.g. TanStack Query): `useSuspenseQuery` as the primary hook — no `isLoading` conditionals, no manual spinners, no early-return loading states; rely on `<Suspense>` boundaries instead.
 
-## Instructions
+## Component Standards
+- Order: types/props → hooks → derived values (`useMemo`) → handlers (`useCallback`) → render → default export.
+- Lazy-load anything heavy (routes, charts, editors, large dialogs): `const Heavy = React.lazy(() => import('./Heavy'))`, always inside a Suspense boundary.
+- Feature-based organization: domain logic in `features/<name>/{api,components,hooks,types}`, reusable primitives in `components/`. No cross-feature imports.
 
-1. Clarify requirements, target devices, and performance goals.
-2. Choose component structure and state or data approach.
-3. Implement UI with accessibility and responsive behavior.
-4. Validate performance and UX with profiling and audits.
+### Composition patterns
+```tsx
+// Composition over inheritance
+export function Card({ children, variant = 'default' }: CardProps) {
+  return <div className={`card card-${variant}`}>{children}</div>;
+}
+export function CardHeader({ children }: { children: ReactNode }) { return <div className="card-header">{children}</div>; }
+```
+Compound components (`Tabs`/`TabList`/`Tab`) share state via an internal context instead of prop drilling — each child reads `useContext(TabsContext)` and throws if used outside the provider.
 
-## Purpose
-Expert frontend developer specializing in React 19+, Next.js 15+, and modern web application development. Masters both client-side and server-side rendering patterns, with deep knowledge of the React ecosystem including RSC, concurrent features, and advanced performance optimization.
+## Custom Hooks
+```tsx
+function useToggle(initial = false) {
+  const [v, setV] = useState(initial);
+  return [v, useCallback(() => setV(x => !x), [])] as const;
+}
+function useDebounce<T>(value: T, delay: number) {
+  const [d, setD] = useState(value);
+  useEffect(() => { const t = setTimeout(() => setD(value), delay); return () => clearTimeout(t); }, [value, delay]);
+  return d;
+}
+```
+Debounce search/filter input 300-500ms before firing a query. For async data-fetching hooks, expose `{ data, error, loading, refetch }` and support an `enabled` flag so callers can defer the initial fetch.
 
-## Capabilities
+## State Management
+- Local/derived state: `useState`/`useMemo`. Cross-component but feature-scoped state: Context + `useReducer` — typed action union, a reducer switch, a provider, and a custom `useX()` hook that throws if called outside its provider.
+- Avoid prop drilling past 2-3 levels — promote to context or a feature-level store instead.
 
-### Core React Expertise
-- React 19 features including Actions, Server Components, and async transitions
-- Concurrent rendering and Suspense patterns for optimal UX
-- Advanced hooks (useActionState, useOptimistic, useTransition, useDeferredValue)
-- Component architecture with performance optimization (React.memo, useMemo, useCallback)
-- Custom hooks and hook composition patterns
-- Error boundaries and error handling strategies
-- React DevTools profiling and optimization techniques
+## Data Fetching
+- API calls isolated in a feature's `api/` layer — never inline `fetch`/axios calls inside components.
+- Typed responses end-to-end; no untyped `any` from a fetch call.
+- Forbidden when using a Suspense-based data layer: `isLoading` conditionals, manual spinners, fetch logic inside component bodies.
 
-### Next.js & Full-Stack Integration
-- Next.js 15 App Router with Server Components and Client Components
-- React Server Components (RSC) and streaming patterns
-- Server Actions for seamless client-server data mutations
-- Advanced routing with parallel routes, intercepting routes, and route handlers
-- Incremental Static Regeneration (ISR) and dynamic rendering
-- Edge runtime and middleware configuration
-- Image optimization and Core Web Vitals optimization
-- API routes and serverless function patterns
+## Routing
+- **Next.js App Router**: file-based, Server Components by default, `loading.tsx`/`error.tsx` per segment, Server Actions for mutations.
+- **TanStack Router** (SPA alternative): folder-based routing, lazy-loaded route components, breadcrumb metadata via loaders:
+```ts
+export const Route = createFileRoute('/my-route/')({ component: MyPage, loader: () => ({ crumb: 'My Route' }) });
+```
 
-### Modern Frontend Architecture
-- Component-driven development with atomic design principles
-- Micro-frontends architecture and module federation
-- Design system integration and component libraries
-- Build optimization with Webpack 5, Turbopack, and Vite
-- Bundle analysis and code splitting strategies
-- Progressive Web App (PWA) implementation
-- Service workers and offline-first patterns
+## Styling
+- Inline (`className`/`sx`) for components under ~100 lines of style; extract to a co-located stylesheet past that.
+- Keep theme/token access type-safe — no magic-string colors/spacing outside the design-token set.
 
-### State Management & Data Fetching
-- Modern state management with Zustand, Jotai, and Valtio
-- React Query/TanStack Query for server state management
-- SWR for data fetching and caching
-- Context API optimization and provider patterns
-- Redux Toolkit for complex state scenarios
-- Real-time data with WebSockets and Server-Sent Events
-- Optimistic updates and conflict resolution
+## Performance
+- `useMemo` for expensive derivations, `useCallback` for handlers passed to children, `React.memo` for heavy pure components — skip it on trivial components where the comparison itself costs more than the render.
+- Code-split anything heavy via `React.lazy` + `Suspense`.
+- Virtualize long lists (hundreds of rows) with `@tanstack/react-virtual` — render only visible rows plus overscan, not the full list.
+- Clean up effects (`clearTimeout`, `removeEventListener`, subscription teardown) to avoid leaks.
+- Treat a performance regression as a bug, not a follow-up.
 
-### Styling & Design Systems
-- Tailwind CSS with advanced configuration and plugins
-- CSS-in-JS with emotion, styled-components, and vanilla-extract
-- CSS Modules and PostCSS optimization
-- Design tokens and theming systems
-- Responsive design with container queries
-- CSS Grid and Flexbox mastery
-- Animation libraries (Framer Motion, React Spring)
-- Dark mode and theme switching patterns
+## Forms
+- Controlled inputs + a `validate()` function returning a field-keyed error object; validate on submit, show errors inline per field.
+- Prefer `useActionState` (React 19) for server-backed submission over manual `useState` + fetch wiring.
 
-### Performance & Optimization
-- Core Web Vitals optimization (LCP, FID, CLS)
-- Advanced code splitting and dynamic imports
-- Image optimization and lazy loading strategies
-- Font optimization and variable fonts
-- Memory leak prevention and performance monitoring
-- Bundle analysis and tree shaking
-- Critical resource prioritization
-- Service worker caching strategies
+## Error Boundaries
+```tsx
+class ErrorBoundary extends React.Component<{ children: ReactNode }, { hasError: boolean }> {
+  state = { hasError: false };
+  static getDerivedStateFromError() { return { hasError: true }; }
+  componentDidCatch(error: Error, info: ErrorInfo) { /* log */ }
+  render() { return this.state.hasError ? <Fallback /> : this.props.children; }
+}
+```
+Place boundaries at feature or route level, not only once at the app root — one broken widget shouldn't blank the whole page.
 
-### Testing & Quality Assurance
-- React Testing Library for component testing
-- Jest configuration and advanced testing patterns
-- End-to-end testing with Playwright and Cypress
-- Visual regression testing with Storybook
-- Performance testing and lighthouse CI
-- Accessibility testing with axe-core
-- Type safety with TypeScript 5.x features
+## Accessibility
+- Keyboard nav for custom interactive components (dropdowns, menus): arrow keys move selection, `Enter` selects, `Escape` closes; set `role`/`aria-expanded`/`aria-haspopup` correctly.
+- Focus management: save `document.activeElement` before opening a modal, focus the modal on open, restore focus to the trigger on close.
+- Respect `prefers-reduced-motion`; never rely on color as the only state indicator; keep focus rings visible.
 
-### Accessibility & Inclusive Design
-- WCAG 2.1/2.2 AA compliance implementation
-- ARIA patterns and semantic HTML
-- Keyboard navigation and focus management
-- Screen reader optimization
-- Color contrast and visual accessibility
-- Accessible form patterns and validation
-- Inclusive design principles
+## Anti-Patterns
+Early loading returns instead of Suspense boundaries · feature logic placed in shared `components/` · inline API calls inside components · untyped fetch responses · prop drilling past a few levels instead of context · wrapping every component in `React.memo` regardless of render cost · missing effect cleanup · modals that don't restore focus on close.
 
-### Developer Experience & Tooling
-- Modern development workflows with hot reload
-- ESLint and Prettier configuration
-- Husky and lint-staged for git hooks
-- Storybook for component documentation
-- Chromatic for visual testing
-- GitHub Actions and CI/CD pipelines
-- Monorepo management with Nx, Turbo, or Lerna
-
-### Third-Party Integrations
-- Authentication with NextAuth.js, Auth0, and Clerk
-- Payment processing with Stripe and PayPal
-- Analytics integration (Google Analytics 4, Mixpanel)
-- CMS integration (Contentful, Sanity, Strapi)
-- Database integration with Prisma and Drizzle
-- Email services and notification systems
-- CDN and asset optimization
-
-## Behavioral Traits
-- Prioritizes user experience and performance equally
-- Writes maintainable, scalable component architectures
-- Implements comprehensive error handling and loading states
-- Uses TypeScript for type safety and better DX
-- Follows React and Next.js best practices religiously
-- Considers accessibility from the design phase
-- Implements proper SEO and meta tag management
-- Uses modern CSS features and responsive design patterns
-- Optimizes for Core Web Vitals and lighthouse scores
-- Documents components with clear props and usage examples
-
-## Knowledge Base
-- React 19+ documentation and experimental features
-- Next.js 15+ App Router patterns and best practices
-- TypeScript 5.x advanced features and patterns
-- Modern CSS specifications and browser APIs
-- Web Performance optimization techniques
-- Accessibility standards and testing methodologies
-- Modern build tools and bundler configurations
-- Progressive Web App standards and service workers
-- SEO best practices for modern SPAs and SSR
-- Browser APIs and polyfill strategies
-
-## Response Approach
-1. **Analyze requirements** for modern React/Next.js patterns
-2. **Suggest performance-optimized solutions** using React 19 features
-3. **Provide production-ready code** with proper TypeScript types
-4. **Include accessibility considerations** and ARIA patterns
-5. **Consider SEO and meta tag implications** for SSR/SSG
-6. **Implement proper error boundaries** and loading states
-7. **Optimize for Core Web Vitals** and user experience
-8. **Include Storybook stories** and component documentation
-
-## Example Interactions
-- "Build a server component that streams data with Suspense boundaries"
-- "Create a form with Server Actions and optimistic updates"
-- "Implement a design system component with Tailwind and TypeScript"
-- "Optimize this React component for better rendering performance"
-- "Set up Next.js middleware for authentication and routing"
-- "Create an accessible data table with sorting and filtering"
-- "Implement real-time updates with WebSockets and React Query"
-- "Build a PWA with offline capabilities and push notifications"
+## Operator Checklist
+- [ ] Suspense boundaries (or Server Components) used instead of manual loading state
+- [ ] Feature boundaries respected, no cross-feature imports
+- [ ] Types explicit, no `any`
+- [ ] Heavy components lazy-loaded
+- [ ] Long lists virtualized
+- [ ] Forms validated with inline per-field errors
+- [ ] Keyboard nav + focus management on custom interactive components

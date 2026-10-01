@@ -33,6 +33,11 @@ Known limitation — first run in an untrusted repo:
     is nothing to work around in code: open the repo in Claude Code once by hand
     and accept the prompt, after which spawning it works. Observed on a repo that
     had never been opened; repos already in use spawn first try.
+    The trust prompt is not the only one: a repo whose `.mcp.json` registers a
+    server not yet approved stops on "New MCP server found" the same way (seen
+    2026-10-01 after GitNexus setup wrote one). spawn() reads the pane before
+    closing it and raises AgentBlockedError naming the prompt, so the next new
+    kind of startup dialog explains itself instead of needing a hand repro.
     Errors from herdr arrive as a JSON envelope on stderr with a non-zero exit,
     so _run() parses stderr too — otherwise this surfaces as an unreadable dump.
 
@@ -101,6 +106,19 @@ SERVER_BOOT_TIMEOUT_S = 10.0
 
 class HerderError(RuntimeError):
     """A Herdr call failed, or Herdr is not installed."""
+
+
+class AgentBlockedError(HerderError):
+    """The agent stopped on an interactive prompt before it was ready.
+
+    `screen` is the prompt as it appeared in the pane, captured before the
+    workspace is closed — otherwise the one piece of evidence that says *which*
+    prompt (trust, new MCP server, …) is destroyed with the pane.
+    """
+
+    def __init__(self, message: str, screen: str):
+        super().__init__(message)
+        self.screen = screen
 
 
 def find_herdr() -> str:
@@ -448,12 +466,10 @@ def spawn(repo: str, label: str, *, kind: str = "claude", prompt: str = "",
              "--timeout", str(START_TIMEOUT_MS), "--", *agent_args],
             timeout=START_TIMEOUT_MS / 1000 + 15,
         )["result"]
-    except HerderError:
-        # Never leave a half-built workspace behind holding a shell pane.
-        try:
-            _run(["workspace", "close", workspace_id], timeout=10)
-        except HerderError:
-            pass
+    except HerderError as exc:
+        blocked = _abandon_start(exc, workspace_id, pane_id, repo_path)
+        if blocked:
+            raise blocked from exc
         raise
 
     if prompt.strip():
@@ -479,6 +495,30 @@ def spawn(repo: str, label: str, *, kind: str = "claude", prompt: str = "",
     }
     _write_ledger(record)
     return record
+
+
+def _abandon_start(exc: HerderError, workspace_id: str, pane_id: str,
+                   repo_path: Path) -> AgentBlockedError | None:
+    """Close the workspace of a failed `agent start`; explain it if it was blocked.
+
+    The pane is read BEFORE the close: on agent_not_ready it shows the prompt
+    Claude Code stopped on, and closing the workspace destroys it. Returns the
+    richer error to raise, or None to re-raise the original.
+    """
+    screen = _blocking_screen(pane_id) if "agent_not_ready" in str(exc) else ""
+    # Never leave a half-built workspace behind holding a shell pane.
+    try:
+        _run(["workspace", "close", workspace_id], timeout=10)
+    except HerderError:
+        pass
+    if not screen:
+        return None
+    headline = next(line.strip() for line in screen.splitlines() if line.strip())
+    return AgentBlockedError(
+        f"{exc} — blocked on: {headline}. Answer it once by running "
+        f"`claude` in {repo_path}, then spawn again.",
+        screen,
+    )
 
 
 # ── Attribution ──────────────────────────────────────────────────────────────
@@ -715,6 +755,197 @@ def prompt_agent(name: str, text: str) -> dict:
     return _run(["agent", "prompt", name, text], timeout=30)
 
 
+# ── Prompt-box completion ────────────────────────────────────────────────────
+# The dashboard's prompt boxes complete `/skill` and `@path` the way Claude Code's
+# own input does. Both lists are read off disk for the target repo, never kept in
+# this file, and cached briefly so a burst of keystrokes is one disk walk.
+
+COMPLETE_LIMIT = 50
+_COMPLETE_TTL_S = 30.0
+_complete_cache: dict = {}
+
+
+def _frontmatter_description(md: Path) -> str:
+    """`description:` from a markdown file's frontmatter, or "" when it has none.
+
+    Line scanning only — no YAML dependency, no regex. Covers the plain and the
+    folded (`>` / `|`) forms, which is all SKILL.md and command files use.
+    """
+    try:
+        lines = md.read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return ""
+    if not lines or lines[0].strip() != "---":
+        return ""
+    for i, line in enumerate(lines[1:], start=1):
+        if line.strip() == "---":
+            return ""
+        if not line.startswith("description:"):
+            continue
+        value = line[len("description:"):].strip()
+        if value in (">", "|", ">-", "|-"):
+            folded = []
+            for cont in lines[i + 1:]:
+                if not cont.startswith((" ", "\t")):
+                    break
+                folded.append(cont.strip())
+            value = " ".join(folded)
+        return value.strip().strip('"').strip("'")
+    return ""
+
+
+def _collect_invocables(base: Path, prefix: str, source: str, out: dict) -> None:
+    """Add every skill and command under `base` (a `.claude`-shaped dir) to `out`.
+
+    `skills/<name>/SKILL.md` → `/name`; `commands/a/b.md` → `/a:b`, matching how
+    Claude Code names nested commands (this repo's `kiro/` → `/kiro:spec-init`).
+    First writer wins, so callers add sources in precedence order.
+    """
+    skills = base / "skills"
+    if skills.is_dir():
+        for d in sorted(skills.iterdir()):
+            md = d / "SKILL.md"
+            name = prefix + d.name
+            if md.is_file() and name not in out:
+                out[name] = {"name": name, "description": _frontmatter_description(md),
+                             "source": source}
+    commands = base / "commands"
+    if commands.is_dir():
+        for md in sorted(commands.rglob("*.md")):
+            name = prefix + ":".join(md.relative_to(commands).with_suffix("").parts)
+            if name not in out:
+                out[name] = {"name": name, "description": _frontmatter_description(md),
+                             "source": source}
+
+
+def _plugin_roots() -> list:
+    """(plugin_name, install_dir) for every plugin Claude Code has installed."""
+    plugins = Path.home() / ".claude" / "plugins"
+    roots = []
+    manifest = plugins / "installed_plugins.json"
+    if manifest.is_file():
+        try:
+            installed = json.loads(manifest.read_text()).get("plugins", {})
+        except ValueError as exc:
+            raise HerderError(f"unreadable {manifest}: {exc}") from exc
+        for key, entries in installed.items():
+            for entry in entries:
+                path = Path(entry.get("installPath") or "")
+                if path.is_dir():
+                    roots.append((key.split("@", 1)[0], path))
+    # claude.ai-synced plugins: synced/<org>/<plugin>/{skills,commands}.
+    synced = plugins / "synced"
+    if synced.is_dir():
+        for org in synced.iterdir():
+            if org.is_dir():
+                roots += [(p.name, p) for p in org.iterdir() if p.is_dir()]
+    return roots
+
+
+def list_invocables(repo_path: Path) -> list:
+    """Every `/name` Claude Code would offer inside `repo_path`.
+
+    Precedence: project `.claude/`, then user `~/.claude/`, then plugins (always
+    namespaced `plugin:name`, so they never collide with the first two).
+    """
+    out: dict = {}
+    _collect_invocables(repo_path / ".claude", "", "project", out)
+    _collect_invocables(Path.home() / ".claude", "", "user", out)
+    for plugin, root in _plugin_roots():
+        _collect_invocables(root, plugin + ":", "plugin", out)
+    return list(out.values())
+
+
+def list_repo_paths(repo_path: Path) -> list:
+    """Tracked + untracked-not-ignored files, plus their directories (`dir/`)."""
+    try:
+        proc = subprocess.run(
+            ["git", "-C", str(repo_path), "ls-files", "--cached", "--others",
+             "--exclude-standard", "-z"],
+            capture_output=True, text=True, timeout=20, check=False,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise HerderError(f"git ls-files timed out in {repo_path}") from exc
+    if proc.returncode != 0:
+        raise HerderError(f"git ls-files failed in {repo_path}: {proc.stderr.strip()[:200]}")
+    files = [f for f in proc.stdout.split("\0") if f]
+    dirs = set()
+    for f in files:
+        parts = f.split("/")[:-1]
+        for i in range(1, len(parts) + 1):
+            dirs.add("/".join(parts[:i]) + "/")
+    return [{"name": d} for d in sorted(dirs)] + [{"name": f} for f in sorted(set(files))]
+
+
+def _is_subsequence(needle: str, hay: str) -> bool:
+    it = iter(hay)
+    return all(ch in it for ch in needle)
+
+
+def _rank(name: str, description: str, query: str):
+    """Lower is better; None means no match. Mirrors fuzzy-finder ordering."""
+    if not query:
+        return 0
+    n = name.lower()
+    base = n.rstrip("/").rsplit("/", 1)[-1]
+    if base.startswith(query) or n.startswith(query):
+        return 0
+    if _at_word_start(query, n):
+        return 1
+    if query in base:
+        return 2
+    if query in n:
+        return 3
+    if _is_subsequence(query, n):
+        return 4
+    if query in description.lower():
+        return 5
+    return None
+
+
+def _at_word_start(query: str, name: str) -> bool:
+    """True when `query` occurs right after a separator (`kiro:spec-…`, `a/b_c`)."""
+    i = name.find(query)
+    while i > 0:
+        if name[i - 1] in "-_:/.":
+            return True
+        i = name.find(query, i + 1)
+    return False
+
+
+def complete(repo: str, kind: str, query: str) -> dict:
+    """Ranked completions for the dashboard prompt box.
+
+    kind="skill" → `/` candidates; kind="file" → `@` candidates. `query` is the
+    text typed after the trigger character.
+    """
+    repo_path = Path(repo).expanduser()
+    if not repo_path.is_dir():
+        raise HerderError(f"not a directory: {repo}")
+    if kind not in ("skill", "file"):
+        raise HerderError(f"unknown completion kind {kind!r}")
+
+    key = (kind, str(repo_path.resolve()))
+    hit = _complete_cache.get(key)
+    if hit and time.time() - hit[0] < _COMPLETE_TTL_S:
+        items = hit[1]
+    else:
+        items = list_invocables(repo_path) if kind == "skill" else list_repo_paths(repo_path)
+        _complete_cache[key] = (time.time(), items)
+
+    q = query.lower()
+    scored = []
+    for item in items:
+        r = _rank(item["name"], item.get("description", ""), q)
+        if r is not None:
+            # Shallow, short names first when match quality ties — the fuzzy-finder
+            # tie-break, so `@read` offers README.md before some/deep/README.md.
+            scored.append((r, item["name"].count("/"), len(item["name"]), item["name"], item))
+    scored.sort(key=lambda s: s[:4])
+    return {"kind": kind, "items": [s[4] for s in scored[:COMPLETE_LIMIT]],
+            "total": len(scored)}
+
+
 def read_agent(name: str) -> str:
     """Terminal contents for one agent.
 
@@ -743,6 +974,47 @@ def read_agent(name: str) -> str:
     return out
 
 
+_RULE_CHARS = set("─━═-")
+BLOCKING_SCREEN_MAX_LINES = 15
+
+
+def _blocking_screen(pane_id: str) -> str:
+    """The interactive prompt a just-started agent is stuck on, or "" if unreadable.
+
+    Claude Code draws its startup dialogs (trust, new MCP server, …) under a
+    horizontal rule, below the echoed launch command. Everything after the first
+    rule line is the dialog; with no rule, the bottom of the pane is used. Plain
+    line scanning — no regex. Best-effort by design: it only enriches an error
+    that is already being raised, so a failed read must not replace that error.
+    """
+    try:
+        proc = subprocess.run(
+            [find_herdr(), "pane", "read", pane_id],
+            capture_output=True, text=True, timeout=10,
+            env=_clean_env(), check=False,
+        )
+    except (subprocess.TimeoutExpired, OSError, HerderError):
+        return ""
+    lines = (proc.stdout or "").splitlines()
+    if proc.returncode != 0 or not lines:
+        return ""
+
+    def is_rule(line):
+        s = line.strip()
+        return len(s) >= 10 and set(s) <= _RULE_CHARS
+
+    start = next((i + 1 for i, line in enumerate(lines) if is_rule(line)), None)
+    body = lines[start:] if start is not None else lines[-BLOCKING_SCREEN_MAX_LINES:]
+    # Drop leading/trailing blanks and collapse blank runs to one.
+    kept = []
+    for line in body:
+        if line.strip() or (kept and kept[-1].strip()):
+            kept.append(line.rstrip())
+    while kept and not kept[-1].strip():
+        kept.pop()
+    return "\n".join(kept[:BLOCKING_SCREEN_MAX_LINES])
+
+
 # Argument keys worth showing for a tool call, most-specific first. A tool is
 # summarized by the first one it has — no guessing, no regex over the payload.
 _TOOL_ARG_KEYS = (
@@ -751,9 +1023,28 @@ _TOOL_ARG_KEYS = (
 )
 
 
+# Chat bubbles render this text as markdown, so a clip mid-list or mid-fence
+# breaks the layout as well as hiding the answer. Generous on purpose; only a
+# runaway message should ever hit it.
+CHAT_TEXT_LIMIT = 20000
+
+
 def _clip(text, limit):
     text = " ".join(str(text).split())
     return text if len(text) <= limit else text[:limit - 1] + "…"
+
+
+def _clip_chat(text):
+    """Like `_clip`, but keeps newlines and indentation.
+
+    `_clip` folds all whitespace to single spaces, which is right for one-line
+    tool previews and wrong for chat: it flattens numbered lists, code fences
+    and paragraphs into one run-on line before the dashboard can render them.
+    """
+    text = str(text).strip()
+    if len(text) <= CHAT_TEXT_LIMIT:
+        return text
+    return text[:CHAT_TEXT_LIMIT - 1] + "…"
 
 
 def _tool_summary(tool_input) -> str:
@@ -837,7 +1128,7 @@ def agent_stream(name: str, after: int = 0, limit: int = 60):
         # block-list shape assistant turns use — without this branch the
         # question itself never reaches the events list at all.
         if isinstance(content, str):
-            text = _clip(content, 600)
+            text = _clip_chat(content)
             if text:
                 events.append({"t": "text", "role": role, "text": text})
             continue
@@ -854,7 +1145,7 @@ def agent_stream(name: str, after: int = 0, limit: int = 60):
                 if text:
                     events.append({"t": "thinking", "text": text})
             elif btype == "text":
-                text = _clip(blk.get("text") or "", 600)
+                text = _clip_chat(blk.get("text") or "")
                 if text:
                     events.append({"t": "text", "role": role, "text": text})
             elif btype == "tool_use":

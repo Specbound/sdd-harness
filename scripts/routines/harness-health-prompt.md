@@ -107,8 +107,8 @@ Steps:
    many transcripts, the transcript format changed and the dedup is a no-op —
    report exactly that and skip the rest of this phase. Do not quote inflated
    numbers.
-2. Apply `Skill("auditing-token-spend")` Phase 2–3 to read the four signals and
-   name **one** cause, with the number that supports it.
+2. Read `~/.claude/skill-library/auditing-token-spend/SKILL.md` and apply its Phase 2–3
+   to read the four signals and name **one** cause, with the number that supports it.
 3. Honour the `method` line on the automation split. When it says
    `proxy (sessions under 5min)`, subagent turns are not tagged in this
    transcript format — call it a proxy, and never restate an unpopulated field

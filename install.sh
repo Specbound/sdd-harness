@@ -836,14 +836,9 @@ install_globals() {
   # --- Serena MCP server: user scope, pinned release (see script header) ---
   bash "$HARNESS_DIR/scripts/setup/serena-reconcile.sh" --global || true
 
-  # --- Install harness skills globally ---
+  # --- Install harness skills globally (split listed vs on-demand library) ---
   if [ -d "$HARNESS_DIR/skills" ]; then
-    mkdir -p "$HOME/.claude/skills"
-    for skill_dir in "$HARNESS_DIR/skills"/*/; do
-      [ -d "$skill_dir" ] || continue
-      sync_dir "${skill_dir%/}" "$HOME/.claude/skills"
-    done
-    echo "  Harness skills installed to ~/.claude/skills/"
+    bash "$HARNESS_DIR/scripts/setup/sync-skills.sh" "$HARNESS_DIR"
   fi
 
   # --- Install global hooks (caveman, lean-ctx) to ~/.claude/hooks/ ---

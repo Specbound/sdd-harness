@@ -65,7 +65,7 @@ Manually triggered from the dashboard. It:
 
 Token cost estimate: ~5k tokens (small trace set) to ~30k tokens (complex multi-tool traces with 3 fix cycles).
 
-Skill reference: `~/.claude/skills/raindrop-eval-loop/SKILL.md`
+Skill reference: `~/.claude/skill-library/raindrop-eval-loop/SKILL.md`
 
 ---
 
@@ -122,9 +122,9 @@ Wraps the streaming `event_generator()` async generator inside `chat_llm()`:
 
 | Skill | Path | Purpose |
 |---|---|---|
-| `raindrop-instrument-agent` | `~/.claude/skills/raindrop-instrument-agent/SKILL.md` | Add tracing to a new agent |
-| `raindrop-agent-replay` | `~/.claude/skills/raindrop-agent-replay/SKILL.md` | Set up replay server + `.raindrop/agents.yaml` |
-| `raindrop-eval-loop` | `~/.claude/skills/raindrop-eval-loop/SKILL.md` | Read traces, write tests, auto-fix (max 3 cycles) |
+| `raindrop-instrument-agent` | `~/.claude/skill-library/raindrop-instrument-agent/SKILL.md` | Add tracing to a new agent |
+| `raindrop-agent-replay` | `~/.claude/skill-library/raindrop-agent-replay/SKILL.md` | Set up replay server + `.raindrop/agents.yaml` |
+| `raindrop-eval-loop` | `~/.claude/skill-library/raindrop-eval-loop/SKILL.md` | Read traces, write tests, auto-fix (max 3 cycles) |
 
 ---
 

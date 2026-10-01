@@ -26,13 +26,11 @@ argument-hint: <url, pasted content, or idea>
 
 ## Invoke Skill
 
-Use the Skill tool to load the adapt-to-repo skill, then follow its execution protocol exactly:
+Read `~/.claude/skill-library/adapt-to-repo/SKILL.md` and follow its execution protocol
+exactly (the skill lives in the on-demand library, reached by path — not the Skill tool).
+Treat `$ARGUMENTS` as its input.
 
-```
-Skill(skill="adapt-to-repo", args="$ARGUMENTS")
-```
-
-Follow every phase in the loaded skill:
+Follow every phase in the skill:
 
 1. **Ingest the Source** — fetch URL or parse pasted content, extract every discrete technique/pattern/tool/practice
 2. **Map the Repo** — read project root, scan structure, grep for existing patterns relevant to the source

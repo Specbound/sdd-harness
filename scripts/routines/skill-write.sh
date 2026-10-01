@@ -38,7 +38,16 @@ if [ ! -f "$NEW_CONTENT" ]; then
 fi
 
 SRC_DIR="skills/$SKILL_NAME"
-INSTALLED_DIR="$HOME/.claude/skills/$SKILL_NAME"
+# Installed location depends on tier: library skills (listed in the manifest) install to
+# ~/.claude/skill-library/ and are NOT in the per-prompt listing; everything else is in
+# ~/.claude/skills/. Writing to the wrong one leaves a stray listed copy and misses the
+# copy Claude actually reads. See scripts/setup/sync-skills.sh (single namer of the split).
+MANIFEST="scripts/setup/skill-library.txt"
+if [ -f "$MANIFEST" ] && grep -qxF "$SKILL_NAME" "$MANIFEST"; then
+  INSTALLED_DIR="$HOME/.claude/skill-library/$SKILL_NAME"
+else
+  INSTALLED_DIR="$HOME/.claude/skills/$SKILL_NAME"
+fi
 SRC="$SRC_DIR/$RELPATH"
 INSTALLED="$INSTALLED_DIR/$RELPATH"
 BACKUP_DIR=".claude/memory/skill-repair-backups/$SKILL_NAME"

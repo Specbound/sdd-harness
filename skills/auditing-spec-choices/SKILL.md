@@ -43,7 +43,7 @@ This skill reconstructs those decisions and writes them down.
 ## Do not use this skill when
 
 - Reviewing code correctness, style, or security — that is `kiro:validate-impl`,
-  `code-review-excellence`, and `security-review`. This skill is indifferent to
+  `code-reviewer`, and `security-review`. This skill is indifferent to
   whether the code is good; it cares whether the *choice* was the user's to make.
 - The change had no spec (bugfix, perf work, tooling) — there is no "silent spec"
   to be silent, so there is nothing to audit against

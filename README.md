@@ -537,7 +537,7 @@ Based on the methodology from ["Automating Skill Acquisition through Large-Scale
 **3-stage pipeline**:
 1. **Structural analysis** — Map repo architecture and module boundaries
 2. **Semantic scoring** — Score against the 4-criteria rubric from the paper
-3. **SKILL.md generation** — Produce standalone skill files for `~/.claude/skills/`
+3. **SKILL.md generation** — Produce standalone skill files into the two-tier skill hierarchy (see **Skill Hierarchy** below): Library tier by default, registered under a domain master
 
 **Quality gates** (applied to every new skill before it is logged):
 - **Phase 5b — SkillOS Quality Gate**: scores task relevance, operational validity, content quality, and compression. Failures block completion until fixed.
@@ -564,6 +564,29 @@ Based on the methodology from ["Automating Skill Acquisition through Large-Scale
 | `diff-teach` | Compound Engineering v3.20 | Two-turn predict-then-reveal drill for diffs/commits/time-windows — closes comprehension debt on agent-written code the user never read line-by-line. Merged with incumbent `code-documentation-code-explain` |
 
 See [docs/skills/skill-extraction/README.md](docs/skills/skill-extraction/README.md) for the full extracted skills index.
+
+---
+
+## Skill Hierarchy
+
+The harness ships ~570 skills. Listing every one in every prompt cost ~13k tokens per API
+call, so skills install into **two tiers**, fronted by **14 domain-router "master" skills**:
+
+| Tier | Install path | In every prompt? | Holds |
+|---|---|---|---|
+| **Listed** | `~/.claude/skills/` | yes | the 14 masters + a small pinned set (~29 total) |
+| **Library** | `~/.claude/skill-library/` | no | everything else (~560), reached on demand |
+
+A master (`backend-dev`, `security`, `code-quality`, `ai-ml-agents`, …) holds no technique —
+its body is a routing table of its domain's sub-skills (`name | one-line | path`). An agent
+sees the 14 master descriptions, opens the relevant one(s), and **reads the sub-skill by path**;
+it may pull as many as the task needs. This cut the per-call skill-listing cost from ~13.3k to
+~5.0k while keeping every skill reachable.
+
+`scripts/setup/sync-skills.sh` (run by `install.sh`/`update.sh`) routes each skill by
+`scripts/setup/skill-library.txt`. New skills default to the Library tier; only skills
+hard-invoked by a hook/command via `Skill("x")` stay Listed. Full rules, and how to register a
+new skill, are in **[docs/skills/SKILL-HIERARCHY.md](docs/skills/SKILL-HIERARCHY.md)**.
 
 ---
 

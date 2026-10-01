@@ -64,7 +64,7 @@ All `/skill-extraction` sessions from harness inception through mid-May 2026. Or
 ### 5. https://github.com/pbakaus/impeccable
 
 **What was added:**
-- `~/.claude/skills/impeccable-audit/SKILL.md` — 27 deterministic anti-pattern rules across 7 domains: typography, color/contrast, spatial design, motion, interaction, responsive, UX writing
+- `~/.claude/skill-library/impeccable-audit/SKILL.md` — 27 deterministic anti-pattern rules across 7 domains: typography, color/contrast, spatial design, motion, interaction, responsive, UX writing
 - AI fingerprint detection for 7 common AI-generated UI patterns (gradient text, glassmorphism, colored left borders, gradient backgrounds, nested cards, identical card grids, pure white backgrounds)
 - Output: structured audit with PASS / NEEDS WORK / BLOCK verdict + file:line references
 
@@ -86,7 +86,7 @@ All `/skill-extraction` sessions from harness inception through mid-May 2026. Or
 **What was added:**
 - `hooks/claude/memory-discipline-hook.sh` — PreToolUse gate on `*/memory/*.md` writes; displays discipline rules before write executes
 - `hooks/claude/compaction-discipline-hook.sh` — PreCompact gate; injects boundary-timing principles (compact at phase boundaries, preserve artifact paths/decisions/open questions, merge not regenerate)
-- `~/.claude/skills/agent-memory-discipline/SKILL.md` — canonical reference
+- `~/.claude/skill-library/agent-memory-discipline/SKILL.md` — canonical reference
 - `~/.claude/skills/context-compression/SKILL.md` updated — new "Compaction Modes and Boundary Timing" section
 
 **Reasoning:** OpenAI cookbook identified memory contamination by case-specific facts as the #1 silent failure mode in long-running agents. Hook-based governance enforces rules automatically rather than relying on prompts that Claude might drift from.
@@ -111,7 +111,7 @@ All `/skill-extraction` sessions from harness inception through mid-May 2026. Or
 - `hooks/claude/gbrain-agent-spawn.sh` — PreToolUse on `Agent` tool; injects model-tier guidance (haiku=classification, sonnet=generation/subagents, opus=deep-reasoning-only) + background-routing pain signals
 - `hooks/claude/gbrain-memory-write.sh` — PreToolUse on `save_observation`; enforces compiled-truth two-zone structure (State section rewrite-in-place at top, Evidence append-only at bottom)
 - `hooks/claude/gbrain-external-search.sh` — PreToolUse on `WebFetch`/`WebSearch`; reminds to run memory-first lookup chain before reaching for external APIs
-- `~/.claude/skills/agent-memory-consolidation/SKILL.md` — episodic-first architecture, 3 failure modes (misgrouping, interference, overfitting), audit checklist
+- `~/.claude/skill-library/agent-memory-consolidation/SKILL.md` — episodic-first architecture, 3 failure modes (misgrouping, interference, overfitting), audit checklist
 
 **Reasoning:** Skills that must be manually invoked get skipped. Hook-based injection fires at the exact moment the protocol is relevant — no invocation needed. The memory consolidation skill addresses generative loop drift where iterative LLM rewrites degrade memory quality below no-memory baseline.
 
@@ -128,7 +128,7 @@ All `/skill-extraction` sessions from harness inception through mid-May 2026. Or
 ### 11. https://code.claude.com/docs/en/goal (Claude Code `/goal` docs)
 
 **What was added:**
-- `~/.claude/skills/goal-mode/` directory created — skill for running any workflow in autonomous mode (Haiku evaluates completion condition after each turn, continues until met) vs interactive mode (permission steps, debuggable)
+- `~/.claude/skill-library/goal-mode/` directory created — skill for running any workflow in autonomous mode (Haiku evaluates completion condition after each turn, continues until met) vs interactive mode (permission steps, debuggable)
 
 **Reasoning:** Existing 53 development workflow skills all required manual step-by-step interaction. No skill covered the pattern of "run this until done without stopping." Goal-mode fills that gap using the built-in `/goal` primitive.
 
@@ -145,9 +145,9 @@ All `/skill-extraction` sessions from harness inception through mid-May 2026. Or
 ### 13. https://github.com/raindrop-ai/workshop...
 
 **What was added:**
-- `~/.claude/skills/raindrop-instrument-agent/SKILL.md`
-- `~/.claude/skills/raindrop-eval-loop/SKILL.md`
-- `~/.claude/skills/raindrop-agent-replay/SKILL.md`
+- `~/.claude/skill-library/raindrop-instrument-agent/SKILL.md`
+- `~/.claude/skill-library/raindrop-eval-loop/SKILL.md`
+- `~/.claude/skill-library/raindrop-agent-replay/SKILL.md`
 - Raindrop Workshop tab integrated into harness dashboard
 - Per-repo tracing configuration across all 3 registered projects
 

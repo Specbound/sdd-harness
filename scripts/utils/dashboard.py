@@ -4753,7 +4753,9 @@ def render_herder(rd, companion=False):
         <input id="hd-label" value="agent" style="{fld};width:100%;margin-top:3px"></label>
     </div>
     <div id="hd-opt-src" style="font-size:10px;color:var(--overlay0);margin-bottom:8px"></div>
-    <textarea id="hd-prompt" rows="3" placeholder="Opening prompt (optional)."
+    <textarea id="hd-prompt" rows="3"
+      placeholder="Opening prompt (optional). / for skills, @ for files · Enter spawns, Shift+Enter new line."
+      oninput="herderAcInput(this, repo)" onkeydown="herderSpawnKeydown(event)" onblur="herderAcClose()"
       style="{fld};width:100%;box-sizing:border-box;resize:vertical"></textarea>
     <div style="display:flex;align-items:center;gap:14px;margin-top:10px;flex-wrap:wrap">
       <button onclick="herderSpawn()" id="hd-spawn-btn"
@@ -5125,6 +5127,7 @@ function _hdNum(n) {
 // One box per agent, each tailing its own pane, so several runs are watchable at
 // once rather than one at a time through a shared log pane.
 function _hdBox(a) {
+  _hdCwd[a.name] = a.cwd;   // the repo `/` and `@` complete against for this agent
   var badge = _hdBadge(a.status);
   var meta = [];
   if (a.repo)  { meta.push(a.repo); }
@@ -5164,12 +5167,14 @@ function _hdBox(a) {
     '<div id="hdchat-' + a.name + '" style="background:var(--crust);border:1px solid var(--surface1);' +
       'border-radius:6px;padding:9px;font-size:10px;line-height:1.5;max-height:400px;overflow-y:auto;' +
       'margin-bottom:8px;display:flex;flex-direction:column;gap:8px">loading…</div>' +
-    '<div id="hdfiles-' + a.name + '" style="margin-bottom:6px;display:flex;flex-wrap:wrap;gap:4px;' +
-      'font-size:9px"></div>' +
+    '<div id="hderr-' + a.name + '" style="display:none;margin-bottom:6px;font-size:9.5px;' +
+      'color:#f38ba8"></div>' +
     '<div style="display:flex;gap:6px;align-items:flex-end">' +
-      '<textarea id="hdinput-' + a.name + '" placeholder="Reply…" ' +
+      '<textarea id="hdinput-' + a.name + '" data-agent="' + a.name + '" ' +
+        'placeholder="Reply… / for skills, @ for files · Shift+Enter new line" ' +
         'style="flex:1;' + fld + ';font-size:10px;padding:6px;border-radius:4px;' +
-        'resize:none;min-height:32px;max-height:100px" onkeydown="herderInputKeydown(event, \\'' + a.name + '\\')"></textarea>' +
+        'resize:none;min-height:32px;max-height:100px" onkeydown="herderInputKeydown(event, \\'' + a.name + '\\')" ' +
+        'oninput="herderAcInput(this, _hdCwd[this.dataset.agent])" onblur="herderAcClose()"></textarea>' +
       '<button onclick="herderFileTag(\\'' + a.name + '\\')" style="' + btn + ';padding:6px 10px">📎</button>' +
       '<button onclick="herderSendReply(\\'' + a.name + '\\')" style="' + btn + ';padding:6px 12px">send</button>' +
     '</div>' +
@@ -5272,9 +5277,20 @@ function herderRefresh() {
     .then(function(d) {
       var box = document.getElementById('herder-roster');
       if (!box) { return; }
-      var rows = (d && d.agents) || [];
+      // Scope the roster to the sidebar's repo: an agent belongs to the repo its
+      // cwd is, or sits under. Herdr itself is machine-wide, so the list is not.
+      var all = (d && d.agents) || [];
+      var rows = all.filter(_hdInRepo);
       if (!rows.length) {
-        box.innerHTML = '<div style="padding:36px;text-align:center;color:var(--overlay0);font-size:13px">No agents running.</div>';
+        // Clear the signature, or an agent set that returns unchanged after this
+        // empty state would match it and never be re-rendered over the message.
+        _hdRosterSig = '';
+        var other = all.length - rows.length;
+        box.innerHTML = '<div style="padding:36px;text-align:center;color:var(--overlay0);font-size:13px">' +
+          'No agents running for this repo.' +
+          (other ? ' ' + other + ' running in other repos.' : '') + '</div>';
+        var none = document.getElementById('hd-live-note');
+        if (none) { none.textContent = '0 agent(s) in this repo'; }
         return;
       }
       // Only rebuild the boxes when the set of agents changes. Re-rendering every
@@ -5288,8 +5304,57 @@ function herderRefresh() {
           return d && d.open;
         }).map(function(a) { return a.name; });
 
+        // A status change rebuilds every card. Carry each card's half-typed reply,
+        // caret, focus, error line and chat scroll across it, so a working→idle
+        // flip does not eat what the user is typing or yank them out of history.
+        var keep = {};
+        rows.forEach(function(a) {
+          var inp = document.getElementById('hdinput-' + a.name);
+          var chat = document.getElementById('hdchat-' + a.name);
+          var err = document.getElementById('hderr-' + a.name);
+          keep[a.name] = {
+            value: inp ? inp.value : '',
+            s: inp ? inp.selectionStart : 0,
+            e: inp ? inp.selectionEnd : 0,
+            focused: !!inp && document.activeElement === inp,
+            disabled: !!inp && inp.disabled,
+            err: err ? err.textContent : '',
+            chat: chat ? chat.innerHTML : null,
+            scroll: chat ? chat.scrollTop : 0
+          };
+        });
+
+        // Snapshot the open completion list: removing its textarea may fire blur,
+        // which closes and clears it before it can be re-anchored below.
+        var ac = (_hdAc.el && _hdAc.el.dataset && _hdAc.el.dataset.agent && _hdAc.items.length)
+          ? { name: _hdAc.el.dataset.agent, items: _hdAc.items, idx: _hdAc.idx,
+              start: _hdAc.start, kind: _hdAc.kind, repo: _hdAc.repo }
+          : null;
+
         _hdRosterSig = sig;
         box.innerHTML = rows.map(_hdBox).join('');
+
+        rows.forEach(function(a) {
+          var k = keep[a.name];
+          var inp = document.getElementById('hdinput-' + a.name);
+          var chat = document.getElementById('hdchat-' + a.name);
+          var err = document.getElementById('hderr-' + a.name);
+          if (inp) {
+            inp.value = k.value;
+            inp.disabled = k.disabled;
+            if (k.focused) { inp.focus(); inp.setSelectionRange(k.s, k.e); }
+          }
+          if (err && k.err) { err.textContent = k.err; err.style.display = 'block'; }
+          if (chat && k.chat !== null) { chat.innerHTML = k.chat; chat.scrollTop = k.scroll; }
+        });
+        var acEl = ac && document.getElementById('hdinput-' + ac.name);
+        if (acEl && document.activeElement === acEl) {
+          _hdAc.el = acEl; _hdAc.items = ac.items; _hdAc.idx = ac.idx;
+          _hdAc.start = ac.start; _hdAc.kind = ac.kind; _hdAc.repo = ac.repo;
+          _hdAcRender();
+        } else if (_hdAc.el && !document.body.contains(_hdAc.el)) {
+          herderAcClose();
+        }
 
         openNames.forEach(function(n) {
           var d = document.getElementById('hddet-' + n);
@@ -5315,6 +5380,13 @@ function herderRefresh() {
       }
     })
     .catch(function() {});
+}
+
+function _hdInRepo(a) {
+  var root = String(repo || '');
+  while (root.length > 1 && root.charAt(root.length - 1) === '/') { root = root.slice(0, -1); }
+  var cwd = String(a.cwd || '');
+  return !!root && (cwd === root || cwd.indexOf(root + '/') === 0);
 }
 
 function herderSpawn() {
@@ -5346,7 +5418,13 @@ function herderSpawn() {
                         ' (' + d.agent.argv.join(' ') + ')</span>';
         document.getElementById('hd-prompt').value = '';
       } else {
-        msg.innerHTML = '<span style="color:#f38ba8">' + (d.error || 'failed') + '</span>';
+        // Errors carry herdr and pane text — escape, never inject as HTML.
+        msg.innerHTML = '<span style="color:#f38ba8">' + _hdEsc(d.error || 'failed') + '</span>' +
+          (d.blocked_on
+            ? '<pre style="' + _HD_MONO + 'margin:6px 0 0;background:var(--crust);border:1px solid #f38ba855;' +
+              'border-radius:4px;padding:7px 9px;font-size:10.5px;line-height:1.45;white-space:pre-wrap;' +
+              'color:var(--text)">' + _hdEsc(d.blocked_on) + '</pre>'
+            : '');
       }
       herderRefresh();
     })
@@ -5364,14 +5442,203 @@ function herderStop(ws) {
 
 var _hdChat = {};
 
+// Chat markdown. Agents answer in markdown (lists, fences, `paths`, tables);
+// shown as escaped plain text it reads as one run-on paragraph. Line- and
+// character-scanning only — no regex, per the repo-wide ban. Every piece of
+// agent text goes through _hdEsc before it reaches innerHTML.
+var _HD_MONO = 'font-family:ui-monospace,SFMono-Regular,Menlo,monospace;';
+
+function _hdInline(s) {
+  var out = '';
+  var i = 0;
+  while (i < s.length) {
+    var c = s.charAt(i);
+    if (c === '`') {
+      var end = s.indexOf('`', i + 1);
+      if (end > i + 1) {
+        var code = s.slice(i + 1, end);
+        // Paths get their own colour so files stand out from commands.
+        var isPath = code.indexOf(' ') === -1 && code.indexOf('/') !== -1;
+        out += '<code style="' + _HD_MONO + 'background:var(--surface0);padding:1px 5px;' +
+               'border-radius:3px;font-size:10.5px;color:' + (isPath ? 'var(--peach)' : 'var(--text)') + '">' +
+               _hdEsc(code) + '</code>';
+        i = end + 1;
+        continue;
+      }
+    }
+    if (c === '*' && s.charAt(i + 1) === '*') {
+      var close = s.indexOf('**', i + 2);
+      if (close > i + 2) {
+        out += '<strong style="color:var(--text);font-weight:600">' + _hdInline(s.slice(i + 2, close)) + '</strong>';
+        i = close + 2;
+        continue;
+      }
+    }
+    out += _hdEsc(c);
+    i++;
+  }
+  return out;
+}
+
+function _hdHeading(t) {
+  var d = 0;
+  while (d < t.length && t.charAt(d) === '#') { d++; }
+  if (d >= 1 && d <= 6 && t.charAt(d) === ' ') { return { depth: d, body: t.slice(d + 1) }; }
+  return null;
+}
+
+// `- x`, `* x`, `+ x` or `12. x` / `12) x`; null for anything else.
+function _hdListItem(line) {
+  var s = line.trimStart();
+  var indent = line.length - s.length;
+  var two = s.slice(0, 2);
+  if (two === '- ' || two === '* ' || two === '+ ') { return { indent: indent, marker: '•', body: s.slice(2) }; }
+  var n = 0;
+  while (n < s.length && s.charAt(n) >= '0' && s.charAt(n) <= '9') { n++; }
+  if (n > 0 && n < 4 && (s.charAt(n) === '.' || s.charAt(n) === ')') && s.charAt(n + 1) === ' ') {
+    return { indent: indent, marker: s.slice(0, n) + '.', body: s.slice(n + 2) };
+  }
+  return null;
+}
+
+function _hdList(items) {
+  var base = Math.min.apply(null, items.map(function(it) { return it.indent; }));
+  return '<div style="margin:0 0 6px;display:flex;flex-direction:column;gap:3px">' +
+    items.map(function(it) {
+      var level = Math.min(3, Math.floor((it.indent - base) / 2));
+      return '<div style="display:flex;gap:6px;margin-left:' + (level * 14) + 'px">' +
+             '<span style="flex:none;min-width:16px;text-align:right;color:var(--mauve);' +
+             'font-weight:600;font-variant-numeric:tabular-nums">' + _hdEsc(it.marker) + '</span>' +
+             '<span style="flex:1;min-width:0">' + it.lines.map(_hdInline).join('<br>') + '</span></div>';
+    }).join('') + '</div>';
+}
+
+function _hdTableCells(t) {
+  var parts = t.split('|');
+  if (parts.length && parts[0].trim() === '') { parts.shift(); }
+  if (parts.length && parts[parts.length - 1].trim() === '') { parts.pop(); }
+  return parts.map(function(p) { return p.trim(); });
+}
+
+function _hdIsTableRule(t) {
+  for (var i = 0; i < t.length; i++) {
+    if ('|-: '.indexOf(t.charAt(i)) === -1) { return false; }
+  }
+  return t.indexOf('-') !== -1;
+}
+
+function _hdTable(rows) {
+  if (!rows.length) { return ''; }
+  var td = 'padding:3px 8px;border:1px solid var(--surface0);vertical-align:top;text-align:left';
+  var th = td + ';font-weight:600;color:var(--mauve);background:var(--surface0)';
+  var cells = function(row, style, tag) {
+    return '<tr>' + row.map(function(c) {
+      return '<' + tag + ' style="' + style + '">' + _hdInline(c) + '</' + tag + '>';
+    }).join('') + '</tr>';
+  };
+  return '<div style="overflow-x:auto;margin:0 0 8px"><table style="border-collapse:collapse;font-size:10.5px">' +
+         '<thead>' + cells(rows[0], th, 'th') + '</thead><tbody>' +
+         rows.slice(1).map(function(r) { return cells(r, td, 'td'); }).join('') +
+         '</tbody></table></div>';
+}
+
+function _hdMarkdown(text) {
+  var lines = String(text === null || text === undefined ? '' : text).split('\\n');
+  var out = '';
+  var para = [];
+  var flush = function() {
+    if (para.length) { out += '<p style="margin:0 0 6px">' + para.map(_hdInline).join('<br>') + '</p>'; }
+    para = [];
+  };
+  var i = 0;
+  while (i < lines.length) {
+    var t = lines[i].trim();
+
+    if (t.slice(0, 3) === '```') {
+      flush();
+      var lang = t.slice(3).trim();
+      var body = [];
+      i++;
+      while (i < lines.length && lines[i].trim().slice(0, 3) !== '```') { body.push(lines[i]); i++; }
+      i++;  // closing fence
+      out += '<div style="margin:2px 0 8px">' +
+             (lang ? '<div style="font-size:8.5px;color:var(--overlay0);text-transform:uppercase;margin-bottom:2px">' +
+                     _hdEsc(lang) + '</div>' : '') +
+             '<pre style="' + _HD_MONO + 'margin:0;background:var(--crust);border:1px solid var(--surface0);' +
+             'border-radius:4px;padding:7px 9px;font-size:10.5px;line-height:1.5;white-space:pre;' +
+             'overflow-x:auto;color:var(--text)">' + _hdEsc(body.join('\\n')) + '</pre></div>';
+      continue;
+    }
+    if (!t) { flush(); i++; continue; }
+    if (t === '---' || t === '***') {
+      flush();
+      out += '<hr style="border:none;border-top:1px solid var(--surface0);margin:8px 0">';
+      i++;
+      continue;
+    }
+    var hd = _hdHeading(t);
+    if (hd) {
+      flush();
+      var size = hd.depth === 1 ? 13 : (hd.depth === 2 ? 12 : 11.5);
+      out += '<div style="font-weight:600;font-size:' + size + 'px;margin:6px 0 4px;color:' +
+             (hd.depth <= 2 ? 'var(--text)' : 'var(--mauve)') + '">' + _hdInline(hd.body) + '</div>';
+      i++;
+      continue;
+    }
+    if (t.charAt(0) === '|') {
+      flush();
+      var rows = [];
+      while (i < lines.length && lines[i].trim().charAt(0) === '|') {
+        var r = lines[i].trim();
+        if (!_hdIsTableRule(r)) { rows.push(_hdTableCells(r)); }
+        i++;
+      }
+      out += _hdTable(rows);
+      continue;
+    }
+    if (t.charAt(0) === '>') {
+      flush();
+      var quote = [];
+      while (i < lines.length && lines[i].trim().charAt(0) === '>') { quote.push(lines[i].trim().slice(1).trim()); i++; }
+      out += '<div style="border-left:2px solid var(--overlay0);padding-left:8px;color:var(--subtext1);margin:0 0 6px">' +
+             quote.map(_hdInline).join('<br>') + '</div>';
+      continue;
+    }
+    if (_hdListItem(lines[i])) {
+      flush();
+      var items = [];
+      while (i < lines.length) {
+        var raw = lines[i];
+        var it = _hdListItem(raw);
+        if (it) { items.push({ indent: it.indent, marker: it.marker, lines: [it.body] }); i++; continue; }
+        var rt = raw.trim();
+        // A blank line between items does not end the list; one before prose does.
+        if (!rt) {
+          if (i + 1 < lines.length && _hdListItem(lines[i + 1])) { i++; continue; }
+          break;
+        }
+        // Indented text under an item is that item's continuation.
+        if (raw.charAt(0) === ' ' && rt.slice(0, 3) !== '```') { items[items.length - 1].lines.push(rt); i++; continue; }
+        break;
+      }
+      out += _hdList(items);
+      continue;
+    }
+    para.push(t);
+    i++;
+  }
+  flush();
+  return out;
+}
+
 function _hdChatMessage(role, text) {
   var bg = role === 'user' ? '#89b4fa22' : '#a6e3a122';
   var accent = role === 'user' ? '#89b4fa' : '#a6e3a1';
   var label = role === 'user' ? 'question' : 'response';
   return '<div style="background:' + bg + ';border-left:2px solid ' + accent + ';color:var(--text);' +
-         'border-radius:4px;padding:6px 9px;word-break:break-word;font-size:10px;line-height:1.4">' +
-         '<div style="font-size:8.5px;color:' + accent + ';margin-bottom:2px;text-transform:uppercase">' + label + '</div>' +
-         _hdEsc(text) +
+         'border-radius:4px;padding:6px 9px 2px;word-break:break-word;font-size:11px;line-height:1.55">' +
+         '<div style="font-size:8.5px;color:' + accent + ';margin-bottom:3px;text-transform:uppercase">' + label + '</div>' +
+         _hdMarkdown(text) +
          '</div>';
 }
 
@@ -5414,76 +5681,211 @@ function herderUpdateChat(name, force) {
     .catch(function(e) { chat.textContent = String(e); });
 }
 
+// Enter sends, Shift+Enter is a newline — unless the completion list is open
+// (Enter picks) or an IME is mid-composition (Enter commits the character).
 function herderInputKeydown(e, name) {
-  if (e.key === 'Enter' && !e.shiftKey) {
+  if (herderAcKeydown(e)) { return; }
+  if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
     e.preventDefault();
     herderSendReply(name);
   }
 }
 
+function herderSpawnKeydown(e) {
+  if (herderAcKeydown(e)) { return; }
+  var btn = document.getElementById('hd-spawn-btn');
+  if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+    e.preventDefault();
+    if (btn && !btn.disabled) { herderSpawn(); }
+  }
+}
+
+// `/skill` and `@path` completion: `/` at the start of any word completes a skill
+// or command, `@` at the start of any word completes a repo path. Candidates come from /api/herder-complete for the
+// repo the session runs in, so the list is what that session can invoke.
+var _hdAc = { el: null, repo: '', start: 0, kind: '', items: [], idx: 0, seq: 0 };
+var _hdCwd = {};
+
+function _hdAcToken(el) {
+  var pos = el.selectionStart;
+  if (pos !== el.selectionEnd) { return null; }
+  var v = el.value;
+  var i = pos;
+  while (i > 0 && ' \\n\\t'.indexOf(v.charAt(i - 1)) < 0) { i--; }
+  var ch = v.charAt(i);
+  var q = v.slice(i + 1, pos);
+  // `/` opens skills at the start of any word, not only the message. A second
+  // `/` in the token makes it a path (`/tmp/x`) — skill names never contain one.
+  if (ch === '/') { return q.indexOf('/') < 0 ? { kind: 'skill', start: i, q: q } : null; }
+  if (ch === '@') { return { kind: 'file', start: i, q: q }; }
+  return null;
+}
+
+function _hdAcBox() {
+  var b = document.getElementById('hd-ac');
+  if (b) { return b; }
+  b = document.createElement('div');
+  b.id = 'hd-ac';
+  b.style.cssText = 'position:fixed;z-index:9999;display:none;max-height:260px;overflow-y:auto;' +
+    'background:var(--base);border:1px solid var(--surface1);border-radius:6px;' +
+    'box-shadow:0 6px 20px #0008;font-size:11px;min-width:260px;max-width:560px';
+  // mousedown, not click: preventing it keeps focus in the textarea, so its blur
+  // handler does not close the list before the pick lands.
+  b.addEventListener('mousedown', function(e) {
+    e.preventDefault();
+    var row = e.target.closest('[data-i]');
+    if (row) { _hdAcPick(Number(row.getAttribute('data-i'))); }
+  });
+  document.body.appendChild(b);
+  return b;
+}
+
+function herderAcClose() {
+  _hdAc.seq++;
+  _hdAc.el = null;
+  _hdAc.items = [];
+  var b = document.getElementById('hd-ac');
+  if (b) { b.style.display = 'none'; }
+}
+
+function herderAcInput(el, repoPath) {
+  var t = _hdAcToken(el);
+  if (!t || !repoPath) { herderAcClose(); return; }
+  var seq = ++_hdAc.seq;
+  _hdAc.el = el;
+  _hdAc.repo = repoPath;
+  _hdAc.start = t.start;
+  _hdAc.kind = t.kind;
+  _hdFetch('/api/herder-complete?kind=' + t.kind + '&repo=' + encodeURIComponent(repoPath) +
+           '&q=' + encodeURIComponent(t.q))
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      if (seq !== _hdAc.seq) { return; }   // a later keystroke superseded this one
+      if (d.error || !(d.items || []).length) { herderAcClose(); return; }
+      _hdAc.items = d.items;
+      _hdAc.idx = 0;
+      _hdAcRender();
+    })
+    .catch(function() { herderAcClose(); });
+}
+
+function _hdAcRender() {
+  var el = _hdAc.el;
+  if (!el || !document.body.contains(el)) { herderAcClose(); return; }
+  var b = _hdAcBox();
+  var sigil = _hdAc.kind === 'skill' ? '/' : '@';
+  b.innerHTML = _hdAc.items.map(function(it, i) {
+    return '<div data-i="' + i + '" style="padding:5px 9px;cursor:pointer;display:flex;gap:9px;' +
+      'align-items:baseline;' + (i === _hdAc.idx ? 'background:var(--surface1)' : '') + '">' +
+      '<span style="' + _HD_MONO + 'color:var(--mauve);white-space:nowrap">' + sigil + _hdEsc(it.name) + '</span>' +
+      (it.description
+        ? '<span style="color:var(--overlay1);font-size:10px;overflow:hidden;text-overflow:ellipsis;' +
+          'white-space:nowrap">' + _hdEsc(it.description) + '</span>'
+        : '') +
+      '</div>';
+  }).join('');
+  b.style.display = 'block';
+  // Below the box, or above it when the viewport has no room below.
+  var r = el.getBoundingClientRect();
+  var h = b.offsetHeight;
+  b.style.left = r.left + 'px';
+  b.style.top = ((r.bottom + 4 + h > window.innerHeight) ? Math.max(4, r.top - h - 4) : r.bottom + 4) + 'px';
+  var cur = b.querySelector('[data-i="' + _hdAc.idx + '"]');
+  if (cur) { cur.scrollIntoView({ block: 'nearest' }); }
+}
+
+function _hdAcPick(i) {
+  var el = _hdAc.el;
+  var it = _hdAc.items[i];
+  if (!el || !it) { herderAcClose(); return; }
+  var v = el.value;
+  // Replace the whole token, including any part of it right of the caret.
+  var end = el.selectionStart;
+  while (end < v.length && ' \\n\\t'.indexOf(v.charAt(end)) < 0) { end++; }
+  // A directory keeps the list open for the next level; a finished file or skill
+  // gets the trailing space Claude Code inserts.
+  var dir = _hdAc.kind === 'file' && it.name.charAt(it.name.length - 1) === '/';
+  var ins = (_hdAc.kind === 'skill' ? '/' : '@') + it.name + (dir ? '' : ' ');
+  el.value = v.slice(0, _hdAc.start) + ins + v.slice(end);
+  var caret = _hdAc.start + ins.length;
+  el.focus();
+  el.setSelectionRange(caret, caret);
+  if (dir) { herderAcInput(el, _hdAc.repo); } else { herderAcClose(); }
+}
+
+// True when the completion list consumed the key.
+function herderAcKeydown(e) {
+  var b = document.getElementById('hd-ac');
+  if (!b || b.style.display === 'none' || e.target !== _hdAc.el || !_hdAc.items.length) { return false; }
+  var n = _hdAc.items.length;
+  if (e.key === 'ArrowDown') { _hdAc.idx = (_hdAc.idx + 1) % n; }
+  else if (e.key === 'ArrowUp') { _hdAc.idx = (_hdAc.idx - 1 + n) % n; }
+  else if ((e.key === 'Enter' && !e.shiftKey && !e.isComposing) || e.key === 'Tab') {
+    e.preventDefault();
+    _hdAcPick(_hdAc.idx);
+    return true;
+  }
+  else if (e.key === 'Escape') { e.preventDefault(); herderAcClose(); return true; }
+  else { return false; }
+  e.preventDefault();
+  _hdAcRender();
+  return true;
+}
+
+// The input is cleared only once the server confirms the prompt landed. fetch()
+// resolves on a 403/500 too, so the reply body's `ok` is what decides — otherwise
+// a failed send silently throws away what was typed.
 function herderSendReply(name) {
   var input = document.getElementById('hdinput-' + name);
-  var fileChips = document.getElementById('hdfiles-' + name);
-  if (!input) { return; }
-
+  if (!input || input.disabled) { return; }
   var text = input.value.trim();
-  var files = fileChips ? (fileChips.dataset.files || '').split(',').filter(function(f) { return f; }) : [];
+  if (!text) { return; }
 
-  if (!text && !files.length) { return; }
-
-  var prompt = text;
-  if (files.length) {
-    prompt += '\\n\\nFiles: ' + files.map(function(f) { return '@' + f; }).join(' ');
-  }
-
+  herderAcClose();
+  _hdSendError(name, '');
+  input.disabled = true;
   _hdFetch('/api/herder-prompt', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name: name, prompt: prompt })
+    body: JSON.stringify({ name: name, prompt: text })
   })
-    .then(function() {
-      input.value = '';
-      fileChips.innerHTML = '';
-      fileChips.dataset.files = '';
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      // Look the box up again: a roster rebuild may have replaced it mid-send.
+      var cur = document.getElementById('hdinput-' + name) || input;
+      cur.disabled = false;
+      if (!d.ok) { _hdSendError(name, d.error || 'send failed'); cur.focus(); return; }
+      cur.value = '';
+      cur.focus();
       herderUpdateChat(name, true);
       setTimeout(function() { herderUpdateChat(name, true); }, 1000);
     })
-    .catch(function(e) { alert('Error sending reply: ' + e); });
+    .catch(function(e) {
+      var cur = document.getElementById('hdinput-' + name) || input;
+      cur.disabled = false;
+      _hdSendError(name, String(e));
+    });
 }
 
+function _hdSendError(name, msg) {
+  var el = document.getElementById('hderr-' + name);
+  if (!el) { return; }
+  el.textContent = msg ? 'not sent — ' + msg : '';
+  el.style.display = msg ? 'block' : 'none';
+}
+
+// 📎 starts an `@` mention at the caret and opens the file list — the same path
+// as typing `@`, so attaching a file has one implementation, not two.
 function herderFileTag(name) {
-  var fileChips = document.getElementById('hdfiles-' + name);
-  if (!fileChips) { return; }
-
-  var input = prompt('Enter filename (or comma-separated list):');
-  if (!input) { return; }
-
-  var files = input.split(',').map(function(f) { return f.trim(); }).filter(function(f) { return f; });
-  var existing = (fileChips.dataset.files || '').split(',').filter(function(f) { return f; });
-  var all = existing.concat(files);
-
-  fileChips.dataset.files = all.join(',');
-  fileChips.innerHTML = all.map(function(f) {
-    return '<div style="background:var(--mauve);color:var(--base);' +
-           'border-radius:4px;padding:2px 8px;display:flex;align-items:center;gap:4px;' +
-           'font-size:9px">' + _hdEsc(f) +
-           '<span onclick="herderRemoveFile(\\'' + name + '\\',\\'' + _hdEsc(f) + '\\')" ' +
-           'style="cursor:pointer;font-weight:bold">×</span></div>';
-  }).join('');
-}
-
-function herderRemoveFile(name, file) {
-  var fileChips = document.getElementById('hdfiles-' + name);
-  if (!fileChips) { return; }
-  var files = (fileChips.dataset.files || '').split(',').filter(function(f) { return f && f !== file; });
-  fileChips.dataset.files = files.join(',');
-  fileChips.innerHTML = files.map(function(f) {
-    return '<div style="background:var(--mauve);color:var(--base);' +
-           'border-radius:4px;padding:2px 8px;display:flex;align-items:center;gap:4px;' +
-           'font-size:9px">' + _hdEsc(f) +
-           '<span onclick="herderRemoveFile(\\'' + name + '\\',\\'' + _hdEsc(f) + '\\')" ' +
-           'style="cursor:pointer;font-weight:bold">×</span></div>';
-  }).join('');
+  var input = document.getElementById('hdinput-' + name);
+  if (!input || input.disabled) { return; }
+  var v = input.value;
+  var pos = input.selectionStart;
+  var pre = (pos > 0 && ' \\n\\t'.indexOf(v.charAt(pos - 1)) < 0) ? ' @' : '@';
+  input.value = v.slice(0, pos) + pre + v.slice(pos);
+  input.focus();
+  input.setSelectionRange(pos + pre.length, pos + pre.length);
+  herderAcInput(input, _hdCwd[name]);
 }
 
 setInterval(function() {
@@ -6016,6 +6418,19 @@ class _DashboardHandler(BaseHTTPRequestHandler):
                 self._send_json({"name": name, "output": hd.read_agent(name)})
             except Exception as exc:                      # noqa: BLE001
                 self._send_json({"error": str(exc)}, 500)
+        elif parsed.path == "/api/herder-complete":
+            # Guarded like the rest: a file listing of a repo is not something
+            # another site's page should be able to read.
+            hd = self._herder_guarded()
+            if hd is None:
+                return
+            qs = parse_qs(parsed.query)
+            try:
+                self._send_json(hd.complete(qs.get("repo", [""])[0],
+                                            qs.get("kind", [""])[0],
+                                            qs.get("q", [""])[0]))
+            except Exception as exc:                      # noqa: BLE001
+                self._send_json({"error": str(exc)}, 500)
         elif parsed.path.startswith("/workshop/") or parsed.path == "/workshop":
             self._proxy_workshop(parsed)
         else:
@@ -6107,7 +6522,8 @@ class _DashboardHandler(BaseHTTPRequestHandler):
                 )
                 self._send_json({"ok": True, "agent": result})
             except Exception as exc:                      # noqa: BLE001
-                self._send_json({"ok": False, "error": str(exc)}, 500)
+                self._send_json({"ok": False, "error": str(exc),
+                                 "blocked_on": getattr(exc, "screen", "")}, 500)
         elif parsed.path == "/api/herder-stop":
             hd = self._herder_guarded()
             if hd is None:

@@ -75,15 +75,35 @@ printf '{ "mcpServers": ' > "$P/.mcp.json"
 bash "$RECON" "$P" >/dev/null 2>&1
 check "block removed"        "0" "$(grep -c 'gitnexus:start' "$P/CLAUDE.md")"
 
-echo "=== 3. block + index + MCP -> kept, paths repaired ==="
+echo "=== 3. block + index + MCP -> kept, compacted ==="
 P="$(make_proj live yes yes yes)"
 bash "$RECON" "$P" >/dev/null
 check "block kept"           "1" "$(grep -c 'gitnexus:start' "$P/CLAUDE.md")"
+check "block closed"         "1" "$(grep -c 'gitnexus:end' "$P/CLAUDE.md")"
+check "repo name carried"    "1" "$(grep -c 'Indexed as \*\*demo\*\*' "$P/CLAUDE.md")"
+check "impact rule"          "1" "$(grep -c 'MUST run `impact' "$P/CLAUDE.md")"
+check "detect_changes rule"  "1" "$(grep -c 'MUST run `detect_changes' "$P/CLAUDE.md")"
+check "UNKNOWN rule"         "1" "$(grep -c 'risk: UNKNOWN` is unresolved' "$P/CLAUDE.md")"
+check "rename rule"          "1" "$(grep -c 'NEVER rename' "$P/CLAUDE.md")"
+check "old body gone"        "0" "$(grep -c '| Task | Skill |' "$P/CLAUDE.md")"
 check "no project-local path" "0" "$(grep -c '[^/]\.claude/skills/' "$P/CLAUDE.md")"
-check "global paths"         "3" "$(grep -c '~/.claude/skills/gitnexus' "$P/CLAUDE.md")"
+check "head preserved"       "1" "$(grep -c '^## Commands' "$P/CLAUDE.md")"
+check "tail preserved"       "1" "$(grep -c '^## Tail section' "$P/CLAUDE.md")"
 cp "$P/CLAUDE.md" "$ROOT/live-once.md"
 bash "$RECON" "$P" >/dev/null
 check "idempotent"           "" "$(diff "$ROOT/live-once.md" "$P/CLAUDE.md")"
+
+echo "=== 3b. SDD_GITNEXUS_FULL_BLOCK=1 -> upstream body kept, paths repaired ==="
+P="$(make_proj live-full yes yes yes)"
+SDD_GITNEXUS_FULL_BLOCK=1 bash "$RECON" "$P" >/dev/null
+check "no project-local path" "0" "$(grep -c '[^/]\.claude/skills/' "$P/CLAUDE.md")"
+check "global paths"         "3" "$(grep -c '~/.claude/skills/gitnexus' "$P/CLAUDE.md")"
+
+echo "=== 3c. unterminated block -> not compacted, tail kept ==="
+P="$(make_proj live-open yes yes yes)"
+grep -vF 'gitnexus:end' "$P/CLAUDE.md" > "$P/x" && mv "$P/x" "$P/CLAUDE.md"
+bash "$RECON" "$P" >/dev/null
+check "tail preserved"       "1" "$(grep -c '^## Tail section' "$P/CLAUDE.md")"
 
 echo "=== 4. no block -> untouched ==="
 P="$(make_proj noblock no no no)"

@@ -1,509 +1,228 @@
 ---
 name: tool-design
-description: This skill should be used when the user asks to "design agent tools", "create tool descriptions", "reduce tool complexity", "implement MCP tools", or mentions tool consolidation, architectural reduction, tool naming conventions, or agent-tool interfaces.
+description: "Use when designing or reviewing agent/MCP tool interfaces: writing tool descriptions, deciding whether to consolidate or split tools, capping/formatting tool output, or bridging an existing CLI for agent use."
 ---
 
 # Tool Design for Agents
 
-Tools are the primary mechanism through which agents interact with the world. They define the contract between deterministic systems and non-deterministic agents. Unlike traditional software APIs designed for developers, tool APIs must be designed for language models that reason about intent, infer parameter values, and generate calls from natural language requests. Poor tool design creates failure modes that no amount of prompt engineering can fix. Effective tool design follows specific principles that account for how agents perceive and use tools.
+Tools are the contract between deterministic systems and non-deterministic agents. Agents
+never see your code — only the schema and description — so every ambiguity there becomes a
+failure mode no prompt engineering fixes downstream.
 
-## When to Activate
+## Core Principles
 
-Activate this skill when:
-- Creating new tools for agent systems
-- Debugging tool-related failures or misuse
-- Optimizing existing tool sets for better agent performance
-- Designing tool APIs from scratch
-- Evaluating third-party tools for agent integration
-- Standardizing tool conventions across a codebase
+- **Tools are contracts.** Humans infer API contracts from docs; agents must infer them
+  entirely from the description. Ambiguity that a human shrugs off becomes a wrong call.
+- **Descriptions are prompts.** They're loaded into context and steer behavior, not just
+  document it. Answer four questions: what it does, when to use it, what inputs it takes,
+  what it returns.
+- **Consolidation principle.** If a human engineer can't definitively say which tool applies
+  in a given situation, an agent can't either. Prefer one comprehensive tool
+  (`schedule_event`: finds availability + books) over a chain of narrow ones
+  (`list_users` + `list_events` + `create_event`). Each extra tool costs context-budget
+  tokens and adds selection ambiguity even when unused.
+- **When not to consolidate:** tools with fundamentally different behaviors, tools used in
+  different contexts, or tools that might legitimately be called independently.
+- **"Bash gravity."** As a tool collection grows, routing collapses toward the most general
+  tool available — it's never *wrong*, only worse, so specific tools silently lose traffic
+  to it. Counter this in the description itself (see Six-Section Skeleton below), not by
+  hoping agents pick the narrow tool unprompted.
 
-## Core Concepts
+## Architectural Reduction
 
-Tools are contracts between deterministic systems and non-deterministic agents. The consolidation principle states that if a human engineer cannot definitively say which tool should be used in a given situation, an agent cannot be expected to do better. Effective tool descriptions are prompt engineering that shapes agent behavior.
+Taken to its extreme, consolidation argues for removing specialized tools in favor of a
+single primitive (e.g. one `execute_command` sandbox tool, agent drives `grep`/`cat`/`find`
+over well-documented files) instead of a bespoke tool per operation. Production case: a
+17-tool text-to-SQL agent reduced to 2 primitives ran 3.5x faster, 100% vs 80% success, 37%
+fewer tokens — see `references/architectural_reduction.md` for the full comparison.
 
-Key principles include: clear descriptions that answer what, when, and what returns; response formats that balance completeness and token efficiency; error messages that enable recovery; and consistent conventions that reduce cognitive load.
+**Reduction wins when:** the data layer is well-documented and consistent, the model has
+enough reasoning capacity to navigate it unaided, and specialized tools were constraining
+more than enabling.
 
-## Detailed Topics
+**Reduction fails when:** data is messy/undocumented, the domain needs knowledge the model
+lacks, safety requires hard limits on what the agent can do, or workflows are genuinely
+multi-step and benefit from enforced structure.
 
-### The Tool-Agent Interface
+**Ask before adding a guardrail tool:** is this enabling a new capability, or constraining
+reasoning the model could already do? Guardrails become maintenance liabilities as models
+improve — build for the model the project will have in a year, not just today's.
 
-**Tools as Contracts**
-Tools are contracts between deterministic systems and non-deterministic agents. When humans call APIs, they understand the contract and make appropriate requests. Agents must infer the contract from descriptions and generate calls that match expected formats.
-
-This fundamental difference requires rethinking API design. The contract must be unambiguous, examples must illustrate expected patterns, and error messages must guide correction. Every ambiguity in tool definitions becomes a potential failure mode.
-
-**Tool Description as Prompt**
-Tool descriptions are loaded into agent context and collectively steer behavior. The descriptions are not just documentation—they are prompt engineering that shapes how agents reason about tool use.
-
-Poor descriptions like "Search the database" with cryptic parameter names force agents to guess. Optimized descriptions include usage context, examples, and defaults. The description answers: what the tool does, when to use it, and what it produces.
-
-**Namespacing and Organization**
-As tool collections grow, organization becomes critical. Namespacing groups related tools under common prefixes, helping agents select appropriate tools at the right time.
-
-Namespacing creates clear boundaries between functionality. When an agent needs database information, it routes to the database namespace. When it needs web search, it routes to web namespace.
-
-### The Consolidation Principle
-
-**Single Comprehensive Tools**
-The consolidation principle states that if a human engineer cannot definitively say which tool should be used in a given situation, an agent cannot be expected to do better. This leads to a preference for single comprehensive tools over multiple narrow tools.
-
-Instead of implementing list_users, list_events, and create_event, implement schedule_event that finds availability and schedules. The comprehensive tool handles the full workflow internally rather than requiring agents to chain multiple calls.
-
-**Why Consolidation Works**
-Agents have limited context and attention. Each tool in the collection competes for attention in the tool selection phase. Each tool adds description tokens that consume context budget. Overlapping functionality creates ambiguity about which tool to use.
-
-Consolidation reduces token consumption by eliminating redundant descriptions. It eliminates ambiguity by having one tool cover each workflow. It reduces tool selection complexity by shrinking the effective tool set.
-
-**When Not to Consolidate**
-Consolidation is not universally correct. Tools with fundamentally different behaviors should remain separate. Tools used in different contexts benefit from separation. Tools that might be called independently should not be artificially bundled.
-
-### Architectural Reduction
-
-The consolidation principle, taken to its logical extreme, leads to architectural reduction: removing most specialized tools in favor of primitive, general-purpose capabilities. Production evidence shows this approach can outperform sophisticated multi-tool architectures.
-
-**The File System Agent Pattern**
-Instead of building custom tools for data exploration, schema lookup, and query validation, provide direct file system access through a single command execution tool. The agent uses standard Unix utilities (grep, cat, find, ls) to explore, understand, and operate on your system.
-
-This works because:
-1. File systems are a proven abstraction that models understand deeply
-2. Standard tools have predictable, well-documented behavior
-3. The agent can chain primitives flexibly rather than being constrained to predefined workflows
-4. Good documentation in files replaces the need for summarization tools
-
-**When Reduction Outperforms Complexity**
-Reduction works when:
-- Your data layer is well-documented and consistently structured
-- The model has sufficient reasoning capability to navigate complexity
-- Your specialized tools were constraining rather than enabling the model
-- You're spending more time maintaining scaffolding than improving outcomes
-
-Reduction fails when:
-- Your underlying data is messy, inconsistent, or poorly documented
-- The domain requires specialized knowledge the model lacks
-- Safety constraints require limiting what the agent can do
-- Operations are truly complex and benefit from structured workflows
-
-**Stop Constraining Reasoning**
-A common anti-pattern is building tools to "protect" the model from complexity. Pre-filtering context, constraining options, wrapping interactions in validation logic. These guardrails often become liabilities as models improve.
-
-The question to ask: are your tools enabling new capabilities, or are they constraining reasoning the model could handle on its own?
-
-**Build for Future Models**
-Models improve faster than tooling can keep up. An architecture optimized for today's model may be over-constrained for tomorrow's. Build minimal architectures that can benefit from model improvements rather than sophisticated architectures that lock in current limitations.
-
-See [Architectural Reduction Case Study](./references/architectural_reduction.md) for production evidence.
-
-### Tool Description Engineering
-
-**Description Structure**
-Effective tool descriptions answer four questions:
-
-What does the tool do? Clear, specific description of functionality. Avoid vague language like "helps with" or "can be used for." State exactly what the tool accomplishes.
-
-When should it be used? Specific triggers and contexts. Include both direct triggers ("User asks about pricing") and indirect signals ("Need current market rates").
-
-What inputs does it accept? Parameter descriptions with types, constraints, and defaults. Explain what each parameter controls.
-
-What does it return? Output format and structure. Include examples of successful responses and error conditions.
-
-**Default Parameter Selection**
-Defaults should reflect common use cases. They reduce agent burden by eliminating unnecessary parameter specification. They prevent errors from omitted parameters.
-
-**The Six-Section Skeleton**
-
-The four questions above say what to cover. This is the order and shape to cover it in:
+## Writing Tool Descriptions: The Six-Section Skeleton
 
 1. **Opening line** — the job, and what it returns. One sentence.
 2. **WHEN TO USE** — direct triggers and indirect signals.
-3. **WHEN NOT TO USE** — the soft boundary: "prefer `<other tool>` for X."
-4. **DO NOT USE FOR** — the hard boundary: "never use this for Y."
+3. **WHEN NOT TO USE** — soft boundary: "prefer `<other tool>` for X."
+4. **DO NOT USE FOR** — hard boundary: "never use this for Y."
 5. **USAGE** — parameters, constraints, defaults.
-6. **EXAMPLES** — two or three, including at least one near-miss the tool should decline.
+6. **EXAMPLES** — 2-3, including at least one near-miss the tool should decline.
 
-**State the negative twice, on purpose.** Sections 3 and 4 overlap and that is the
-design, not redundancy to be edited out. A soft handoff tells the model where to go
-instead; a hard prohibition holds when the request is ambiguous and the soft version
-bends. The repetition is tier-sensitive in a way worth knowing: smaller models
-register the soft boundary and drop it under ambiguity, mid-tier models honor it and
-measurably gain from the restatement, and the largest models are unaffected either
-way — and, critically, not *harmed* by the repetition. So the restatement costs
-nothing where it is unnecessary and rescues routing where it is.
+Sections 3 and 4 deliberately overlap — a soft handoff tells the model where to go instead;
+a hard prohibition holds when the request is ambiguous and the soft version bends. Smaller
+models drop the soft boundary under ambiguity; mid-tier models gain measurably from the
+restatement; the largest models are unaffected either way (not harmed). The repetition
+costs nothing where unneeded and rescues routing where it is. Phrase section 4 as a
+prohibition on *this* tool, not a recommendation of another — "prefer X" loses to bash
+gravity, "never use this for Y" does not.
 
-Long descriptions are cheap. They live in the cached system prompt and are paid once
-per session, not per call. Optimizing description length is optimizing the wrong
-axis; optimize whether the boundary is unmissable.
+Long descriptions are cheap — they're cached in the system prompt, paid once per session
+not per call. Optimize whether the boundary is unmissable, not description length.
 
-**Bash gravity** — the named failure mode these boundaries exist to counter. As a
-tool collection grows, routing collapses toward the most general tool available:
-whatever can technically do anything gets used for everything, because it is never
-*wrong*, only worse. Specific tools lose to the general one unless their descriptions
-say outright that the general one should not be used here. This is why section 4 is
-phrased as a prohibition on *this* tool rather than a recommendation of another —
-"prefer X" loses to gravity, "never use this for Y" does not.
+**Verify by per-section ablation, not by reading.** A description you wrote always reads as
+clear to you. Hold three fixed probe prompts (one search-shaped, one file-shaped, one
+shell-shaped) and strip one section at a time (EXAMPLES, then DO NOT USE FOR, then USAGE),
+re-running all three after each removal. The section whose removal first collapses routing
+is the one doing the work; sections you can remove with no effect are dead text.
 
-**Verify by per-section ablation, not by reading.** A description you wrote always
-reads as clear to you. Hold three fixed probe prompts — one clearly search-shaped,
-one clearly file-shaped, one shell-shaped — and strip one section at a time
-(EXAMPLES, then DO NOT USE FOR, then USAGE), re-running all three after each removal.
-The section whose removal first collapses routing is the one carrying the weight;
-sections you can remove with no effect are dead text. This tells you *which part*
-works, which reading never will. See `skill-eval-gate` for the same technique applied
-to whole skills.
+## Naming and Parameters
 
-### Response Format Optimization
+- Self-documenting parameter names: `customer_id`, `max_results`, `include_history` — never
+  `x`, `val`, `param1`, `info`.
+- Consistent terms across tools for the same concept (`customer_id` everywhere, not
+  `id`/`identifier`/`customer_id` mixed).
+- Boolean-style options: `include_` for affirmative, `exclude_` for negative.
+- **MCP tools: always use fully-qualified names** (`ServerName:tool_name`) in descriptions
+  and cross-references — unqualified names fail to resolve when multiple servers are
+  active: `"Use the BigQuery:bigquery_schema tool..."` not `"Use the bigquery_schema
+  tool..."`.
 
-Tool response size significantly impacts context usage. Implementing response format options gives agents control over verbosity.
+## Response Format and Output Caps
 
-Concise format returns essential fields only, appropriate for confirmation or basic information. Detailed format returns complete objects with all fields, appropriate when full context is needed for decisions.
+Give agents a verbosity choice (`format: "concise" | "detailed"`) — concise for
+confirmation/basic info, detailed when the full object drives a downstream decision.
 
-Include guidance in tool descriptions about when to use each format. Agents learn to select appropriate formats based on task requirements.
+Format options only help when the agent chooses well. **Caps protect the context window
+when it doesn't** — an unbounded result is one bad call from evicting the rest of the
+session. Three parts, all required:
 
-**Output Caps: cap, announce, paginate**
+1. **Cap it.** Working defaults: ~500 lines for a file read, ~50 matches for a search,
+   ~5000 characters for command output.
+2. **Announce the cut and the true total.** `showing first 50 of 1,284 matches`, never a
+   silently shortened list — silent truncation is worse than none, because the model
+   believes it has the full picture and will confidently conclude "no other call sites
+   exist" from a list cut at 50.
+3. **Offer the continuation** — offset, page, or filter. A cap with no way past it is a
+   dead end.
 
-Format options control verbosity when the agent chooses well. Caps are what protect
-the context window when it does not — an unbounded tool result is one bad call away
-from evicting everything else in the session.
+**Keep the tail, not the head, for command output** — failures put their signal last (stack
+trace, assertion, exit line); `stdout[:MAX]` keeps the build banner and throws away the
+reason it failed. Listings are the opposite: keep the head.
 
-Three parts, all required:
+Four bounded reads cost more calls than one dump and are still the better trade — the
+dump's cost isn't paid at the call, it's paid by every later turn that carries it.
 
-1. **Cap the output.** Concrete working defaults: ~500 lines for a file read, ~50
-   matches for a search, ~5000 characters for command output.
-2. **Announce the cut and its size.** `showing first 50 of 1,284 matches`, not a
-   quietly shortened list. **Silent truncation is worse than no truncation**, because
-   the model believes it has the full picture and acts on incomplete data — it will
-   confidently conclude "there are no other call sites" from a list that was cut at
-   50. A visible cut is a fact the model can reason about; an invisible one is a
-   false premise.
-3. **Offer the continuation.** Say how to get the rest — offset, page, filter. A cap
-   with no way past it turns a bounded result into a dead end.
+## Error Message Design
 
-**Keep the tail, not the head, for command output.** Failures put their signal last:
-the stack trace, the assertion, the exit line. `stdout[-MAX:]` preserves that;
-`stdout[:MAX]` preserves the build banner and throws away the reason the command
-failed. For structured listings the head is usually right; for anything that can
-fail, the tail is.
+Error messages serve agents recovering, not just developers debugging — they must be
+actionable. Retryable errors need retry guidance; input errors need the corrected format;
+missing-data errors need what's actually required. Example shape:
 
-**Report the true total, not the shown count.** The agent needs to know a search
-matched 1,284 times even when it can only see 50, because 1,284 and 50 imply
-different next actions.
-
-The tradeoff is deliberate and worth stating: four bounded reads cost more calls than
-one dump, and are still the better trade, because the dump's cost is not paid at the
-call — it is paid by every subsequent turn in the session that now carries it.
-
-### Error Message Design
-
-Error messages serve two audiences: developers debugging issues and agents recovering from failures. For agents, error messages must be actionable. They must tell the agent what went wrong and how to correct it.
-
-Design error messages that enable recovery. For retryable errors, include retry guidance. For input errors, include corrected format. For missing data, include what's needed.
-
-### Tool Definition Schema
-
-Use a consistent schema across all tools. Establish naming conventions: verb-noun pattern for tool names, consistent parameter names across tools, consistent return field names.
-
-### Tool Collection Design
-
-Research shows tool description overlap causes model confusion. More tools do not always lead to better outcomes. A reasonable guideline is 10-20 tools for most applications. If more are needed, use namespacing to create logical groupings.
-
-Implement mechanisms to help agents select the right tool: tool grouping, example-based selection, and hierarchy with umbrella tools that route to specialized sub-tools.
-
-### MCP Tool Naming Requirements
-
-When using MCP (Model Context Protocol) tools, always use fully qualified tool names to avoid "tool not found" errors.
-
-Format: `ServerName:tool_name`
-
-```python
-# Correct: Fully qualified names
-"Use the BigQuery:bigquery_schema tool to retrieve table schemas."
-"Use the GitHub:create_issue tool to create issues."
-
-# Incorrect: Unqualified names
-"Use the bigquery_schema tool..."  # May fail with multiple servers
+```json
+{"error": "INVALID_CUSTOMER_ID", "message": "Customer ID 'CUST-123' does not match format",
+ "expected_format": "CUST-######", "resolution": "Provide ID matching CUST-######",
+ "retryable": true}
 ```
-
-Without the server prefix, agents may fail to locate tools, especially when multiple MCP servers are available. Establish naming conventions that include server context in all tool references.
-
-### Using Agents to Optimize Tools
-
-Claude can optimize its own tools. When given a tool and observed failure modes, it diagnoses issues and suggests improvements. Production testing shows this approach achieves 40% reduction in task completion time by helping future agents avoid mistakes.
-
-**The Tool-Testing Agent Pattern**:
-
-```python
-def optimize_tool_description(tool_spec, failure_examples):
-    """
-    Use an agent to analyze tool failures and improve descriptions.
-    
-    Process:
-    1. Agent attempts to use tool across diverse tasks
-    2. Collect failure modes and friction points
-    3. Agent analyzes failures and proposes improvements
-    4. Test improved descriptions against same tasks
-    """
-    prompt = f"""
-    Analyze this tool specification and the observed failures.
-    
-    Tool: {tool_spec}
-    
-    Failures observed:
-    {failure_examples}
-    
-    Identify:
-    1. Why agents are failing with this tool
-    2. What information is missing from the description
-    3. What ambiguities cause incorrect usage
-    
-    Propose an improved tool description that addresses these issues.
-    """
-    
-    return get_agent_response(prompt)
-```
-
-This creates a feedback loop: agents using tools generate failure data, which agents then use to improve tool descriptions, which reduces future failures.
-
-### Testing Tool Design
-
-Evaluate tool designs against criteria: unambiguity, completeness, recoverability, efficiency, and consistency. Test tools by presenting representative agent requests and evaluating the resulting tool calls.
-
-## Advanced Tool Use Patterns
-
-Three empirically validated techniques for high-scale tool systems (source: Anthropic Engineering, 2025). These are orthogonal to consolidation and description engineering — apply them after the base design is solid.
-
-Enable via: `betas=["advanced-tool-use-2025-11-20"]`
-
-### Tool Search (Deferred Discovery)
-
-When tool definitions exceed ~10K tokens, load a small core set at startup and let Claude search for tools on demand instead.
-
-**How it works:** Mark tools with `defer_loading: true`. Provide a search tool (regex or BM25) as part of the always-loaded core. Claude searches for capabilities when needed; definitions load only on demand.
-
-**Results:** 85% token reduction on definition-heavy MCP setups. Opus 4.5 accuracy: 79.5% → 88.1% on MCP evals.
-
-**Cache note:** Deferred tools are excluded from the initial prompt entirely — Tool Search does not break prompt caching.
-
-**Decision rule:** Use when you have 10+ tools or >10K tokens in tool definitions. Keep 3–5 most-used tools always loaded; defer the rest.
-
-### Programmatic Tool Calling
-
-Claude writes orchestration code instead of requesting tools one at a time through natural language.
-
-**How it works:** Mark tools with `allowed_callers: ["code_execution_20250825"]`. Claude generates Python that calls tools in sequence, loops, or parallel. Intermediate results stay in the code executor, not Claude's context.
-
-**Results:** 37% token reduction (43,588 → 27,297 tokens on complex 20-tool workflows). Eliminates 19+ inference passes on sequential tool chains. Enables `asyncio.gather()` for genuine parallel tool calls.
-
-**When to use:** 3+ dependent tool calls, large intermediate data that shouldn't accumulate in context, workflows with loops or conditionals.
-
-### Usage Examples in Tool Definitions
-
-Provide concrete JSON examples in tool definitions for patterns JSON Schema cannot express: when to use optional parameters, which combinations make sense, API conventions.
-
-**Results:** Accuracy: 72% → 90% on complex parameter handling.
-
-**Format:** Include 1–5 realistic examples per tool. Focus on ambiguous areas — minimal, partial, and full specification variants. Use real data (actual cities, real prices) not placeholder strings.
-
-```python
-# In tool description:
-"""
-Examples:
-  Minimal: {"city": "Portland"}
-  With dates: {"city": "Portland", "check_in": "2026-08-01", "nights": 3}
-  Full: {"city": "Portland", "check_in": "2026-08-01", "nights": 3, "guests": 2, "room_type": "queen"}
-"""
-```
-
-**Layered strategy:** Start with your primary bottleneck (context bloat → Tool Search; intermediate data → Programmatic Calling; parameter errors → Examples). Add techniques progressively.
-
----
-
-## CLI-to-Agent Bridging
-
-When making an existing CLI agent-consumable, **keep traditional argument-based interfaces** — do not rewrite to JSON payloads. Empirical data shows args strictly dominate.
-
-Source: Microsoft Developer Blog, 2025 — tested across Haiku 4.5, Sonnet 4.6, multiple shells.
-
-### Why Args Beat JSON
-
-| Metric | Args | JSON |
-|---|---|---|
-| Correctness (all models) | 100% | Degraded on smaller models (Haiku 4.5: 40%) |
-| Token cost | Baseline | 4×–11× more per task |
-| Shell portability | Consistent | Shell escaping creates 9× cost gap (PowerShell vs Bash) |
-
-**The mechanism:** Args constrain the input space, eliminating JSON syntax validation, nesting errors, and shell escaping ambiguities. Narrowing valid inputs compensates for model capability gaps.
-
-**Shell escaping tax:** JSON failures compound across retry cycles. The same model (Sonnet 4.6) ran 9× more expensive on PowerShell than Bash for JSON mode — identical correctness, just a different shell. Args were unaffected.
-
-### The "Don't Rewrite" Rule
-
-Keep existing CLI argument structures intact. If adding structured input:
-- Offer `--json` as an *optional addition*, not a replacement
-- Never force agents toward JSON-first interfaces
-- The rewrite cost is negative: you get worse performance and more tokens for the trouble
-
-### What to Change (Minimal Intervention)
-
-If an existing CLI does need agent-friendliness improvements, focus on:
-1. **Exit codes:** Ensure 0/non-0 are meaningful and consistent — agents need binary success signals
-2. **Quiet mode:** Add `--quiet` or `--no-color` to suppress human-oriented decorations (progress bars, ANSI colors) that break agent parsing
-3. **Machine-readable output flag (optional):** `--json` as an additive flag for structured output; never remove the default arg-based interface
-
-These three changes cover 90% of CLI-to-agent friction without a rewrite.
-
----
-
-## Intent-vs-Compiler: Emit Intent, Derive Config
-
-When a tool requires verbose, low-level configuration, do not make the model hand-write it. Have the LLM emit a terse, high-level **intent** plus **semantic types**, and let deterministic code (the "compiler") derive the fragile low-level parameters — scales, formatting, layout, ranges, defaults, styling, config. The model declares *what it means*; the compiler decides *how to realize it*.
-
-Source: Microsoft Flint (chart-generation), 2025. The principle generalizes to any tool where the model currently hand-writes fragile verbose specs.
-
-**Why it wins on both axes:**
-- **Token cost:** intent is a fraction of the size of a full spec — the compiler expands it deterministically at zero context cost.
-- **Error surface:** the fragile parts (numeric scales, nested layout objects, enum-heavy styling) are exactly what models get wrong. Moving them into deterministic code removes an entire class of malformed-output failures — the model can only get the *intent* wrong, not the syntax.
-
-**Two-layer pattern (charts as the worked example):**
-
-1. **Data layer — semantic types + field metadata.** The model annotates each field with its semantic type (temporal / quantitative / categorical / ordinal) and lightweight metadata (unit, cardinality, whether it's a measure or dimension). It does *not* pick axis ranges, tick formats, or color scales.
-2. **Intent layer — map fields to roles/channels.** The model states the intent as a mapping: `date → x`, `revenue → y`, `region → color`. That is the whole model-authored payload.
-
-The compiler fills everything else — axis scales inferred from the quantitative field's range, tick/number formatting inferred from the unit, a categorical palette sized to `region`'s cardinality, legend placement, and layout. None of that touches the model.
-
-**Generalizing beyond charts.** Apply this wherever a tool's schema is verbose and mechanically derivable:
-- **Query/report tools:** model emits `{metric, dimension, filter-intent}`; compiler builds the SQL, pagination, and formatting.
-- **UI/layout tools:** model emits component roles; compiler resolves spacing, breakpoints, and theming.
-- **Infra/config tools:** model emits the high-level goal ("public HTTPS endpoint for service X"); compiler derives ports, security groups, and boilerplate.
-
-**Decision rule:** if a parameter is (a) mechanically derivable from the data or a semantic type, and (b) a frequent source of malformed model output, it belongs in the compiler, not the tool schema. Expose only the irreducible intent. This is the consolidation principle applied to *parameters* rather than tools: the fewer fragile fields the model must author, the fewer ways it can fail.
-
----
 
 ## Agent-Facing API Design Checklist
 
-Source: "Designing APIs for Agents" (freestyle.sh). Agent-facing API/tool design inverts human-API conventions: agents read full docs in one pass and pay no readability cost for verbosity, so conventions that reduce typing for humans just add ambiguity for agents. Four principles:
+Agent APIs invert human-API conventions: agents read full docs in one pass and pay no
+readability tax for verbosity, so human-typing-saving conventions just add ambiguity here.
 
-1. **Explicit over defaults** — require explicit parameters rather than hidden "sensible defaults." A human API hides complexity behind defaults to reduce typing; an agent has no typing cost, so hidden defaults just create ambiguity about what actually happened.
-2. **Strict, precise error messages over lenient coercion** — don't silently coerce malformed input to something reasonable; return a precise error. For an agent, an error is a clarifying signal it can act on, not friction to smooth over.
-3. **Unambiguous, specific field naming** — prefer specific names (`displayName`, `slug`, `externalId`) over generic ones (`name`, `id`) to reduce the chance an agent hallucinates or confuses which field means what.
-4. **"Facts not utilities"** — expose primitive/raw capability surfaces (e.g. a raw `exec()`-style primitive) rather than convenience-wrapped SDK utilities. Let the agent compose its own higher-level wrapper from primitives rather than being constrained by someone else's abstraction choices.
+1. **Explicit over defaults** — require explicit parameters rather than hidden "sensible
+   defaults"; a default an agent didn't choose is ambiguity about what actually happened.
+2. **Strict errors over lenient coercion** — don't silently coerce malformed input; a
+   precise error is a signal the agent can act on, silent coercion is not.
+3. **Specific field names** — `displayName`/`slug`/`externalId` over generic `name`/`id`,
+   to cut the odds of hallucinated or confused field meaning.
+4. **Facts not utilities** — expose raw primitives (e.g. a raw `exec()`) over
+   convenience-wrapped SDK utilities; let the agent compose its own abstraction rather than
+   being boxed into someone else's.
 
----
+## Tool Collection Design
 
-## Practical Guidance
+10-20 tools is a reasonable ceiling for most applications — beyond that, namespace into
+logical groups (`db:query`, `web:search`) rather than flattening everything. Tool
+description overlap measurably causes selection confusion; shrinking the effective set
+beats adding more disambiguating text.
 
-### Anti-Patterns to Avoid
+## CLI-to-Agent Bridging
 
-Vague descriptions: "Search the database for customer information" leaves too many questions unanswered.
+When exposing an existing CLI to agents, **keep the argument-based interface** — do not
+rewrite to JSON payloads. Tested across Haiku 4.5 / Sonnet 4.6, multiple shells (Microsoft
+Developer Blog, 2025):
 
-Cryptic parameter names: Parameters named x, val, or param1 force agents to guess meaning.
+| Metric | Args | JSON |
+|---|---|---|
+| Correctness | 100% all models | Degrades on smaller models (Haiku 4.5: 40%) |
+| Token cost | Baseline | 4x-11x more per task |
+| Shell portability | Consistent | Escaping creates a 9x cost gap (PowerShell vs Bash) |
 
-Missing error handling: Tools that fail with generic errors provide no recovery guidance.
+Args constrain the input space, which eliminates JSON syntax/nesting/escaping errors —
+narrowing valid inputs compensates for model capability gaps that JSON exposes.
 
-Inconsistent naming: Using id in some tools, identifier in others, and customer_id in some creates confusion.
+**Minimal intervention, not a rewrite** — if a CLI needs agent-friendliness work, this
+covers ~90% of the friction:
+1. Meaningful, consistent exit codes (0 / non-0).
+2. A `--quiet`/`--no-color` flag suppressing progress bars and ANSI decoration that breaks
+   parsing.
+3. An *additive* `--json` flag for structured output — never remove the default arg
+   interface, never force JSON-first.
 
-### Tool Selection Framework
+## Intent-vs-Compiler: Emit Intent, Derive Config
 
-When designing tool collections:
-1. Identify distinct workflows agents must accomplish
-2. Group related actions into comprehensive tools
-3. Ensure each tool has a clear, unambiguous purpose
-4. Document error cases and recovery paths
-5. Test with actual agent interactions
+When a tool needs verbose low-level configuration, don't make the model hand-write it. Have
+it emit terse **intent** + **semantic types**, and let deterministic code (the "compiler")
+derive the fragile parameters — scales, formatting, layout, defaults. Worked example
+(charts): the model annotates fields by semantic type (temporal/quantitative/categorical)
+and states `date -> x, revenue -> y, region -> color`; the compiler derives axis scales,
+tick formatting, palette, and legend placement. None of that touches the model.
 
-## Examples
+**Decision rule:** if a parameter is (a) mechanically derivable from the data or a semantic
+type, and (b) a frequent source of malformed output, move it into the compiler, not the
+tool schema. This is the consolidation principle applied to *parameters* — fewer fragile
+fields the model authors, fewer ways it can fail. Generalizes to query tools (model emits
+`{metric, dimension, filter-intent}`, compiler builds SQL), UI tools (model emits component
+roles, compiler resolves spacing/theming), infra tools (model emits the goal, compiler
+derives ports/security groups).
 
-**Example 1: Well-Designed Tool**
-```python
-def get_customer(customer_id: str, format: str = "concise"):
-    """
-    Retrieve customer information by ID.
-    
-    Use when:
-    - User asks about specific customer details
-    - Need customer context for decision-making
-    - Verifying customer identity
-    
-    Args:
-        customer_id: Format "CUST-######" (e.g., "CUST-000001")
-        format: "concise" for key fields, "detailed" for complete record
-    
-    Returns:
-        Customer object with requested fields
-    
-    Errors:
-        NOT_FOUND: Customer ID not found
-        INVALID_FORMAT: ID must match CUST-###### pattern
-    """
-```
+## Advanced Tool Use Patterns
 
-**Example 2: Poor Tool Design**
+Three techniques for high-scale tool systems (Anthropic Engineering, 2025). Enable via
+`betas=["advanced-tool-use-2025-11-20"]`. Apply after the base design above is solid.
 
-This example demonstrates several tool design anti-patterns:
+- **Tool Search (deferred discovery).** Past ~10K tokens of tool definitions, mark tools
+  `defer_loading: true` and provide a search tool as the always-loaded core; Claude searches
+  for capabilities instead of loading everything upfront. 85% token reduction on
+  definition-heavy MCP setups; Opus 4.5 MCP eval accuracy 79.5% -> 88.1%. Deferred tools are
+  excluded from the initial prompt, so this does not break prompt caching. Use at 10+ tools
+  or >10K definition tokens; keep the 3-5 most-used tools always loaded.
+- **Programmatic Tool Calling.** Mark tools `allowed_callers: ["code_execution_20250825"]`
+  so Claude writes orchestration code instead of one tool-call-per-turn; intermediate
+  results stay in the code executor, not context. 37% token reduction on a 20-tool workflow,
+  eliminates 19+ inference passes on sequential chains, enables real parallel calls via
+  `asyncio.gather()`. Use at 3+ dependent calls, large intermediate data, or
+  loops/conditionals.
+- **Usage examples in tool definitions.** 1-5 realistic JSON examples (minimal / partial /
+  full) covering ambiguous parameter combinations, with real data not placeholders. 72% ->
+  90% accuracy on complex parameter handling.
 
-```python
-def search(query):
-    """Search the database."""
-    pass
-```
+Pick by bottleneck: context bloat -> Tool Search; intermediate data -> Programmatic Calling;
+parameter errors -> Usage Examples. Add progressively, not all at once.
 
-**Problems with this design:**
+## Using Agents to Improve Tools
 
-1. **Vague name**: "search" is ambiguous - search what, for what purpose?
-2. **Missing parameters**: What database? What format should query take?
-3. **No return description**: What does this function return? A list? A string? Error handling?
-4. **No usage context**: When should an agent use this versus other tools?
-5. **No error handling**: What happens if the database is unavailable?
+Claude can diagnose its own tool failures: feed it the tool spec plus observed failure
+examples and ask why agents are failing, what's missing from the description, and what
+ambiguity causes misuse — then test the revised description against the same failure cases.
+Production testing shows ~40% reduction in task completion time from this feedback loop.
 
-**Failure modes:**
-- Agents may call this tool when they should use a more specific tool
-- Agents cannot determine correct query format
-- Agents cannot interpret results
-- Agents cannot recover from failures
+## Checklist Before Shipping a Tool
 
-## Guidelines
-
-1. Write descriptions that answer what, when, and what returns
-2. Use consolidation to reduce ambiguity
-3. Implement response format options for token efficiency
-4. Design error messages for agent recovery
-5. Establish and follow consistent naming conventions
-6. Limit tool count and use namespacing for organization
-7. Test tool designs with actual agent interactions
-8. Iterate based on observed failure modes
-9. Question whether each tool enables or constrains the model
-10. Prefer primitive, general-purpose tools over specialized wrappers
-11. Invest in documentation quality over tooling sophistication
-12. Build minimal architectures that benefit from model improvements
-
-## Integration
-
-This skill connects to:
-- context-fundamentals - How tools interact with context
-- multi-agent-patterns - Specialized tools per agent
-- evaluation - Evaluating tool effectiveness
-
-## References
-
-Internal references:
-- [Best Practices Reference](./references/best_practices.md) - Detailed tool design guidelines
-- [Architectural Reduction Case Study](./references/architectural_reduction.md) - Production evidence for tool minimalism
-
-Related skills in this collection:
-- context-fundamentals - Tool context interactions
-- evaluation - Tool testing patterns
-
-External resources:
-- MCP (Model Context Protocol) documentation
-- Framework tool conventions
-- API design best practices for agents
-- Vercel d0 agent architecture case study
-
----
-
-## Skill Metadata
-
-**Created**: 2025-12-20
-**Last Updated**: 2026-07-28
-**Author**: Agent Skills for Context Engineering Contributors
-**Version**: 1.4.0
-**Sources added**: Anthropic Engineering Advanced Tool Use (advanced tool use patterns); Microsoft Developer Blog (CLI-to-agent bridging); Microsoft Flint (intent-vs-compiler principle — emit intent, derive config); freestyle.sh "Designing APIs for Agents" (agent-facing API design checklist)
+- Description states what/when/inputs/returns without vague verbs ("helps with", "handle").
+- Parameters are self-documenting; no `x`/`val`/`param1`.
+- Errors are structured and actionable, not generic.
+- Output is capped, the cut is announced with a true total, and a continuation path exists.
+- Naming is consistent with the rest of the tool collection.
+- Tested against representative agent requests, not just read for clarity.
+- Asked: does this tool enable a new capability, or constrain reasoning the model already
+  has?
