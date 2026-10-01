@@ -1374,3 +1374,5 @@ See also: [x/README.md](../x/README.md) (eric zakariasson's token-efficiency aud
 **Rejected:** the six-layer product stack (SPACE, BrowseSafe, Numbat are Perplexity infrastructure; independent verifier already in `agent-permissions-design` / `secure-agent-design`), the improvement loop (`harness-fix-agent`, `skill-augment-agent`).
 
 **Open:** `hooks/claude/scan-pii.sh` reports "No PII detected" when `opf` errors or its output fails to parse (`|| true`, `except: print(0, "", 0)`). Not fixed: `opf` is not in the lean-ctx shell allowlist, so its clean-file output contract could not be checked.
+
+_Last synced: 2026-10-01

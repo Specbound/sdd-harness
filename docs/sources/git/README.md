@@ -519,6 +519,16 @@ GitHub repositories that were passed to `/skill-extraction` and turned into harn
 - Hook: `hooks/claude/agent-behavior-guard.sh` — `PreToolUse` (matcher `Read|Bash|WebFetch|WebSearch`). Ported three of numbat's detections, scoped down for a single local harness (no rule files, no versioning, no signed bundles): `network_indicator` (cloud-metadata SSRF endpoints), `persistence` (crontab/rc-file/authorized_keys/systemd writes), and `chained_secret_egress` (a secret-bearing path accessed, then an egress call made later in the same session — correlated via a per-session ledger). Fills the gap `protected-path-hook.sh` doesn't cover: that hook only fires on `Write|Edit` and is stateless per call. Default mode is monitor-only (logs to `.claude/memory/agent-security-findings.jsonl`); `SDD_AGENT_GUARD_ENFORCE` promotes named rules (or `all`) to hard-block, mirroring numbat's monitor→enforce toggle without its rule-file machinery.
 - Documented in `docs/hooks/README.md` (new `agent-behavior-guard.sh` section + Wiring Reference row).
 
+**Correction (2026-10-01):** the monitor→enforce toggle above did not actually work as
+shipped. The script ended in a bare `exit 0` that discarded the Python's `sys.exit(2)`,
+so a rule named in `SDD_AGENT_GUARD_ENFORCE` logged `"mode": "enforce"` findings and
+blocked nothing. The Python's exit code is now the verdict, and with any rule enforced
+the guard also fails closed on its own failures (malformed event, `python3` missing,
+crash). Monitor mode is unchanged — still silent, still exit 0. Covered by the new
+`hooks/claude/agent-behavior-guard.test.sh` (13 cases). See the Perplexity "How we
+engineer safer agents" entry in [articles/README.md](../articles/README.md), which is
+where the audit that found it came from.
+
 **Rejected:**
 - Full rule-file/YAML DSL with versioning and cryptographic signing — massive overkill for a single-user local harness; three inline regex rules cover the real gap.
 - Forensic/replay event-source scanning — numbat's live+forensic dual-source model doesn't map to Claude Code's tool-call event stream; not applicable here.

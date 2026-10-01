@@ -125,7 +125,7 @@ IF ALLOWED:
 - **Exit code 0**: ALLOW
 - **Timing**: Runs BEFORE tool execution
 - **Session tracking**: Prevents repeated blocks in same session
-- **Fail open**: On errors, allows operation (don't break workflow)
+- **Fail open / fail closed**: an advisory hook that never blocks should fail open on errors (don't break the workflow). A hook that can exit 2 must fail *closed* instead — a missing interpreter or malformed event turns `|| echo ""` plus `[ -z "$X" ] && exit 0` into a silent allow, which is how the guard gets disabled without anyone noticing. Scope the failure block to events that mention what the hook protects, so one broken dependency doesn't block every tool call. See `skills/hook-design` → "Fail Closed, Narrow Only"
 - **Purpose**: Enforce critical guardrails
 
 ### Input Format
