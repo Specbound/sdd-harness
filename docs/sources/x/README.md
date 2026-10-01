@@ -603,3 +603,19 @@ See also: [articles/README.md](../articles/README.md) — the full eleven-source
 **Rejected:** cache-breakpoint layout (Claude Code owns prompt assembly), tool offloading (already deferred), online A/B testing (nothing here to A/B), porting the prompt as a command (repeats `auditing-token-spend` and `/context-budget`).
 
 See also: [articles/README.md](../articles/README.md) — same 18-source batch, 2026-09-30. Two other X posts in the batch (Cua jev-use, OpenRouter's Jev Router) yielded nothing and are recorded in `docs/skills/skill-extraction/extraction-history.md`.
+
+---
+
+## @tvykruta — 10 design principles as hard rules for Claude Code
+**URL:** https://archive.codenewsletter.ai/2105302045573959697 (archived copy of x.com/tvykruta/status/2105302045573959697)
+**Added:** 2026-10-01
+**Source / Author:** Tomas Vykruta (@tvykruta), X thread, 2026-09-30. Fetch partial: posts 8–10 absent from the archive page.
+
+**What it's about:** Old C/C++ design principles from Microsoft and Google turned into AGENTS.md rules for an Opus-written app. An audit found pricing logic spread across 32 files, with copies that disagreed; one pricing bug ate ~30% of PRs, including a discarded 89-file rewrite. The central rule is "two steps, never one": refactor with behavior unchanged and tests green, then build the feature. The other rule is "gates, not promises" (enforce rules in CI or hooks). The author reports PRs 7× cheaper, 5× faster and 9× fewer tokens. These are the author's own numbers and haven't been verified elsewhere.
+
+**What we added:**
+- Augmentation: `kiro/settings/rules/tasks-generation.md` — "Refactor first, then build": when design.md chose *refactor* or *hybrid* for an area, the feature task there is preceded by its own behavior-preserving refactor task (tests green, own commit, `_Requirements:_` = the IDs of the feature it enables). Design-discovery already made the refactor decision; nothing turned it into task order, and `/kiro:simplify` only runs after the fact, on request. `better-call`: MERGE (25 vs 21, reversed pass 24 vs 21), applied by hand because `better-call` is not installed in `~/.claude/skills`.
+
+**Rejected:** one-owning-module / no-duplication / outside-module counters (guardrails-agent's import-linter, eslint-plugin-boundaries, jscpd already cover them), "gates, not promises" (already how the harness works).
+
+See also: [git/README.md](../git/README.md) — same 4-source batch, 2026-10-01 (pi, open-dot).

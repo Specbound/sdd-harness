@@ -946,3 +946,27 @@ See also: [articles/README.md](../articles/README.md) (RRSI names the same overf
 **Rejected:** installing `orx` (default-on telemetry, unauthenticated remote mode, overlaps `/kiro:autoresearch`), the worktree-per-branch experiment tree (too heavy for the single-file keep/revert loop).
 
 See also: [articles/README.md](../articles/README.md) — same 18-source batch, 2026-09-30. Three other repos in the batch (`rohitg00/ai-engineering-from-scratch`, `wbopan/tastebench`, `dzhng/jevgrep`) yielded nothing; see `docs/skills/skill-extraction/extraction-history.md`. `dzhng/skills` is logged separately above.
+
+---
+
+## github.com/earendil-works/pi
+**URL:** https://github.com/earendil-works/pi | **Added:** 2026-10-01
+
+**What it is:** A TypeScript monorepo for a coding agent that can extend itself. It contains a unified LLM API (`pi-ai`), an agent runtime, a TUI and durable/telemetry packages. Pi has no permission system and leaves sandboxing to Gondolin micro-VMs, Docker or OpenShell. The README documents its supply-chain hardening: exact pins, `.npmrc` `save-exact=true` plus `min-release-age=2`, a pre-commit hook that blocks lockfile changes, a shipped shrinkwrap and `npm ci --ignore-scripts`. Only the README was read; pi.dev/docs was not.
+
+**What we added:**
+- Script lib: `scripts/lib/pip-cooldown.sh` (+ `pip-cooldown.test.sh`, 9 cases) — pi's release-age cooldown, applied to pip and uv. Every harness-driven Python install (`check-harness-deps.sh`, `liteparse-setup.sh` via `lib/venv-tools.sh`, and `repo_pip_install`'s pip and uv paths in `lib/repo-venv.sh`) now skips packages uploaded within `SDD_PIP_MIN_AGE` (default `P2D`; `off` disables it). Before this, unpinned `raindrop-ai`/`liteparse` resolved to whatever was published that day. A pip without `--uploaded-prior-to` installs without the cooldown and warns.
+- Augmentation: `install.sh` — `impeccable` pinned to `3.6.0` (`IMPECCABLE_VERSION`). npm 10.9.8 has no `min-release-age`, so a pin is the only guard available.
+
+**Rejected:** lockfile pre-commit hook (no lockfile here), shrinkwrap and `--ignore-scripts` (the harness publishes no packages), sandbox options (Claude Code already has sandbox and permission modes), `pi-share-hf`, auto-closing new contributors' PRs, the RFC process.
+
+---
+
+## github.com/composio-community/open-dot
+**URL:** https://github.com/composio-community/open-dot | **Added:** 2026-10-01
+
+**What it is:** An open-source Mac copy of OpenAI's "Dots": background agents, each with its own Chrome profile, a Keychain-encrypted password vault the model never sees, Composio app connections, voice, routines and triggers. Before each risky action, a small review model checks it against approval rules written in plain language, and the user approves or denies it on a card.
+
+**What we added:** nothing. The approval-rule review model overlaps Claude Code's auto-mode classifier and PreToolUse hooks, and a `claude --print` call on every tool call would add a lot of latency. The vault, browser profiles and voice don't apply to a coding harness. Routines and triggers are already covered by `daily-orchestrator.sh`.
+
+See also: [x/README.md](../x/README.md) — same 4-source batch, 2026-10-01 (@tvykruta thread). The batch's YouTube episode (How I AI, Jev decision model) yielded nothing; see `docs/skills/skill-extraction/extraction-history.md`.

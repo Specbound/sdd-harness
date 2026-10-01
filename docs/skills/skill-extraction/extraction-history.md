@@ -189,6 +189,23 @@ Side effect: #6 and #7 also paid down two entries of the no-regex debt ledger (`
 
 ---
 
+## Oct 1, 2026 — 4-Source Batch (pi, open-dot, @tvykruta thread, How I AI video)
+
+**Sources:** `earendil-works/pi` and `composio-community/open-dot` (READMEs, rung 1), the @tvykruta X thread via its codenewsletter archive (rung 1, partial: posts 8–10 missing; the link was labelled as a newsletter issue but is a single thread), and How I AI `dAIIaepNhQM` (John Lindquist on the Jev decision model, full transcript via rung 4). The user approved all items.
+
+**What was added (no new skills):**
+1. `kiro/settings/rules/tasks-generation.md` — refactor-first task ordering (@tvykruta "two steps, never one")
+2. `scripts/lib/pip-cooldown.sh` (+ test) wired into `lib/venv-tools.sh` and `lib/repo-venv.sh` — `P2D` release-age cooldown on every harness pip/uv install (pi `min-release-age`)
+3. `install.sh` — `impeccable@3.6.0` pin
+
+**Rejected:** open-dot entirely (see git/README.md). The How I AI Jev episode: it needs a third-party API key while harness LLM calls go only through `claude --print`; cheap bulk classification is already covered by `cheap-model-delegation`; and the multi-pass and decision-type tips only apply if you call Jev. This is the third Jev source rejected after the two on 2026-09-30.
+
+**Reasoning:** `better-call` is in the harness source but not installed in `~/.claude/skills` (`Skill("better-call")` returned "Unknown skill"), so #1 was scored by hand with its rubric, both reading orders: MERGE. #2 was first scoped to `.venv-tools` only. A run of `check-harness-deps.sh` showed `harness-requirements.txt` is empty and that `raindrop-ai` actually installs through `repo_pip_install`, so the cooldown moved into a shared lib that both paths use (3 call sites). That makes #2 a security fix for unpinned dependencies, an underserved area, not another generic software-engineering rule.
+
+**Open:** `better-call` not installed globally. Not covered by the cooldown: `headroom-setup.sh` `pip install --user` and the `.venv-tools` pip self-upgrade. A real network install with the cooldown was denied at the permission prompt, so it is verified with fake binaries only.
+
+---
+
 ## Summary Table
 
 | Date | URL | Skill/Artifact Created | Type |
@@ -209,3 +226,4 @@ Side effect: #6 and #7 also paid down two entries of the no-regex debt ledger (`
 | May 18 | raindrop-ai/workshop | 3 Raindrop skills + Workshop dashboard integration | Skill + Integration |
 | May 18 | huggingface.co/continuous_eval | `skill-extraction` SKILL.md updated (hook candidate assessment phase) | Skill update |
 | Sep 30 | 18-link newsletter batch | 9 augmentations: `model-tiers`, `skill-eval-gate`, `auditing-token-spend`, `synthesizing-daily-briefings`, `hook-design` (+ `hook-replay.py`), `autoresearch-agent`; `token-forensics.py`, `startup-payload-audit.sh`, `prompt-quality-check.sh` | Skill + Script + Hook updates |
+| Oct 1 | pi, open-dot, @tvykruta, How I AI | `tasks-generation.md` refactor-first rule; `lib/pip-cooldown.sh` (+ test); `impeccable@3.6.0` pin | Rule + Script lib + Install pin |

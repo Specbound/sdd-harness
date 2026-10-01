@@ -17,6 +17,9 @@
 # the package was never there. Failures are reported here, once.
 # =============================================================================
 
+# Every install below carries the release-age cooldown (SDD_PIP_MIN_AGE).
+. "$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd)/pip-cooldown.sh"
+
 # _rv_timeout <secs> <cmd...> — run with a time limit where one is available.
 # macOS ships no `timeout` (it is GNU coreutils, optionally `gtimeout` via brew).
 # Without this shim every timed probe on a Mac fails with "command not found",
@@ -81,18 +84,20 @@ repo_pip_install() {
   py="$(repo_python "$repo")" || py=""
 
   if [ -n "$py" ]; then
-    if out="$("$py" -m pip install --upgrade "$@" 2>&1)"; then
+    if out="$(pip_cooldown_install "$py" --upgrade "$@" 2>&1)"; then
       return 0
     fi
     # `uv venv` seeds no pip unless asked, so a perfectly healthy uv-managed venv
     # answers `-m pip` with "No module named pip". uv installs into it directly.
     if command -v uv >/dev/null 2>&1; then
-      if out="$(uv pip install --python "$py" "$@" 2>&1)"; then
+      # shellcheck disable=SC2046 # flags are two words by design
+      if out="$(uv pip install $(uv_cooldown_flags) --python "$py" "$@" 2>&1)"; then
         return 0
       fi
     fi
   elif [ -f "$repo/pyproject.toml" ] && command -v uv >/dev/null 2>&1; then
-    if out="$(cd "$repo" && uv pip install "$@" 2>&1)"; then
+    # shellcheck disable=SC2046
+    if out="$(cd "$repo" && uv pip install $(uv_cooldown_flags) "$@" 2>&1)"; then
       return 0
     fi
   else

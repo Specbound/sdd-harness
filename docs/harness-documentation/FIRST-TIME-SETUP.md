@@ -413,7 +413,7 @@ Run through this on a fresh machine:
 | `rtk` | `which rtk` | macOS/Linux/WSL2: `brew install rtk`; Linux no-brew: `curl -fsSL https://rtk-ai.app/install.sh \| sh`; Windows native: requires WSL2 | `rtk init -g --auto-patch` |
 | `raindrop` | `which raindrop` | `curl -fsSL https://raindrop.sh/install \| bash` (all platforms) | automatic via `install.sh`; see Step 2 |
 | `gitnexus` | `which gitnexus` | `npm install -g gitnexus` (all platforms) | `/kiro:gitnexus-setup` per-project |
-| `impeccable` | `which impeccable` | `npm install -g impeccable` (all platforms) | automatic via hook |
+| `impeccable` | `which impeccable` | `npm install -g impeccable@3.6.0` (all platforms; version `install.sh` pins) | automatic via hook |
 | `proof-sdk` | `ls ~/.claude/tools/proof-sdk/node_modules` | auto-installed on first spec phase run (requires Node.js) | automatic via skill |
 | `uv` | `which uv` | Linux/macOS/WSL2: `curl -LsSf https://astral.sh/uv/install.sh \| sh`; Windows: see Step 5 | nothing extra |
 | `opf` | `which opf` | `uv tool install --python 3.13 git+https://github.com/openai/privacy-filter.git` | wire pre-commit hook |

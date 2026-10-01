@@ -82,7 +82,7 @@ else
     elif [ "$CHECK_ONLY" = "1" ]; then
       report ".venv-tools" "$spec" "MISSING (check-only)"
       FAILURES=$((FAILURES + 1))
-    elif out="$("$VPY" -m pip install --upgrade "$spec" 2>&1)" \
+    elif out="$(pip_cooldown_install "$VPY" --upgrade "$spec" 2>&1)" \
          && "$VPY" -c "import $imp" >/dev/null 2>&1; then
       report ".venv-tools" "$spec" "healed (installed)"
     else

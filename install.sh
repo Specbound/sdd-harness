@@ -452,8 +452,11 @@ install_global_tools() {
   elif command -v impeccable >/dev/null 2>&1; then
     ok "impeccable already installed"
   else
-    if confirm "Install impeccable globally?  (npm install -g impeccable)"; then
-      npm install -g impeccable
+    # Pinned: an unpinned `npm install -g` takes whatever was published today, and
+    # npm 10 has no min-release-age cooldown to fall back on. Bump deliberately.
+    IMPECCABLE_VERSION="3.6.0"
+    if confirm "Install impeccable globally?  (pinned npm install -g impeccable@$IMPECCABLE_VERSION)"; then
+      npm install -g "impeccable@$IMPECCABLE_VERSION"
       refresh_tool_path
       ok "impeccable installed"
     else
