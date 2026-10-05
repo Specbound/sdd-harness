@@ -391,6 +391,7 @@ class LoadCatalogTests(unittest.TestCase):
             router_toml = tmp_path / "router.toml"  # never written
             catalog = config.load_catalog(router_toml, catalogue_path=catalogue)
         self.assertTrue(catalog.pass_through)
+        assert catalog.cause is not None
         self.assertIn("router.toml", catalog.cause)
         self.assertIsNone(catalog.ladder)
 
@@ -416,6 +417,7 @@ class LoadCatalogTests(unittest.TestCase):
         self.assertFalse(catalog.pass_through)
         self.assertIsNone(catalog.cause)
         self.assertIsNotNone(catalog.ladder)
+        assert catalog.ladder is not None
         self.assertEqual(len(catalog.ladder), 1)
         self.assertIn("claude-broken-1-0", catalog.rejected_models)
         self.assertEqual(catalog.rung_of("claude-sound-1-0"), 0)
