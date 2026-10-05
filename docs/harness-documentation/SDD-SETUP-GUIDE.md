@@ -6,6 +6,15 @@
 
 ---
 
+## Recent Changes (2026-10-05 — Harness Build 29)
+
+Theme: ship `templates/router.toml.template`, the policy-only config template for the cost router (`scripts/router/`). Its schema mirrors `scripts/router/config.py`'s `load_policy()` exactly — thresholds, lane→rung buckets, tier-family order, context-window default, escalation bounds. Verified by loading the template through the real `load_policy()`: it parses cleanly into `RouterConfig` with no `rejected_overrides`. It contains no model ids, no `api.typesafe.ai` host, and no secrets — `api_key_env` names an environment variable only; model identity (`safe_default`, `long_context_model`) and the `upstream` value are left as placeholders for `router-setup.sh` to fill in from the harness's discovered pricing catalogue (R5.1).
+
+### Templates
+- `templates/router.toml.template` **(new)** — ships to `~/.sdd-router/router.toml`. Sections: `[router]` (port, `upstream` placeholder written by `router-setup.sh`, never a literal committed here), `[classifier]` (local `jeff`/`julia1`/`none` backend, loopback `base_url`, `api_key_env` names the bearer-key env var — never the key itself), `[policy]` (`confidence_floor`, `privacy_threshold`, `long_context_tokens`, `escalation_window_s`, `max_tiers_above_baseline`; `safe_default` and `long_context_model` are catalogue-key placeholders filled in at setup time), `[tier_families]` (hand-maintained weakest→strongest family order: `haiku, sonnet, opus, fable, mythos` — a new family not yet listed still routes, just undifferentiated by rung), `[policy.lanes.code]` (score-bucket → rung mapping, rung 0 = weakest/cheapest, -1 = strongest), `[context_windows]` (`default` context window plus optional per-model `[overrides."<id>"]` and local-model `[local.<name>]` slots, both commented out in the shipped template).
+
+---
+
 ## Recent Changes (2026-10-05 — Harness Build 28)
 
 Theme: enforcing the Library-skill architecture Build 27 introduced. A Library-tier
@@ -31,6 +40,7 @@ at a Library skill by name was repointed at its path.
 
 ### Settings & constitution templates
 - `templates/settings.json.template` and `templates/settings.harness.json.template` — both gained a `PreToolUse` block matching `Skill`, wired to `skill-library-resolver.sh`, inserted ahead of the existing `Write|Edit` block
+- `templates/settings.notes.md.template` — the `ktx-data-context` skill pointer updated from `~/.claude/skills/ktx-data-context/SKILL.md` to `~/.claude/skill-library/ktx-data-context/SKILL.md`, same bare-path → Library-tier-path fix
 
 ---
 
