@@ -15,7 +15,7 @@ upstream = ""
 backend        = "jeff"                      # jeff | julia1 | none
 base_url       = "http://127.0.0.1:8000"      # jeff's default port, loopback only
 # Name of the environment variable holding the bearer key — never the key
-# itself (R11.4). The router reads this var name, then reads the var at call
+# itself. The router reads this var name, then reads the var at call
 # time; no key value is ever written to this file.
 api_key_env    = "JEFF_API_KEY"
 timeout_ms     = 400
