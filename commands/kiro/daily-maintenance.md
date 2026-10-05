@@ -208,7 +208,7 @@ Log the result. If behavior-spec-agent errors, log `[routine-error]: behavior-sp
 
 ## Step 6c — AI-Surface Drift Check
 
-Best-effort, advisory only — see the `ai-surface-audit` skill. Skip silently if
+Best-effort, advisory only — see `~/.claude/skill-library/ai-surface-audit/SKILL.md`. Skip silently if
 `npx` isn't on PATH or `.claude/memory/.ai-surface-scan.json` doesn't exist yet
 (no baseline to diff against — the initial scan is user-invoked, not run here).
 

@@ -50,7 +50,7 @@ actually that large.
 
 Ask: "Would you like to refine the skill description using the `prompt-engineering` skill before generating files?"
 
-- If yes: invoke `Skill("prompt-engineering")` with the current description as input, review the enhanced output with the user, and confirm before adopting it.
+- If yes: follow `~/.claude/skill-library/prompt-engineering/SKILL.md` with the current description as input, review the enhanced output with the user, and confirm before adopting it.
 - If no or skill unavailable: proceed with original input.
 
 ### Phase 3: File Generation
@@ -165,7 +165,7 @@ Fix any failures before installation:
 
 ### Phase 4c: Identity Alignment Check
 
-Invoke `Skill("agent-identity")` in **Mode B (skill identity check)** to validate the new skill's identity sharpness:
+Follow `~/.claude/skill-library/agent-identity/SKILL.md` in **Mode B (skill identity check)** to validate the new skill's identity sharpness:
 
 1. **Description specificity** — Does the description predict WHEN the skill fires — not just what it does?
 2. **Trigger sharpness** — Are `When to Activate` conditions falsifiable by two independent readers?
@@ -186,7 +186,7 @@ Examples that warrant a companion verify skill:
 - Sampling output for correctness or plausibility
 - Checking logs, error output, or side effects
 
-If YES → invoke `Skill("verification-skill-authoring")` to create a companion `<domain>-verify` skill before installation.
+If YES → follow `~/.claude/skill-library/verification-skill-authoring/SKILL.md` to create a companion `<domain>-verify` skill before installation.
 
 If NO (pure logic, already covered by CI, or the skill itself IS a verification skill) → skip and proceed.
 
@@ -205,6 +205,8 @@ pin it to the Listed tier if a hook/command will load it by name via `Skill("<na
    - Add one row to `skills/<master>/SKILL.md`'s table:
      `` | `<skill-name>` | <one-line what + when> | `~/.claude/skill-library/<skill-name>/SKILL.md` | ``
    - Add `<skill-name>` on its own line to `scripts/setup/skill-library.txt`.
+   - Run `python3 scripts/utils/check-skill-tiers.py` — it fails if any command, agent, hook
+     or script still invokes `<skill-name>` by bare name; point each at the library path.
 3. Install: `bash scripts/setup/sync-skills.sh "$PWD"` (routes by the manifest).
 
 Confirm it landed in the Library:

@@ -51,7 +51,21 @@ it, or you want it as a `/`-command): do NOT add it to the manifest. It installs
 the Listed set small; prefer Library + a master row unless a hard `Skill()` call requires otherwise.
 
 If a caller needs a Library skill, point it at the path — `Read ~/.claude/skill-library/<name>/SKILL.md`
-— never `Skill("<name>")`.
+— never `Skill("<name>")`, and never text like "invoke the `<name>` skill": the agent reads that
+as a Skill-tool call, finds nothing listed, and reports the skill as not installed.
+
+**Enforced, not just documented** (added 2026-10-04, after moving `proof-collaborative-review`
+to the library silently broke all three spec approval gates):
+
+- `scripts/utils/check-skill-tiers.py` (pre-commit) fails when a commands/agents/hooks/kiro/
+  scripts/templates line names a Library skill by bare name, or a skill calls `Skill("<lib>")`.
+  So moving a skill into `skill-library.txt` fails the commit until each caller gets the path.
+  Human-facing mentions (docstrings) go in `scripts/utils/skill-tier-allow.txt`.
+- `hooks/claude/skill-library-resolver.sh` (PreToolUse `Skill`) catches what the check can't
+  see, like soft "related skill" mentions inside skills. It turns a `Skill("<lib>")` call into
+  "read this path".
+- `session-start-hook.sh` prints a `[SKILL-LIBRARY]` line, so an agent looks in the library
+  before reporting a skill as missing.
 
 ## Editing / deleting
 
@@ -66,4 +80,4 @@ Measured per-call skill-listing cost: ~13.3k (all listed) → ~5.0k (29 listed).
 preserve discovery — an agent still finds any sub-skill by routing through its domain — while
 the Library skills cost nothing until read. See the master bodies for the live routing tables.
 
-_Last synced: 2026-10-01_
+_Last synced: 2026-10-05_

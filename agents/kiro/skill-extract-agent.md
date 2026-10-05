@@ -166,7 +166,8 @@ Next: Review the plan, then run /kiro:skill-extract <plan-path>
    **`skill`** → Generate the skill into the two-tier hierarchy (see `docs/skills/SKILL-HIERARCHY.md`)
 
    Write the source to `skills/<name>/SKILL.md`. Default every extracted skill to the **Library**
-   tier (it costs no per-prompt context): add `<name>` to `scripts/setup/skill-library.txt`, and
+   tier (it costs no per-prompt context): add `<name>` to `scripts/setup/skill-library.txt` (then
+   `python3 scripts/utils/check-skill-tiers.py` must pass), and
    add one row to the owning master's table in `skills/<master>/SKILL.md`
    (`` | `<name>` | <one-line what+when> | `~/.claude/skill-library/<name>/SKILL.md` | ``), picking
    the master from the 14 domains. Only leave it off the manifest (Listed tier) if a hook or command

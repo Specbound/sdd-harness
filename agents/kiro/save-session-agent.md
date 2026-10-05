@@ -68,7 +68,7 @@ Write to the specified output path using this format:
 {from git status/diff — list modified files with brief description of changes}
 
 ## Suggested Skills
-- {Skill name}: {why the resuming agent should call it — e.g. "spec-tdd-impl" if mid-implementation, "systematic-debugging" if the last action was a failing test}
+- {Skill name}: {why the resuming agent should call it — e.g. "spec-tdd-impl" if mid-implementation, "code-quality" if the last action was a failing test}
 
 ## Exact Next Step
 - Run: {specific command or action}

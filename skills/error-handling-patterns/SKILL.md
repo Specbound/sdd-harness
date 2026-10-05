@@ -46,6 +46,9 @@ Exit 0 ≠ success if errors print to stdout. Parse output for errors before mar
 ### ❌ Substring-matching injected content in serialized output
 Checking for error substrings in responses with injected content (hot-memory.md, interpolated variables) causes false positives. Validate actual status fields, not text content. (source: 2026-09-28 [judge])
 
+### ❌ Misinterpreting operational markers as defects
+Sentinel written at routine-start is idempotent-by-design, not a defect. Read the intended pattern before prescribing a fix. (source: 2026-10-04 [insight])
+
 ## Resources
 
 - `resources/implementation-playbook.md` for detailed patterns and examples.

@@ -43,6 +43,7 @@ Hook output is injected into Claude's context as system messages — Claude read
 - `[HARNESS-POINTER-STALE]` — `~/.sdd-harness-root` points at a directory that does not exist. Names the dead path and the fix (`bash <harness>/update.sh`). Nothing is printed when the pointer is absent (harness never installed globally) or valid.
 - `[HEADROOM-SELFHEAL]` — emitted only when `ANTHROPIC_BASE_URL` was actually stripped because the routed headroom proxy refused the connection. Nothing is printed when routing is healthy, absent, or not pointed at a local proxy.
 - `[SESSION-HANDOFF-AVAILABLE]` — if `.claude/memory/handoff/latest.md` exists and is <24h old, injects a reminder to silently read it before responding to the user's first message. The file is written by `scripts/session/write_handoff.py`, fired from `compaction-discipline-hook.sh` (PreCompact) and `gbrain-agent-spawn.sh` (PreToolUse Agent) — this hook only surfaces it, it never writes it.
+- `[SKILL-LIBRARY]` — if `~/.claude/skill-library` exists, prints a one-line reminder that skills absent from the session's per-prompt listing may still be installed there (`~/.claude/skill-library/<name>/SKILL.md`) and should be checked before reporting a skill as missing. Catches the case where a command, hook, or agent names a Library-tier skill by bare name and the agent concludes it isn't installed; `hooks/claude/skill-library-resolver.sh` catches the same failure at the `Skill()` call site. See `docs/skills/SKILL-HIERARCHY.md`.
 
 **Respects:** `SDD_PROFILE=minimal` env var — skips entirely in minimal profile.
 
@@ -457,7 +458,7 @@ Hook output is injected into Claude's context as system messages — Claude read
 ### `skill-permissions-gate.sh`
 **Event:** `PostToolUse` — **Matcher:** `Write|Edit` — _(soft gate, never blocks)_
 
-**Purpose:** After any Write or Edit to a `*/skills/*/SKILL.md` path, prompts Claude to invoke `agent-permissions-design` and verify four dimensions before marking skill creation complete: (1) tool access — does the skill direct Claude to use destructive tools? (2) irreversible action gates — are high-risk steps preceded by a verification instruction? (3) scope boundary — are trigger conditions specific enough to prevent misfire? (4) external access — does the skill touch external services or credentials least-privilege?
+**Purpose:** After any Write or Edit to a `*/skills/*/SKILL.md` path, prompts Claude to follow `~/.claude/skill-library/agent-permissions-design/SKILL.md` (Library tier — referenced by path, not bare name) and verify four dimensions before marking skill creation complete: (1) tool access — does the skill direct Claude to use destructive tools? (2) irreversible action gates — are high-risk steps preceded by a verification instruction? (3) scope boundary — are trigger conditions specific enough to prevent misfire? (4) external access — does the skill touch external services or credentials least-privilege?
 
 **Design principle:** Skills are mini-agents — they direct Claude to take actions with tools. The same rigor applied to AI agent authorization systems (`agent-permissions-design`) applies to skill design: scope it, gate destructive actions, keep triggers tight. Extracted from the VentureBeat article "The AI agent bottleneck isn't model performance — it's permissions" (2026-05-29).
 
@@ -468,6 +469,19 @@ Hook output is injected into Claude's context as system messages — Claude read
 **Output:** `╔══ Skill Permissions Gate ══╗` reminder banner listing the four review dimensions. Silent on no match.
 
 **Location:** `$SDD_HARNESS/.claude/hooks/skill-permissions-gate.sh`
+
+---
+
+### `skill-library-resolver.sh`
+**Event:** `PreToolUse` — **Matcher:** `Skill`
+
+**Purpose:** Resolves `Skill("<name>")` calls the Skill tool's index cannot see. `scripts/setup/sync-skills.sh` installs every skill named in `scripts/setup/skill-library.txt` to `~/.claude/skill-library/`, which is not in the session's per-prompt skill listing — so calling a Library-tier skill by name fails as "unknown skill" even though it is installed. Reads `tool_input.skill` from stdin; if it resolves to a Listed skill (`~/.claude/skills/<name>/SKILL.md` or the project's `.claude/skills/<name>/SKILL.md`) or isn't installed at all, exits 0 and lets the Skill tool handle it normally. If it only exists under `~/.claude/skill-library/<name>/SKILL.md`, blocks (exit 2) with that path so Claude reads it directly instead of concluding the skill is missing.
+
+**Why it's needed:** A bare-name invocation of a Library-tier skill (from a command, another skill, or a headless prompt) used to dead-end silently — all three spec approval gates lost `proof-collaborative-review` this way (2026-10-04). This hook is the runtime backstop at the `Skill()` call site; `scripts/utils/check-skill-tiers.py` (pre-commit) is the static backstop that fails a commit introducing a new bare-name reference, and the `[SKILL-LIBRARY]` line in `session-start-hook.sh` covers text mentions neither tool can parse.
+
+**Output:** Silent (exit 0) on Listed, missing, or plugin/path-qualified skill names. On a Library-tier name: `[skill-library] '<name>' is installed as a Library-tier skill — it is not in the Skill tool's index...` plus the `SKILL.md` path to read, via stderr (exit 2), which Claude Code feeds back into the conversation.
+
+**Location:** ships in `hooks/claude/`, copied to each project's `.claude/hooks/`; wired via `PreToolUse` matcher `Skill` in `templates/settings.json.template` and `templates/settings.harness.json.template`. See `docs/skills/SKILL-HIERARCHY.md`.
 
 ---
 
@@ -915,7 +929,7 @@ The guard also fails closed on **its own** failures (2026-10-01). If `python3` i
 
 Verified directly against `.claude/settings.json` on 2026-09-06 (not just this doc's prior claims):
 
-All 44 registrations below are live — counted with the `jq` command in this section, not carried over from the previous sync. Regenerate this block from the real config with:
+All 44 registrations below are live — counted with the `jq` command in this section, not carried over from the previous sync. (A 45th, `PreToolUse Skill → skill-library-resolver.sh`, was added 2026-10-05 and spot-checked against the live `.claude/settings.json`; the rest of the block has not been re-verified since 2026-09-06.) Regenerate this block from the real config with:
 
 ```bash
 jq -r '.hooks | to_entries[] | .key as $e | .value[] | .matcher as $m | .hooks[]
@@ -959,6 +973,7 @@ PreToolUse       Agent                                → gbrain-agent-spawn.sh
 PreToolUse       Agent                                → prompt-quality-check.sh  [see docs/prompt-quality/README.md]
 PreToolUse       mcp__…claude-mem…save_observation    → gbrain-memory-write.sh
 PreToolUse       mcp__raindrop__                      → raindrop-best-practices.sh
+PreToolUse       Skill                                 → skill-library-resolver.sh  [added 2026-10-05]
 PreToolUse       WebFetch|WebSearch                   → gbrain-external-search.sh
 PreToolUse       Read|Bash|WebFetch|WebSearch         → agent-behavior-guard.sh
 SubagentStart    (all)                                → subagent-context-hook.sh
@@ -1036,5 +1051,5 @@ denies `git push*` outright where projects only deny force-push.
 
 **No regex, continued (2026-09-30).** `prompt-quality-check.sh` was rewritten off `re` onto the same literal-token pattern: the prompt is tokenized to lowercase words (apostrophes stay inside a word, every other non-alphanumeric character separates, so `double-check` is the two tokens `double check`) and phrases are matched on token boundaries. The rewrite was verified score-identical to the regex version on 94 real Agent prompts, and it added two anti-patterns — `think-instruction` and `show-reasoning-request`. `scripts/routines/startup-payload-audit.sh` lost its `@import` regex the same day in favour of a line-prefix parser. Both are off `scripts/utils/no-regex-debt.txt`; `action-capture.sh` and `stop-hook.sh` are the remaining hooks that regex-parse free text.
 
-_Last synced: 2026-10-01_
+_Last synced: 2026-10-05_
 

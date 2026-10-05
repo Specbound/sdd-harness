@@ -114,7 +114,7 @@ Wraps the streaming `event_generator()` async generator inside `chat_llm()`:
 |---|---|---|
 | `GET` | `/workshop/` | Proxy to `http://127.0.0.1:5899` — Workshop UI |
 | `POST` | `/api/workshop-start` | Spawns `raindrop workshop` subprocess |
-| `POST` | `/api/workshop-eval?repo=PATH` | Spawns `claude --print "Use the raindrop-eval-loop skill..."` |
+| `POST` | `/api/workshop-eval?repo=PATH` | Spawns `claude --print "Read ~/.claude/skill-library/raindrop-eval-loop/SKILL.md and follow it..."` |
 
 ---
 

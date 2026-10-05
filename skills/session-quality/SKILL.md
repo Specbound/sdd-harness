@@ -119,6 +119,7 @@ Dead = tail≤3 AND ≤25 lines. Tail marks where a run ENDED, not whether it wo
 
 ### ❌ Completion sentinel stamped at routine start
 Stamping at routine-start hides outages. `claude --print` exits 0 on OAuth, 502 gateway failures. Gate on artifact. (source: daa-llm-evaluation 2026-09-28 [judge])
+Example: 2026-10-03 daily-maintenance died in queue; marker read start time, not completion. (source: 2026-10-05 [session-quality])
 
 ### ❌ Scheduler no-show vs true idle
 Never-fired run leaves zero artifacts, indistinguishable from idle. Check cadence before marking idle. (source: 2026-09-27 [routine-error, insight])
@@ -128,3 +129,20 @@ Zero transcripts+observations+metrics across BOTH repos for one day indicates sc
 
 ### ❌ Reading the subagent scratch dir as the transcript channel
 Transcripts live in ~/.claude/projects/<slug>/; /private/tmp/claude-*/<slug>/ is subagent scratch. An empty tasks/ there is normal, not a dead session. (source: 2026-09-30 [session-quality])
+
+### ❌ Missing observation rows mean idle
+They may signal routine failures. Check logs/orchestrator-errors.log for exit codes: daily-maintenance, macro-eval, harness-health, tool-failure-review. (source: sdd-harness 2026-10-02 [session-quality])
+
+### ❌ String-keyed failure-mode detection
+String-keyed detectors fail when modes shift (OAuth→502→timeout). Use structural invariant: isApiErrorMessage:true + model:"<synthetic>". (source: daa-llm-evaluation 2026-10-02 [judge] drain 2)
+Timeout also emits isApiErrorMessage + model:<synthetic> (2026-10-03/04 observed), but text search would miss 'timed out'. (source: 2026-10-05 [session-quality])
+
+### ❌ Marking parallel-instance outages as schedule never-fire
+Parallel-instance death: all scheduled routines fire within 10s, all die identically (<25 lines, 1 turn). Indicates auth outage, not scheduler. (source: daa-llm-evaluation 2026-10-02 [judge] drain 1)
+
+### ❌ File size as outage discriminator
+System payloads inflate transcript bytes (92–103 kB) while turn count stays 1. Use turn count or API-error markers instead. (source: 2026-10-02 [session-quality])
+
+### ❌ Fleet-tick overrun vs never-fire (check orchestrator.log for run start/finish pairs)
+Stalled fleet tick = zero repo artifacts but `run started` with no matching `run finished`; never-fire = no `run started` at all. Overrun needs scheduler fix, not runner hardening. (source: 2026-10-04 [session-quality])
+2026-10-03: 18h37m tick span (three steps held in queue 2-9h each); 2026-10-04 tick never fired. (source: 2026-10-05 [session-quality])

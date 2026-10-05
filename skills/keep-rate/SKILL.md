@@ -140,6 +140,9 @@ Blaming only commit's own paths loses renamed files. Build blame map over all te
 ### ❌ Changing blame flags mid-measurement
 Per-commit reattribution reaches 4.7pt under `-M -C` (e.g. 8df5ed3 93.6→98.3). Pin flags consistently and record choice per Step 2. (source: 2026-08-31 [keep-rate])
 
+### ❌ Unbounded keep-rate window
+_keep_rate_calc.py has no upper-window default and scores full history (~7 years). Use --days to bound the window; --end-date not available. (source: 2026-10-02 [keep-rate])
+
 ### ❌ Root commit diffs without empty-tree fallback
 `git diff <commit>^..<commit>` fails on root commits; detect via `git rev-parse --verify "<commit>^"` and use empty-tree 4b825dc642cb6eb9a060e54bf8d69288fbee4904.
 
@@ -165,3 +168,14 @@ Calculator methodology changes (clamp logic, reattribution rules) invalidate com
 
 ### ✓ Durable script path verified
 Write to sdd-harness/scripts/session/ first, copy to .claude/. Verified at 2026-09-30 358-file reinstall. Still untracked, unsafe from git clean. (source: daa-llm-evaluation 2026-09-30 [keep-rate])
+
+### ❌ Treating classified calculator as unit-comparable with aggregate
+Classified split (feature/infra) incomparable with 81.66% aggregate series. Use only as baseline for future classified-mode runs. (source: daa-llm-evaluation 2026-10-02 [keep-rate])
+
+### ❌ Generated scripts defaulting to untracked state
+New calculator scripts (_keep_rate_classified.py, _keep_rate_delta.py) created untracked; same class as prior losses. Write to tracked path first. (source: daa-llm-evaluation 2026-10-02 [judge] drain 4)
+
+### ❌ Calculator parameters without bounds validation
+`_keep_rate_classified.py --days 300` returns commits:0 + all-null percentages silently; unbounded params produce undetectable meaningless results. (source: 2026-10-05 [keep-rate])
+### ❌ Using --days flag to bound window lookback (supersedes line 143-144)
+`--days` trims the recent end (grace floor), not a lookback bound. Comparability comes from stable md5 + unmoved HEAD. (source: 2026-10-04 [keep-rate])

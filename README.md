@@ -302,7 +302,7 @@ sdd-harness/
 │   │   ├── caveman-statusline.sh #     Statusline command: emits [CAVEMAN] / [CAVEMAN:ULTRA] badge + live context-usage meter (color-coded %ctx)
 │   │   └── lean-ctx-rewrite.sh  #     PreToolUse(Bash): rewrites common shell commands to lean-ctx equivalents
 │   └── git/                      # Git lifecycle hooks (copied to .git/hooks/ on install/update)
-│       ├── pre-commit            #     Harness repo only: runs check-no-hardcoded-paths.sh (machine-specific paths) and check-no-regex.py (regex in embedded Python). Both run and both verdicts print — it does not short-circuit on the first failure — and either one blocks the commit. Never propagated to downstream projects
+│       ├── pre-commit            #     Harness repo only: runs check-no-hardcoded-paths.sh (machine-specific paths), check-no-regex.py (regex in embedded Python), and check-skill-tiers.py (Library-tier skill invoked by bare name). All run and every verdict prints — it does not short-circuit on the first failure — and any one blocks the commit. Never propagated to downstream projects
 │       └── post-commit           #     On commit: detects doc-sync/harness-update work, then runs it in ONE detached job (log: .git/post-commit-docsync.log) that auto-commits/pushes only the .md files touched; serialized on .git/post-commit-docsync.lock so concurrent commits skip instead of racing the git index
 │
 ├── templates/                    # Project-level templates
@@ -585,7 +585,9 @@ it may pull as many as the task needs. This cut the per-call skill-listing cost 
 
 `scripts/setup/sync-skills.sh` (run by `install.sh`/`update.sh`) routes each skill by
 `scripts/setup/skill-library.txt`. New skills default to the Library tier; only skills
-hard-invoked by a hook/command via `Skill("x")` stay Listed. Full rules, and how to register a
+hard-invoked by a hook/command via `Skill("x")` stay Listed; any other caller must name a
+Library skill by its `~/.claude/skill-library/<name>/SKILL.md` path (pre-commit
+`scripts/utils/check-skill-tiers.py` enforces this). Full rules, and how to register a
 new skill, are in **[docs/skills/SKILL-HIERARCHY.md](docs/skills/SKILL-HIERARCHY.md)**.
 
 ---
@@ -1054,4 +1056,4 @@ The Model Cost section reads session data from `~/.claude/projects/*/`. Pricing 
 
 Private repository. Contact the maintainer for access.
 
-_Last synced: 2026-10-01_
+_Last synced: 2026-10-05_
