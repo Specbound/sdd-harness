@@ -183,9 +183,12 @@ def _valid_price_entry(prices) -> bool:
     """A discovered entry is valid when it carries numeric input/output prices."""
     if not isinstance(prices, dict):
         return False
+    input_price, output_price = prices.get("input"), prices.get("output")
+    if input_price is None or output_price is None:
+        return False
     try:
-        float(prices.get("input"))
-        float(prices.get("output"))
+        float(input_price)
+        float(output_price)
     except (TypeError, ValueError):
         return False
     return True
