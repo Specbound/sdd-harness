@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """scripts/router/config.py — discovered model catalog, generation ladder, policy.
 
 Discovers the Claude model surface the same way `scripts/utils/herder.py:203`
@@ -302,7 +301,7 @@ def _validate_override(entry) -> str | None:
 
 
 @dataclass(frozen=True)
-class Policy:
+class RouterConfig:
     """Everything `router.toml` declares — policy only, never a model identity."""
 
     schema_version: int
@@ -328,9 +327,9 @@ class Policy:
 
 
 def load_policy(path: Path) -> tuple:
-    """Parse `router.toml`. Returns `(Policy | None, cause: str | None)`.
+    """Parse `router.toml`. Returns `(RouterConfig | None, cause: str | None)`.
 
-    Absent or unparseable file means `Policy` is `None` and `cause` states why
+    Absent or unparseable file means `RouterConfig` is `None` and `cause` states why
     — the router falls to pass-through, reusing R5.5's vocabulary for the
     policy file too rather than inventing a second one.
     """
@@ -367,7 +366,7 @@ def load_policy(path: Path) -> tuple:
         "long_context_model": policy_tbl.get("long_context_model"),
     }
 
-    policy = Policy(
+    policy = RouterConfig(
         schema_version=raw.get("schema_version", 0),
         port=router_tbl.get("port"),
         upstream=router_tbl.get("upstream", ""),
@@ -393,7 +392,7 @@ class Catalog:
     pass_through: bool
     cause: str | None
     ladder: Ladder | None
-    policy: Policy | None
+    policy: RouterConfig | None
     rejected_models: dict = field(default_factory=dict)
 
     def rung_of(self, model_id: str) -> int | None:
