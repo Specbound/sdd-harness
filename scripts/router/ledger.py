@@ -68,7 +68,8 @@ import json
 import logging
 import os
 import tempfile
-from dataclasses import dataclass
+from collections.abc import Callable
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 _logger = logging.getLogger(__name__)
@@ -100,6 +101,13 @@ _COST_STATES = frozenset({"known", "unknown"})
 
 _WINDOW_DAYS = 30
 
+# design.md "Ledger / ledger.py": default re-ask window that counts as an
+# escalation signal when no caller-supplied value is given. Matches
+# `policy.escalation_window_s`'s own documented default — this module does
+# not import config.py to read it (loosely-typed `rung_of` parameter below
+# mirrors how policy.py takes `catalog` without a hard import).
+_DEFAULT_ESCALATION_WINDOW_S = 120
+
 _TS_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
 
 
@@ -121,9 +129,10 @@ class CallRecord:
     classifier was ever reached) — mirrors `policy.py`'s `DecisionLike`
     Protocol, which allows the same for the identical reason.
 
-    `suspect_escalation` always defaults to `False` here — task 4.1's scope
-    is the field existing on every record; the detector that sets it `True`
-    is task 4.2, not built yet.
+    `suspect_escalation` always defaults to `False` here. `Ledger.append()`
+    recomputes it when a `rung_of` lookup is supplied (task 4.2's detector,
+    `_detect_escalation`) and overrides whatever was passed in — callers
+    never need to set this field themselves.
     """
 
     lane: str
@@ -178,6 +187,12 @@ def _empty_bucket() -> dict:
         "output_tokens_by_model": {},
         "baseline_input_tokens_by_model": {},
         "baseline_output_tokens_by_model": {},
+        # R7.5a/7.5b: an escalation call's own token cost, bucketed by its
+        # `selected_model` and kept separate from the plain buckets above so
+        # a later net-savings rollup (task 10) can subtract it from down-route
+        # gains rather than silently folding it into a gross figure.
+        "delta_input_tokens_by_model": {},
+        "delta_output_tokens_by_model": {},
         "unknown_cost_calls": 0,
     }
 
@@ -208,12 +223,17 @@ def _add_contribution(
     baseline_model: str,
     input_tokens: int,
     output_tokens: int,
+    suspect_escalation: bool = False,
 ) -> None:
     """Fold one call's fields into `bucket` (lifetime, window_30d, or a
     by_lane entry — same shape, same rule). `selected_model` gets its real
     token counts; `baseline_model` gets the *same* token counts for the
     counterfactual (R7.3: counterfactual = starting model priced over the
     same token counts actually used, not a separately measured call).
+
+    `suspect_escalation=True` additionally folds this call's token cost into
+    `delta_*_tokens_by_model` (R7.5a/7.5b) — this call *is* the escalation,
+    so its cost is the measured negative saving a later rollup subtracts.
     """
     bucket["routed"] += 1
     if outcome in _OUTCOMES:
@@ -222,6 +242,9 @@ def _add_contribution(
     _bump(bucket["output_tokens_by_model"], selected_model, output_tokens)
     _bump(bucket["baseline_input_tokens_by_model"], baseline_model, input_tokens)
     _bump(bucket["baseline_output_tokens_by_model"], baseline_model, output_tokens)
+    if suspect_escalation:
+        _bump(bucket["delta_input_tokens_by_model"], selected_model, input_tokens)
+        _bump(bucket["delta_output_tokens_by_model"], selected_model, output_tokens)
     if cost_state == "unknown":
         bucket["unknown_cost_calls"] += 1
 
@@ -235,6 +258,7 @@ def _add_record(bucket: dict, record: CallRecord) -> None:
         baseline_model=record.baseline_model,
         input_tokens=record.input_tokens,
         output_tokens=record.output_tokens,
+        suspect_escalation=record.suspect_escalation,
     )
 
 
@@ -291,11 +315,49 @@ def _rebuild_window_from_tail(ledger_path: Path, cutoff: _dt.datetime) -> tuple[
                 baseline_model=obj.get("baseline_model", ""),
                 input_tokens=int(obj.get("input_tokens", 0)),
                 output_tokens=int(obj.get("output_tokens", 0)),
+                suspect_escalation=bool(obj.get("suspect_escalation", False)),
             )
         except (TypeError, ValueError):
             continue  # a malformed field on one line doesn't abort the rebuild
         oldest_ts = ts
     return bucket, oldest_ts
+
+
+def _escalation_applies(
+    prior: dict,
+    new_baseline_model: str,
+    new_ts: _dt.datetime | None,
+    rung_of: Callable[[str], int | None],
+    window_s: int,
+) -> bool:
+    """R1.9: model fields and timestamps only, never message text.
+
+    `prior` (the raw dict of the most recently appended `ledger.jsonl` line)
+    must be an `applied` down-route within `window_s` of `new_ts`, and
+    `new_baseline_model` must rank strictly higher on the ladder than
+    `prior`'s own `baseline_model` — equal or lower tier is a plain re-ask,
+    not an escalation signal (design.md "Suspected-bad-route flag").
+
+    Any missing/unparseable timestamp or an unranked model (absent from the
+    ladder) falls safe to `False` — "no escalation data" is not a failure,
+    it's the same safe default `policy.py`'s `Escalation` uses.
+    """
+    if prior.get("outcome") != "applied":
+        return False
+    prior_ts = _parse_iso(prior.get("ts"))
+    if prior_ts is None or new_ts is None:
+        return False
+    delta_s = (new_ts - prior_ts).total_seconds()
+    if delta_s < 0 or delta_s > window_s:
+        return False
+    prior_baseline = prior.get("baseline_model")
+    if not isinstance(prior_baseline, str):
+        return False
+    prior_rung = rung_of(prior_baseline)
+    new_rung = rung_of(new_baseline_model)
+    if prior_rung is None or new_rung is None:
+        return False
+    return new_rung > prior_rung
 
 
 def _default_stats() -> dict:
@@ -306,6 +368,25 @@ def _default_stats() -> dict:
         "window_30d_since": None,
         "by_lane": {},
     }
+
+
+@dataclass(frozen=True)
+class PendingEscalation:
+    """`Escalation`-shaped answer to "should my upcoming request escalate?"
+
+    Deliberately not `policy.Escalation` itself — this module does not
+    import `policy.py` (Rule of Three; mirrors `policy.py`'s own avoidance
+    of importing `classify.py`'s `Decision`). Field names match `Escalation`
+    exactly, so a caller builds the real thing with
+    `Escalation(active=p.active, previous_model=p.previous_model)` without
+    re-deriving anything from the ledger itself.
+
+    `previous_model` is the prior call's *selected* model, not its baseline
+    (R1.8: escalation climbs one rung above what was actually picked).
+    """
+
+    active: bool = False
+    previous_model: str | None = None
 
 
 class Ledger:
@@ -326,8 +407,22 @@ class Ledger:
         self.ledger_path = Path(ledger_path) if ledger_path is not None else DEFAULT_LEDGER_PATH
         self.stats_path = Path(stats_path) if stats_path is not None else DEFAULT_STATS_PATH
 
-    def append(self, record: CallRecord) -> None:
+    def append(
+        self,
+        record: CallRecord,
+        *,
+        rung_of: Callable[[str], int | None] | None = None,
+        escalation_window_s: int = _DEFAULT_ESCALATION_WINDOW_S,
+    ) -> None:
         """Write one record to `ledger.jsonl` and fold it into `stats.json`.
+
+        When `rung_of` is given, `record.suspect_escalation` is recomputed
+        from the most recent prior record (task 4.2's detector,
+        `_detect_escalation`) and the caller-supplied value is overridden —
+        this is the module's job, not the caller's (design.md "Suspected-
+        bad-route flag"). Omitting `rung_of` skips detection entirely and
+        keeps whatever `record.suspect_escalation` already was (task 4.1's
+        default, `False`).
 
         Raises `LedgerError` for a malformed `record` (programmer error,
         caught before any file is touched). Any `OSError` encountered while
@@ -337,6 +432,11 @@ class Ledger:
         """
         _validate(record)
         ts = _now_iso()
+        if rung_of is not None:
+            record = replace(
+                record,
+                suspect_escalation=self._detect_escalation(record, ts, rung_of, escalation_window_s),
+            )
         try:
             self._append_jsonl_line(record, ts)
             self._update_stats(record, ts)
@@ -348,9 +448,64 @@ class Ledger:
                 exc_info=True,
             )
 
+    def pending_escalation(
+        self,
+        current_baseline_model: str,
+        rung_of: Callable[[str], int | None],
+        escalation_window_s: int = _DEFAULT_ESCALATION_WINDOW_S,
+    ) -> PendingEscalation:
+        """Should the caller's upcoming request be treated as an escalation?
+
+        Exposes task 4.2's detector to the policy layer (design.md
+        "Suspected-bad-route flag": "the flag drives the escalation ladder")
+        without requiring the caller to re-parse `ledger.jsonl` itself.
+        Checks the most recent persisted record against
+        `current_baseline_model` using "now" as the comparison timestamp —
+        R1.9: model fields and timestamps only.
+        """
+        prior = self._last_record()
+        if prior is None:
+            return PendingEscalation()
+        now = _dt.datetime.now(_dt.timezone.utc)
+        if not _escalation_applies(prior, current_baseline_model, now, rung_of, escalation_window_s):
+            return PendingEscalation()
+        previous_model = prior.get("selected_model")
+        if not isinstance(previous_model, str):
+            return PendingEscalation()
+        return PendingEscalation(active=True, previous_model=previous_model)
+
     def read_stats(self) -> dict:
         """Current persisted rollup, loaded fresh from `stats.json`."""
         return self._load_stats()
+
+    def _detect_escalation(
+        self,
+        record: CallRecord,
+        ts: str,
+        rung_of: Callable[[str], int | None],
+        window_s: int,
+    ) -> bool:
+        """`record` (about to be appended at `ts`) is the escalation call —
+        i.e. the most recent prior record was an `applied` down-route inside
+        `window_s` whose `baseline_model` ranks lower than `record`'s own.
+        """
+        prior = self._last_record()
+        if prior is None:
+            return False
+        return _escalation_applies(prior, record.baseline_model, _parse_iso(ts), rung_of, window_s)
+
+    def _last_record(self) -> dict | None:
+        """Most recent line of `ledger.jsonl`, parsed — or `None` for an
+        empty, missing, or corrupt-tail ledger. Reads only the last line
+        (`_reverse_lines` is lazy), never the whole file.
+        """
+        for line in _reverse_lines(self.ledger_path):
+            try:
+                obj = json.loads(line)
+            except json.JSONDecodeError:
+                return None
+            return obj if isinstance(obj, dict) else None
+        return None
 
     def _append_jsonl_line(self, record: CallRecord, ts: str) -> None:
         line = {
