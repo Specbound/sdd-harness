@@ -135,7 +135,12 @@ def _get(port: int, timeout: float = 5.0) -> tuple[int, bytes]:
         response = urlopen(request, timeout=timeout)
     except HTTPError as exc:
         response = exc
-    return response.status, response.read()
+    status = response.status
+    # `addinfourl.status` (base of both `urlopen`'s return type and `HTTPError`) is
+    # typed `int | None` in typeshed, but a real HTTP response always carries a real
+    # status code by the time it reaches here — narrow per tech.md's convention.
+    assert status is not None
+    return status, response.read()
 
 
 # ---------------------------------------------------------------------------
