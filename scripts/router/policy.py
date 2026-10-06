@@ -88,7 +88,7 @@ def _escalation_rung(escalation: Escalation, catalog, ceiling_rung: int) -> int 
     return min(previous_rung + 1, ceiling_rung)
 
 
-def _privacy_pick(decision: DecisionLike, catalog) -> str | None:
+def _privacy_pick(decision: DecisionLike, catalog) -> str | _NoLocalMarker | None:
     """Local model id when the gate trips, else None when it doesn't trip.
 
     A trip with no local model configured returns the Baseline Model marker
@@ -106,9 +106,17 @@ def _privacy_pick(decision: DecisionLike, catalog) -> str | None:
     return _NO_LOCAL
 
 
+class _NoLocalMarker:
+    """Dedicated sentinel type (not bare `object()`) so `_privacy_pick`'s
+    three-state return — "didn't trip" (`None`), "tripped, no local model"
+    (this marker), "tripped, routed" (`str`) — stays checkable instead of
+    widening to `object` everywhere `local_pick` is read.
+    """
+
+
 # Sentinel distinguishing "privacy gate tripped, no local model" from "gate
 # didn't trip at all" — see `_privacy_pick`.
-_NO_LOCAL = object()
+_NO_LOCAL = _NoLocalMarker()
 
 
 def _confidence_floor_tripped(decision: DecisionLike, policy) -> bool:
@@ -127,6 +135,24 @@ def _lane_rung(decision: DecisionLike, policy) -> int | None:
         if decision.score <= bucket.get("max", 0):
             return bucket.get("rung")
     return buckets[-1].get("rung")
+
+
+def _absolute_rung(catalog, rung: int) -> int | None:
+    """Resolve a possibly-negative, Python-list-style rung to its absolute,
+    non-negative index before it can reach `_finalize_rung`'s tier cap.
+
+    `[policy.lanes.<lane>]` buckets may declare `rung = -1` for "strongest"
+    (per `Ladder`'s docstring, `model_at`/`model_at_rung` accept negative
+    indices) but `min(rung, cap_rung)` only clamps a non-negative `rung` —
+    `min(-1, cap_rung)` is always `-1` for any `cap_rung >= 0`, silently
+    bypassing the tier cap and violating R1.7. Round-trips through
+    `model_at_rung` -> `rung_of` (the same pattern `_escalation_rung` uses)
+    to get the absolute index; `None` when the rung can't be resolved at all.
+    """
+    if rung >= 0:
+        return rung
+    model_id = catalog.model_at_rung(rung)
+    return catalog.rung_of(model_id) if model_id is not None else None
 
 
 def _context_window_guard(rung: int, catalog, policy, token_estimate: int) -> int:
@@ -204,6 +230,10 @@ def select(
     else:
         rung = _lane_rung(decision, policy)
 
+    if rung is None:
+        return baseline
+
+    rung = _absolute_rung(catalog, rung)
     if rung is None:
         return baseline
 
