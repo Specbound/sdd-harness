@@ -220,7 +220,7 @@ def select(
         return _finalize_rung(catalog, escalated_rung, ceiling_rung, baseline)
 
     local_pick = _privacy_pick(decision, catalog)
-    if local_pick is _NO_LOCAL:
+    if isinstance(local_pick, _NoLocalMarker):
         return baseline  # R6.2: gate tripped, no local model — never down-route
     if local_pick is not None:
         return _finalize_model(catalog, local_pick, baseline)
