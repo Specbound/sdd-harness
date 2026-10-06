@@ -160,5 +160,9 @@ Verify artifacts persist on disk before claiming 'implemented' (not gitignored).
 ### ❌ Unqualified citations in skill additions
 Use `(source: repo-name date [tag])` not `(source: date [tag])`. Bare citations fail cross-repo reads. (source: sdd-harness 2026-09-28 [insight, enforceable])
 
+### ❌ Leaving modifications to critical files uncommitted across multiple passes
+Iterative changes to skills, rules, or configs left in modified-uncommitted state across 3+ maintenance passes suggests incomplete work. Before concluding a pass, either commit finalized changes or explicitly record work-in-progress state with resumption context. (source: 2026-10-06 [judge] drain)
+
 ## When to Use
 This skill is applicable to execute the workflow or actions described in the overview.
+_Last synced: 2026-10-06

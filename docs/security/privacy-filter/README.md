@@ -236,4 +236,4 @@ For CI pipelines on CPU-only runners, expect ~2–5s per file after model load.
 - [`sast-configuration` skill](~/.claude/skill-library/sast-configuration/) — Static analysis with Semgrep, CodeQL
 - [OpenAI Privacy Filter repo](https://github.com/openai/privacy-filter) — Source, model card, fine-tuning guide
 
-_Last synced: 2026-10-05_
+_Last synced: 2026-10-06_

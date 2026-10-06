@@ -80,4 +80,4 @@ Measured per-call skill-listing cost: ~13.3k (all listed) → ~5.0k (29 listed).
 preserve discovery — an agent still finds any sub-skill by routing through its domain — while
 the Library skills cost nothing until read. See the master bodies for the live routing tables.
 
-_Last synced: 2026-10-05_
+_Last synced: 2026-10-06_

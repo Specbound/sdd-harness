@@ -1056,4 +1056,4 @@ The Model Cost section reads session data from `~/.claude/projects/*/`. Pricing 
 
 Private repository. Contact the maintainer for access.
 
-_Last synced: 2026-10-05_
+_Last synced: 2026-10-06_
