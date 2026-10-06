@@ -43,10 +43,14 @@ class DecisionLike(Protocol):
     contract is not a reason to couple this module to that one.
     """
 
-    lane: str
-    score: int
-    gate_p: float
-    confidence: float
+    @property
+    def lane(self) -> str: ...
+    @property
+    def score(self) -> int: ...
+    @property
+    def gate_p(self) -> float: ...
+    @property
+    def confidence(self) -> float: ...
 
 
 @dataclass(frozen=True)
