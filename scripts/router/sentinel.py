@@ -132,7 +132,6 @@ class SentinelHandler(BaseHTTPRequestHandler):
     """
 
     protocol_version = "HTTP/1.1"
-    server: _SentinelServer  # narrows the type ThreadingHTTPServer gives at runtime
 
     def do_GET(self) -> None:
         self._handle()
@@ -155,12 +154,26 @@ class SentinelHandler(BaseHTTPRequestHandler):
     def do_OPTIONS(self) -> None:
         self._handle()
 
+    def _sentinel_server(self) -> _SentinelServer:
+        """Narrow `self.server` from its inherited `BaseServer` type.
+
+        `BaseRequestHandler.server: BaseServer` is a plain mutable attribute, so
+        Pyright requires an exact type match for any subclass override rather than a
+        narrowing redeclaration (same invariance rule as `policy.py`'s `DecisionLike`
+        Protocol). This asserts the narrowing once instead of redeclaring the
+        attribute's type, matching tech.md's "Optional narrowing" convention.
+        """
+        assert isinstance(self.server, _SentinelServer)
+        return self.server
+
     def _handle(self) -> None:
         body = self._read_body()
         headers = _forward_headers(self.headers)
 
         try:
-            response = _open(self._worker_url(), self.command, headers, body, self.server.worker_timeout_s)
+            response = _open(
+                self._worker_url(), self.command, headers, body, self._sentinel_server().worker_timeout_s
+            )
         except (URLError, TimeoutError, OSError) as exc:
             logger.warning("worker unreachable (%s) — falling through to upstream", exc)
             try:
@@ -178,10 +191,11 @@ class SentinelHandler(BaseHTTPRequestHandler):
         return self.rfile.read(int(length))
 
     def _worker_url(self) -> str:
-        return f"http://{self.server.worker_host}:{self.server.worker_port}{self.path}"
+        server = self._sentinel_server()
+        return f"http://{server.worker_host}:{server.worker_port}{self.path}"
 
     def _upstream_url(self) -> str:
-        return f"{self.server.upstream.rstrip('/')}{self.path}"
+        return f"{self._sentinel_server().upstream.rstrip('/')}{self.path}"
 
     def _relay(self, response) -> None:
         """Stream `response` back to the client verbatim — body bytes untouched.
@@ -228,8 +242,8 @@ class SentinelHandler(BaseHTTPRequestHandler):
         self.wfile.write(b"0\r\n\r\n")
         self.wfile.flush()
 
-    def log_message(self, format_str: str, *args: object) -> None:
-        logger.info("%s - %s", self.address_string(), format_str % args)
+    def log_message(self, format: str, *args: object) -> None:
+        logger.info("%s - %s", self.address_string(), format % args)
 
 
 class _SentinelServer(ThreadingHTTPServer):
