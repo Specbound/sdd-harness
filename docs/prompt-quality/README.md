@@ -53,7 +53,7 @@ Matching is literal — the prompt is split into word tokens and phrases are che
 | `hooks/claude/prompt-quality-check.sh` | PreToolUse hook — scores every Agent call |
 | `hooks/claude/session-start-hook.sh` | Extended to show PQ baseline at session start |
 | `scripts/utils/dashboard.py` | `render_prompt_quality()` function — Session Health tab |
-| `skills/prompt-quality-assess/SKILL.md` | Cognitive rubric — apply before writing agent prompts |
+| `~/.claude/skill-library/prompt-quality-assess/SKILL.md` | Cognitive rubric — apply before writing agent prompts |
 | `~/.code-insights/pq-log.jsonl` | Runtime log (global, not per-repo) |
 
 ## Log Format
@@ -88,12 +88,12 @@ Located at **Session Health → Prompt Quality** (✨ tab). Shows:
 
 ```
 📊 Prompt Quality Baseline (last 14 agent spawns): 🟡 avg 3.4/5 | weakest: context provision (2.8), scope management (3.1)
-   → Reminder: front-load context and bound scope on every Agent call.
+   → Reminder: front-load context and bound scope on every Agent call. Read ~/.claude/skill-library/prompt-quality-assess/SKILL.md when writing agent prompts.
 ```
 
 ## How to Improve Scores
 
-Invoke the `prompt-quality-assess` skill before writing agent prompts. It provides per-dimension rewrite patterns to get scores ≥4.0 before the hook fires.
+Read `~/.claude/skill-library/prompt-quality-assess/SKILL.md` before writing agent prompts. It provides per-dimension rewrite patterns to get scores ≥4.0 before the hook fires.
 
 ## Inspired By
 
@@ -101,4 +101,4 @@ Invoke the `prompt-quality-assess` skill before writing agent prompts. It provid
 
 ---
 
-_Last synced: 2026-09-30_
+_Last synced: 2026-10-06_
