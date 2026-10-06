@@ -713,7 +713,7 @@ echo 'bash "$(git rev-parse --show-toplevel)/.claude/hooks/scan-pii.sh" --staged
   >> .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit
 ```
 
-> **In the harness repo itself**, `.git/hooks/pre-commit` is owned by `hooks/git/pre-commit` (the hardcoded-path guard, and since 2026-09-03 the embedded-Python regex guard alongside it), which `install.sh` / `update.sh` rewrite on every run — a line appended there is lost at the next install or update. Add the scan-pii line to `hooks/git/pre-commit` in the source tree instead. In any other project the slot is free: the harness guard is deliberately not propagated downstream, and the installer leaves a pre-commit it doesn't recognise alone.
+> **In the harness repo itself**, `.git/hooks/pre-commit` is owned by `hooks/git/pre-commit` (the hardcoded-path guard, the embedded-Python regex guard since 2026-09-03, and the Library-tier skill-bare-name guard since 2026-10-04), which `install.sh` / `update.sh` rewrite on every run — a line appended there is lost at the next install or update. Add the scan-pii line to `hooks/git/pre-commit` in the source tree instead. In any other project the slot is free: the harness guard is deliberately not propagated downstream, and the installer leaves a pre-commit it doesn't recognise alone.
 
 See [docs/security/privacy-filter/README.md](docs/security/privacy-filter/README.md).
 
