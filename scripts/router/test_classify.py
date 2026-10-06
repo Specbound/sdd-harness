@@ -110,7 +110,7 @@ class _StubHandler(BaseHTTPRequestHandler):
         except OSError:
             pass  # client already disconnected (e.g. after its own timeout)
 
-    def log_message(self, format_str: str, *args: object) -> None:
+    def log_message(self, format: str, *args: object) -> None:
         pass  # silence BaseHTTPRequestHandler's default stderr access log
 
 
