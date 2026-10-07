@@ -505,7 +505,7 @@ class RouterHandler(BaseHTTPRequestHandler):
             self.end_headers()
             tee = StreamTee(write=self._write_chunk)
             while True:
-                chunk = response.read(_CHUNK_SIZE)
+                chunk = response.read1(_CHUNK_SIZE)
                 if not chunk:
                     break
                 tee.feed(chunk)
@@ -569,7 +569,7 @@ class RouterHandler(BaseHTTPRequestHandler):
 
     def _copy_chunked(self, response) -> None:
         while True:
-            chunk = response.read(_CHUNK_SIZE)
+            chunk = response.read1(_CHUNK_SIZE)
             if not chunk:
                 break
             self._write_chunk(chunk)
