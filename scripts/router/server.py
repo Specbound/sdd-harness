@@ -130,12 +130,23 @@ _STARTUP_PROBE_TIMEOUT_S = 0.5
 
 
 def _forward_headers(headers) -> dict[str, str]:
-    """Copy a client header set, dropping hop-by-hop headers (RFC 7230 6.1).
+    """Copy a client header set, dropping hop-by-hop headers (RFC 7230 6.1)
+    and the client's own `Content-Length`.
 
-    Everything else — including auth/credentials (R3.5) — passes through
-    untouched.
+    `Content-Length` is dropped (not just hop-by-hop) because `_rewrite_model`
+    can re-serialize the body to a different byte length than the client's
+    original `raw_body`; `http.client` only auto-computes `Content-Length`
+    when the header is absent, so a stale value here would desync upstream's
+    framing. Mirrors the exact `key.lower() == "content-length"` exclusion
+    `_relay`/`_forward_raw` already apply when copying the *response*
+    headers back to the client. Everything else — including auth/credentials
+    (R3.5) — passes through untouched.
     """
-    return {k: v for k, v in headers.items() if k.lower() not in _HOP_BY_HOP_HEADERS}
+    return {
+        k: v
+        for k, v in headers.items()
+        if k.lower() not in _HOP_BY_HOP_HEADERS and k.lower() != "content-length"
+    }
 
 
 def _parse_body(raw_body: bytes) -> tuple[dict, str] | None:
@@ -217,11 +228,26 @@ def _derive_reason(catalog: Catalog, decision: Decision, token_estimate: int) ->
     priority order `select()` itself uses, not of its branching logic.
     """
     thresholds = catalog.policy.thresholds if catalog.policy is not None else {}
-    if decision.gate_p is not None and decision.gate_p > thresholds.get("privacy_threshold", float("inf")):
+    # `.get(key, default)` only applies `default` when the key is *absent* —
+    # config.py's real `_parse_router_config` always populates all 5 keys,
+    # leaving the value `None` when unset in router.toml, so an explicit
+    # None-coalesce is required here (not just a `.get` default) to avoid
+    # `decision.gate_p > None` / `decision.confidence < None` raising.
+    privacy_threshold = thresholds.get("privacy_threshold")
+    if privacy_threshold is None:
+        privacy_threshold = float("inf")
+    confidence_floor = thresholds.get("confidence_floor")
+    if confidence_floor is None:
+        confidence_floor = 0.0
+    long_context_tokens = thresholds.get("long_context_tokens")
+    if long_context_tokens is None:
+        long_context_tokens = float("inf")
+
+    if decision.gate_p is not None and decision.gate_p > privacy_threshold:
         return "privacy_gate"
-    if decision.confidence is not None and decision.confidence < thresholds.get("confidence_floor", 0.0):
+    if decision.confidence is not None and decision.confidence < confidence_floor:
         return "low_confidence"
-    if token_estimate > thresholds.get("long_context_tokens", float("inf")):
+    if token_estimate > long_context_tokens:
         return "long_context"
     return "policy"
 

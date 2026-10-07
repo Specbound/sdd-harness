@@ -75,20 +75,17 @@ from ledger import Ledger
 from server import build_server
 
 #
-# KNOWN UPSTREAM BUG (filed, not fixed — server.py is out of scope for task
-# 7.2): `_forward_headers` does not strip the client's original
-# `Content-Length`, and `_open_upstream` passes it straight through to
-# `urllib.request.Request(..., headers=headers)`. `urllib`'s own
-# `do_request_` only computes `Content-Length` when the header is *absent*
-# (`if not request.has_header('Content-length')`) — so whenever
-# `_rewrite_model` produces a body of a *different* byte length than the
-# original (any pair of model ids of different lengths), the proxy forwards
-# the stale original length while sending the new, shorter/longer body.
-# The receiving server then blocks waiting for bytes that never arrive.
-# Reproduced directly against this suite's own stub upstream (a real
-# `TimeoutError`, not a guess). `_CHEAP`/`_BASELINE` below are deliberately
-# equal-length so the retry test exercises R5.10's retry logic instead of
-# tripping over this separate bug.
+# FIXED (was: filed-not-fixed in task 7.2's own report) — `_forward_headers`
+# now strips the client's original `Content-Length` (case-insensitive,
+# mirroring the response-side exclusion `_relay`/`_forward_raw` already use),
+# so `urllib`'s own `do_request_` recomputes it from the actual outbound
+# body instead of forwarding a stale value next to a `_rewrite_model`-
+# produced body of a different byte length. Previously reproduced directly
+# against this suite's own stub upstream as a real `TimeoutError`.
+# `ContentLengthRewriteTests` below regression-tests this with model ids of
+# genuinely different lengths. `_CHEAP`/`_BASELINE` stay equal-length so the
+# retry test below continues to exercise R5.10's retry logic specifically,
+# not this now-fixed, separate bug.
 _BASELINE = "router-pricy"
 _CHEAP = "router-cheap"
 
@@ -101,38 +98,45 @@ _DEFAULT_UPSTREAM_BODY = b'{"usage": {"input_tokens": 3, "output_tokens": 4}}'
 # ---------------------------------------------------------------------------
 
 
-def _build_catalog(upstream_url: str) -> Catalog:
+def _build_catalog(
+    upstream_url: str,
+    *,
+    cheap_model: str = _CHEAP,
+    baseline_model: str = _BASELINE,
+    thresholds: dict | None = None,
+) -> Catalog:
+    """`cheap_model`/`baseline_model` default to the equal-length module
+    constants; pass distinct-length ids to exercise the rewrite path's
+    former stale-Content-Length bug (`ContentLengthRewriteTests`).
+
+    `thresholds` defaults to `{}` (absent keys); pass a dict with explicit
+    `None` values — the real shape `config.py`'s `_parse_router_config`
+    always produces for an unset `router.toml` key — to exercise
+    `_derive_reason`'s former present-but-None crash
+    (`ThresholdNoneCoalesceTests`).
+    """
     ladder = Ladder(
         groups=[
-            [ModelEntry(model_id=_CHEAP, prices={}, family="x", generation=(), family_known=False)],
             [
                 ModelEntry(
-                    model_id=_BASELINE, prices={}, family="x", generation=(), family_known=False
+                    model_id=cheap_model, prices={}, family="x", generation=(), family_known=False
+                )
+            ],
+            [
+                ModelEntry(
+                    model_id=baseline_model, prices={}, family="x", generation=(), family_known=False
                 )
             ],
         ],
-        canonical=[_CHEAP, _BASELINE],
-        rung_of={_CHEAP: 0, _BASELINE: 1},
+        canonical=[cheap_model, baseline_model],
+        rung_of={cheap_model: 0, baseline_model: 1},
     )
     policy = RouterConfig(
         schema_version=1,
         port=None,
         upstream=upstream_url,
         classifier={},
-        # Deliberately an empty dict, not a dict with the 5 keys explicitly
-        # set to `None` (which is what config.py's real `load_policy()`
-        # always produces for unset router.toml keys — see the "KNOWN
-        # UPSTREAM BUG" note below). `_derive_reason` in server.py reads
-        # these via `thresholds.get(key, float("inf"))`, which only applies
-        # its default when the key is *absent*, not when it's present with
-        # value `None` — so a fully-populated-with-None dict (the real
-        # production shape) crashes `decision.gate_p > None` on every
-        # successful downroute. Tests here are not about that bug (none of
-        # the required coverage items name `_derive_reason`), so the fixture
-        # uses the one threshold shape that sidesteps it; see this module's
-        # final report for the bug itself, filed rather than fixed (server.py
-        # is out of scope for task 7.2).
-        thresholds={},
+        thresholds=thresholds if thresholds is not None else {},
         escalation_window_s=120,
         max_tiers_above_baseline=3,
         tier_families=[],
@@ -537,6 +541,73 @@ class UpstreamOrdinaryErrorPassthroughTests(_RouterServerTestCase):
         self.assertEqual(body, body_bytes)
         self.assertEqual(classifier.calls, 0)
         self.assertEqual(self.upstream_behavior.requests, [_BASELINE])  # exactly one attempt
+
+
+# ---------------------------------------------------------------------------
+# Regression: stale Content-Length on a rewritten request (bugfix pass on
+# top of task 7.1/7.2). `_CHEAP`/`_BASELINE` above are deliberately
+# equal-length so this needed its own catalog with genuinely different
+# model-id lengths to actually exercise the bug.
+# ---------------------------------------------------------------------------
+class ContentLengthRewriteTests(_RouterServerTestCase):
+    # Verifies: specs/model-router/requirements.md#3.1
+    def test_rewrite_between_different_length_model_ids_completes_and_relays_body(self) -> None:
+        cheap_model = "rc"
+        baseline_model = "router-pricy-baseline-model-with-a-long-name"
+        catalog = _build_catalog(
+            self.upstream_url, cheap_model=cheap_model, baseline_model=baseline_model
+        )
+
+        classifier = _StubClassifier(mode="ok")  # routes to cheap_model per the fixture lane
+        server = self._build_router(classifier, catalog=catalog)
+
+        status, body = _post(server.server_port, _text_request(baseline_model, "please downroute me"))
+
+        # Before the fix this hung/timed out against the stub upstream
+        # instead of completing — now it must relay the upstream's real
+        # response for the rewritten (shorter) model id.
+        self.assertEqual(status, 200)
+        self.assertEqual(body, _DEFAULT_UPSTREAM_BODY)
+        self.assertEqual(self.upstream_behavior.requests, [cheap_model])
+
+
+# ---------------------------------------------------------------------------
+# Regression: `_derive_reason`'s threshold defaults never applying when a
+# key is present-but-`None` (the real shape config.py produces for an unset
+# router.toml key) — previously crashed into a fail-open "error" instead of
+# the real routing decision.
+# ---------------------------------------------------------------------------
+class ThresholdNoneCoalesceTests(_RouterServerTestCase):
+    # Verifies: specs/model-router/requirements.md#4.1
+    def test_all_none_thresholds_produce_real_reason_not_fail_open(self) -> None:
+        catalog = _build_catalog(
+            self.upstream_url,
+            thresholds={
+                "privacy_threshold": None,
+                "confidence_floor": None,
+                "long_context_tokens": None,
+            },
+        )
+        classifier = _StubClassifier(mode="ok")
+        server = self._build_router(classifier, catalog=catalog)
+
+        status, _body = _post(server.server_port, _text_request(_BASELINE, "please downroute me"))
+
+        self.assertEqual(status, 200)
+        self.assertEqual(classifier.calls, 1)
+
+        lines = _wait_for_ledger_lines(self.ledger_path, 1)
+        self.assertEqual(len(lines), 1)
+        record = json.loads(lines[0])
+        # Before the fix, `thresholds.get(key, default)` never applied its
+        # default for a present-but-None value, so `decision.gate_p > None`
+        # raised and `_handle()`'s broad except converted this into a
+        # fail-open ("error") instead of the real downroute decision.
+        self.assertNotEqual(record["outcome"], "failed_open")
+        self.assertNotEqual(record["reason"], "error")
+        self.assertEqual(record["outcome"], "applied")
+        self.assertEqual(record["selected_model"], _CHEAP)
+        self.assertEqual(record["reason"], "policy")
 
 
 if __name__ == "__main__":
