@@ -274,6 +274,8 @@ sdd-harness/
 │       ├── check-no-hardcoded-paths.sh  # Verify no machine-specific paths in harness sources (*.sh, *.py, *.json, *.template + the generated .claude/settings.json); run by the harness repo's .git/hooks/pre-commit
 │       ├── check-no-regex.py    #     Extends the repo-wide regex ban to Python embedded in shell heredocs, where ruff's TID251 cannot reach. Runs in .git/hooks/pre-commit against a shrinking debt ledger
 │       ├── no-regex-debt.txt    #     The ledger check-no-regex.py reads. Listed files are known debt and do not fail; a file that is fixed but still listed DOES fail, so the ledger can only shrink
+│       ├── check-skill-tiers.py #     Fails the commit when a Library-tier skill (listed in setup/skill-library.txt) is referenced by bare name instead of its ~/.claude/skill-library/<name>/SKILL.md path. Third guard in .git/hooks/pre-commit
+│       ├── skill-tier-allow.txt #     Exemption list read by check-skill-tiers.py — one "<repo-relative path> <skill name>" pair per line, for mentions a human reads rather than text an agent acts on
 │       └── check-fleet-registration.sh  # Find harness-installed repos missing from projects.txt (they get no routines and appear on no dashboard)
 │
 ├── hooks/                        # Claude Code and Git lifecycle hooks
@@ -286,6 +288,7 @@ sdd-harness/
 │   │   ├── pr-evidence-hook.sh   #     PreToolUse(Bash): soft gate on `gh pr create` — nudges when the PR body carries no `## Evidence` section. Never blocks; the command is tokenized with shlex and matched token-by-token
 │   │   ├── setup-buffer-hook.sh  #     PostToolUse(Bash): buffers setup-pattern commands to .claude/memory/.setup-session-buffer.log (flushed by stop-hook)
 │   │   ├── skill-permissions-gate.sh # PostToolUse(Write/Edit): soft gate on */skills/*/SKILL.md — prompts agent-permissions-design review
+│   │   ├── skill-library-resolver.sh # PreToolUse(Skill): hard block (exit 2) when a Skill("name") call resolves to a Library-tier install absent from the Skill tool's index — names the ~/.claude/skill-library/<name>/SKILL.md path to read instead. Listed, plugin, and genuinely-missing names pass through
 │   │   ├── js-quality-gate-hook.sh #   PostToolUse(Write/Edit/MultiEdit): runs oxlint (or eslint) on .ts/.tsx/.js/.jsx writes — the JS half of the ruff gate; no-ops when neither linter is installed
 │   │   ├── todo-focus-hook.sh    #     PostToolUse(TodoWrite): names competing in_progress items when more than one is active (soft, exit 2)
 │   │   ├── claudemd-edit-notice.sh #   PostToolUse(Write/Edit/MultiEdit): says a just-written CLAUDE.md/CLAUDE.local.md/AGENTS.md is NOT active in the running session — instruction files are read once at session start (soft, exit 2). Basename match via jq, never substring. Opt out: SDD_SKIP_CLAUDEMD_NOTICE=1
@@ -1056,4 +1059,4 @@ The Model Cost section reads session data from `~/.claude/projects/*/`. Pricing 
 
 Private repository. Contact the maintainer for access.
 
-_Last synced: 2026-10-06_
+_Last synced: 2026-10-07_

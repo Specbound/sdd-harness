@@ -179,3 +179,6 @@ New calculator scripts (_keep_rate_classified.py, _keep_rate_delta.py) created u
 `_keep_rate_classified.py --days 300` returns commits:0 + all-null percentages silently; unbounded params produce undetectable meaningless results. (source: 2026-10-05 [keep-rate])
 ### ❌ Using --days flag to bound window lookback (supersedes line 143-144)
 `--days` trims the recent end (grace floor), not a lookback bound. Comparability comes from stable md5 + unmoved HEAD. (source: 2026-10-04 [keep-rate])
+
+### ✓ Record calculator md5 alongside rate
+Without md5 hash and HEAD hash recorded, "stable flags" claims become unverifiable. Record both with each measurement. (source: 2026-10-07 [keep-rate])

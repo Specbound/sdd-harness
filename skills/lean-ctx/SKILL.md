@@ -76,3 +76,11 @@ Verify: ctx_benchmark, ctx_verify, ctx_proof, ctx_review
 Batch: ctx_fill, ctx_pack
 
 Full docs: https://leanctx.com/docs
+
+## Anti-Patterns
+
+### ❌ Intermittent root mismatch
+Server resolves wrong project root; absolute paths rejected while relative paths work. Use relative paths as workaround. (source: 2026-10-07 [friction])
+
+### ❌ Dedup cache lying
+Dedup returns 'unchanged' for never-read files, hiding content. Workaround: pass offset/limit to force read. (source: 2026-10-07 [friction])

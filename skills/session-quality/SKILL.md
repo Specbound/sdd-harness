@@ -146,3 +146,8 @@ System payloads inflate transcript bytes (92–103 kB) while turn count stays 1.
 ### ❌ Fleet-tick overrun vs never-fire (check orchestrator.log for run start/finish pairs)
 Stalled fleet tick = zero repo artifacts but `run started` with no matching `run finished`; never-fire = no `run started` at all. Overrun needs scheduler fix, not runner hardening. (source: 2026-10-04 [session-quality])
 2026-10-03: 18h37m tick span (three steps held in queue 2-9h each); 2026-10-04 tick never fired. (source: 2026-10-05 [session-quality])
+### ❌ Trusting trace-hook error classification
+If error count seems high, verify trace.log's `## Trace / outcome:` — hook substring-matches false positives. (source: 2026-10-07 [debug, insight])
+
+### ❌ isApiErrorMessage alone in a transcript that read this skill
+Marker appears in skill text; require co-occurrence with model:"<synthetic>" to avoid self-match. (source: 2026-10-07 [session-quality])

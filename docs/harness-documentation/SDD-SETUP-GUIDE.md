@@ -2,7 +2,22 @@
 
 > This file is managed by the SDD harness (`sdd-harness/docs/`).
 > It is the single source of truth — do not edit copies in individual projects.
-> _Last synced: 2026-10-06_
+> _Last synced: 2026-10-07_
+
+---
+
+## Recent Changes (2026-10-07 — Harness Build 31)
+
+Theme: the cost router gains its single request/response path — `scripts/router/server.py` (task 7.1) — wiring the modules Build 30 landed into one worker process behind the sentinel. Alongside it, four skills absorbed the day's friction and judge findings as anti-patterns.
+
+### Scripts
+- `scripts/router/server.py` **(new)** — `ThreadingHTTPServer` handler binding `127.0.0.1:8798`, the worker the sentinel (`sentinel.py`, task 6.1) front-doors. Imports `config.py`, `policy.py`, `classify.py`, `ledger.py`, and `stream.py` **without modifying any of them**, so the whole decision stack is composed here rather than re-implemented. Exactly **one** fail-open `try`/`except` wraps the classify+select decision path only — any failure there forwards the original request unmodified and logs a warning, so a classifier or policy bug degrades to baseline routing instead of failing the call (R4 fail-open block). Upstream status is read **before** any response-body streaming begins, which is what makes a single retry-on-baseline possible when a rewritten-model request comes back non-2xx (R5.10); once bytes are flowing to the client the retry is no longer available. The deliberately narrow fail-open scope is the counterpart to the sentinel's stdlib-only isolation: a bug inside this process cannot take the public port down, and a bug in the decision path cannot drop the request.
+
+### Skills
+- `skills/git-advanced-workflows` (2026-10-07) — new Common Pitfall: **already-tracked files and `.gitignore`**. `.gitignore` only prevents *future* tracking, so a path already in the index keeps appearing in `git status` until `git rm --cached` untracks it — run `git ls-files <path>` before editing `.gitignore`, and untrack first if it comes back non-empty. Worked example in the skill's new `resources/examples/2026-10-07-examples.md` (adding `.claude/` to `.gitignore` and expecting `git status` to go quiet).
+- `skills/keep-rate` (2026-10-07) — new rule: **record the calculator's md5 alongside the rate**. Without the calculator md5 and the HEAD hash captured with each measurement, a "flags are stable" claim is unverifiable — that pair is what makes two runs comparable.
+- `skills/lean-ctx` (2026-10-07) — new **Anti-Patterns** section covering two live friction modes: the server intermittently resolving the wrong project root (absolute paths rejected while relative paths work — use relative paths as the workaround), and the dedup cache returning `unchanged` for a file never read in this session, hiding its content (pass `offset`/`limit` to force a real read).
+- `skills/session-quality` (2026-10-07) — two new anti-patterns: **trusting the trace hook's error classification** (it substring-matches `error`/`failed` anywhere in the raw `tool_response` instead of reading the agent's own `## Trace` / `outcome:` field, so verify `trace.log` before believing a high error count) and **treating a bare `isApiErrorMessage` as an outage signal** (the marker appears in this skill's own text, so require co-occurrence with `model:"<synthetic>"` to avoid a self-match).
 
 ---
 
@@ -1926,5 +1941,5 @@ disown 2>/dev/null || true
 
 The Stop hook should only contain **passive checks** (e.g., nudging housekeeping when observations exceed a threshold). See `.claude/hooks/stop-hook.sh` for the reference implementation.
 
-_Last synced: 2026-10-06_
+_Last synced: 2026-10-07_
 
