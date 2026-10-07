@@ -26,6 +26,7 @@ Capturing traces is **free** — no tokens consumed. The self-healing eval loop 
 1. Adds `RAINDROP_LOCAL_DEBUGGER=http://localhost:5899` to `~/.claude/settings.json` env so all Claude-spawned subprocesses pick it up.
 2. Adds the same export to `~/.bashrc` so all interactive shell sessions (where you run `uvicorn`, `python`, etc.) inherit it.
 3. Detects each registered repo's virtualenv (`.venv/`, `venv/`, or `uv`-managed) and installs `raindrop-ai` inside it via `repo_pip_install` (`scripts/lib/repo-venv.sh`). That install carries the release-age cooldown from `scripts/lib/pip-cooldown.sh` on both its pip and `uv pip` paths: a release uploaded within `SDD_PIP_MIN_AGE` (ISO 8601 duration, default `P2D`) is not considered, since `raindrop-ai` is installed unpinned. Set `SDD_PIP_MIN_AGE=off` when you need a same-day release. A pip too old for `--uploaded-prior-to` installs without the cooldown and says so on stderr.
+4. For a repo that is not yet instrumented, `maybe_auto_instrument()` spawns a headless `claude --print` session whose prompt reads `~/.claude/skill-library/instrument-agent/SKILL.md` and follows it against that repo (log: `/tmp/raindrop-instrument-<repo>.log`). That skill is Library tier, so the prompt names its installed path — a bare `instrument-agent` reference would dead-end as "skill not installed". Note this is `instrument-agent`, a different skill from the `raindrop-instrument-agent` listed under **Skills** below.
 
 **One additional manual step** — install the Raindrop CLI itself (global binary, not Python):
 
@@ -122,6 +123,7 @@ Wraps the streaming `event_generator()` async generator inside `chat_llm()`:
 
 | Skill | Path | Purpose |
 |---|---|---|
+| `instrument-agent` | `~/.claude/skill-library/instrument-agent/SKILL.md` | Instrument a repo — the one `scripts/setup/raindrop-setup.sh` drives headlessly |
 | `raindrop-instrument-agent` | `~/.claude/skill-library/raindrop-instrument-agent/SKILL.md` | Add tracing to a new agent |
 | `raindrop-agent-replay` | `~/.claude/skill-library/raindrop-agent-replay/SKILL.md` | Set up replay server + `.raindrop/agents.yaml` |
 | `raindrop-eval-loop` | `~/.claude/skill-library/raindrop-eval-loop/SKILL.md` | Read traces, write tests, auto-fix (max 3 cycles) |
@@ -156,3 +158,7 @@ Or manually:
 | Traces appear under wrong repo | `event=` label mismatch | Verify the `event=` value matches the repo name in the dashboard |
 | Eval loop fails immediately | Workshop not running | Click "Start raindrop workshop" in the dashboard first |
 | Import error at startup | `raindrop-ai` not installed in this venv | `pip install raindrop-ai` or `uv pip install raindrop-ai` in the repo's venv |
+
+---
+
+_Last synced: 2026-10-07_

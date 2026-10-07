@@ -395,6 +395,8 @@ Hook output is injected into Claude's context as system messages — Claude read
 4. **No-LLM classify** — at classification time use nearest-summary lookup (~100ms; no LLM call needed once a topic map exists)
 5. **Long tail** — don't sample aggressively; bugs live in rare clusters (HDBSCAN with no pre-specified count; outliers → `no_match`, not forced)
 
+Plus a discovery-before-eval pointer: read `~/.claude/skill-library/active-observability/SKILL.md` first when the patterns to look for aren't known yet, then `raindrop-eval-loop`. Both are Library tier, so the hook names the path rather than the bare skill name.
+
 **Why it's needed:** Raindrop trace analysis is token-heavy. Without guidance, the natural pattern is to feed raw trace payloads into LLMs one at a time — multiplying cost. These patterns compress the input surface and batch analytical work so trace evaluation runs at ~10–20% of the naïve cost.
 
 **Output:** `╔══ Active Observability (Raindrop) ══╗` rules banner before every Raindrop MCP call.
@@ -929,7 +931,7 @@ The guard also fails closed on **its own** failures (2026-10-01). If `python3` i
 
 Verified directly against `.claude/settings.json` on 2026-09-06 (not just this doc's prior claims):
 
-All 44 registrations below are live — counted with the `jq` command in this section, not carried over from the previous sync. (A 45th, `PreToolUse Skill → skill-library-resolver.sh`, was added 2026-10-05 and spot-checked against the live `.claude/settings.json`; the rest of the block has not been re-verified since 2026-09-06.) Regenerate this block from the real config with:
+All 44 registrations below are live — counted with the `jq` command in this section, not carried over from the previous sync. (A 45th, `PreToolUse Skill → skill-library-resolver.sh`, was added 2026-10-05 and is now registered in both `templates/settings.json.template` and `templates/settings.harness.json.template` — inserted ahead of each template's existing `Write|Edit` block — as well as spot-checked against the live `.claude/settings.json`; the rest of the block has not been re-verified since 2026-09-06.) Regenerate this block from the real config with:
 
 ```bash
 jq -r '.hooks | to_entries[] | .key as $e | .value[] | .matcher as $m | .hooks[]
