@@ -57,6 +57,7 @@ across generated inputs.
 from __future__ import annotations
 
 import json
+import socket
 import sys
 import tempfile
 import threading
@@ -878,17 +879,20 @@ class StreamingFidelityTests(unittest.TestCase):
 
     # Verifies: specs/model-router/requirements.md#3.2
     # Verifies: specs/model-router/requirements.md#3.3 (property: incremental delivery)
-    @unittest.expectedFailure
     def test_early_chunk_is_client_readable_before_later_chunk_is_sent(self) -> None:
-        """KNOWN BUG — see the module-level note above `_SSE_EVENTS`.
+        """The client must be able to read event 0 off the socket before
+        event 1 has even been sent by the stub — a direct probe of R3.3's
+        "no buffering of full responses" invariant.
 
-        Written to the task's literal requirement: the client must be able
-        to read event 0 off the socket before event 1 has even been sent by
-        the stub. Today `_relay()` buffers the whole stream instead, so the
-        client's read stays blocked the entire time — this test asserts
-        that blocked state (proving the bug, not racing it), which itself
-        raises `AssertionError`, which `@unittest.expectedFailure` turns
-        into a tracked expected failure rather than a suite-breaking one.
+        `_post()` (used by the other two tests in this class) cannot probe
+        this: it drives `http.client.HTTPResponse.read()` with no `amt`,
+        which for a chunked body always blocks until the terminal chunk
+        arrives, no matter how incrementally the server wrote earlier
+        chunks — it is a full-body read by definition, not a partial one.
+        This test instead opens a raw socket to the router, sends the
+        request by hand, and accumulates bounded `recv()` calls — which
+        return as soon as *any* bytes the router has already relayed are
+        on the wire — so it can observe partial delivery directly.
         """
         upstream_server, behavior = self._build_streaming_upstream(gate=True)
         upstream_url = f"http://127.0.0.1:{upstream_server.server_port}"
@@ -897,38 +901,61 @@ class StreamingFidelityTests(unittest.TestCase):
         router = self._build_router(catalog, classifier)
 
         body = json.dumps({"model": _BASELINE, "stream": True}).encode("utf-8")
-        result: dict[str, object] = {}
+        request_bytes = (
+            b"POST /v1/messages HTTP/1.1\r\n"
+            b"Host: 127.0.0.1\r\n"
+            b"Content-Type: application/json\r\n"
+            b"Content-Length: " + str(len(body)).encode("ascii") + b"\r\n"
+            b"Connection: close\r\n\r\n" + body
+        )
 
-        def _do_request() -> None:
-            result["status"], result["body"] = _post(router.server_port, body, timeout=10.0)
+        with socket.create_connection(("127.0.0.1", router.server_port), timeout=5.0) as sock:
+            try:
+                sock.sendall(request_bytes)
 
-        request_thread = threading.Thread(target=_do_request, daemon=True)
-        request_thread.start()
-        try:
-            # The stub sending event 0 is always fast — sending is
-            # server-side and not gated on the client reading anything.
-            self.assertTrue(behavior.sent_events[0].wait(timeout=2.0))
+                # The stub sending event 0 is always fast — sending is
+                # server-side and not gated on the client reading anything.
+                self.assertTrue(behavior.sent_events[0].wait(timeout=2.0))
 
-            # The real assertion: with event 1 still gated (not yet sent),
-            # the client's request thread should already have finished
-            # reading event 0 and returned — it does not, because
-            # `_relay()` never wrote event 0 to the client in the first
-            # place without also having read event 1 (or stream-end).
-            request_thread.join(timeout=1.5)
-            self.assertFalse(
-                request_thread.is_alive(),
-                "expected (buggy) current behavior: the client's read is "
-                "still blocked waiting for the full stream, proving "
-                "_relay() buffered event 0 instead of delivering it "
-                "incrementally",
-            )
-        finally:
-            # Release every remaining gate so the handler and the request
-            # thread both finish within tearDown's own bound, regardless of
-            # which assertion above raised.
-            for index in range(len(behavior.release_events)):
-                behavior.release(index)
-            request_thread.join(timeout=5.0)
+                # The real assertion: accumulate bounded recv()s with
+                # events 1-4 still physically ungated-unsent (no gate has
+                # been released yet below) — event 0's own marker must
+                # already be on the wire, and neither a later event's
+                # marker nor the terminal event should be, proving the
+                # router relayed event 0 without waiting on anything past
+                # it.
+                sock.settimeout(2.0)
+                received = b""
+                deadline = time.monotonic() + 2.0
+                while b"message_start" not in received and time.monotonic() < deadline:
+                    chunk = sock.recv(65536)
+                    if not chunk:
+                        break
+                    received += chunk
+
+                self.assertIn(
+                    b"message_start",
+                    received,
+                    "expected event 0's bytes to already be relayed to the client",
+                )
+                self.assertNotIn(
+                    b"content_block_delta",
+                    received,
+                    "event 1 should not have been sent by the still-gated stub",
+                )
+                self.assertNotIn(b"message_stop", received)
+            finally:
+                # Release every remaining gate so the handler and the stub
+                # both finish within tearDown's own bound, regardless of
+                # which assertion above raised.
+                for index in range(len(behavior.release_events)):
+                    behavior.release(index)
+                sock.settimeout(5.0)
+                try:
+                    while sock.recv(65536):
+                        pass
+                except OSError:
+                    pass
 
 
 if __name__ == "__main__":
