@@ -610,5 +610,326 @@ class ThresholdNoneCoalesceTests(_RouterServerTestCase):
         self.assertEqual(record["reason"], "policy")
 
 
+# ---------------------------------------------------------------------------
+# Task 7.3: streaming fidelity — a real multi-chunk Anthropic SSE sequence
+# (message_start -> content_block_delta x2 -> message_delta -> message_stop),
+# each event sent by the stub upstream as its own `_write_chunk` write with
+# an explicit flush, not one combined write. Covers R3.2 ("identical with
+# and without the proxy") and R3.3 ("never buffers a streaming response").
+#
+# KNOWN BUG (found during this task, NOT fixed here — server.py is out of
+# scope per the task directive; flagged for a dedicated fix pass, same
+# posture as task 7.2's own Content-Length/None-coalesce findings):
+#
+# `_relay()`'s read-from-upstream loop (`response.read(_CHUNK_SIZE)`,
+# `_CHUNK_SIZE = 65536`) does not return as soon as *any* data is available
+# from a chunked-transfer-encoding upstream. `http.client.HTTPResponse
+# .read(amt)`'s chunked-mode implementation (`_read_chunked`) loops pulling
+# *additional* HTTP-level chunks off the socket until it has accumulated
+# `amt` bytes total or the stream ends — it only returns early once a
+# single already-buffered chunk is itself >= `amt`. For any multi-event SSE
+# stream whose cumulative size is under 64KB (true of every event below,
+# and true of virtually all real token-by-token deltas), this means
+# `_relay()` silently buffers EVERY event until the upstream closes the
+# connection, then relays everything as a single write — the opposite of
+# R3.3's "never buffers a streaming response" invariant, and fatal to
+# real-time delivery in production.
+#
+# Confirmed directly (not inferred) against a real `build_server()`
+# instance during this task's investigation, by three independent methods
+# that all showed the identical result — the client receives nothing until
+# the LAST event has already been sent by the stub and the connection
+# closes: `response.read(65536)`, `response.read1(65536)` (a single-
+# syscall, non-accumulating read — rules out client-side read semantics as
+# the cause), and a raw-socket `recv()` loop (rules out any `http.client`
+# buffering on the client side entirely).
+#
+# Recommended fix for the dedicated pass: use `response.read1(_CHUNK_SIZE)`
+# instead of `response.read(_CHUNK_SIZE)` in both `_relay()` and
+# `_copy_chunked()` — `read1()` performs at most one underlying read without
+# the accumulate-until-`amt` loop, which is what actually yields incremental
+# relay from a chunked source.
+#
+# `test_early_chunk_is_client_readable_before_later_chunk_is_sent` below is
+# written to the task's literal requirement and is `@unittest.expectedFailure`
+# — not skipped or deleted — so it fails loudly and specifically (never a
+# hang) until the dedicated fix lands, and flips to an "unexpected success"
+# (a hard failure) the moment it does, at which point the decorator should
+# be removed. The other two tests in this class assert final byte-for-byte
+# sequence equality only (not incremental timing), which the bug above does
+# not affect — they hold today and will continue to hold after the fix.
+# ---------------------------------------------------------------------------
+_SSE_EVENTS: tuple[bytes, ...] = (
+    (
+        b'event: message_start\ndata: {"type":"message_start","message":'
+        b'{"id":"msg_1","usage":{"input_tokens":12,"output_tokens":0}}}\n\n'
+    ),
+    (
+        b'event: content_block_delta\ndata: {"type":"content_block_delta",'
+        b'"index":0,"delta":{"type":"text_delta","text":"Hel"}}\n\n'
+    ),
+    (
+        b'event: content_block_delta\ndata: {"type":"content_block_delta",'
+        b'"index":0,"delta":{"type":"text_delta","text":"lo"}}\n\n'
+    ),
+    (
+        b'event: message_delta\ndata: {"type":"message_delta","delta":'
+        b'{"stop_reason":"end_turn"},"usage":{"input_tokens":12,"output_tokens":5}}\n\n'
+    ),
+    b'event: message_stop\ndata: {"type":"message_stop"}\n\n',
+)
+
+# Bounded wait for the *stub*'s own internal gate between events — never the
+# unbounded hang the module docstring above warns about; always finite so a
+# killed/aborted test run still tears down within this budget.
+_GATE_WAIT_TIMEOUT_S = 3.0
+
+
+class _StreamingUpstreamBehavior:
+    """Serves a fixed, ordered sequence of real SSE event chunks over a
+    chunked-transfer-encoding response, one `_write_chunk` per event, each
+    individually flushed.
+
+    `gate=True` makes the handler block after each event (except the last)
+    on `release_events[i]`, bounded by `_GATE_WAIT_TIMEOUT_S` — lets a test
+    synchronize "client has read event i" with "stub now sends event i+1"
+    (see `test_early_chunk_is_client_readable_before_later_chunk_is_sent`).
+    `gate=False` (default) just sleeps `inter_event_delay_s` between writes,
+    mimicking realistic token-by-token arrival with no synchronization.
+    """
+
+    def __init__(
+        self,
+        events: tuple[bytes, ...] = _SSE_EVENTS,
+        *,
+        gate: bool = False,
+        inter_event_delay_s: float = 0.01,
+    ) -> None:
+        self.events = events
+        self.gate = gate
+        self.inter_event_delay_s = inter_event_delay_s
+        self.release_events = [threading.Event() for _ in range(len(events) - 1)] if gate else []
+        self.sent_events = [threading.Event() for _ in events]
+        self.requests: list[str | None] = []
+        self._lock = threading.Lock()
+
+    def record(self, model: str | None) -> None:
+        with self._lock:
+            self.requests.append(model)
+
+    def release(self, index: int) -> None:
+        self.release_events[index].set()
+
+
+class _StreamingUpstreamHandler(BaseHTTPRequestHandler):
+    def do_POST(self) -> None:
+        length = int(self.headers.get("Content-Length") or 0)
+        raw = self.rfile.read(length) if length else b""
+        behavior: _StreamingUpstreamBehavior = self.server.behavior  # type: ignore[attr-defined]
+
+        model: str | None = None
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError:
+            parsed = None
+        if isinstance(parsed, dict) and isinstance(parsed.get("model"), str):
+            model = parsed["model"]
+        behavior.record(model)
+
+        try:
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Transfer-Encoding", "chunked")
+            self.end_headers()
+            for index, event in enumerate(behavior.events):
+                self._write_chunk(event)
+                behavior.sent_events[index].set()
+                if behavior.gate and index < len(behavior.release_events):
+                    behavior.release_events[index].wait(timeout=_GATE_WAIT_TIMEOUT_S)
+                elif behavior.inter_event_delay_s:
+                    time.sleep(behavior.inter_event_delay_s)
+            self.wfile.write(b"0\r\n\r\n")
+            self.wfile.flush()
+        except OSError:
+            pass  # client already moved on
+
+    def _write_chunk(self, chunk: bytes) -> None:
+        self.wfile.write(f"{len(chunk):x}\r\n".encode("ascii"))
+        self.wfile.write(chunk)
+        self.wfile.write(b"\r\n")
+        self.wfile.flush()
+
+    def log_message(self, format: str, *args: object) -> None:
+        pass
+
+
+class _StreamingUpstreamServer(ThreadingHTTPServer):
+    daemon_threads = True
+    allow_reuse_address = True
+
+    def __init__(
+        self,
+        server_address: tuple[str, int],
+        handler_cls: type[BaseHTTPRequestHandler],
+        behavior: _StreamingUpstreamBehavior,
+    ) -> None:
+        self.behavior = behavior
+        super().__init__(server_address, handler_cls)
+
+
+class StreamingFidelityTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        tmp_path = Path(self._tmp.name)
+        self.ledger = Ledger(ledger_path=tmp_path / "ledger.jsonl", stats_path=tmp_path / "stats.json")
+        self._servers: list[tuple[ThreadingHTTPServer, threading.Thread]] = []
+
+    def tearDown(self) -> None:
+        for server, thread in self._servers:
+            self._stop(server, thread)
+        self._tmp.cleanup()
+
+    def _start(self, server: ThreadingHTTPServer) -> threading.Thread:
+        thread = threading.Thread(
+            target=server.serve_forever, kwargs={"poll_interval": 0.02}, daemon=True
+        )
+        thread.start()
+        self._servers.append((server, thread))
+        return thread
+
+    def _stop(self, server: ThreadingHTTPServer, thread: threading.Thread) -> None:
+        try:
+            server.shutdown()
+        except OSError:
+            pass
+        try:
+            server.server_close()
+        except OSError:
+            pass
+        thread.join(timeout=5)
+
+    def _build_streaming_upstream(
+        self, events: tuple[bytes, ...] = _SSE_EVENTS, *, gate: bool = False
+    ) -> tuple[_StreamingUpstreamServer, _StreamingUpstreamBehavior]:
+        behavior = _StreamingUpstreamBehavior(events, gate=gate)
+        server = _StreamingUpstreamServer(("127.0.0.1", 0), _StreamingUpstreamHandler, behavior)
+        self._start(server)
+        return server, behavior
+
+    def _build_router(self, catalog: Catalog, classifier) -> ThreadingHTTPServer:
+        server = build_server(
+            host="127.0.0.1", port=0, catalog=catalog, classifier=classifier, ledger=self.ledger
+        )
+        self._start(server)
+        return server
+
+    # Verifies: specs/model-router/requirements.md#3.2
+    # Verifies: specs/model-router/requirements.md#3.3
+    def test_passthrough_stream_byte_sequence_identical_to_direct_upstream(self) -> None:
+        """target == baseline (no 'messages' field -> should_classify() is
+        False): the router's relayed SSE byte sequence, read start to
+        finish, is identical to what a client talking to the stub upstream
+        directly (no proxy in the path at all) would see."""
+        upstream_server, _behavior = self._build_streaming_upstream()
+        upstream_url = f"http://127.0.0.1:{upstream_server.server_port}"
+        catalog = _build_catalog(upstream_url)
+        classifier = _StubClassifier(mode="ok")
+        router = self._build_router(catalog, classifier)
+
+        body = json.dumps({"model": _BASELINE, "stream": True}).encode("utf-8")
+
+        direct_status, direct_body = _post(upstream_server.server_port, body)
+        router_status, router_body = _post(router.server_port, body)
+
+        expected = b"".join(_SSE_EVENTS)
+        self.assertEqual(direct_status, 200)
+        self.assertEqual(router_status, 200)
+        self.assertEqual(direct_body, expected)
+        self.assertEqual(router_body, expected)  # identical with and without the proxy
+        self.assertEqual(classifier.calls, 0)  # no "messages" field -> never classified
+
+    # Verifies: specs/model-router/requirements.md#3.2
+    # Verifies: specs/model-router/requirements.md#3.3
+    def test_rewritten_model_stream_still_relays_byte_identical_sequence(self) -> None:
+        """target != baseline (classifier routes to _CHEAP): the rewrite
+        changes the outbound request's `model` field only — the relayed SSE
+        byte sequence the client reads back is still byte-for-byte identical
+        to what the stub upstream actually sent (tee fidelity survives the
+        rewrite)."""
+        upstream_server, behavior = self._build_streaming_upstream()
+        upstream_url = f"http://127.0.0.1:{upstream_server.server_port}"
+        catalog = _build_catalog(upstream_url)
+        classifier = _StubClassifier(mode="ok")  # lands in the one fixture bucket -> _CHEAP
+        router = self._build_router(catalog, classifier)
+
+        body = json.dumps(
+            {
+                "model": _BASELINE,
+                "stream": True,
+                "messages": [{"role": "user", "content": "please downroute me"}],
+            }
+        ).encode("utf-8")
+
+        router_status, router_body = _post(router.server_port, body)
+
+        self.assertEqual(router_status, 200)
+        self.assertEqual(router_body, b"".join(_SSE_EVENTS))  # byte-for-byte, despite the rewrite
+        self.assertEqual(behavior.requests, [_CHEAP])  # confirms the rewrite actually reached upstream
+
+    # Verifies: specs/model-router/requirements.md#3.2
+    # Verifies: specs/model-router/requirements.md#3.3 (property: incremental delivery)
+    @unittest.expectedFailure
+    def test_early_chunk_is_client_readable_before_later_chunk_is_sent(self) -> None:
+        """KNOWN BUG — see the module-level note above `_SSE_EVENTS`.
+
+        Written to the task's literal requirement: the client must be able
+        to read event 0 off the socket before event 1 has even been sent by
+        the stub. Today `_relay()` buffers the whole stream instead, so the
+        client's read stays blocked the entire time — this test asserts
+        that blocked state (proving the bug, not racing it), which itself
+        raises `AssertionError`, which `@unittest.expectedFailure` turns
+        into a tracked expected failure rather than a suite-breaking one.
+        """
+        upstream_server, behavior = self._build_streaming_upstream(gate=True)
+        upstream_url = f"http://127.0.0.1:{upstream_server.server_port}"
+        catalog = _build_catalog(upstream_url)
+        classifier = _StubClassifier(mode="ok")
+        router = self._build_router(catalog, classifier)
+
+        body = json.dumps({"model": _BASELINE, "stream": True}).encode("utf-8")
+        result: dict[str, object] = {}
+
+        def _do_request() -> None:
+            result["status"], result["body"] = _post(router.server_port, body, timeout=10.0)
+
+        request_thread = threading.Thread(target=_do_request, daemon=True)
+        request_thread.start()
+        try:
+            # The stub sending event 0 is always fast — sending is
+            # server-side and not gated on the client reading anything.
+            self.assertTrue(behavior.sent_events[0].wait(timeout=2.0))
+
+            # The real assertion: with event 1 still gated (not yet sent),
+            # the client's request thread should already have finished
+            # reading event 0 and returned — it does not, because
+            # `_relay()` never wrote event 0 to the client in the first
+            # place without also having read event 1 (or stream-end).
+            request_thread.join(timeout=1.5)
+            self.assertFalse(
+                request_thread.is_alive(),
+                "expected (buggy) current behavior: the client's read is "
+                "still blocked waiting for the full stream, proving "
+                "_relay() buffered event 0 instead of delivering it "
+                "incrementally",
+            )
+        finally:
+            # Release every remaining gate so the handler and the request
+            # thread both finish within tearDown's own bound, regardless of
+            # which assertion above raised.
+            for index in range(len(behavior.release_events)):
+                behavior.release(index)
+            request_thread.join(timeout=5.0)
+
+
 if __name__ == "__main__":
     unittest.main()

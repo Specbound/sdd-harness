@@ -35,7 +35,11 @@ from urllib.request import Request, urlopen
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+from classify import NullClassifier
+from config import Catalog, Ladder, RouterConfig
+from ledger import Ledger
 from sentinel import UpstreamNotConfigured, build_server, load_router_settings
+from server import build_server as build_router_worker
 
 # ---------------------------------------------------------------------------
 # Stub backend — real sockets, no urllib mocking. One class plays both the
@@ -255,6 +259,160 @@ class SentinelFallbackTests(unittest.TestCase):
         self.assertEqual(body, b"RATE-LIMITED")
         self.assertEqual(len(self.worker_recorder), 1)
         self.assertEqual(len(self.upstream_recorder), 0)  # never fell through
+
+
+# ---------------------------------------------------------------------------
+# Task 7.3, case 2: confirm the SAME fallback mechanism
+# `test_worker_killed_mid_session_falls_through_to_upstream_and_sentinel_
+# survives` above already proves (R4.5, R4.5a) still holds when the thing
+# behind the worker port is a REAL scripts/router/server.py `build_server()`
+# instance — task 6.2's own test used a generic stub as the "worker", never
+# a real router process. From the sentinel's point of view this substitution
+# is mechanical (it only ever sees an HTTP status/headers/body, same as any
+# other worker), so this is exactly one dedicated test, not a duplicate of
+# the mechanism coverage above: a real router worker, with its own real
+# backing stub upstream, behind a real sentinel with its own separate
+# fallback stub upstream.
+# ---------------------------------------------------------------------------
+class SentinelWithRealRouterWorkerTests(unittest.TestCase):
+    """Real `server.py` worker (not a generic stub) behind a real sentinel."""
+
+    def setUp(self) -> None:
+        # The real router worker's OWN backing upstream.
+        self.worker_upstream_recorder = _RequestRecorder()
+        self.worker_upstream_behavior = _StubBehavior("worker-upstream")
+        self.worker_upstream_server = _StubServer(
+            ("127.0.0.1", 0),
+            _StubHandler,
+            self.worker_upstream_recorder,
+            self.worker_upstream_behavior,
+        )
+        self._start(self.worker_upstream_server)
+        worker_upstream_url = f"http://127.0.0.1:{self.worker_upstream_server.server_port}"
+
+        # Minimal real Catalog/RouterConfig: the GET to /v1/test below has
+        # no body, so `_parse_body` returns None and server.py's
+        # `_forward_raw` short-circuit is what actually runs — classifier/
+        # policy/ladder are never reached, but `catalog.policy.upstream`
+        # still has to be a real, valid URL (`_upstream_url()` asserts it).
+        ladder = Ladder(groups=[], canonical=[], rung_of={})
+        policy = RouterConfig(
+            schema_version=1,
+            port=None,
+            upstream=worker_upstream_url,
+            classifier={},
+            thresholds={},
+            escalation_window_s=120,
+            max_tiers_above_baseline=3,
+            tier_families=[],
+            lanes={},
+            context_window_default=200_000,
+            context_window_overrides={},
+            overrides={},
+            rejected_overrides={},
+            local={},
+        )
+        catalog = Catalog(
+            pass_through=False, cause=None, ladder=ladder, policy=policy, rejected_models={}
+        )
+
+        self._tmp = tempfile.TemporaryDirectory()
+        tmp_path = Path(self._tmp.name)
+        self.addCleanup(self._tmp.cleanup)
+        ledger = Ledger(ledger_path=tmp_path / "ledger.jsonl", stats_path=tmp_path / "stats.json")
+
+        self.worker_server = build_router_worker(
+            host="127.0.0.1",
+            port=0,
+            catalog=catalog,
+            classifier=NullClassifier(),
+            ledger=ledger,
+        )
+        self.worker_thread = self._start(self.worker_server)
+
+        # The sentinel's OWN direct fallback upstream — deliberately a
+        # *different* stub/port than the worker's own backing upstream, so
+        # a response body alone proves which path actually served a
+        # request.
+        self.sentinel_upstream_recorder = _RequestRecorder()
+        self.sentinel_upstream_behavior = _StubBehavior("sentinel-upstream")
+        self.sentinel_upstream_server = _StubServer(
+            ("127.0.0.1", 0),
+            _StubHandler,
+            self.sentinel_upstream_recorder,
+            self.sentinel_upstream_behavior,
+        )
+        self._start(self.sentinel_upstream_server)
+        sentinel_upstream_url = f"http://127.0.0.1:{self.sentinel_upstream_server.server_port}"
+
+        self.sentinel = build_server(
+            host="127.0.0.1",
+            port=0,
+            upstream=sentinel_upstream_url,
+            worker_host="127.0.0.1",
+            worker_port=self.worker_server.server_port,
+            worker_timeout_s=0.150,
+        )
+        self.sentinel_thread = self._start(self.sentinel)
+        self.sentinel_port = self.sentinel.server_port
+
+    def _start(self, server: ThreadingHTTPServer) -> threading.Thread:
+        thread = threading.Thread(
+            target=server.serve_forever,
+            kwargs={"poll_interval": 0.02},
+            daemon=True,
+        )
+        thread.start()
+        self.addCleanup(self._stop, server, thread)
+        return thread
+
+    def _stop(self, server: ThreadingHTTPServer, thread: threading.Thread) -> None:
+        try:
+            server.shutdown()
+        except OSError:
+            pass
+        try:
+            server.server_close()
+        except OSError:
+            pass
+        thread.join(timeout=5)
+
+    # Verifies: specs/model-router/requirements.md#4.5
+    # Verifies: specs/model-router/requirements.md#4.5a
+    def test_real_router_worker_killed_mid_session_falls_through_to_stub_upstream(
+        self,
+    ) -> None:
+        # Request 1: the real router worker is healthy — served via the
+        # worker's own `_forward_raw` relay to its backing upstream.
+        status, body = _get(self.sentinel_port)
+        self.assertEqual(status, 200)
+        self.assertEqual(body, b"FROM-WORKER-UPSTREAM")
+        self.assertEqual(len(self.worker_upstream_recorder), 1)
+        self.assertEqual(len(self.sentinel_upstream_recorder), 0)
+
+        # Kill the real router worker process's server/thread mid-session —
+        # same `_stop()` (shutdown + server_close) as the generic-stub
+        # worker test above, simulating a crashed/OOM-killed process.
+        self._stop(self.worker_server, self.worker_thread)
+
+        # Request 2 (new, post-kill): falls through to the sentinel's own
+        # direct upstream, bounded by worker_timeout_s — the same mechanism
+        # the generic-stub test above already proves, now confirmed with a
+        # real router worker substituted in behind the sentinel.
+        started = time.monotonic()
+        status, body = _get(self.sentinel_port)
+        elapsed = time.monotonic() - started
+        self.assertEqual(status, 200)
+        self.assertEqual(body, b"FROM-SENTINEL-UPSTREAM")
+        self.assertLess(elapsed, 1.0)
+
+        # Request 3: the sentinel itself is still alive and serving — the
+        # real worker's death did not take the sentinel process down.
+        self.assertTrue(self.sentinel_thread.is_alive())
+        status, body = _get(self.sentinel_port)
+        self.assertEqual(status, 200)
+        self.assertEqual(body, b"FROM-SENTINEL-UPSTREAM")
+        self.assertEqual(len(self.sentinel_upstream_recorder), 2)
 
 
 # ---------------------------------------------------------------------------
