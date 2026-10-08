@@ -220,6 +220,8 @@ class _UpstreamBehavior:
 
     def response_for(self, model: str | None) -> tuple[int, bytes]:
         with self._lock:
+            if model is None:
+                return self.default_status, self.default_body
             status = self.status_by_model.get(model, self.default_status)
             body = self.body_by_model.get(model, self.default_body)
         return status, body
