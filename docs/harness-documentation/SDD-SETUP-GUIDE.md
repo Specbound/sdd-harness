@@ -6,6 +6,18 @@
 
 ---
 
+## Recent Changes (2026-10-08 — Harness Build 39)
+
+Theme: the model router's verification pass opens (task 12.1) — the repo's own guards run across every router file, and the single gap they surfaced is closed.
+
+### Scripts
+- `scripts/router/test_server.py` — `_UpstreamBehavior.response_for()` now returns `(default_status, default_body)` directly when `model is None`, instead of passing a `str | None` key into `status_by_model` / `body_by_model`, which are typed `dict[str, …]`. Runtime behaviour was already correct (a `None` key never matched, so both lookups fell through to the defaults); this closes the static-type gap Serena/Pyright flagged during the sweep. Re-verified with `bash scripts/router/server.test.sh`.
+- Guard sweep over `scripts/router/` (task 12.1's checklist: `scripts/utils/check-no-regex.py`, `scripts/utils/check-no-hardcoded-paths.sh`, `ruff check`, Serena diagnostics on each `.py`) — clean after the fix above. 12.1 is the only sub-task of §12 (Verification pass) done; **12.2** (added latency, p50/p95 through the full sentinel→worker→classifier path), **12.3** (model-access gating degrades to exactly one baseline retry), and **12.4** (zero-dollar operation with no `ANTHROPIC_API_KEY`) remain open.
+
+> Still carried over from Build 38, not new: the Library-tier bare-name fixes in the working tree (`hooks/claude/pr-evidence-hook.sh`, `hooks/claude/raindrop-best-practices.sh`, `hooks/claude/session-start-hook.sh`, `hooks/claude/skill-permissions-gate.sh`, `hooks/git/pre-commit`, `scripts/orchestration/daily-orchestrator.sh`, `scripts/pr/detect_base_and_create.sh`, `scripts/pr/log_review.sh`, `scripts/setup/raindrop-setup.sh`, both settings templates' `PreToolUse Skill` blocks, and `templates/settings.notes.md.template`) are documented in Builds 28 and 30 and in Step 6, Step 8, and the Automated Hooks table below.
+
+---
+
 ## Recent Changes (2026-10-08 — Harness Build 38)
 
 Theme: the router's savings stop being invisible to whoever pays for them. Builds 29–37 landed the routing path, its config, and its health rows, but nothing read `~/.sdd-router/stats.json` into the dashboard — so a router that was wired and saving nothing looked exactly like one that was working (task 10.1).
@@ -842,7 +854,7 @@ The post-commit hook applies a self-commit guard first, then runs three stages:
 **`.git/hooks/pre-commit` (harness repo only).** `hooks/git/pre-commit` runs **three** guards, all about the harness lying to itself, and blocks the commit if any fails. It is installed by `install.sh` / `update.sh` (`install_harness_pre_commit()` in `scripts/lib/harness-pointer.sh`) into the harness repo only — never propagated to downstream projects, since a user's own project may legitimately reference absolute paths. Before this, the hook existed in the source tree but nothing ever copied it: both installers handled only `post-commit`, and the hook's own header documented a manual `cp` from a `git-hooks/` directory that does not exist — so the guard had never run automatically while two files advertised it as wired up.
 
 1. **`scripts/utils/check-no-hardcoded-paths.sh`** — a machine/user-specific absolute path must never be committed into harness source. Every path is self-located (`scripts/lib/resolve-harness-dir.sh`) or computed from `$HARNESS_DIR`.
-2. **`scripts/utils/check-no-regex.py`** (added 2026-09-03) — `ruff.toml` bans `re` via TID251, but ruff only reads `.py` files, so the ban never reached the Python living in shell heredocs. This guard covers that half, running against a shrinking debt ledger (`scripts/utils/no-regex-debt.txt`) so the 15 pre-existing violations do not block commits while new ones do. It is skipped silently if `python3` is unavailable.
+2. **`scripts/utils/check-no-regex.py`** (added 2026-09-03) — `ruff.toml` bans `re` via TID251, but ruff only reads `.py` files, so the ban never reached the Python living in shell heredocs. This guard covers that half, running against a shrinking debt ledger (`scripts/utils/no-regex-debt.txt`) so the pre-existing violations (13 files as of 2026-10-08) do not block commits while new ones do. It is skipped silently if `python3` is unavailable.
 3. **`scripts/utils/check-skill-tiers.py`** (added 2026-10-04) — a skill listed in `scripts/setup/skill-library.txt` installs unlisted, so a command, agent, hook, or script that invokes it by bare name (`Skill("<name>")` or text naming it) dead-ends with "skill not installed" instead of resolving. The guard fails the commit when a Library-tier skill is referenced by bare name instead of its path (`~/.claude/skill-library/<name>/SKILL.md`); human-facing mentions (docstrings, comments) are exempted via `scripts/utils/skill-tier-allow.txt`. Added after all three spec approval gates lost `proof-collaborative-review` this way. See `docs/skills/SKILL-HIERARCHY.md`.
 
 All run and **every verdict prints** rather than short-circuiting on the first failure — fixing one and rediscovering the other on the next attempt wastes a cycle. Each guard is also skipped if its script is absent, so a downstream repo that somehow inherits the hook does nothing rather than erroring.

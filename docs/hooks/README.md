@@ -483,6 +483,8 @@ Plus a discovery-before-eval pointer: read `~/.claude/skill-library/active-obser
 
 **Output:** Silent (exit 0) on Listed, missing, or plugin/path-qualified skill names. On a Library-tier name: `[skill-library] '<name>' is installed as a Library-tier skill — it is not in the Skill tool's index...` plus the `SKILL.md` path to read, via stderr (exit 2), which Claude Code feeds back into the conversation.
 
+**Tests:** `hooks/claude/skill-library-resolver.test.sh` — 9 cases against a throwaway `HOME` + project tree (Listed allowed, Library-tier blocked, block message names the `skill-library/<name>/SKILL.md` path, project-level `.claude/skills/` wins over the library, unknown name passes through, plugin-qualified name passes through, non-`Skill` tool ignored, malformed stdin ignored, path traversal ignored).
+
 **Location:** ships in `hooks/claude/`, copied to each project's `.claude/hooks/`; wired via `PreToolUse` matcher `Skill` in `templates/settings.json.template` and `templates/settings.harness.json.template`. See `docs/skills/SKILL-HIERARCHY.md`.
 
 ---
