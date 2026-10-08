@@ -72,10 +72,13 @@ class _StubBehavior:
         self.sleep_s = 0.0
         self.status = 200
         self.response: dict[str, object] = {
-            "lane": "simple",
-            "score": 2,
-            "gate_p": 0.1,
-            "confidence": 0.9,
+            "model": "gliformer-large-v1",
+            "answers": {
+                "lane": {"type": "choice", "choice": "simple", "confidence": 0.9},
+                "difficulty": {"type": "score", "score": 2.0, "confidence": 0.5},
+                "privacy": {"type": "noul", "noul": 0.1},
+            },
+            "usage": {"input_tokens": 10, "output_tokens": 5},
         }
 
 
@@ -200,15 +203,46 @@ class ClassifySinglePostTests(_StubServerTestCase):
         self.assertEqual(path, "/v1/systemone")
 
         payload = json.loads(body)
-        self.assertEqual(payload["text"], "book me a flight to Austin")
-        self.assertEqual(payload["lanes"], ["chitchat", "simple", "code"])
-        self.assertEqual(payload["scale_max"], 10)
+        self.assertEqual(payload["state"], "book me a flight to Austin")
+        self.assertEqual(payload["model"], "jev-latest")
+        self.assertEqual(
+            set(payload["questions"]["lane"]["criteria"]),
+            {"chitchat", "simple", "code"},
+        )
+        self.assertEqual(len(payload["questions"]["difficulty"]["criteria"]), 11)
+        self.assertIn("privacy", payload["questions"])
 
         self.assertEqual(decision.lane, "simple")
         self.assertEqual(decision.score, 2)
         self.assertAlmostEqual(decision.gate_p, 0.1)
         self.assertAlmostEqual(decision.confidence, 0.9)
         self.assertGreaterEqual(decision.latency_ms, 0)
+
+
+# ---------------------------------------------------------------------------
+# 1b. A response missing a nested answer key is a new failure mode this real
+#     nested shape introduces (a missing top-level key vs. a missing nested
+#     one couldn't be distinguished under the old flat shape).
+# ---------------------------------------------------------------------------
+
+
+class ClassifyMissingAnswerKeyTests(_StubServerTestCase):
+    # Verifies: specs/model-router/requirements.md#2.4
+    def test_missing_nested_answer_key_raises_bad_response(self) -> None:
+        self.behavior.response = {
+            "model": "gliformer-large-v1",
+            "answers": {
+                "lane": {"type": "choice", "choice": "simple", "confidence": 0.9},
+                # "difficulty" answer missing entirely.
+                "privacy": {"type": "noul", "noul": 0.1},
+            },
+            "usage": {"input_tokens": 10, "output_tokens": 5},
+        }
+        classifier = self.make_classifier()
+
+        with self.assertRaises(ClassifierUnavailable) as ctx:
+            classifier.classify("tell me a joke")
+        self.assertEqual(ctx.exception.reason, "bad_response")
 
 
 # ---------------------------------------------------------------------------

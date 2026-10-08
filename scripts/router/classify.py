@@ -17,17 +17,15 @@ two independent readers of one shape is not a reason to couple the two
 modules (see `policy.py`'s own `DecisionLike` docstring, which makes the same
 choice in the other direction).
 
-NEEDS-USER — wire schema not discoverable in-repo: `jeff`'s exact
-`/v1/systemone` request/response JSON shape is not vendored, captured, or
-documented anywhere in this repository (confirmed by search of `specs/`,
-`docs/`, and `design.md`; only the endpoint path and question-type names are
-recorded). The request/response shape implemented below —
-`{"text", "lanes", "scale_max"}` in, `{"lane", "score", "gate_p",
-"confidence"}` out — is this implementation's own reasonable, documented
-placeholder, not a verified contract. It must be checked against a real
-`jeff` instance (task 8 setup, or an integration test) before this is
-trusted in production. Flagged for the choices ledger rather than guessed at
-silently.
+The real `/v1/systemone` wire contract was confirmed 2026-10-08 by reading
+`jeff`'s actual FastAPI routes/pydantic schemas (`src/jeff/core/schemas.py`,
+`src/jeff/server/app.py`, `src/jeff/core/answers.py` at commit `34b32f9`,
+the exact commit `design.md` cites as verified) and a live round-trip
+against `jeff`'s own test-suite fake backend over a real loopback socket —
+not guessed, not read from docs alone. The request nests a `questions` dict
+keyed by question id (`"lane"` choice, `"difficulty"` score, `"privacy"`
+null), and the response nests a matching `answers` dict; see `_call()` and
+`_parse()` below for the exact shape.
 
 Circuit breaker state (a failure counter and an open-until timestamp) lives
 on the `JeffClassifier` instance only — nothing persisted, nothing shared
@@ -187,13 +185,43 @@ class JeffClassifier:
             self._consecutive_failures = 0
 
     def _call(self, text: str, started: float) -> Decision:
-        # NEEDS-USER (see module docstring): placeholder wire shape, not a
-        # verified `jeff` contract. `lanes`/`scale_max` tell the classifier
-        # how to interpret the choice/score question types; the privacy-gate
-        # ("null") question type is assumed always-answered, not toggled
-        # per request.
+        # Real jeff wire shape (see module docstring): one POST, three
+        # questions keyed by id. `lane`'s `criteria` has no per-option
+        # descriptions anywhere in the spec, so `None` per option is
+        # correct, not a cop-out. If `self._lanes` is empty (misconfigured),
+        # `criteria` becomes `{}`, which jeff's own validator 422-rejects
+        # server-side — intentionally left to fail open via the existing
+        # HTTPError handling below rather than special-cased here.
         payload = json.dumps(
-            {"text": text, "lanes": list(self._lanes), "scale_max": self._scale_max}
+            {
+                "state": text,
+                "model": "jev-latest",
+                "questions": {
+                    "lane": {
+                        "type": "choice",
+                        "instructions": (
+                            "Which lane best describes the kind of work this "
+                            "request requires?"
+                        ),
+                        "criteria": {lane: None for lane in self._lanes},
+                    },
+                    "difficulty": {
+                        "type": "score",
+                        "instructions": (
+                            f"On a scale of 0 to {self._scale_max}, how difficult "
+                            "or complex is this request?"
+                        ),
+                        "criteria": [str(i) for i in range(self._scale_max + 1)],
+                    },
+                    "privacy": {
+                        "type": "noul",
+                        "instructions": (
+                            "Does this request involve sensitive, private, or "
+                            "confidential information that should stay local?"
+                        ),
+                    },
+                },
+            }
         ).encode("utf-8")
         request = urllib.request.Request(
             f"{self._base_url}/v1/systemone",
@@ -227,10 +255,16 @@ class JeffClassifier:
     def _parse(self, raw: bytes, latency_ms: int) -> Decision:
         try:
             data = json.loads(raw)
-            lane = str(data["lane"])
-            score = int(data["score"])
-            gate_p = float(data["gate_p"])
-            confidence = float(data["confidence"])
+            answers = data["answers"]
+            lane = str(answers["lane"]["choice"])
+            # `score` is an expectation over level indices (a float), not a
+            # raw integer; Decision.score is int, so round it.
+            score = round(float(answers["difficulty"]["score"]))
+            gate_p = float(answers["privacy"]["noul"])
+            # Confidence is specifically the lane/choice answer's confidence
+            # (Decision's own docstring: "winning choice probability") — not
+            # averaged or mixed with the difficulty/privacy answers.
+            confidence = float(answers["lane"]["confidence"])
         except (json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
             # Deliberate broad-ish catch: any malformed-response shape becomes
             # one named failure (R2.4) rather than letting a parsing exception
