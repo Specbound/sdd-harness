@@ -163,6 +163,12 @@ Use `(source: repo-name date [tag])` not `(source: date [tag])`. Bare citations 
 ### ❌ Leaving modifications to critical files uncommitted across multiple passes
 Iterative changes to skills, rules, or configs left in modified-uncommitted state across 3+ maintenance passes suggests incomplete work. Before concluding a pass, either commit finalized changes or explicitly record work-in-progress state with resumption context. (source: 2026-10-06 [judge] drain)
 
+### ❌ Crediting old findings as new without verifying investigation history
+Before claiming a finding is fresh, verify it hasn't already been investigated in prior observations. Check observation records for prior-day evidence that addresses it before double-counting in verdicts. (source: daa-llm-evaluation 2026-10-08 [judge])
+
+### ❌ Replacement claim without verification
+Replacing wrong claim A with correction B requires verifying B is correct, not just that A was wrong. (source: 2026-10-08 [insight])
+
 ## When to Use
 This skill is applicable to execute the workflow or actions described in the overview.
 _Last synced: 2026-10-06

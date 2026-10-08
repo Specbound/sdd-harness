@@ -175,6 +175,9 @@ instead of fixing the source.
 Date records by primary data fields (`timestamp`), not filesystem mtime. Metadata lags;
 data is truth.
 
+### ❌ N identical call-site patches instead of root cause
+When identical fixes repeat at N≥2 call sites, root cause lies at common source. Return to Phase 1. (source: 2026-10-08 [insight, harness-fix])
+
 ## Quick Reference
 
 | Phase | Key Activities | Success Criteria |
