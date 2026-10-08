@@ -4122,6 +4122,9 @@ _LEAN_CTX_DATA_DIR = Path(os.environ.get("XDG_DATA_HOME") or (Path.home() / ".lo
 LEAN_CTX_STATS   = _LEAN_CTX_DATA_DIR / "stats.json"
 LEAN_CTX_LEDGER  = _LEAN_CTX_DATA_DIR / "savings" / "ledger.jsonl"
 CAVEMAN_CONFIG   = _platform_config_dir("caveman") / "config.json"
+# Matches scripts/router/ledger.py's DEFAULT_STATS_PATH exactly — this module
+# reads the router's rollup, it does not own the path.
+ROUTER_STATS     = Path.home() / ".sdd-router" / "stats.json"
 # Sonnet 4.6 input price per million tokens (used to estimate RTK $ savings)
 _SONNET_INPUT_PER_M = 3.0
 # Sonnet 4.6 output price per million tokens (used to estimate caveman $ savings) — approximate.
@@ -4276,6 +4279,42 @@ def _read_rtk_stats() -> dict:
         return {"baseline": 0, "saved": 0, "after": 0, "commands": 0, "effective": 0}
 
 
+def _read_router_stats() -> dict:
+    """Read model-router savings rollup from ~/.sdd-router/stats.json
+    (scripts/router/ledger.py's `Ledger._write_stats_atomic`). Returns `{}`
+    when the file is absent or unreadable — the router may simply not be
+    installed, which is a dimmed layer (R8.5), never a dashboard error.
+    """
+    if not ROUTER_STATS.exists():
+        return {}
+    try:
+        return json.loads(ROUTER_STATS.read_text())
+    except Exception:
+        return {}
+
+
+def _price_model_tokens(tokens_by_model: dict, field: str, pricing: dict):
+    """Price one `{model_id: tokens}` bucket at `field` ("input" or "output")
+    using a `get_pricing_at()` snapshot. No second price table (R7.2) — this
+    is the only arithmetic path between router tokens and dollars.
+
+    Returns `(dollars, unpriced_tokens)`: `unpriced_tokens` is the token
+    count for any model missing from `pricing`, so a caller can surface what
+    was excluded rather than silently pricing it at zero.
+    """
+    dollars = 0.0
+    unpriced = 0
+    for model, tokens in tokens_by_model.items():
+        if not tokens:
+            continue
+        price = pricing.get(f"anthropic/{model}")
+        if not price or price.get(field) is None:
+            unpriced += tokens
+            continue
+        dollars += tokens * price[field] / 1_000_000
+    return dollars, unpriced
+
+
 def _read_rtk_net_effect(repo_path: "str | None" = None) -> dict:
     """Read .claude/memory/rtk-net-effect.json — written by
     rtk-net-effect-runner.sh. Global rerun/reread signal, not RTK's own
@@ -4295,9 +4334,14 @@ def _read_rtk_net_effect(repo_path: "str | None" = None) -> dict:
         return empty
 
 
-def render_headroom(repo_path: "str | None" = None) -> str:
-    """Compression pipeline tab — RTK + headroom + lean-ctx (per-repo if repo_path given)."""
+def render_headroom(repo_path: "str | None" = None, pricing_snapshots=None) -> str:
+    """Compression pipeline tab — RTK + headroom + lean-ctx + router (per-repo if repo_path given)."""
     repo_hash = _repo_to_lean_ctx_hash(repo_path) if repo_path else None
+    # Router pricing needs the dashboard's one pricing source (R7.2); callers
+    # that already loaded it (build_html) pass it in, anything else (tests,
+    # ad-hoc calls) gets it lazily rather than requiring every caller to know.
+    if pricing_snapshots is None:
+        pricing_snapshots = load_or_refresh_pricing_history()
 
     # ── RTK data ──────────────────────────────────────────────────────────────
     rtk = _read_rtk_stats()
@@ -4474,6 +4518,115 @@ def render_headroom(repo_path: "str | None" = None) -> str:
         total_saved    += cav_data["saved_tokens"]
         total_cost_est += cav_cost_est
 
+    # ── Router data (model-router savings; stats.json absent ⇒ dimmed) ─────────
+    router_stats    = _read_router_stats()
+    router_lifetime = router_stats.get("lifetime", {}) if router_stats else {}
+    router_by_lane  = router_stats.get("by_lane", {}) if router_stats else {}
+    router_pricing  = (
+        get_pricing_at(pricing_snapshots, NOW.strftime("%Y-%m-%d")) if pricing_snapshots else {}
+    )
+
+    router_actual_in,  router_actual_in_unpriced  = _price_model_tokens(
+        router_lifetime.get("input_tokens_by_model", {}), "input", router_pricing)
+    router_actual_out, router_actual_out_unpriced = _price_model_tokens(
+        router_lifetime.get("output_tokens_by_model", {}), "output", router_pricing)
+    router_base_in,  router_base_in_unpriced  = _price_model_tokens(
+        router_lifetime.get("baseline_input_tokens_by_model", {}), "input", router_pricing)
+    router_base_out, router_base_out_unpriced = _price_model_tokens(
+        router_lifetime.get("baseline_output_tokens_by_model", {}), "output", router_pricing)
+
+    router_actual_cost   = router_actual_in + router_actual_out
+    router_baseline_cost = router_base_in + router_base_out
+    # R7.5b: reported net, not gross. Each call's own (baseline − actual) is
+    # already negative for an escalation, so this sum nets automatically —
+    # no separate subtraction step exists or is needed on top of it.
+    router_net_saving      = router_baseline_cost - router_actual_cost
+    router_unpriced_tokens = (
+        router_actual_in_unpriced + router_actual_out_unpriced
+        + router_base_in_unpriced + router_base_out_unpriced
+    )
+
+    router_actual_tokens = (
+        sum(router_lifetime.get("input_tokens_by_model", {}).values())
+        + sum(router_lifetime.get("output_tokens_by_model", {}).values())
+    )
+    router_baseline_tokens = (
+        sum(router_lifetime.get("baseline_input_tokens_by_model", {}).values())
+        + sum(router_lifetime.get("baseline_output_tokens_by_model", {}).values())
+    )
+    router_saved_tokens = router_baseline_tokens - router_actual_tokens
+    router_pct = (router_saved_tokens / router_baseline_tokens * 100) if router_baseline_tokens else 0.0
+
+    router_routed   = router_lifetime.get("routed", 0)
+    router_fallback = router_lifetime.get("failed_open", 0)
+    # R8.7: calls the router itself marked cost_state="unknown" (no usage
+    # data) are recorded with zero tokens at the source (server.py), so
+    # they're already excluded from the dollar figures above — this is only
+    # the visible count, never folded back into the saving.
+    router_unknown_cost = router_lifetime.get("unknown_cost_calls", 0)
+
+    # Suspected-bad-route signal (grill Q2-A): the ledger carries this call's
+    # token cost (not a raw per-call counter), bucketed by the model it
+    # escalated to — so the closest honest "count" available here is how
+    # many distinct models show a flagged escalation, not how many calls.
+    # That cost is already included in router_actual_cost above; this count
+    # is informational only and is never subtracted again.
+    router_suspect_models = (
+        {m for m, t in router_lifetime.get("delta_input_tokens_by_model", {}).items() if t}
+        | {m for m, t in router_lifetime.get("delta_output_tokens_by_model", {}).items() if t}
+    )
+    router_suspect_count = len(router_suspect_models)
+
+    router_note = (
+        f"{router_routed:,} routed · {router_fallback:,} fallback · "
+        f"{router_suspect_count} suspected bad-route model(s) (not subtracted) · "
+        f"{router_unknown_cost:,} unknown-cost excluded"
+    )
+
+    if router_stats:
+        router_layer = _layer(
+            "🧭", "Router — Model Selection",
+            "baseline tokens (counterfactual)", f"{router_baseline_tokens:,}",
+            router_saved_tokens, router_pct,
+            f"${router_net_saving:.2f}",
+            "actual tokens", f"{router_actual_tokens:,}",
+            note=router_note,
+        )
+
+        lane_rows = []
+        for lane, bucket in sorted(router_by_lane.items()):
+            model_tok: dict = {}
+            for m, t in bucket.get("input_tokens_by_model", {}).items():
+                model_tok[m] = model_tok.get(m, 0) + t
+            for m, t in bucket.get("output_tokens_by_model", {}).items():
+                model_tok[m] = model_tok.get(m, 0) + t
+            models_str = ", ".join(
+                f"{h(m)} {t:,} tok" for m, t in sorted(model_tok.items(), key=lambda kv: -kv[1])
+            ) or "–"
+            lane_rows.append(
+                f'<div style="font-size:11px;color:var(--subtext1);margin-top:2px">'
+                f'<b>{h(lane)}</b>: {bucket.get("routed", 0):,} routed — {models_str}</div>'
+            )
+        router_unpriced_note = (
+            f'<div style="font-size:10px;color:var(--overlay0);margin-top:4px">'
+            f'{router_unpriced_tokens:,} tokens excluded — model missing from pricing catalogue</div>'
+            if router_unpriced_tokens else ""
+        )
+        router_detail_html = (
+            '<div style="padding:4px 16px 2px">' + "".join(lane_rows) + router_unpriced_note + '</div>'
+            if lane_rows or router_unpriced_note else ""
+        )
+        total_saved    += router_saved_tokens
+        total_cost_est += router_net_saving
+    else:
+        router_layer = _layer(
+            "🧭", "Router — Model Selection",
+            "–", "–", 0, 0.0, "–", "–", "–",
+            note="not installed / no stats.json yet",
+            dimmed=True,
+        )
+        router_detail_html = ""
+
     pipeline_html = f"""
 <div style="margin-bottom:20px">
   <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.8px;
@@ -4486,6 +4639,9 @@ def render_headroom(repo_path: "str | None" = None) -> str:
     {leancx_layer}
     {arrow}
     {caveman_layer}
+    {arrow}
+    {router_layer}
+    {router_detail_html}
   </div>
 </div>"""
 
@@ -4802,7 +4958,7 @@ def build_html(repos_data, harness_data, usage_sessions, pricing_snapshots, init
 
     sections_map = {}
     for rd in repos_data:
-        headroom_html = render_headroom(repo_path=rd["path"])
+        headroom_html = render_headroom(repo_path=rd["path"], pricing_snapshots=pricing_snapshots)
         # Scheduled tasks must be recomputed per repo — per-repo-scoped routines
         # (macro-eval, security-report, ...) each have their own state files.
         repo_scheduled_tasks = parse_scheduled_tasks(rd["path"])
