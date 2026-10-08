@@ -186,6 +186,7 @@ check_contains "run1: secret has JEFF_HOST=127.0.0.1" "$(cat "$H/.sdd-router/jef
 check_contains "run1: secret has JEFF_BACKEND=onnx"   "$(cat "$H/.sdd-router/jeff/.jeff-service.env")" "JEFF_BACKEND=onnx"
 check_contains "run1: secret has JEFF_QUANT=int8"     "$(cat "$H/.sdd-router/jeff/.jeff-service.env")" "JEFF_QUANT=int8"
 check "run1: plist written"            "1" "$([ -f "$H/Library/LaunchAgents/com.sdd.jeff-classifier.plist" ] && echo 1 || echo 0)"
+check "run1: plist mode 600 (embeds JEFF_API_KEYS raw, no EnvironmentFile= equivalent on launchd)" "600" "$(stat -f '%Lp' "$H/Library/LaunchAgents/com.sdd.jeff-classifier.plist" 2>/dev/null || stat -c '%a' "$H/Library/LaunchAgents/com.sdd.jeff-classifier.plist")"
 PLIST1="$(cat "$H/Library/LaunchAgents/com.sdd.jeff-classifier.plist")"
 check_contains "run1: plist has WorkingDirectory" "$PLIST1" "<string>$H/.sdd-router/jeff</string>"
 check_contains "run1: plist ProgramArguments use absolute uv" "$PLIST1" "<string>$BIN/uv</string>"

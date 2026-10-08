@@ -203,6 +203,10 @@ ${threads_xml}
 </dict>
 </plist>
 PLIST
+  # JEFF_API_KEYS is embedded directly in this file (launchd has no
+  # EnvironmentFile= equivalent) — the plist's own permissions are the only
+  # thing protecting the secret, unlike install_service_linux()'s SECRET_ENV_FILE.
+  chmod 600 "$plist_path"
 
   if launchctl load -w "$plist_path"; then
     note "LaunchAgent '$LAUNCHD_LABEL' registered and started."
