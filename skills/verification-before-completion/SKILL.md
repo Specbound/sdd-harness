@@ -151,5 +151,27 @@ Deleting module/function/component requires full-repo grep for remaining imports
 ### ❌ Citing rule sections without verifying they exist
 Claiming a rule file contains a specific section/phrase to justify skipping work requires reading that file to confirm. Fabricated citations (hallucinated rule text) bypass task gates when left unverified. (source: 2026-08-02 session-judge fabricated-citation drain)
 
+### ❌ Stamping completion markers before parsing output for errors
+Do not record completion markers until parsing output for error signals. Early stamping hides failures. (source: 2026-09-07 [kaizen])
+
+### ❌ Claiming artifacts implemented without verifying persistent storage
+Verify artifacts persist on disk before claiming 'implemented' (not gitignored). Memory entries aren't evidence. (source: 2026-09-24 [keep-rate])
+
+### ❌ Unqualified citations in skill additions
+Use `(source: repo-name date [tag])` not `(source: date [tag])`. Bare citations fail cross-repo reads. (source: sdd-harness 2026-09-28 [insight, enforceable])
+
+### ❌ Leaving modifications to critical files uncommitted across multiple passes
+Iterative changes to skills, rules, or configs left in modified-uncommitted state across 3+ maintenance passes suggests incomplete work. Before concluding a pass, either commit finalized changes or explicitly record work-in-progress state with resumption context. (source: 2026-10-06 [judge] drain)
+
+### ❌ Crediting old findings as new without verifying investigation history
+Before claiming a finding is fresh, verify it hasn't already been investigated in prior observations. Check observation records for prior-day evidence that addresses it before double-counting in verdicts. (source: daa-llm-evaluation 2026-10-08 [judge])
+
+### ❌ Replacement claim without verification
+Replacing wrong claim A with correction B requires verifying B is correct, not just that A was wrong. (source: 2026-10-08 [insight])
+
+### ❌ Prompt instructions alone don't prevent judge hallucinations
+Prompt-level warnings to LLM judges don't prevent fabricated citations; documented 10 times (3 by session-judge). Require structural code verification. (source: 2026-10-08 [routine-error])
+
 ## When to Use
 This skill is applicable to execute the workflow or actions described in the overview.
+_Last synced: 2026-10-06

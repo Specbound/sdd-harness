@@ -1,6 +1,6 @@
 ---
 description: Execute spec tasks using TDD methodology
-allowed-tools: Read, Task
+allowed-tools: Read, Task, Skill, Write, Edit, Grep, Glob, Bash
 argument-hint: <feature-name> [task-numbers]
 ---
 
@@ -41,23 +41,37 @@ Before delegating to the TDD agent, run this checklist against `specs/$1/tasks.m
 - [ ] API contracts or interface definitions exist in design.md before any implementation task?
 - [ ] At least one integration/contract test task appears before any unit-only implementation task?
 
+**Decision-Budget Gate**
+- [ ] Does every task leave the implementer *inheriting* decisions rather than making them?
+- [ ] Is every deliberately-open freedom named in the task as delegated ("implementer's choice: X")?
+
+The three gates above check for over-engineering and integration ordering — all
+failures of *too much*. This one checks the opposite: under-specification. An
+unnamed freedom is a spec gap, and it does not fail loudly. It produces working,
+tested code that quietly embeds an architecture the user never chose, and it
+surfaces later as a fat entry in the choices ledger. Naming the freedom is what
+turns it from a silent decision into a delegated one.
+
 If all gates pass: proceed to subagent invocation.
 If any gate fails: show the failing item(s), ask the user to confirm or fix before continuing. This is a soft gate — user can override with "proceed anyway".
 
-## Invoke Subagent
+## Task Loop (one subagent per task — isolated context)
 
-Delegate TDD implementation to spec-tdd-impl-agent:
+Resolve the target list (from `$2`, or all unchecked tasks). Then run the four
+steps below **once per task**, in order, before starting the next task's Step 1.
+Never batch multiple tasks into a single `spec-tdd-impl-agent` call — each task
+gets its own fresh subagent invocation so one task's context never bloats into
+the next.
 
-Use the Task tool to invoke the Subagent with file path patterns:
-
+### Step 1 — Implement
 ```
 Task(
   subagent_type="spec-tdd-impl-agent",
-  description="Execute TDD implementation",
+  description="Execute TDD implementation for task {task_number}",
   prompt="""
 Feature: $1
 Spec directory: specs/$1/
-Target tasks: {parsed task numbers or "all pending"}
+Target tasks: {task_number}
 
 File patterns to read:
 - specs/$1/*.{json,md}
@@ -68,9 +82,50 @@ TDD Mode: strict (test-first)
 )
 ```
 
+### Step 2 — Review (mandatory, every task)
+Immediately after Step 1 returns, invoke `spec-refactor-agent` against only the
+files that task touched. Do not skip this even for small tasks.
+```
+Task(
+  subagent_type="spec-refactor-agent",
+  description="Review task {task_number} implementation",
+  prompt="""
+Feature: $1
+Task: {task_number}
+Files touched: {file list from Step 1's summary}
+
+Review for reuse, simplification, efficiency, security, error handling, and
+boundary conditions. Fix confirmed issues and re-run tests.
+"""
+)
+```
+
+### Step 3 — Choices Ledger Audit
+Run `/kiro:audit-choices $1` (or invoke `Skill("auditing-spec-choices")`
+directly), scoped to this task's pass.
+
+This runs **per task**, not once at the end. Waiting until the feature closes
+means auditing a session trace that has already been compacted away and subagent
+reports that no longer exist — the evidence is gone precisely when you need it.
+
+It changes no code and never blocks: `needs-user` entries carry reversible
+provisional calls so an unattended run completes with an open ledger. Skip it
+only when the pass produced no code.
+
+Feed the result back into this command's gates: entries clustering on one slice
+means reslice it, and a pass heavy with `needs-user` means the Decision-Budget
+Gate above should have failed.
+
+### Step 4 — Checkpoint
+Show this task's implementation summary, review findings, and ledger counts to
+the user before Step 1 of the next task starts.
+
 ## Display Result
 
-Show Subagent summary to user, then provide next step guidance:
+After the last task in the target list completes its Step 4, show the
+aggregated choices-ledger counts across all tasks run this pass
+(`sound` / `unsound` / `needs-user`) with the `needs-user` entries in full, then
+provide next step guidance:
 
 ### Task Execution
 
@@ -80,6 +135,9 @@ Show Subagent summary to user, then provide next step guidance:
 
 **Execute all pending**:
 - `/kiro:spec-impl $1` - All unchecked tasks
+
+**Close out the feature**:
+- `/kiro:audit-choices $1 --close` - Resolve open `needs-user` calls and consolidate the ledger before calling the spec done
 
 **Before Starting Implementation**:
 - **IMPORTANT**: Clear conversation history and free up context before running `/kiro:spec-impl`

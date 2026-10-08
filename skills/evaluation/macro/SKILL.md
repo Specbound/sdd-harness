@@ -138,6 +138,40 @@ Which should we pursue with the Harness-Improvement Loop? (or "none — run swee
 
 Wait for human selection before proceeding to the Harness-Improvement Loop (see `loop-patterns` Loop 11). Do not auto-select the highest-impact cluster; impact alone does not capture effort, feasibility, or current product priority.
 
+## Consistency Gap (Reliability vs. Capability)
+
+Phase 4's impact leaderboard scores *distinct* behavior patterns — it never asks whether
+the *same* task, run again, would pass again. A population can show a healthy average
+quality score while individual tasks are coin-flips underneath it: IBM Research's
+ALTK-Evolve consistency work measured a GPT-4.1 ReAct agent at 77.4% Mean@5 but only
+53.0% Pass^5 on AppWorld (every one of 5 repeated runs passing) — a 24.4pp gap invisible
+to any metric that averages instead of requiring unanimity.
+
+Run this as an added slice inside Phase 4, whenever the population contains ≥3 traces of
+the *same or near-identical* task (same skill/command invocation signature, not just same
+cluster):
+
+```
+mean_at_k   = pass_count / total_runs                     # average success
+pass_hat_k  = 1 if ALL runs of this task passed else 0     # unanimity
+consistency_gap = mean_at_k - pass_hat_k   (aggregated across all repeated tasks)
+```
+
+- **Gap ≈ 0** — the task is either reliably passing or reliably failing; Phase 3/4's normal
+  clustering already has this covered.
+- **Gap large** — capability and reliability have decoupled: the agent *can* do this but
+  doesn't consistently. This is a distinct failure category from "the agent is wrong" —
+  don't fold it into an ordinary behavior_pattern bucket, name it separately
+  (e.g. `flip_prone: <task signature>`) so Phase 6's report doesn't bury it under
+  average-quality patterns that look fine on paper.
+- Flag the **step**, not just the task: use the same backward suspect-trace method from
+  Phase 5 to name which decision point varies across the repeated runs' state digests —
+  that step is the one worth turning into a standing guideline (see Harness Integration
+  below), not the whole task.
+
+This does not require logits, live re-execution, or ground truth — only ≥3 existing traces
+of the same task, which the population already has.
+
 ## Do's and Don'ts
 
 **Do:** Separate per-run evals (raw signal) from macro (pattern). Preserve evidence (handoffs, environment signals, review markers) in trace documents. Compare context with slice analysis. Anchor diagnosis on explicit focus events. Keep every score decomposable.
@@ -146,7 +180,7 @@ Wait for human selection before proceeding to the Harness-Improvement Loop (see 
 
 ## Harness Integration
 
-This methodology runs as the ~twice-weekly `/kiro:macro-eval-sweep` routine (driven by the daily orchestrator), which runs Phases 1–5 over Raindrop Workshop traces and writes a ranked report + posts findings back as annotations.
+This methodology runs as the ~twice-weekly `/kiro:macro-eval-sweep` routine (driven by the daily orchestrator), which runs Phases 1–5 over Raindrop Workshop traces and writes a ranked report + posts findings back as annotations. The sweep also computes the Consistency Gap (above) for any repeated task signature in the window; a flip-prone step it finds is hand-off material for `skill-augment-agent` to write as a guideline into the relevant `SKILL.md` — the same injection mechanism it already uses for ordinary failure lessons, just triggered by variance instead of failure.
 
 ## Reference
 

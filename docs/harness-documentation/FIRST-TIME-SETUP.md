@@ -130,7 +130,7 @@ curl -fsSL https://raindrop.sh/install | bash
 
 The harness wires this automatically via `raindrop-setup.sh` during `install.sh` / `update.sh`. It:
 
-- Installs `raindrop-ai` in each registered repo's virtualenv (`.venv/`, `venv/`, or `uv`-managed)
+- Installs `raindrop-ai` in each registered repo's virtualenv (`.venv/`, `venv/`, or `uv`-managed), with the `SDD_PIP_MIN_AGE` release-age cooldown (default `P2D`) from `scripts/lib/pip-cooldown.sh`
 - Adds `RAINDROP_LOCAL_DEBUGGER=http://localhost:5899` to `~/.claude/settings.json` (Claude env)
 - Adds the same export to `~/.bashrc` (shell env for user-run servers)
 
@@ -190,7 +190,9 @@ $SDD_HARNESS/install.sh /path/to/project --with-gitnexus
 
 This indexes the repo (`.gitnexus/`), adds the MCP server to `.claude/settings.json`, updates `.gitignore`, and registers editor integration.
 
-Option A now does the MCP wiring itself: `install.sh --with-gitnexus` calls `scripts/setup/gitnexus-reconcile.sh <project> --wire` instead of printing a note asking you to paste the `mcpServers` JSON by hand, and it only runs `gitnexus setup` once a `--check` confirms both the index and the MCP server exist. If that check fails it says so and sends you to Option B — that gate exists because `gitnexus setup` writes a MUST/NEVER block into `CLAUDE.md`, and an unwired install left the agent ordered to call `gitnexus_*` tools that did not exist.
+Option A now does the MCP wiring itself: `install.sh --with-gitnexus` calls `scripts/setup/gitnexus-reconcile.sh <project> --wire` instead of printing a note asking you to paste the `mcpServers` JSON by hand, and it only runs `gitnexus setup` once a `--check` confirms both the index and the MCP server exist. If that check fails it says so and sends you to Option B — that gate exists because `gitnexus setup` writes a MUST/NEVER block into `CLAUDE.md` (or `AGENTS.md`, if that's where the project keeps its conventions), and an unwired install left the agent ordered to call `gitnexus_*` tools that did not exist.
+
+After `gitnexus setup` succeeds, the reconciler runs once more and **compacts** that block: the upstream version costs ~900 tokens on every API call (each rule written twice, in MCP and CLI form, plus tables the skill listing already carries), so it is replaced by the harness's compact rule set, which keeps every MUST/NEVER rule. Set `SDD_GITNEXUS_FULL_BLOCK=1` if you want the upstream block left verbatim.
 
 ---
 
@@ -208,7 +210,7 @@ which impeccable && impeccable --version
 
 **If not found:**
 ```bash
-npm install -g impeccable
+npm install -g impeccable@3.6.0   # pinned — `install.sh` installs this same version via IMPECCABLE_VERSION
 ```
 
 That's it — the hook in `.claude/hooks/impeccable-detect-hook.sh` picks it up automatically on the next frontend file write.
@@ -351,9 +353,13 @@ $SDD_HARNESS/install.sh --all --force          # re-sync every project (push upd
 $SDD_HARNESS/install.sh --all --with-gitnexus  # batch install + GitNexus
 ```
 
-`install.sh` propagates **every** hook in the harness's `hooks/` directory into the project's `.claude/hooks/` (and `chmod +x`'s them), syncs `docs/` into `.claude/docs/`, and generates a project stack summary. The harness is the source of truth — which hooks actually fire is governed by the project's `.claude/settings.json` wiring, not by which files are present. Re-run `update.sh` to re-sync after the harness changes.
+`install.sh` propagates **every** hook in the harness's `hooks/` directory into the project's `.claude/hooks/` (and `chmod +x`'s them) — except `*.test.sh` files, which are harness-repo test suites for the hooks rather than runtime hooks and are skipped by the copy loop — syncs `docs/` into `.claude/docs/`, and generates a project stack summary. The harness is the source of truth — which hooks actually fire is governed by the project's `.claude/settings.json` wiring, not by which files are present. Re-run `update.sh` to re-sync after the harness changes.
 
 `install.sh` validates `templates/settings.json.template` with `scripts/setup/check-settings-json.sh` before copying it; if the template is not strict JSON the copy is skipped and an error is printed rather than shipping a settings file Claude Code cannot parse. It also drops `.claude/settings.notes.md` (from `templates/settings.notes.md.template`) — the place for notes that cannot live inside `settings.json`, since JSON allows no comments and no content after the closing brace. Both `install.sh` and `update.sh` then run `scripts/setup/repair-settings-json.py` over the project, which peels a trailing `//` comment block out of an existing `settings.json` into that sidecar. It is idempotent, leaves valid files untouched, and reports (rather than guesses) when the breakage is something other than a trailing comment block.
+
+Two things the copied `templates/settings.json.template` now brings with it. It sets **`cleanupPeriodDays: 365`** — Claude Code's default is 30 days, after which session transcripts under `~/.claude/projects/<slug>/` are deleted, and the harness's measurement stack (`token-forensics.py`, `rtk-net-effect.py`, `dashboard.py`, `herder.py`, `session-judge`, `detect_reexplanation.py`) reads those raw transcripts, so the default silently truncated its own evidence window with no error. `0` does **not** mean unlimited; it wipes immediately. It also registers `claudemd-edit-notice.sh` on `PostToolUse Write|Edit|MultiEdit` (in both templates), which warns that a `CLAUDE.md`/`AGENTS.md` edited mid-session is not loaded until `/compact`, `/clear`, or a restart. Opt out with `SDD_SKIP_CLAUDEMD_NOTICE=1`.
+
+Before generating the harness repo's own `.claude/settings.json`, `install.sh` and `update.sh` both run `scripts/setup/reconcile-settings-templates.py --sync`. `templates/settings.json.template` is the source of truth for shared hooks and `templates/settings.harness.json.template` is derived from it plus an explicit harness-only allowlist, so the two cannot drift apart in the direction that matters — a hook firing in every installed project while not firing in the repo where it is written and tested. A failure there prints a warning and the install continues. Add a shared hook to the project template and run `--sync`; never edit the harness template directly.
 
 Then, inside Claude Code in the project directory, run these once:
 
@@ -364,9 +370,13 @@ Then, inside Claude Code in the project directory, run these once:
 
 Daily maintenance runs automatically via the local OS scheduler (registered by `install.sh` / `update.sh`). No per-project setup is required. Registration is followed by a **preflight** that runs the orchestrator once under the scheduler's own environment — on macOS and Linux the install fails (exit 1) if that comes back non-zero, so a job that registers but cannot execute is reported at setup instead of doing nothing nightly. On macOS the most common cause is a harness under a TCC-protected folder (`~/Documents`, `~/Desktop`, `~/Downloads`), which launchd is refused access to; the preflight names it and gives both fixes.
 
-Update `.gitignore` to exclude harness files. `install.sh` automatically adds the core three entries (`.claude/`, `specs/`, `CLAUDE.md`) under a `# SDD harness` header — skip those below if already present. For the full recommended exclusion set:
+Update `.gitignore` to exclude harness files. `install.sh` automatically adds the harness-local entries (`.claude/`, `specs/`, `CLAUDE.md`, `AGENTS.md`, `ERRORS.md`) under a `# SDD harness` header — skip those below if already present. The list is defined once as `SDD_GITIGNORE_ENTRIES` in `scripts/lib/project-gitignore.sh`, and `update.sh` calls the same `ensure_gitignore` on every sync (git repos only), so a project installed before an entry existed picks it up on its next update instead of needing a re-install. For the full recommended exclusion set:
 ```gitignore
 CLAUDE.md
+# Generated per machine, same class as CLAUDE.md: AGENTS.md by `lean-ctx setup`,
+# ERRORS.md by the 2+-attempts logging rule
+AGENTS.md
+ERRORS.md
 specs/
 .claude/settings.json
 .claude/.last-harness-check
@@ -403,7 +413,7 @@ Run through this on a fresh machine:
 | `rtk` | `which rtk` | macOS/Linux/WSL2: `brew install rtk`; Linux no-brew: `curl -fsSL https://rtk-ai.app/install.sh \| sh`; Windows native: requires WSL2 | `rtk init -g --auto-patch` |
 | `raindrop` | `which raindrop` | `curl -fsSL https://raindrop.sh/install \| bash` (all platforms) | automatic via `install.sh`; see Step 2 |
 | `gitnexus` | `which gitnexus` | `npm install -g gitnexus` (all platforms) | `/kiro:gitnexus-setup` per-project |
-| `impeccable` | `which impeccable` | `npm install -g impeccable` (all platforms) | automatic via hook |
+| `impeccable` | `which impeccable` | `npm install -g impeccable@3.6.0` (all platforms; version `install.sh` pins) | automatic via hook |
 | `proof-sdk` | `ls ~/.claude/tools/proof-sdk/node_modules` | auto-installed on first spec phase run (requires Node.js) | automatic via skill |
 | `uv` | `which uv` | Linux/macOS/WSL2: `curl -LsSf https://astral.sh/uv/install.sh \| sh`; Windows: see Step 5 | nothing extra |
 | `opf` | `which opf` | `uv tool install --python 3.13 git+https://github.com/openai/privacy-filter.git` | wire pre-commit hook |
@@ -424,7 +434,7 @@ Run through this on a fresh machine:
 | Permission dialog on every Bash call | Stale legacy hook from a prior token-compression tool still present in `~/.claude/settings.json` | Remove the old hook entry and run `rtk init -g` to install the current `rtk hook claude` entry |
 | Hook not firing at all | `rtk init -g` not run | Run `rtk init -g --auto-patch` |
 | GitNexus context missing in Claude | MCP not in `settings.json` or repo not indexed | Run `/kiro:gitnexus-setup` |
-| impeccable scans not appearing | Binary not in PATH | `npm install -g impeccable` |
+| impeccable scans not appearing | Binary not in PATH | `npm install -g impeccable@3.6.0` |
 | Local daily maintenance not running (macOS) | LaunchAgent not loaded | `launchctl list com.sdd.daily-orchestrator` to check; re-run `install.sh` or `update.sh` to re-register |
 | Local daily maintenance not running (macOS) **while the LaunchAgent is loaded** | launchd holds no Full Disk Access, so it is refused at exec time (`Operation not permitted`, exit 126) when the harness lives under a TCC-protected folder — `~/Documents`, `~/Desktop`, `~/Downloads`. `launchctl list` shows the job as present the whole time | Run `bash $SDD_HARNESS/scripts/orchestration/setup-mac-orchestrator.sh --force`; its preflight reproduces the failure and names the cause. Fix by moving the harness somewhere unprotected (e.g. `~/GitHub/`) and re-running `install.sh`, or by granting Full Disk Access to `/bin/bash` in System Settings → Privacy & Security. The grant is per-machine and never travels with a clone |
 | Harness cross-repo hooks stopped firing everywhere | `~/.sdd-harness-root` points at a directory that no longer exists — the harness was moved or renamed | Session start and session end now print `[HARNESS-POINTER-STALE]` naming the dead path. Re-run `bash <harness>/update.sh` from the new location to rewrite the pointer |
@@ -435,6 +445,10 @@ Run through this on a fresh machine:
 | **Windows:** `uv` not found after install | PowerShell PATH not reloaded | Restart terminal or run `. $env:USERPROFILE\.cargo\env` (or reopen shell) |
 | **Windows:** `install.sh` fails | Script requires bash | Run from Git Bash or WSL2, not PowerShell or CMD |
 | `Settings file failed to parse: .claude/settings.json — Invalid or malformed JSON` (permission rules and hooks silently inactive) | Comments or notes after the closing brace — JSON allows neither. Installs before 2026-08-12 copied a template that carried a `//` block | `python3 $SDD_HARNESS/scripts/setup/repair-settings-json.py /path/to/project` moves the block to `.claude/settings.notes.md`; `update.sh` now does this automatically. Keep all notes in `settings.notes.md` |
-| `headroom` proxy exits with `FastAPI required` or `h2 package not installed` | Missing `uvicorn` or `httpx[http2]` in headroom's uv env | Re-run `install.sh` (patched) or manually: `uv tool install headroom-ai --python 3.12 --with-requirements $SDD_HARNESS/scripts/setup/headroom-extras.txt` |
+| `headroom` proxy silently crash-loops (`Error: Deployment '<profile>' did not become ready after start`, launchd shows nonzero `last exit code` with no stdout/stderr) | A proxy dependency is missing from the running uv tool env (seen so far: `mcp`, `magika`) — the real error (`No module named 'X'`) is written only to `~/.headroom/deploy/<profile>/runner.log`, never to launchd's own logs | Check `~/.headroom/deploy/<profile>/runner.log` first, always — it has the real reason launchd's silence hides. Fix: `uv tool install "headroom-ai[proxy]" --python 3.12 --force`, then `headroom install apply --preset persistent-service --memory --profile <profile>`. headroom-setup.sh installs via the `[proxy]` extra (not a hand-maintained requirements list) precisely so this stops recurring release over release |
+| `ANTHROPIC_BASE_URL` points at a dead headroom proxy and won't stay unset | headroom's own SessionStart hook (`headroom init hook ensure`) re-asserts routing every session, so editing `settings.json`/shell rc by hand doesn't stick | Nothing to do manually — `session-start-hook.sh` now probes the routed URL every session (`scripts/utils/headroom-unwire-if-dead.py`) and strips it automatically when the proxy is unreachable; routing resumes on its own once the proxy is healthy again. If a VS Code terminal specifically still shows the stale value after that, fully quit VS Code (Cmd+Q, not Reload Window) and relaunch — it caches resolved shell env once per app launch |
+| `router-setup.sh` exits 1 with a looped-upstream refusal, and nothing is installed | `ANTHROPIC_BASE_URL` already pointed at the router's own sentinel address before `~/.sdd-router/router.toml` had ever recorded a real upstream — a self-forwarding loop with no known upstream, which the script refuses to guess at | Unset `ANTHROPIC_BASE_URL` (or point it back at the real upstream — `https://api.anthropic.com`, or the headroom proxy port if headroom is installed) in `~/.claude/settings.json` and shell rc, then re-run `bash $SDD_HARNESS/scripts/setup/router-setup.sh`. The first successful run records that value as `[router].upstream` permanently |
+| `ANTHROPIC_BASE_URL` keeps flipping between the headroom proxy and the router sentinel | Both own the value: `headroom-setup.sh` wires the proxy, then `router-setup.sh` (which `install.sh`/`update.sh` run right after it) re-points the global value at the sentinel, with headroom kept as the router's stored upstream | Expected, and self-correcting — the intended chain is `claude → sentinel → headroom proxy → API`. Each run's reclaim repair rewrites `settings.json` only; `[router].upstream` is written once on the first successful run and never re-derived from a drifted value. Confirm with `grep -A2 '"env"' ~/.claude/settings.json` plus `grep upstream ~/.sdd-router/router.toml` |
+| The router is installed but no routing decisions are being logged, and nothing reports an error | Either `claude` is bypassing the router entirely (`ANTHROPIC_BASE_URL` reclaimed by something else), or the worker is down and the sentinel is passing every request through unchanged — both are silent by design, since fail-open means `claude` keeps working | `bash $SDD_HARNESS/scripts/setup/check-harness-deps.sh` now reports this directly: `router sentinel` and `router worker` each get their own row (a `FAILED` worker under an `ok` sentinel is the pass-through case), and `router routing` reports `ok (wired)` / `FAILED (unwired)` / `FAILED (looped)`. Repair for any of them is `bash $SDD_HARNESS/scripts/setup/router-setup.sh`. All three rows say `skipped` when `~/.sdd-router/router.toml` is absent, which means the installer never ran here |
 
-_Last synced: 2026-08-20_
+_Last synced: 2026-10-08_

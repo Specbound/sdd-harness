@@ -2,7 +2,7 @@
 
 Semantic layer for AI data agents using [ktx](https://github.com/Kaelio/ktx) (Kaelio, Apache 2.0). Invoke when building any agent that queries a warehouse or when LLM-generated SQL is hallucinating joins and metric definitions.
 
-**Skill file:** `~/.claude/skills/ktx-data-context/SKILL.md`
+**Skill file:** `~/.claude/skill-library/ktx-data-context/SKILL.md`
 
 ---
 
@@ -43,10 +43,10 @@ Fires when:
 - Project has dbt/LookML/BI tools needing agent consumption
 - Adding analytics capability to a skill (e.g. `cfo-insights/`)
 
-Direct invocation:
+Direct invocation (Library-tier — read by path, not `Skill()` by bare name):
 
 ```
-Skill("ktx-data-context")
+Read ~/.claude/skill-library/ktx-data-context/SKILL.md
 ```
 
 ---
@@ -96,3 +96,4 @@ dbt, LookML, Metabase, Looker, Tableau, Power BI
 
 Extracted from [github.com/Kaelio/ktx](https://github.com/Kaelio/ktx) on 2026-06-11.  
 Apache 2.0 license. YC-backed.
+_Last synced: 2026-10-08_

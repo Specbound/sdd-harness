@@ -35,6 +35,6 @@ UI components → Write/Edit → impeccable-detect-hook (auto-scan)
 
 - **`/kiro:validate-design`** — software architecture review; references `frontend-anti-patterns.md` for UI deliverables
 - **`/impeccable-audit`** skill — full 7-domain visual audit with PASS/NEEDS WORK/BLOCK verdict
-- **`impeccable-detect-hook.sh`** — PostToolUse auto-scan on frontend file writes (requires `npm install -g impeccable`)
+- **`impeccable-detect-hook.sh`** — PostToolUse auto-scan on frontend file writes (requires `npm install -g impeccable@3.6.0`)
 - **`frontend-code-quality`** skill — HTML/CSS/JS code quality checklist (invoke during code review)
 - **`frontend-performance`** skill — architecture and performance checklist (invoke at design time)

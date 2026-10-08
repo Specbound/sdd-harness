@@ -1,10 +1,22 @@
 #!/bin/bash
 # =============================================================================
-# SDD harness pre-commit guard — blocks commits that introduce hardcoded paths.
+# SDD harness pre-commit guard — hardcoded paths, and regex in embedded Python.
 # =============================================================================
-# Runs scripts/check-no-hardcoded-paths.sh so a machine/user-specific absolute
-# path can never be committed into harness source. Every path must be
-# self-located (scripts/lib/resolve-harness-dir.sh) or computed from $HARNESS_DIR.
+# Two checks, both about the harness lying to itself:
+#
+#   1. scripts/utils/check-no-hardcoded-paths.sh — a machine/user-specific
+#      absolute path must never be committed into harness source. Every path is
+#      self-located (scripts/lib/resolve-harness-dir.sh) or from $HARNESS_DIR.
+#
+#   2. scripts/utils/check-no-regex.py — ruff.toml bans `re` via TID251, but
+#      ruff only reads `.py` files, so the ban never reached the Python living
+#      in shell heredocs. Added 2026-09-03; runs against a shrinking debt ledger
+#      (scripts/utils/no-regex-debt.txt) so existing violations do not block
+#      commits while new ones do.
+#
+# Both run; the commit is blocked if either fails, and both verdicts are shown
+# rather than short-circuiting on the first — fixing one and rediscovering the
+# other on the next attempt wastes a cycle.
 #
 # HARNESS-REPO ONLY. This hook is intentionally NOT propagated to downstream
 # projects by install.sh — a user's own project may legitimately reference
@@ -19,12 +31,29 @@
 set -u
 
 ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0
-GUARD="$ROOT/scripts/utils/check-no-hardcoded-paths.sh"
-[ -f "$GUARD" ] || exit 0   # guard absent (e.g. downstream repo) — do nothing
 
-if ! bash "$GUARD"; then
-  echo ""
-  echo "pre-commit: BLOCKED — hardcoded path(s) above must be made dynamic."
+FAILED=0
+
+PATH_GUARD="$ROOT/scripts/utils/check-no-hardcoded-paths.sh"
+if [ -f "$PATH_GUARD" ]; then      # guard absent (e.g. downstream repo) — skip
+  if ! bash "$PATH_GUARD"; then
+    echo ""
+    echo "pre-commit: BLOCKED — hardcoded path(s) above must be made dynamic."
+    FAILED=1
+  fi
+fi
+
+REGEX_GUARD="$ROOT/scripts/utils/check-no-regex.py"
+if [ -f "$REGEX_GUARD" ] && command -v python3 >/dev/null 2>&1; then
+  if ! python3 "$REGEX_GUARD"; then
+    echo ""
+    echo "pre-commit: BLOCKED — regex in embedded Python (see above)."
+    echo "            Write an explicit parser, or emit structured data at the source."
+    FAILED=1
+  fi
+fi
+
+if [ "$FAILED" -ne 0 ]; then
   echo "            Bypass (discouraged): git commit --no-verify"
   exit 1
 fi

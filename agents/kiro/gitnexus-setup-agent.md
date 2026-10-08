@@ -63,9 +63,12 @@ grep -qF '.gitnexus/' .gitignore 2>/dev/null || echo -e '\n# GitNexus index (loc
 
 ### Step 5: Editor Registration
 
-`gitnexus setup` writes a managed MUST/NEVER block into `CLAUDE.md` that calls
+`gitnexus setup` writes a managed MUST/NEVER block into `CLAUDE.md` (or
+`AGENTS.md`, if that's where the project keeps its conventions) that calls
 `gitnexus_*` tools. Only run it once index and MCP server both exist, then
-reconcile the block so its skill paths point at the installed skills:
+reconcile the block so its skill paths point at the installed skills and its
+bare `gitnexus_*` tool names are rewritten to the `mcp__gitnexus__*` form the
+MCP server exposes:
 
 ```bash
 bash .claude/scripts/setup/gitnexus-reconcile.sh . --check \
