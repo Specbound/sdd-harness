@@ -60,7 +60,11 @@ to the library silently broke all three spec approval gates):
 - `scripts/utils/check-skill-tiers.py` (pre-commit) fails when a commands/agents/hooks/kiro/
   scripts/templates line names a Library skill by bare name, or a skill calls `Skill("<lib>")`.
   So moving a skill into `skill-library.txt` fails the commit until each caller gets the path.
-  Human-facing mentions (docstrings) go in `scripts/utils/skill-tier-allow.txt`.
+  Human-facing mentions (docstrings) go in `scripts/utils/skill-tier-allow.txt`. It is wired as
+  the **third** guard in `hooks/git/pre-commit` (after the hardcoded-path and embedded-Python
+  regex guards); every guard's verdict prints and any one failing blocks the commit. Scope note:
+  the walk covers `agents/ commands/ hooks/ kiro/ rules/ scripts/ skills/ templates/` only, and
+  skips every `README.md` — so `docs/` prose is not checked and stays a manual review surface.
 - `hooks/claude/skill-library-resolver.sh` (PreToolUse `Skill`) catches what the check can't
   see, like soft "related skill" mentions inside skills. It turns a `Skill("<lib>")` call into
   "read this path".
@@ -80,4 +84,4 @@ Measured per-call skill-listing cost: ~13.3k (all listed) → ~5.0k (29 listed).
 preserve discovery — an agent still finds any sub-skill by routing through its domain — while
 the Library skills cost nothing until read. See the master bodies for the live routing tables.
 
-_Last synced: 2026-10-07_
+_Last synced: 2026-10-08_

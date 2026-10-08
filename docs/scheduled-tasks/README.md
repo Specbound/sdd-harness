@@ -200,7 +200,7 @@ This is the **review** stage of the tool-failure-memory loop (capture → recall
 **Scope:** Every registered repo (no-ops unless there's a merged PR with a logged automated review not yet processed)
 
 **What it does:**
-- Discovers merged PRs with a logged `.claude/memory/pr-reviews/pr-<n>.md` (written by `scripts/pr/log_review.sh` via the `gitnexus-pr-review` skill, backgrounded from `scripts/pr/detect_base_and_create.sh` when the PR is created) not yet processed, via `gh pr view --json state`. `detect_base_and_create.sh` now reads the new PR's number back from `gh pr list --json number` instead of parsing it out of the printed URL — the URL is free text, the number is a field — and writes a placeholder `## Evidence` section into the PR body stating that no before/after probe was run, since this path fires headless on `git push` where none can be captured. `pr-evidence-hook.sh` cannot cover it: the `gh pr create` here runs inside the script, not as a Bash tool call, so no `PreToolUse` event fires. If the number cannot be read back, the script says so and exits without inventing one
+- Discovers merged PRs with a logged `.claude/memory/pr-reviews/pr-<n>.md` (written by `scripts/pr/log_review.sh`, whose prompt names `~/.claude/skill-library/gitnexus-pr-review/SKILL.md` — with `~/.claude/skill-library/code-reviewer/SKILL.md` as the stale-index fallback — by installed path rather than bare skill name, since both are Library tier; backgrounded from `scripts/pr/detect_base_and_create.sh` when the PR is created) not yet processed, via `gh pr view --json state`. `detect_base_and_create.sh` now reads the new PR's number back from `gh pr list --json number` instead of parsing it out of the printed URL — the URL is free text, the number is a field — and writes a placeholder `## Evidence` section into the PR body stating that no before/after probe was run, since this path fires headless on `git push` where none can be captured. `pr-evidence-hook.sh` cannot cover it: the `gh pr create` here runs inside the script, not as a Bash tool call, so no `PreToolUse` event fires. If the number cannot be read back, the script says so and exits without inventing one
 - For each: diffs the logged review against real human review activity (`gh api .../comments`, `.../reviews`) to find **missed** flags, **false positives**, or **convention gaps**
 - **Low-risk** findings (team conventions, dismissed-flag patterns) are written directly into `.claude/memory/` as `project`/`feedback` facts
 - **Higher-risk** findings (changes to the `code-reviewer` skill's methodology) are never auto-applied — only reported to `docs/code-review-learning-report.md` for human approval
@@ -315,5 +315,5 @@ The dashboard's **Scheduled Tasks** tab shows live status for each task, scoped 
 
 ---
 
-_Last synced: 2026-10-07_
+_Last synced: 2026-10-08_
 

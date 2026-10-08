@@ -277,7 +277,7 @@ Hook output is injected into Claude's context as system messages — Claude read
 4. Emits the same nudge when the invocation supplies no inspectable body at all — `--fill`, `--fill-first`, or a bare `gh pr create` that opens an editor. Both reach the reviewer with no evidence section.
 5. Stays silent when the body cannot be judged rather than guessing: `--body-file -` (stdin) and an unreadable file produce no output.
 
-**Why it's needed:** `verification-before-completion` requires evidence for claims made in conversation, but that evidence stops at the PR boundary — `create-pr`, `iterate-pr`, and `pr-babysit` contained zero references to evidence artifacts, so the reviewer received the agent's description of its own work and nothing to check it against. The hook enforces the presence of the section; `create-pr` ("Attach Runtime Evidence") teaches what goes in it, including the load-bearing rule that the before-state must be captured while reproducing the problem, since after the fix it costs a revert and is therefore usually written from memory instead.
+**Why it's needed:** `verification-before-completion` requires evidence for claims made in conversation, but that evidence stops at the PR boundary — `create-pr`, `iterate-pr`, and `pr-babysit` contained zero references to evidence artifacts, so the reviewer received the agent's description of its own work and nothing to check it against. The hook enforces the presence of the section; `~/.claude/skill-library/create-pr/SKILL.md` ("Attach Runtime Evidence") teaches what goes in it — the nudge names that installed path rather than the bare skill name, because `create-pr` is Library tier and the Skill tool cannot resolve it — including the load-bearing rule that the before-state must be captured while reproducing the problem, since after the fix it costs a revert and is therefore usually written from memory instead.
 
 **Output / side effect:** Prints a `PR Evidence — missing proof` block to stdout naming which case fired (no inspectable `--body`, or `--body` without the heading), with the required format and the docs-only escape hatch. No files written.
 
@@ -1053,5 +1053,5 @@ denies `git push*` outright where projects only deny force-push.
 
 **No regex, continued (2026-09-30).** `prompt-quality-check.sh` was rewritten off `re` onto the same literal-token pattern: the prompt is tokenized to lowercase words (apostrophes stay inside a word, every other non-alphanumeric character separates, so `double-check` is the two tokens `double check`) and phrases are matched on token boundaries. The rewrite was verified score-identical to the regex version on 94 real Agent prompts, and it added two anti-patterns — `think-instruction` and `show-reasoning-request`. `scripts/routines/startup-payload-audit.sh` lost its `@import` regex the same day in favour of a line-prefix parser. Both are off `scripts/utils/no-regex-debt.txt`; `action-capture.sh` and `stop-hook.sh` are the remaining hooks that regex-parse free text.
 
-_Last synced: 2026-10-07_
+_Last synced: 2026-10-08_
 

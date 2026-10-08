@@ -2,7 +2,17 @@
 
 > This file is managed by the SDD harness (`sdd-harness/docs/`).
 > It is the single source of truth — do not edit copies in individual projects.
-> _Last synced: 2026-10-07_
+> _Last synced: 2026-10-08_
+
+---
+
+## Recent Changes (2026-10-08 — Harness Build 32)
+
+Theme: the one unverified contract left in the cost router gets verified. Build 30 shipped `scripts/router/classify.py` against a **documented placeholder** wire shape because jeff's `/v1/systemone` JSON was not discoverable anywhere in this repo. It was wrong. jeff was downloaded and run locally, the real shape read off its FastAPI routes and pydantic schemas, and both the client and its suite rewritten against it.
+
+### Scripts
+- `scripts/router/classify.py` — `_call()` and `_parse()` now speak jeff's **real** nested wire shape, replacing the flat `{"text", "lanes", "scale_max"}` → `{"lane", "score", "gate_p", "confidence"}` placeholder Build 30 flagged `NEEDS-USER`. The request posts `{"state", "model": "jev-latest", "questions": {…}}` with three questions keyed by id — `lane` (`type: "choice"`, `criteria` a dict of lane name → `None`, since the spec carries no per-option descriptions), `difficulty` (`type: "score"`, `criteria` the `0..scale_max` levels as strings), and `privacy` (`type: "noul"`) — and the response nests a matching `answers` dict: `answers.lane.choice`, `answers.difficulty.score`, `answers.privacy.noul`, with `confidence` read specifically off the **lane** answer, not averaged across the three (`Decision`'s own contract is "winning choice probability"). `difficulty.score` is an expectation over level indices (a float), so it is rounded into `Decision.score`'s `int`. Verified two ways, not one: by reading `src/jeff/core/schemas.py`, `src/jeff/server/app.py`, and `src/jeff/core/answers.py` at jeff commit `34b32f9` — the exact commit `design.md` already cites — **and** by a live round-trip against jeff's own test-suite fake backend over a real loopback socket. The module docstring's `NEEDS-USER` block is replaced by the verified contract; logged as Pass 14 in `specs/model-router/choices.md`. This supersedes the closing sentence of Build 30's `classify.py` entry below, which is accurate only as a record of what was true then.
+- `scripts/router/test_classify.py` — `_StubBehavior`'s canned response and the single-POST assertions rewritten against the nested shape (payload `state`/`model`, `questions.lane.criteria` as a set, `questions.difficulty.criteria` length 11 for `scale_max: 10`, `privacy` present). One new case, `ClassifyMissingAnswerKeyTests`: a response whose `answers` dict is missing `difficulty` entirely must raise `ClassifierUnavailable(reason="bad_response")`. That failure mode is new to the nested shape — under the old flat shape a missing nested key and a missing top-level key were indistinguishable, so there was nothing to test.
 
 ---
 
@@ -1946,5 +1956,5 @@ disown 2>/dev/null || true
 
 The Stop hook should only contain **passive checks** (e.g., nudging housekeeping when observations exceed a threshold). See `.claude/hooks/stop-hook.sh` for the reference implementation.
 
-_Last synced: 2026-10-07_
+_Last synced: 2026-10-08_
 

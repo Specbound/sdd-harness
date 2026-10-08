@@ -96,4 +96,4 @@ dbt, LookML, Metabase, Looker, Tableau, Power BI
 
 Extracted from [github.com/Kaelio/ktx](https://github.com/Kaelio/ktx) on 2026-06-11.  
 Apache 2.0 license. YC-backed.
-_Last synced: 2026-10-07_
+_Last synced: 2026-10-08_

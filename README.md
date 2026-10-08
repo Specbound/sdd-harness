@@ -287,7 +287,7 @@ sdd-harness/
 │   │   ├── test-integrity-guard.sh #   PostToolUse(Write/Edit/MultiEdit): soft gate flagging "gradient descent to green" — weakened test assertions, added skips, lowered coverage thresholds. Detection is literal-token membership plus pathlib, not regex (2026-09-03)
 │   │   ├── pr-evidence-hook.sh   #     PreToolUse(Bash): soft gate on `gh pr create` — nudges when the PR body carries no `## Evidence` section. Never blocks; the command is tokenized with shlex and matched token-by-token
 │   │   ├── setup-buffer-hook.sh  #     PostToolUse(Bash): buffers setup-pattern commands to .claude/memory/.setup-session-buffer.log (flushed by stop-hook)
-│   │   ├── skill-permissions-gate.sh # PostToolUse(Write/Edit): soft gate on */skills/*/SKILL.md — prompts agent-permissions-design review
+│   │   ├── skill-permissions-gate.sh # PostToolUse(Write/Edit): soft gate on */skills/*/SKILL.md — prompts a ~/.claude/skill-library/agent-permissions-design/SKILL.md review, named by installed path (Library tier, so Skill("agent-permissions-design") cannot resolve it)
 │   │   ├── skill-library-resolver.sh # PreToolUse(Skill): hard block (exit 2) when a Skill("name") call resolves to a Library-tier install absent from the Skill tool's index — names the ~/.claude/skill-library/<name>/SKILL.md path to read instead. Listed, plugin, and genuinely-missing names pass through
 │   │   ├── js-quality-gate-hook.sh #   PostToolUse(Write/Edit/MultiEdit): runs oxlint (or eslint) on .ts/.tsx/.js/.jsx writes — the JS half of the ruff gate; no-ops when neither linter is installed
 │   │   ├── todo-focus-hook.sh    #     PostToolUse(TodoWrite): names competing in_progress items when more than one is active (soft, exit 2)
@@ -797,7 +797,7 @@ Runs before every user prompt (UserPromptSubmit). When the prompt combines build
 
 ### Raindrop Best Practices (`hooks/claude/raindrop-best-practices.sh`)
 
-Fires before any Raindrop Workshop MCP tool call (`mcp__raindrop__` matcher). Injects five active-observability patterns: batch facets (multiple dimensions → one LLM call), facet-first summarization before clustering, 128K token cap on input, no-LLM nearest-summary classification, and long-tail sampling with HDBSCAN. Ensures trace analysis runs at a fraction of the naïve cost.
+Fires before any Raindrop Workshop MCP tool call (`mcp__raindrop__` matcher). Injects five active-observability patterns: batch facets (multiple dimensions → one LLM call), facet-first summarization before clustering, 128K token cap on input, no-LLM nearest-summary classification, and long-tail sampling with HDBSCAN. Ensures trace analysis runs at a fraction of the naïve cost. Its discovery-before-eval pointer names `~/.claude/skill-library/active-observability/SKILL.md` by installed path — that skill is Library tier, so a bare-name mention would dead-end.
 
 ### Headless Envelope (`hooks/claude/headless-envelope-hook.sh`)
 
@@ -1059,4 +1059,4 @@ The Model Cost section reads session data from `~/.claude/projects/*/`. Pricing 
 
 Private repository. Contact the maintainer for access.
 
-_Last synced: 2026-10-07_
+_Last synced: 2026-10-08_
