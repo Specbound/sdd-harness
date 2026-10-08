@@ -955,6 +955,12 @@ install_globals() {
   bash "$HARNESS_DIR/scripts/setup/headroom-setup.sh" || \
     echo "  WARNING: setup/headroom-setup.sh returned non-zero — re-run manually if needed."
 
+  # --- Model router (sentinel + worker services) ---
+  echo ""
+  echo "Setting up model router..."
+  bash "$HARNESS_DIR/scripts/setup/router-setup.sh" || \
+    echo "  WARNING: setup/router-setup.sh returned non-zero — re-run manually if needed."
+
   # --- LiteParse doc parser (owned in a dedicated >=3.10 venv) ---
   echo ""
   echo "Installing liteparse doc parser..."

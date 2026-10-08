@@ -345,6 +345,12 @@ echo "Refreshing headroom context compression setup..."
 bash "$HARNESS_DIR/scripts/setup/headroom-setup.sh" || \
   echo "  WARNING: setup/headroom-setup.sh returned non-zero — re-run manually if needed."
 
+# Refresh model router (sentinel + worker services) for all repos.
+echo ""
+echo "Refreshing model router setup..."
+bash "$HARNESS_DIR/scripts/setup/router-setup.sh" || \
+  echo "  WARNING: setup/router-setup.sh returned non-zero — re-run manually if needed."
+
 # Refresh liteparse document parser install (owned in a dedicated >=3.10 venv).
 echo ""
 echo "Refreshing liteparse install..."
