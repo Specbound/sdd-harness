@@ -8,7 +8,9 @@
 # real resolved python3 below, so router-setup.sh's own tomllib/json logic
 # runs against a genuine interpreter, not a stub), curl (controllable fake
 # HTTP code via a file), launchctl / systemctl (marker-file tracking, same
-# convention as jeff-setup.test.sh).
+# convention as jeff-setup.test.sh; launchctl's `load` can also be made to
+# fail for one specific label via LAUNCHD_FAIL_LABEL — used by scenario I to
+# test sentinel/worker registration independence).
 # What is NOT faked: uname (real, so detect_os() exercises this machine's
 # real branch — this machine is macOS; grep is real too). The real python3
 # on this machine (resolved once, below, via `command -v`, BEFORE PATH is
@@ -98,15 +100,21 @@ case "\$1" in
     ;;
   load)
     shift
+    fail=0
     for a in "\$@"; do
       case "\$a" in
         -*) continue ;;
         *.plist)
           label="\$(basename "\$a" .plist)"
-          : > "\$LAUNCHD_MARKER.\$label"
+          if [ -n "\${LAUNCHD_FAIL_LABEL:-}" ] && [ "\$label" = "\$LAUNCHD_FAIL_LABEL" ]; then
+            fail=1
+          else
+            : > "\$LAUNCHD_MARKER.\$label"
+          fi
           ;;
       esac
     done
+    [ "\$fail" -eq 1 ] && exit 1
     exit 0
     ;;
   unload)
@@ -275,6 +283,108 @@ check "G: preflight failure exits non-zero" "1" "$rc_g"
 check "G: settings.json untouched when preflight fails" "$before_settings_g" "$after_settings_g"
 out_g="$(cat "$ROOT/out-G.log")"
 check_contains "G: preflight failure message names the cause" "$out_g" "preflight failed"
+
+# base_url_value — exact (not substring) extraction of
+# settings.json's env.ANTHROPIC_BASE_URL via the real interpreter, so
+# restoration/deletion assertions below are byte-for-byte rather than
+# "happens to contain the right text somewhere". Prints the sentinel string
+# "<absent>" when the key itself is missing, distinguishing "key removed"
+# from "key present but empty".
+base_url_value() {
+  "$REAL_PY" - "$H/.claude/settings.json" <<'PY'
+import json
+import sys
+
+path = sys.argv[1]
+try:
+    with open(path, encoding="utf-8") as f:
+        data = json.load(f)
+except (FileNotFoundError, json.JSONDecodeError):
+    print("<absent>")
+    raise SystemExit(0)
+env = data.get("env")
+if not isinstance(env, dict) or "ANTHROPIC_BASE_URL" not in env:
+    print("<absent>")
+else:
+    print(env["ANTHROPIC_BASE_URL"])
+PY
+}
+
+# ── Scenario H: uninstall correctness ─────────────────────────────────────
+# H1/H2: a completed install's real, pre-existing upstream is restored
+# byte-for-byte, and both services are unloaded — not just one.
+new_home "H"
+printf '{\n  "env": {\n    "ANTHROPIC_BASE_URL": "https://my-custom-upstream.example.com"\n  }\n}\n' > "$H/.claude/settings.json"
+run install >"$ROOT/out-H1.log" 2>&1
+rc_h1="$?"
+check "H1: install succeeds before uninstall" "0" "$rc_h1"
+
+run uninstall >"$ROOT/out-H2.log" 2>&1
+rc_h2="$?"
+val_h2="$(base_url_value)"
+calls_h2="$(cat "$CALLS_LOG")"
+check "H2: uninstall exits 0" "0" "$rc_h2"
+check "H2: real pre-existing upstream restored byte-for-byte" "https://my-custom-upstream.example.com" "$val_h2"
+check_contains "H2: uninstall unloads the sentinel LaunchAgent" "$calls_h2" "launchctl unload $H/Library/LaunchAgents/com.sdd.router-sentinel.plist"
+check_contains "H2: uninstall unloads the worker LaunchAgent" "$calls_h2" "launchctl unload $H/Library/LaunchAgents/com.sdd.router-worker.plist"
+check "H2: sentinel LaunchAgent marker gone after uninstall" "1" "$( [ -f "$LAUNCHD_MARKER.com.sdd.router-sentinel" ] && echo 0 || echo 1 )"
+check "H2: worker LaunchAgent marker gone after uninstall" "1" "$( [ -f "$LAUNCHD_MARKER.com.sdd.router-worker" ] && echo 0 || echo 1 )"
+
+# H3: stored upstream equals the SDK default (ANTHROPIC_BASE_URL was never
+# set before the first install) — uninstall must delete the key entirely,
+# never write back the literal default string.
+new_home "H3"
+echo '{}' > "$H/.claude/settings.json"
+run install >"$ROOT/out-H3-1.log" 2>&1
+run uninstall >"$ROOT/out-H3-2.log" 2>&1
+rc_h3="$?"
+val_h3="$(base_url_value)"
+check "H3: uninstall exits 0 when stored upstream is the SDK default" "0" "$rc_h3"
+check "H3: SDK-default case deletes the key rather than writing it back" "<absent>" "$val_h3"
+
+# H4: router.toml's stored upstream is empty (first run never completed —
+# reuse scenario D's self-loop setup to reach that exact state) — uninstall
+# must refuse with a clear error rather than guessing what to restore.
+new_home "H4"
+printf '{\n  "env": {\n    "ANTHROPIC_BASE_URL": "http://127.0.0.1:8799"\n  }\n}\n' > "$H/.claude/settings.json"
+run install >"$ROOT/out-H4-1.log" 2>&1
+toml_h4="$(router_toml)"
+check_contains "H4 setup: router.toml exists with an empty upstream (install never completed)" "$toml_h4" 'upstream = ""'
+run uninstall >"$ROOT/out-H4-2.log" 2>&1
+rc_h4="$?"
+out_h4="$(cat "$ROOT/out-H4-2.log")"
+check "H4: uninstall refuses on an empty stored upstream (exit 1)" "1" "$rc_h4"
+check_contains "H4: refusal names the cause rather than guessing" "$out_h4" "never fully installed"
+
+# ── Scenario I: sentinel/worker registration independence ────────────────
+# This file never starts a real process (launchctl/systemctl are fully
+# faked — see header), so "worker killed, sentinel still answers" cannot be
+# proven at this file's fidelity; sentinel.test.sh/server.test.sh already
+# cover the real pass-through behavior at the process level (task 6.2/7.3).
+# What this file CAN prove, and does: install_services() registers the two
+# services as separate launchctl calls, so a worker registration failure
+# does not retroactively unregister an already-succeeded sentinel — i.e.
+# the two are independently supervised once running. It also proves (see
+# report) that install_service_macos's own die() on a load failure aborts
+# the REST of cmd_install (no preflight, no settings.json write) rather
+# than continuing past the worker — that is current, real behavior, tested
+# here rather than assumed.
+new_home "I"
+echo '{}' > "$H/.claude/settings.json"
+export LAUNCHD_FAIL_LABEL="com.sdd.router-worker"
+run install >"$ROOT/out-I.log" 2>&1
+rc_i="$?"
+unset LAUNCHD_FAIL_LABEL
+calls_i="$(cat "$CALLS_LOG")"
+settings_i="$(settings_json)"
+out_i="$(cat "$ROOT/out-I.log")"
+check "I: a worker registration failure aborts cmd_install (exit 1)" "1" "$rc_i"
+check_contains "I: sentinel load was attempted before the worker failure" "$calls_i" "launchctl load -w $H/Library/LaunchAgents/com.sdd.router-sentinel.plist"
+check_contains "I: worker load was attempted and is the one that failed" "$calls_i" "launchctl load -w $H/Library/LaunchAgents/com.sdd.router-worker.plist"
+check "I: sentinel is left registered despite the overall install aborting" "0" "$( [ -f "$LAUNCHD_MARKER.com.sdd.router-sentinel" ] && echo 0 || echo 1 )"
+check "I: worker is NOT registered (its own load call is what failed)" "1" "$( [ -f "$LAUNCHD_MARKER.com.sdd.router-worker" ] && echo 0 || echo 1 )"
+check_not_contains "I: settings.json was never wired — cmd_install died before preflight/write" "$settings_i" "127.0.0.1:8799"
+check_contains "I: failure message names the launchctl load failure" "$out_i" "launchctl load failed"
 
 echo ""
 echo "$PASS passed, $FAIL failed"
