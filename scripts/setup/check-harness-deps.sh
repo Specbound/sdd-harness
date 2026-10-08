@@ -67,6 +67,173 @@ read_manifest() {
   done < "$file"
 }
 
+# jeff_listen_addr <port> — echo the bound local address:port for whatever is
+# LISTENing on <port> (e.g. "127.0.0.1:8000" or "*:8000"), or nothing if no
+# process is listening there at all. lsof is the default on macOS (this
+# repo's primary dev platform); ss is the fallback for the Linux/systemd
+# target other model-router tasks install against.
+jeff_listen_addr() {
+  local port="$1" line word addr=""
+  [ -n "$port" ] || return 0
+  if command -v lsof >/dev/null 2>&1; then
+    while IFS= read -r line; do
+      [ -n "$line" ] || continue
+      for word in $line; do
+        case "$word" in
+          *:"$port") addr="$word" ;;
+        esac
+      done
+      [ -n "$addr" ] && break
+    done <<EOF
+$(lsof -nP -iTCP:"$port" -sTCP:LISTEN 2>/dev/null)
+EOF
+  elif command -v ss >/dev/null 2>&1; then
+    while IFS= read -r line; do
+      case "$line" in
+        *LISTEN*) ;;
+        *) continue ;;
+      esac
+      for word in $line; do
+        case "$word" in
+          *:"$port") addr="$word" ;;
+        esac
+      done
+      [ -n "$addr" ] && break
+    done <<EOF
+$(ss -ltn 2>/dev/null)
+EOF
+  fi
+  printf '%s' "$addr"
+}
+
+# check_classifier — report the model-router's local classifier (jeff), if one
+# is configured: model weights present, bound to 127.0.0.1 and not the
+# wildcard address (R2.1 — a wildcard bind still answers a 127.0.0.1 probe, so
+# curl reachability alone cannot catch it; the actual listen address must be
+# inspected), and one real classification succeeding.
+#
+# router.toml is written by router-setup.sh (task 9.1, not yet built as of
+# this task) — its absence means "not installed yet," not broken, so that
+# case is a skip, not a failure. Once configured, though, a dead classifier
+# must be exactly as visible as a dead headroom proxy is in section 3 below.
+# Verifies: specs/model-router/requirements.md#2.5, #10.3
+check_classifier() {
+  local router_toml="$HOME/.sdd-router/router.toml"
+  local info="" backend="" base_url="" api_key_env=""
+
+  if [ -f "$router_toml" ] && [ -n "${VPY:-}" ]; then
+    info="$("$VPY" - "$router_toml" <<'PYEOF' 2>/dev/null
+import sys
+try:
+    import tomllib
+except ImportError:
+    print("ERROR")
+    raise SystemExit(0)
+try:
+    with open(sys.argv[1], "rb") as fh:
+        data = tomllib.load(fh)
+except (OSError, tomllib.TOMLDecodeError):
+    print("ERROR")
+    raise SystemExit(0)
+classifier = data.get("classifier")
+if not isinstance(classifier, dict):
+    print("ERROR")
+    raise SystemExit(0)
+print(
+    "{}\t{}\t{}".format(
+        classifier.get("backend", ""),
+        classifier.get("base_url", ""),
+        classifier.get("api_key_env", ""),
+    )
+)
+PYEOF
+)"
+  fi
+
+  if [ -z "$info" ] || [ "$info" = "ERROR" ]; then
+    report "global" "classifier" "skipped (no router.toml / classifier config yet)"
+    return 0
+  fi
+
+  IFS="$(printf '\t')" read -r backend base_url api_key_env <<EOF
+$info
+EOF
+
+  if [ "$backend" != "jeff" ]; then
+    report "global" "classifier" "skipped (backend=$backend, not jeff)"
+    return 0
+  fi
+
+  # ── model present ────────────────────────────────────────────────────────
+  local model_path="$HOME/.sdd-router/jeff/models/gliformer-large-v1"
+  if [ -d "$model_path" ] && [ -n "$(ls -A "$model_path" 2>/dev/null)" ]; then
+    report "global" "jeff model" "ok"
+  else
+    report "global" "jeff model" "FAILED (not found at $model_path)"
+    echo "      Install it: bash $__here/jeff-setup.sh"
+    FAILURES=$((FAILURES + 1))
+  fi
+
+  # ── loopback-vs-wildcard bind (R2.1) ────────────────────────────────────
+  local port="${base_url##*:}" addr
+  addr="$(jeff_listen_addr "$port")"
+  if [ -n "$addr" ]; then
+    case "$addr" in
+      127.0.0.1:*)
+        report "global" "jeff bind" "ok (127.0.0.1)"
+        ;;
+      *)
+        report "global" "jeff bind" "FAILED (wildcard-bound: $addr — violates loopback-only, R2.1)"
+        echo "      Reinstall with the loopback fix: bash $__here/jeff-setup.sh"
+        FAILURES=$((FAILURES + 1))
+        ;;
+    esac
+  fi
+  # Nothing listening at all is reported below, via the classify probe itself
+  # — a connection failure there is the same "dead classifier" signal, without
+  # double-reporting the same outage on two rows.
+
+  # ── one real classification ─────────────────────────────────────────────
+  local api_key="" code="" attempt
+  if [ -n "$api_key_env" ]; then
+    api_key="${!api_key_env:-}"
+  fi
+  if command -v curl >/dev/null 2>&1; then
+    local payload='{"state": "test", "model": "jev-latest", "questions": {"check": {"type": "noul", "instructions": "test"}}}'
+    for attempt in 1 2; do
+      if [ -n "$api_key" ]; then
+        code="$(curl -s -o /dev/null -w '%{http_code}' --connect-timeout 2 -m 5 \
+          -X POST "${base_url}/v1/systemone" \
+          -H "Content-Type: application/json" \
+          -H "Authorization: Bearer ${api_key}" \
+          -d "$payload" 2>/dev/null || true)"
+      else
+        code="$(curl -s -o /dev/null -w '%{http_code}' --connect-timeout 2 -m 5 \
+          -X POST "${base_url}/v1/systemone" \
+          -H "Content-Type: application/json" \
+          -d "$payload" 2>/dev/null || true)"
+      fi
+      [ "$code" = "200" ] && break
+    done
+  fi
+
+  if [ "$code" = "200" ]; then
+    report "global" "jeff classify" "ok (HTTP 200)"
+  else
+    report "global" "jeff classify" "FAILED (HTTP ${code:-no response})"
+    FAILURES=$((FAILURES + 1))
+  fi
+}
+
+# Testing seam: sourcing this file with SDD_HARNESS_DEPS_SOURCE_ONLY=1 defines
+# every function above and returns before any real venv/repo/network work —
+# lets check-harness-deps.test.sh exercise check_classifier() (and
+# jeff_listen_addr()) in a throwaway HOME, with lsof/ss/curl stubbed on PATH,
+# without touching this machine's real .venv-tools or real projects.txt.
+if [ "${SDD_HARNESS_DEPS_SOURCE_ONLY:-0}" = "1" ]; then
+  return 0 2>/dev/null || exit 0
+fi
+
 echo "Harness dependency check"
 
 # ── 1. Harness-owned deps -> .venv-tools ───────────────────────────────────────
@@ -238,6 +405,9 @@ else
     report "global" "headroom proxy" "not running (optional)"
   fi
 fi
+
+# ── 4. Model-router local classifier (jeff), if configured ────────────────
+check_classifier
 
 echo ""
 if [ "$FAILURES" -eq 0 ]; then
