@@ -6,6 +6,26 @@
 
 ---
 
+## Recent Changes (2026-10-08 — Harness Build 37)
+
+Theme: the router's uninstall path stops being verified by reading it. `router-setup.sh`'s ordering guarantees — restore the recorded upstream *before* stopping anything, delete the key rather than write the SDK default back, refuse rather than guess — were asserted only by direct code read in Build 34; task 9.4 turns each into a test.
+
+### Scripts
+- `scripts/setup/router-setup.test.sh` — expanded (not replaced, as its own header note required) from 22 to 44 assertions, adding two scenarios. **Scenario H — uninstall correctness:** a real pre-existing upstream is restored byte-for-byte and *both* LaunchAgents are unloaded, not just the sentinel (H1/H2); when the stored upstream is the SDK default — `ANTHROPIC_BASE_URL` was never set before the first install — uninstall deletes `env.ANTHROPIC_BASE_URL` outright instead of writing the literal default string back (H3); an empty stored upstream, reached by reusing Scenario D's self-loop setup so the state is produced rather than hand-forged, makes uninstall `exit 1` naming "never fully installed" rather than guessing what to restore (H4). A new `base_url_value()` helper reads the key through the real interpreter (`json.load`, not text matching) and prints the sentinel `<absent>` when it is missing, so each restoration assertion is byte-for-byte and "key removed" stays distinguishable from "key present but empty" — a substring check cannot tell those apart. **Scenario I — sentinel/worker registration independence:** the launchctl stub gained a `LAUNCHD_FAIL_LABEL` knob that fails `load` for exactly one label, proving a worker registration failure leaves the already-registered sentinel registered, and that `install_service_macos`'s `die()` aborts the rest of `cmd_install` — no preflight, no `settings.json` write — rather than continuing past the failed worker.
+- **Fidelity limit stated rather than faked:** this suite stubs `launchctl`/`systemctl` completely and starts no real process, so "worker killed mid-session, sentinel still answers" cannot be proven here at any fidelity; that behavior is covered at process level by `scripts/router/sentinel.test.sh` and `scripts/router/server.test.sh` (tasks 6.2/7.3). Scenario I proves independent *registration*, which is what this file can actually observe.
+
+---
+
+## Recent Changes (2026-10-08 — Harness Build 36)
+
+Theme: the router's own wiring stops being invisible. An installed-but-bypassed router, and a worker down while the sentinel still answers, are both states nothing reported until now — `check-harness-deps.sh` surfaces each as its own row (task 9.3).
+
+### Scripts
+- `scripts/setup/check-harness-deps.sh` — new `check_router()` step, run as section 5 immediately after `check_classifier()`. Read-only by design: it never writes `router.toml` or `settings.json` and never restarts a service — installing and wiring stay `router-setup.sh`'s job (Build 34). It reads `[router].port` / `[router].upstream` from `~/.sdd-router/router.toml` via `tomllib` under `$VPY`, then emits **three independent rows**. `router sentinel` and `router worker` each report their own LISTEN state through the existing `jeff_listen_addr()` — reused rather than re-implemented, so there is still one owner of the `lsof`/`ss` parsing — reporting `FAILED (not listening)` when nothing is bound and `FAILED (wildcard-bound: …)` when the bind is not loopback-only (R2.1). The worker is deliberately its own row: a dead worker under a live sentinel is the fail-open state, and collapsing it into one combined status would hide exactly the case worth seeing (R4.5a). The worker's port is `server.py`'s own `8798` default, not read from `router.toml`, which only ever records the sentinel's port. `router routing` is the one global state, derived by comparing the stored `[router].upstream` against the `env.ANTHROPIC_BASE_URL` actually present in `~/.claude/settings.json`: `ok (wired)`, `FAILED (unwired — ANTHROPIC_BASE_URL does not point at the router)`, or `FAILED (looped — points at the router but no real upstream was ever recorded)`, each naming `bash scripts/setup/router-setup.sh` as the repair. A missing or unparseable `router.toml` is `skipped (not installed yet)`, not a failure — the same convention `check_classifier()` already uses, because absence means `router-setup.sh` has not run on this machine.
+- `scripts/setup/check-harness-deps.test.sh` — extended to exercise `check_router()` alongside `check_classifier()` through the `SDD_HARNESS_DEPS_SOURCE_ONLY=1` sourcing seam, in a throwaway `HOME` with `lsof`/`ss`/`curl` stubbed on `PATH`, so neither the real `~/.sdd-router` nor the real `~/.claude/settings.json` is read or written.
+
+---
+
 ## Recent Changes (2026-10-08 — Harness Build 35)
 
 Theme: the cost router's setup script becomes part of the install, in the one order that survives an update. `headroom init --global --memory claude` reclaims `ANTHROPIC_BASE_URL` on every run, so a router wired *before* headroom is silently un-wired by the same install that wired it (task 9.2).
@@ -21,7 +41,7 @@ Theme: the cost router gets its wiring step — the one setup script that can ta
 
 ### Scripts
 - `scripts/setup/router-setup.sh` **(new)** — `install` (default) / `uninstall`. Fixed, non-reversible order on every path: resolve `uv` plus a ≥3.11 interpreter (`scripts/lib/tool-paths.sh`, never a bare `python3` — the system copy is 3.9.6 and has no `tomllib`) → write `~/.sdd-router/router.toml` from `templates/router.toml.template` when absent, never overwriting an existing one → install and start **two** services, `com.sdd.router-sentinel`/`com.sdd.router-worker` (launchd, `KeepAlive` + `ThrottleInterval`) or `sdd-router-sentinel.service`/`sdd-router-worker.service` (systemd, `Restart=always` + `RestartSec`), skipping cleanly on Git Bash and unsupported OS → preflight by sending one real HTTP request through the sentinel's own public port, `exit 1` touching nothing in `settings.json` if nothing comes back → only then write `env.ANTHROPIC_BASE_URL` in `~/.claude/settings.json`. This mirrors `headroom-setup.sh`'s proven install → health-check → wire shape, with `jeff-setup.sh`'s raw plist/unit writing as the service-install template (doubled), since `sentinel.py`/`server.py` ship no installer of their own. `[router].upstream` is discovered exactly once, on the first successful run (the SDK default `https://api.anthropic.com` when `ANTHROPIC_BASE_URL` is unset), and is never rewritten afterwards — reclaim repair (something else, e.g. the `headroom init --global --memory claude` that `update.sh` re-runs, pointed the global value elsewhere) only ever touches `settings.json`, and never re-derives the upstream from the drifted value. A **first-run self-loop** — the global value already equal to the sentinel's own address before any real upstream was ever recorded — is refused with `exit 1` before any service is installed, rather than guessed at. `uninstall` restores the recorded upstream (or deletes the key) *before* stopping either service, never after. `settings.json` is read and written with the same merge-not-overwrite discipline as `headroom-unwire-if-dead.py` (full JSON read, mutate only `env.ANTHROPIC_BASE_URL`, write the whole structure back) through small `$PYBIN` stdlib scripts — no text-munging of JSON. Ordered after `headroom-setup.sh` in both `install.sh` and `update.sh`.
-- `scripts/setup/router-setup.test.sh` **(new)** — 22 cases in a throwaway `HOME` with `uv`, `launchctl`/`systemctl` and `curl` stubbed on `PATH`: install paths A–G covering first-run discovery and the one-time `upstream` write, loop refusal firing before any service install, reclaim repair, the already-pointed-at-the-sentinel no-op (which still preflights), and the invariant that no code path writes `settings.json` before a passing preflight. `cmd_uninstall` is not yet exercised — its ordering was verified by direct code read, and the suite's own header defers the scenarios to task 9.4.
+- `scripts/setup/router-setup.test.sh` **(new)** — 22 cases in a throwaway `HOME` with `uv`, `launchctl`/`systemctl` and `curl` stubbed on `PATH`: install paths A–G covering first-run discovery and the one-time `upstream` write, loop refusal firing before any service install, reclaim repair, the already-pointed-at-the-sentinel no-op (which still preflights), and the invariant that no code path writes `settings.json` before a passing preflight. `cmd_uninstall` was not exercised as of this build — its ordering was verified by direct code read, with the scenarios deferred to task 9.4; they landed in Build 37 (Scenarios H–I, 44 assertions total).
 - **Known gap, flagged rather than skipped:** nothing yet wires jeff's generated `JEFF_API_KEYS` secret (`~/.sdd-router/jeff/.jeff-service.env`, chmod 600, written by `jeff-setup.sh`) into the worker service's environment under the name `router.toml`'s `[classifier].api_key_env` gives. Until it is, every classify call 401s, the circuit breaker opens, and the router fails open to pass-through: `claude` keeps working, classification and cost savings do not happen. The recommended follow-up (systemd `EnvironmentFile=` / launchd `EnvironmentVariables` pointing at jeff's existing chmod-600 file — no new secret file needed) is recorded in the script's own header.
 
 ---
@@ -1916,6 +1936,8 @@ Fail-open is the design, not a fallback. A dead worker, an unreachable classifie
 | `templates/router.toml.template` | Policy-only config, installed to `~/.sdd-router/router.toml` and never overwritten once present |
 | `scripts/setup/router-setup.sh` | Installer/uninstaller — services, preflight, and the `ANTHROPIC_BASE_URL` write (Build 34) |
 | `scripts/setup/jeff-setup.sh` | The local classifier (jeff + `gliformer-large-v1`), reported by `check-harness-deps.sh` |
+| `scripts/setup/check-harness-deps.sh` | Read-only health rows — `router sentinel`, `router worker`, and the single `router routing` wired/unwired/looped state, plus the jeff classifier row (Build 36) |
+| `scripts/setup/router-setup.test.sh` | Stubbed-`PATH` suite for the installer — install paths A–G (Build 34) plus uninstall correctness and service-registration independence, Scenarios H–I (Build 37) |
 
 ### Setup & Usage
 
@@ -1936,9 +1958,11 @@ curl -s -o /dev/null -w '%{http_code}\n' -X POST http://127.0.0.1:8799/v1/messag
 
 launchctl list | grep com.sdd.router           # macOS: sentinel + worker service state
 systemctl --user status sdd-router-sentinel    # Linux equivalent
-bash scripts/setup/check-harness-deps.sh       # includes the classifier row (jeff model + LISTEN address)
+bash scripts/setup/check-harness-deps.sh       # router sentinel / router worker / router routing rows, plus the classifier row
 tail -5 ~/.sdd-router/ledger.jsonl             # per-request routing decisions
 ```
+
+`check-harness-deps.sh` is the read-only reading of all of this (Build 36): `router sentinel` and `router worker` each report their own LISTEN state — a `FAILED` worker under an `ok` sentinel is the fail-open state, and it is its own row rather than being folded into one status — while `router routing` reports the single global state as `ok (wired)`, `FAILED (unwired)` when `ANTHROPIC_BASE_URL` does not point at the sentinel, or `FAILED (looped)` when it does but no real upstream was ever recorded. All three are `skipped` when `~/.sdd-router/router.toml` does not exist, because that means the installer has not run here, not that something broke.
 
 ### Known gap
 
