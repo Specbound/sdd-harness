@@ -6,6 +6,16 @@
 
 ---
 
+## Recent Changes (2026-10-08 — Harness Build 33)
+
+Theme: close the last blind spot in the cost router's local classifier — `check-harness-deps.sh` reported nothing about jeff at all, so a dead or misbound classifier was invisible without being asked about, unlike headroom's proxy check in the same script (task 8.2).
+
+### Scripts
+- `scripts/setup/check-harness-deps.sh` — new `check_classifier()` row: reports the `gliformer-large-v1` model present at `~/.sdd-router/jeff/models/`, jeff's actual LISTEN address inspected via `lsof`/`ss` rather than trusted from a loopback curl probe alone (a wildcard bind still answers a 127.0.0.1 probe, so the real bound address must be read directly — R2.1), and one real classification call succeeding. Skips cleanly, not failing, when `router.toml` is absent or `classifier.backend != "jeff"`, since `router-setup.sh` (task 9.1) has not shipped yet and absence means "not installed," not "broken." Verifies `specs/model-router/requirements.md` #2.5, #10.3.
+- `scripts/setup/check-harness-deps.test.sh` **(new)** — exercises `check_classifier()` and `jeff_listen_addr()` in a throwaway `HOME` with `lsof`/`ss`/`curl` stubbed on `PATH`, via `SDD_HARNESS_DEPS_SOURCE_ONLY=1` sourcing the script (defines every function, returns before any real venv/repo/network work) so the suite never touches this machine's real `.venv-tools` or `projects.txt`.
+
+---
+
 ## Recent Changes (2026-10-08 — Harness Build 32)
 
 Theme: the one unverified contract left in the cost router gets verified. Build 30 shipped `scripts/router/classify.py` against a **documented placeholder** wire shape because jeff's `/v1/systemone` JSON was not discoverable anywhere in this repo. It was wrong. jeff was downloaded and run locally, the real shape read off its FastAPI routes and pydantic schemas, and both the client and its suite rewritten against it.
