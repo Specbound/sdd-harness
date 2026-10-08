@@ -169,6 +169,9 @@ Before claiming a finding is fresh, verify it hasn't already been investigated i
 ### ❌ Replacement claim without verification
 Replacing wrong claim A with correction B requires verifying B is correct, not just that A was wrong. (source: 2026-10-08 [insight])
 
+### ❌ Prompt instructions alone don't prevent judge hallucinations
+Prompt-level warnings to LLM judges don't prevent fabricated citations; documented 10 times (3 by session-judge). Require structural code verification. (source: 2026-10-08 [routine-error])
+
 ## When to Use
 This skill is applicable to execute the workflow or actions described in the overview.
 _Last synced: 2026-10-06
