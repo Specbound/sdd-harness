@@ -35,6 +35,11 @@ bad()  { FAIL=$((FAIL+1)); echo "FAIL: $1"; }
 check(){ if [ "$2" = "$3" ]; then ok "$1"; else bad "$1 (want=$2 got=$3)"; fi }
 check_contains(){ if printf '%s' "$2" | grep -qF "$3"; then ok "$1"; else bad "$1 (missing: $3)"; fi }
 check_not_contains(){ if printf '%s' "$2" | grep -qF "$3"; then bad "$1 (should not contain: $3)"; else ok "$1"; fi }
+# row <group> <label> <status> — the exact formatted line report() emits.
+# Used by the router scenarios below to prove sentinel/worker down-states
+# render as two distinct rows rather than one combined status, not just
+# that the words appear somewhere in the output.
+row(){ printf '  %-28s %-18s %s\n' "$1" "$2" "$3"; }
 
 # A real Python 3.11+ interpreter is required for tomllib — resolve once,
 # mirroring what the real script's own venv_tools_ensure() would hand
@@ -58,6 +63,32 @@ BIN="$ROOT/bin"; mkdir -p "$BIN"
 cat > "$BIN/lsof" <<'SH'
 #!/bin/bash
 echo "lsof $*" >> "${CALLS_LOG:-/dev/null}"
+# FAKE_LISTEN_MAP (router scenarios only, "port1:addr1,port2:addr2") lets one
+# stubbed process answer differently per queried port -- needed because
+# check_router() probes two distinct ports (sentinel + worker) in the same
+# run. check_classifier()'s original single-port FAKE_LISTEN_ADDR behaviour
+# below is left untouched for every existing scenario that never sets the map.
+if [ -n "${FAKE_LISTEN_MAP:-}" ]; then
+  req_port=""
+  for arg in "$@"; do
+    case "$arg" in
+      -iTCP:*) req_port="${arg#-iTCP:}" ;;
+    esac
+  done
+  addr=""
+  IFS=',' read -ra __pairs <<< "$FAKE_LISTEN_MAP"
+  for pair in "${__pairs[@]}"; do
+    p="${pair%%:*}"
+    a="${pair#*:}"
+    [ "$p" = "$req_port" ] && addr="$a" && break
+  done
+  if [ -z "$addr" ]; then
+    exit 1
+  fi
+  echo "COMMAND   PID USER   FD   TYPE DEVICE SIZE/OFF NODE NAME"
+  echo "proc    12345 user    5u  IPv4 0x123        0t0  TCP ${addr} (LISTEN)"
+  exit 0
+fi
 if [ -z "${FAKE_LISTEN_ADDR:-}" ]; then
   exit 1
 fi
@@ -87,6 +118,18 @@ check_classifier
 echo "@@FAILURES=$FAILURES"
 SH
 chmod +x "$RUNNER"
+
+# Second runner (task 9.3): sources check-harness-deps.sh the same
+# function-only way, calls check_router() instead of check_classifier().
+RUNNER2="$ROOT/run_router.sh"
+cat > "$RUNNER2" <<'SH'
+#!/usr/bin/env bash
+set -u
+. "$1"
+check_router
+echo "@@FAILURES=$FAILURES"
+SH
+chmod +x "$RUNNER2"
 
 new_home() {
   H="$ROOT/home-$1"
@@ -127,6 +170,38 @@ run_classifier() {
 }
 
 failures_from() { printf '%s\n' "$1" | grep '^@@FAILURES=' | cut -d= -f2; }
+
+# write_router_only_toml <port> <upstream> — minimal router.toml carrying
+# only what check_router() reads ([router].port, [router].upstream); empty
+# upstream matches router-setup.sh's own templated/not-yet-installed state.
+write_router_only_toml() {
+  mkdir -p "$H/.sdd-router"
+  cat > "$H/.sdd-router/router.toml" <<EOF
+schema_version = 1
+
+[router]
+port = $1
+upstream = "$2"
+EOF
+}
+
+# write_settings_json <base_url> — ~/.claude/settings.json shape router-setup.sh
+# itself reads/writes: {"env": {"ANTHROPIC_BASE_URL": "<base_url>"}}. Omitting
+# the call entirely (no settings.json at all) is its own scenario, exercising
+# check_router()'s FileNotFoundError -> {} fallback.
+write_settings_json() {
+  mkdir -p "$H/.claude"
+  cat > "$H/.claude/settings.json" <<EOF
+{"env": {"ANTHROPIC_BASE_URL": "$1"}}
+EOF
+}
+
+run_router() {
+  HOME="$H" PATH="$BIN:$PATH" VPY="$REAL_PY" SDD_HARNESS_DEPS_SOURCE_ONLY=1 \
+    CALLS_LOG="$CALLS_LOG" \
+    FAKE_LISTEN_ADDR="${FAKE_LISTEN_ADDR:-}" FAKE_LISTEN_MAP="${FAKE_LISTEN_MAP:-}" \
+    bash "$RUNNER2" "$SETUP" 2>&1
+}
 
 # ──────────────────────────────────────────────────────────────────────────
 # Scenario A — backend=jeff, model present, loopback-bound, 200 -> all ok.
@@ -242,6 +317,142 @@ JEFF_API_KEY=""
 : > "$CALLS_LOG"
 outG2="$(run_classifier)"
 check_not_contains "G: no Authorization header when env var unset/empty" "$(cat "$CALLS_LOG")" "Authorization:"
+
+# ──────────────────────────────────────────────────────────────────────────
+# Scenario H — no router.toml at all -> skipped (router-setup.sh, task 9.1,
+# has simply not run yet); no sentinel/worker/routing rows at all.
+# ──────────────────────────────────────────────────────────────────────────
+echo "== Scenario H: no router.toml (router not installed) =="
+new_home h
+unset FAKE_LISTEN_MAP FAKE_LISTEN_ADDR
+outH="$(run_router)"
+check "H: FAILURES is 0" "0" "$(failures_from "$outH")"
+check_contains "H: model router skipped" "$outH" "skipped (not installed yet — bash scripts/setup/router-setup.sh)"
+check_not_contains "H: no sentinel row" "$outH" "router sentinel"
+check_not_contains "H: no worker row" "$outH" "router worker"
+check_not_contains "H: no routing row" "$outH" "router routing"
+
+# ──────────────────────────────────────────────────────────────────────────
+# Scenario I — fully wired: upstream recorded, both services listening on
+# 127.0.0.1, ANTHROPIC_BASE_URL already equals the sentinel's own address.
+# ──────────────────────────────────────────────────────────────────────────
+echo "== Scenario I: fully wired =="
+new_home i
+write_router_only_toml 8799 "https://api.anthropic.com"
+write_settings_json "http://127.0.0.1:8799"
+FAKE_LISTEN_MAP="8799:127.0.0.1:8799,8798:127.0.0.1:8798"
+outI="$(run_router)"
+check "I: FAILURES is 0" "0" "$(failures_from "$outI")"
+check_contains "I: sentinel ok" "$outI" "$(row global "router sentinel" "ok (listening on 127.0.0.1)")"
+check_contains "I: worker ok" "$outI" "$(row global "router worker" "ok (listening on 127.0.0.1)")"
+check_contains "I: routing ok (wired)" "$outI" "$(row global "router routing" "ok (wired)")"
+
+# ──────────────────────────────────────────────────────────────────────────
+# Scenario J — unwired (reclaimed): upstream recorded, but ANTHROPIC_BASE_URL
+# no longer equals the sentinel's own address (e.g. headroom init --global
+# reclaimed it). The "invisible by construction" case named in tasks.md.
+# ──────────────────────────────────────────────────────────────────────────
+echo "== Scenario J: unwired (reclaimed) =="
+new_home j
+write_router_only_toml 8799 "https://api.anthropic.com"
+write_settings_json "https://api.anthropic.com"
+FAKE_LISTEN_MAP="8799:127.0.0.1:8799,8798:127.0.0.1:8798"
+outJ="$(run_router)"
+check "J: FAILURES is 1 (routing only)" "1" "$(failures_from "$outJ")"
+check_contains "J: sentinel ok" "$outJ" "$(row global "router sentinel" "ok (listening on 127.0.0.1)")"
+check_contains "J: worker ok" "$outJ" "$(row global "router worker" "ok (listening on 127.0.0.1)")"
+check_contains "J: routing FAILED unwired" "$outJ" "FAILED (unwired — ANTHROPIC_BASE_URL does not point at the router; re-run: bash scripts/setup/router-setup.sh)"
+
+# ──────────────────────────────────────────────────────────────────────────
+# Scenario K — looped: upstream empty (install never completed, or the
+# self-loop guard refused it) but ANTHROPIC_BASE_URL already equals the
+# sentinel's own address anyway — the ambiguous state cmd_install() itself
+# refuses to create, observed here read-only instead of prevented.
+# ──────────────────────────────────────────────────────────────────────────
+echo "== Scenario K: looped =="
+new_home k
+write_router_only_toml 8799 ""
+write_settings_json "http://127.0.0.1:8799"
+FAKE_LISTEN_MAP="8799:127.0.0.1:8799,8798:127.0.0.1:8798"
+outK="$(run_router)"
+check "K: FAILURES is 1 (routing only)" "1" "$(failures_from "$outK")"
+check_contains "K: routing FAILED looped" "$outK" "FAILED (looped — ANTHROPIC_BASE_URL points at the router but no real upstream was ever recorded; re-run: bash scripts/setup/router-setup.sh)"
+
+# ──────────────────────────────────────────────────────────────────────────
+# Scenario L — sentinel down, worker up: its own distinct FAILED row, not
+# swallowed into a single combined status (tasks.md 9.3's stated reason for
+# this row existing).
+# ──────────────────────────────────────────────────────────────────────────
+echo "== Scenario L: sentinel down, worker up =="
+new_home l
+write_router_only_toml 8799 "https://api.anthropic.com"
+write_settings_json "http://127.0.0.1:8799"
+FAKE_LISTEN_MAP="8798:127.0.0.1:8798"
+outL="$(run_router)"
+check "L: FAILURES is 1 (sentinel only)" "1" "$(failures_from "$outL")"
+check_contains "L: sentinel FAILED not listening" "$outL" "$(row global "router sentinel" "FAILED (not listening)")"
+check_contains "L: worker still ok (own row)" "$outL" "$(row global "router worker" "ok (listening on 127.0.0.1)")"
+check_contains "L: routing still ok wired (config-level, independent of liveness)" "$outL" "$(row global "router routing" "ok (wired)")"
+
+# ──────────────────────────────────────────────────────────────────────────
+# Scenario M — worker down, sentinel up: the mirror of L, confirming the two
+# rows are independent in both directions.
+# ──────────────────────────────────────────────────────────────────────────
+echo "== Scenario M: worker down, sentinel up =="
+new_home m
+write_router_only_toml 8799 "https://api.anthropic.com"
+write_settings_json "http://127.0.0.1:8799"
+FAKE_LISTEN_MAP="8799:127.0.0.1:8799"
+outM="$(run_router)"
+check "M: FAILURES is 1 (worker only)" "1" "$(failures_from "$outM")"
+check_contains "M: sentinel still ok (own row)" "$outM" "$(row global "router sentinel" "ok (listening on 127.0.0.1)")"
+check_contains "M: worker FAILED not listening" "$outM" "$(row global "router worker" "FAILED (not listening)")"
+check_contains "M: routing still ok wired" "$outM" "$(row global "router routing" "ok (wired)")"
+
+# ──────────────────────────────────────────────────────────────────────────
+# Scenario N — sentinel wildcard-bound (R2.1), isolated from the worker and
+# routing rows.
+# ──────────────────────────────────────────────────────────────────────────
+echo "== Scenario N: sentinel wildcard-bound =="
+new_home n
+write_router_only_toml 8799 "https://api.anthropic.com"
+write_settings_json "http://127.0.0.1:8799"
+FAKE_LISTEN_MAP="8799:*:8799,8798:127.0.0.1:8798"
+outN="$(run_router)"
+check "N: FAILURES is 1 (sentinel wildcard only)" "1" "$(failures_from "$outN")"
+check_contains "N: sentinel wildcard FAILED" "$outN" "$(row global "router sentinel" "FAILED (wildcard-bound: *:8799 — violates loopback-only, R2.1)")"
+check_contains "N: worker still ok" "$outN" "$(row global "router worker" "ok (listening on 127.0.0.1)")"
+check_contains "N: routing still ok wired" "$outN" "$(row global "router routing" "ok (wired)")"
+
+# ──────────────────────────────────────────────────────────────────────────
+# Scenario O — worker wildcard-bound (R2.1), the mirror of N.
+# ──────────────────────────────────────────────────────────────────────────
+echo "== Scenario O: worker wildcard-bound =="
+new_home o
+write_router_only_toml 8799 "https://api.anthropic.com"
+write_settings_json "http://127.0.0.1:8799"
+FAKE_LISTEN_MAP="8799:127.0.0.1:8799,8798:*:8798"
+outO="$(run_router)"
+check "O: FAILURES is 1 (worker wildcard only)" "1" "$(failures_from "$outO")"
+check_contains "O: sentinel still ok" "$outO" "$(row global "router sentinel" "ok (listening on 127.0.0.1)")"
+check_contains "O: worker wildcard FAILED" "$outO" "$(row global "router worker" "FAILED (wildcard-bound: *:8798 — violates loopback-only, R2.1)")"
+check_contains "O: routing still ok wired" "$outO" "$(row global "router routing" "ok (wired)")"
+
+# ──────────────────────────────────────────────────────────────────────────
+# Scenario P — not fully installed yet: upstream empty AND ANTHROPIC_BASE_URL
+# does not equal the sentinel's own address (here: no settings.json at all)
+# -> a skip, not a failure, distinct from both unwired and looped.
+# ──────────────────────────────────────────────────────────────────────────
+echo "== Scenario P: not fully installed (upstream empty, base url unset) =="
+new_home p
+write_router_only_toml 8799 ""
+# deliberately no write_settings_json call
+FAKE_LISTEN_MAP="8799:127.0.0.1:8799,8798:127.0.0.1:8798"
+outP="$(run_router)"
+check "P: FAILURES is 0" "0" "$(failures_from "$outP")"
+check_contains "P: sentinel ok" "$outP" "$(row global "router sentinel" "ok (listening on 127.0.0.1)")"
+check_contains "P: worker ok" "$outP" "$(row global "router worker" "ok (listening on 127.0.0.1)")"
+check_contains "P: routing skipped (not fully installed)" "$outP" "$(row global "router routing" "skipped (not fully installed — run bash scripts/setup/router-setup.sh)")"
 
 echo ""
 echo "$PASS passed, $FAIL failed"

@@ -225,11 +225,140 @@ EOF
   fi
 }
 
+# check_router — report the model-router's per-service health (sentinel,
+# worker) and its single global routing state (wired / unwired / looped).
+# Read-only diagnostic probe: never writes router.toml or settings.json,
+# never restarts a service — unlike router-setup.sh (task 9.1), which
+# installs and wires.
+#
+# router.toml absence means router-setup.sh has simply not run yet on this
+# machine — a skip, not a failure, same convention check_classifier() above
+# already uses. Once router.toml exists, an installed-but-bypassed router is
+# invisible by construction unless this row says otherwise, and a worker
+# down while the sentinel is up is a distinct, equally invisible state that
+# must surface as its own row rather than being swallowed into one combined
+# status (design.md Monitoring; R4.5a).
+# Verifies: specs/model-router/requirements.md#3.4, #4.5a, #10.3
+check_router() {
+  local router_toml="$HOME/.sdd-router/router.toml"
+  local fields="" port="" upstream=""
+
+  if [ -f "$router_toml" ] && [ -n "${VPY:-}" ]; then
+    fields="$("$VPY" - "$router_toml" <<'PYEOF' 2>/dev/null
+import sys
+try:
+    import tomllib
+except ImportError:
+    print("ERROR")
+    raise SystemExit(0)
+try:
+    with open(sys.argv[1], "rb") as fh:
+        data = tomllib.load(fh)
+except (OSError, tomllib.TOMLDecodeError):
+    print("ERROR")
+    raise SystemExit(0)
+router = data.get("router")
+if not isinstance(router, dict):
+    router = {}
+print("{}\t{}".format(router.get("port", 8799), router.get("upstream") or ""))
+PYEOF
+)"
+  fi
+
+  if [ -z "$fields" ] || [ "$fields" = "ERROR" ]; then
+    report "global" "model router" "skipped (not installed yet — bash scripts/setup/router-setup.sh)"
+    return 0
+  fi
+
+  IFS="$(printf '\t')" read -r port upstream <<EOF
+$fields
+EOF
+  [ -n "$port" ] || port=8799
+  local sentinel_url="http://127.0.0.1:${port}"
+
+  # ── sentinel: listening check, reusing jeff_listen_addr() directly rather
+  # than duplicating its lsof/ss logic (R4.5a) ────────────────────────────
+  local sentinel_addr
+  sentinel_addr="$(jeff_listen_addr "$port")"
+  if [ -z "$sentinel_addr" ]; then
+    report "global" "router sentinel" "FAILED (not listening)"
+    FAILURES=$((FAILURES + 1))
+  else
+    case "$sentinel_addr" in
+      127.0.0.1:*)
+        report "global" "router sentinel" "ok (listening on 127.0.0.1)"
+        ;;
+      *)
+        report "global" "router sentinel" "FAILED (wildcard-bound: $sentinel_addr — violates loopback-only, R2.1)"
+        FAILURES=$((FAILURES + 1))
+        ;;
+    esac
+  fi
+
+  # ── worker: its own row, independent of the sentinel's (R4.5a) — a down
+  # worker while the sentinel is up must not be swallowed into one combined
+  # status. Worker port is server.py's own DEFAULT_PORT, not read from
+  # router.toml (router.toml only ever records the sentinel's port).
+  local worker_addr
+  worker_addr="$(jeff_listen_addr 8798)"
+  if [ -z "$worker_addr" ]; then
+    report "global" "router worker" "FAILED (not listening)"
+    FAILURES=$((FAILURES + 1))
+  else
+    case "$worker_addr" in
+      127.0.0.1:*)
+        report "global" "router worker" "ok (listening on 127.0.0.1)"
+        ;;
+      *)
+        report "global" "router worker" "FAILED (wildcard-bound: $worker_addr — violates loopback-only, R2.1)"
+        FAILURES=$((FAILURES + 1))
+        ;;
+    esac
+  fi
+
+  # ── routing state — wired / unwired / looped (R3.4): a single global
+  # state describing whether ANTHROPIC_BASE_URL points at the sentinel,
+  # not a per-service fact. An installed-but-bypassed router (unwired) and
+  # a self-forwarding loop with no real upstream ever recorded (looped) are
+  # the two states router-setup.sh's own cmd_install() either repairs or
+  # refuses to create at install time; here they are read-only diagnostics.
+  local current_base_url=""
+  if [ -n "${VPY:-}" ]; then
+    current_base_url="$("$VPY" - "$HOME/.claude/settings.json" <<'PYEOF' 2>/dev/null
+import json
+import sys
+try:
+    with open(sys.argv[1], encoding="utf-8") as fh:
+        data = json.load(fh)
+except (OSError, json.JSONDecodeError):
+    data = {}
+env = data.get("env")
+if not isinstance(env, dict):
+    env = {}
+print(env.get("ANTHROPIC_BASE_URL") or "")
+PYEOF
+)"
+  fi
+
+  if [ -n "$upstream" ] && [ "$current_base_url" = "$sentinel_url" ]; then
+    report "global" "router routing" "ok (wired)"
+  elif [ -n "$upstream" ]; then
+    report "global" "router routing" "FAILED (unwired — ANTHROPIC_BASE_URL does not point at the router; re-run: bash scripts/setup/router-setup.sh)"
+    FAILURES=$((FAILURES + 1))
+  elif [ "$current_base_url" = "$sentinel_url" ]; then
+    report "global" "router routing" "FAILED (looped — ANTHROPIC_BASE_URL points at the router but no real upstream was ever recorded; re-run: bash scripts/setup/router-setup.sh)"
+    FAILURES=$((FAILURES + 1))
+  else
+    report "global" "router routing" "skipped (not fully installed — run bash scripts/setup/router-setup.sh)"
+  fi
+}
+
 # Testing seam: sourcing this file with SDD_HARNESS_DEPS_SOURCE_ONLY=1 defines
 # every function above and returns before any real venv/repo/network work —
-# lets check-harness-deps.test.sh exercise check_classifier() (and
-# jeff_listen_addr()) in a throwaway HOME, with lsof/ss/curl stubbed on PATH,
-# without touching this machine's real .venv-tools or real projects.txt.
+# lets check-harness-deps.test.sh exercise check_classifier() and
+# check_router() (and jeff_listen_addr()) in a throwaway HOME, with
+# lsof/ss/curl stubbed on PATH, without touching this machine's real
+# .venv-tools, real projects.txt, or real ~/.sdd-router / ~/.claude/settings.json.
 if [ "${SDD_HARNESS_DEPS_SOURCE_ONLY:-0}" = "1" ]; then
   return 0 2>/dev/null || exit 0
 fi
@@ -408,6 +537,9 @@ fi
 
 # ── 4. Model-router local classifier (jeff), if configured ────────────────
 check_classifier
+
+# ── 5. Model router — sentinel/worker wiring and routing state ────────────
+check_router
 
 echo ""
 if [ "$FAILURES" -eq 0 ]; then
