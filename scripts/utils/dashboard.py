@@ -6153,10 +6153,10 @@ def _start_workshop() -> None:
 
 
 def _run_workshop_eval(repo_path: str) -> None:
-    """Spawn a claude --print session to run the raindrop-eval-loop skill for repo_path."""
+    """Spawn a claude --print session to run ~/.claude/skill-library/raindrop-eval-loop/SKILL.md for repo_path."""
     repo_name = Path(repo_path).name
     prompt = (
-        f"Use the raindrop-eval-loop skill to run the self-healing eval loop "
+        f"Read ~/.claude/skill-library/raindrop-eval-loop/SKILL.md and follow it to run the self-healing eval loop "
         f"for the repository '{repo_name}' at {repo_path}. "
         f"Workshop is running at http://localhost:5899."
     )
