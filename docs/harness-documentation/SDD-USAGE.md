@@ -1,6 +1,6 @@
 <!-- L0: Quick reference — all SDD commands with usage examples -->
 
-_Last synced: 2026-10-06_
+_Last synced: 2026-10-08_
 
 # SDD Usage Guide
 
@@ -868,4 +868,4 @@ Four protocols extracted from [garrytan/gbrain](https://github.com/garrytan/gbra
 
 Full reference: `docs/gbrain-patterns/gbrain-patterns.md`
 
-_Last synced: 2026-10-06_
+_Last synced: 2026-10-08_

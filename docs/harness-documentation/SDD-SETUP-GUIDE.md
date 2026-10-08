@@ -6,6 +6,26 @@
 
 ---
 
+## Recent Changes (2026-10-08 — Harness Build 35)
+
+Theme: the cost router's setup script becomes part of the install, in the one order that survives an update. `headroom init --global --memory claude` reclaims `ANTHROPIC_BASE_URL` on every run, so a router wired *before* headroom is silently un-wired by the same install that wired it (task 9.2).
+
+### Scripts
+- `install.sh` (`install_globals()`) and `update.sh` — both now invoke `scripts/setup/router-setup.sh` immediately after `headroom-setup.sh`, in the same non-fatal shape as every other global setup step (`|| echo "  WARNING: … re-run manually if needed."`), so a router that refuses to install never aborts the harness install. The order is load-bearing, not cosmetic: headroom's wiring step reclaims the global `ANTHROPIC_BASE_URL` on every `update.sh`, and `router-setup.sh`'s reclaim repair points it back at the sentinel on the same run — which only happens if the router runs second. Build 34 above describes what the script itself does; the **Model Router** section below carries the install/verify commands.
+
+---
+
+## Recent Changes (2026-10-08 — Harness Build 34)
+
+Theme: the cost router gets its wiring step — the one setup script that can take `claude` away from the machine it runs on, so every ordering decision in it is defensive. `scripts/setup/router-setup.sh` (task 9.1) installs the sentinel and worker as OS-supervised services, proves them with a real request, and only then rewrites the global `ANTHROPIC_BASE_URL` that every `claude` invocation reads.
+
+### Scripts
+- `scripts/setup/router-setup.sh` **(new)** — `install` (default) / `uninstall`. Fixed, non-reversible order on every path: resolve `uv` plus a ≥3.11 interpreter (`scripts/lib/tool-paths.sh`, never a bare `python3` — the system copy is 3.9.6 and has no `tomllib`) → write `~/.sdd-router/router.toml` from `templates/router.toml.template` when absent, never overwriting an existing one → install and start **two** services, `com.sdd.router-sentinel`/`com.sdd.router-worker` (launchd, `KeepAlive` + `ThrottleInterval`) or `sdd-router-sentinel.service`/`sdd-router-worker.service` (systemd, `Restart=always` + `RestartSec`), skipping cleanly on Git Bash and unsupported OS → preflight by sending one real HTTP request through the sentinel's own public port, `exit 1` touching nothing in `settings.json` if nothing comes back → only then write `env.ANTHROPIC_BASE_URL` in `~/.claude/settings.json`. This mirrors `headroom-setup.sh`'s proven install → health-check → wire shape, with `jeff-setup.sh`'s raw plist/unit writing as the service-install template (doubled), since `sentinel.py`/`server.py` ship no installer of their own. `[router].upstream` is discovered exactly once, on the first successful run (the SDK default `https://api.anthropic.com` when `ANTHROPIC_BASE_URL` is unset), and is never rewritten afterwards — reclaim repair (something else, e.g. the `headroom init --global --memory claude` that `update.sh` re-runs, pointed the global value elsewhere) only ever touches `settings.json`, and never re-derives the upstream from the drifted value. A **first-run self-loop** — the global value already equal to the sentinel's own address before any real upstream was ever recorded — is refused with `exit 1` before any service is installed, rather than guessed at. `uninstall` restores the recorded upstream (or deletes the key) *before* stopping either service, never after. `settings.json` is read and written with the same merge-not-overwrite discipline as `headroom-unwire-if-dead.py` (full JSON read, mutate only `env.ANTHROPIC_BASE_URL`, write the whole structure back) through small `$PYBIN` stdlib scripts — no text-munging of JSON. Ordered after `headroom-setup.sh` in both `install.sh` and `update.sh`.
+- `scripts/setup/router-setup.test.sh` **(new)** — 22 cases in a throwaway `HOME` with `uv`, `launchctl`/`systemctl` and `curl` stubbed on `PATH`: install paths A–G covering first-run discovery and the one-time `upstream` write, loop refusal firing before any service install, reclaim repair, the already-pointed-at-the-sentinel no-op (which still preflights), and the invariant that no code path writes `settings.json` before a passing preflight. `cmd_uninstall` is not yet exercised — its ordering was verified by direct code read, and the suite's own header defers the scenarios to task 9.4.
+- **Known gap, flagged rather than skipped:** nothing yet wires jeff's generated `JEFF_API_KEYS` secret (`~/.sdd-router/jeff/.jeff-service.env`, chmod 600, written by `jeff-setup.sh`) into the worker service's environment under the name `router.toml`'s `[classifier].api_key_env` gives. Until it is, every classify call 401s, the circuit breaker opens, and the router fails open to pass-through: `claude` keeps working, classification and cost savings do not happen. The recommended follow-up (systemd `EnvironmentFile=` / launchd `EnvironmentVariables` pointing at jeff's existing chmod-600 file — no new secret file needed) is recorded in the script's own header.
+
+---
+
 ## Recent Changes (2026-10-08 — Harness Build 33)
 
 Theme: close the last blind spot in the cost router's local classifier — `check-harness-deps.sh` reported nothing about jeff at all, so a dead or misbound classifier was invisible without being asked about, unlike headroom's proxy check in the same script (task 8.2).
@@ -1854,6 +1874,8 @@ The harness includes a global integration with [headroom-ai](https://github.com/
 
 Routing wired by step 4 does not self-repair if the proxy later dies (crash, machine restart racing launchd, a bad headroom upgrade) — headroom's own SessionStart hook re-asserts the same routing every session, so a hand edit doesn't stick. `hooks/claude/session-start-hook.sh` covers that gap on every session start via `scripts/utils/headroom-unwire-if-dead.py`: a bounded ~1.5s connect probe against the routed host, stripping `ANTHROPIC_BASE_URL` from `~/.claude/settings.json` when it refuses the connection (idempotent no-op on a healthy or unrouted proxy).
 
+Headroom is no longer the only owner of that value. `scripts/setup/router-setup.sh` runs immediately after this script in both `install.sh` and `update.sh`, and once the cost router's services are installed it points `env.ANTHROPIC_BASE_URL` at the router's sentinel instead — recording whatever headroom (or the SDK default) had set as the router's own `[router].upstream`, exactly once, so the chain stays `claude → sentinel → headroom proxy → API`. Each `update.sh` re-runs step 4 above and reclaims the global value; `router-setup.sh`'s reclaim repair points it back at the sentinel on the same run, and never re-derives the stored upstream from the drifted value. See the Build 34 entry above and the **Model Router** section below.
+
 A companion script, `scripts/utils/sync-memories-to-headroom.py`, bidirectionally syncs harness markdown memories with Headroom's SQLite DB at session start when Headroom is installed.
 
 ### Verifying it works
@@ -1871,6 +1893,60 @@ Savings and install status are visible in the harness dashboard's Headroom panel
 No CLAUDE.md changes needed — Headroom is fully automatic and global, wired the same way as RTK.
 
 See `.claude/scripts/README.md` (Utilities section) for the canonical script description.
+
+---
+
+## Model Router (Optional — Local Cost Routing)
+
+### What it does
+
+Puts a local sentinel in front of every `claude` request so a locally-classified request that does not need the expensive model can be served by a cheaper one, and passes the request straight through whenever anything in the chain is unavailable. Two OS-supervised services: the sentinel (front door, `127.0.0.1:8799` — the address `ANTHROPIC_BASE_URL` points at) and the worker (`127.0.0.1:8798`, where the config/classify/policy/ledger logic lives). Installed chain: `claude → sentinel → headroom proxy → API`.
+
+Fail-open is the design, not a fallback. A dead worker, an unreachable classifier, an open circuit breaker or a malformed policy all degrade to byte-for-byte pass-through: `claude` keeps working, the savings stop happening. The sentinel imports nothing beyond stdlib so no policy bug can take the public port down.
+
+### Components
+
+| Path | Role |
+|------|------|
+| `scripts/router/sentinel.py` | Front door on `127.0.0.1:8799`; tries the worker first under a short connect budget, then passes through unchanged |
+| `scripts/router/server.py` | Worker on `127.0.0.1:8798` — the single request/response path (config → classify → policy → ledger) |
+| `scripts/router/policy.py` | `select()` — the one cost-vs-correctness decision; pure function, no I/O, no clock |
+| `scripts/router/classify.py` | `JeffClassifier` / `NullClassifier` — one POST per classify, hard wall-clock timeout, circuit breaker |
+| `scripts/router/ledger.py` | Append-only decision log (`~/.sdd-router/ledger.jsonl`) + atomically-rewritten `stats.json` |
+| `templates/router.toml.template` | Policy-only config, installed to `~/.sdd-router/router.toml` and never overwritten once present |
+| `scripts/setup/router-setup.sh` | Installer/uninstaller — services, preflight, and the `ANTHROPIC_BASE_URL` write (Build 34) |
+| `scripts/setup/jeff-setup.sh` | The local classifier (jeff + `gliformer-large-v1`), reported by `check-harness-deps.sh` |
+
+### Setup & Usage
+
+```bash
+# Automatic: install.sh and update.sh both run it, immediately after headroom-setup.sh
+bash scripts/setup/router-setup.sh             # install (default)
+bash scripts/setup/router-setup.sh uninstall   # restores the recorded upstream FIRST, then stops both services
+```
+
+`install` is idempotent and re-assertive: it repairs a reclaimed `ANTHROPIC_BASE_URL` on every run, and never re-derives the stored `[router].upstream` from a drifted value — the upstream is discovered exactly once, on the first successful run. Nothing is written into `~/.claude/settings.json` until one real HTTP request has come back through the sentinel's own public port; a failed preflight is `exit 1` with the settings file untouched. A first-run self-loop (the global value already pointing at the sentinel before any upstream was recorded) is refused rather than guessed at. Git Bash and unsupported OSes skip cleanly.
+
+### Verifying it works
+
+```bash
+# Same probe the installer's preflight uses — any HTTP answer means the front door is alive
+curl -s -o /dev/null -w '%{http_code}\n' -X POST http://127.0.0.1:8799/v1/messages \
+  -H 'Content-Type: application/json' -d '{}'
+
+launchctl list | grep com.sdd.router           # macOS: sentinel + worker service state
+systemctl --user status sdd-router-sentinel    # Linux equivalent
+bash scripts/setup/check-harness-deps.sh       # includes the classifier row (jeff model + LISTEN address)
+tail -5 ~/.sdd-router/ledger.jsonl             # per-request routing decisions
+```
+
+### Known gap
+
+Nothing yet wires jeff's generated `JEFF_API_KEYS` secret (`~/.sdd-router/jeff/.jeff-service.env`, chmod 600, written by `jeff-setup.sh`) into the worker service's environment under the name `router.toml`'s `[classifier].api_key_env` gives. Until it is, every classify call 401s, the breaker opens, and the router fails open to pass-through. The recommended fix needs no new secret file: systemd `EnvironmentFile=` / launchd `EnvironmentVariables` pointing at jeff's existing chmod-600 file.
+
+### CLAUDE.md additions
+
+No CLAUDE.md changes needed — the router is transparent to `claude` invocations, wired globally the same way as RTK and Headroom.
 
 ---
 
