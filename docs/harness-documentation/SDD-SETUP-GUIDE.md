@@ -2,7 +2,31 @@
 
 > This file is managed by the SDD harness (`sdd-harness/docs/`).
 > It is the single source of truth — do not edit copies in individual projects.
-> _Last synced: 2026-10-08_
+> _Last synced: 2026-10-11_
+
+---
+
+## Recent Changes (2026-10-11 — Harness Build 40)
+
+Theme: the Library-tier bare-name work that Builds 38 and 39 flagged as "in the working tree, not committed" is now committed, and the Keep Rate calculator gains two companion scripts.
+
+### Scripts
+
+- `scripts/session/_keep_rate_classified.py` **(new)** — Keep Rate split by path class, on the same pinned recipe as `_keep_rate_calc.py` (see Build 25), plus the classifier the recorded series has used since 2026-09-24: `lockfile` (`pnpm-lock.yaml` / `package-lock.json` / `yarn.lock`), `infra` (dotfiles, build configs, `.github/`, `.claude/`, `*.md`, `*.txt`), `feature` (everything else). Added lines are classified by the path the commit touched, kept lines by the `HEAD` path they live in now — a line can move between classes, so that asymmetry is inherent to blame-based survival, and it matches how the series was recorded. JSON out: per-class `added`/`kept`/`pct`, plus `raw_with_lockfiles` and `ex_lockfile` totals and a `basis` string. `[--days N] [--repo PATH] [--unpinned]`; `--unpinned` drops `-M -C` from blame and its figures are **not** comparable with the recorded headline series. A `--days` wider than the history returns `commits: 0` with null percentages rather than an error — bound the window deliberately.
+- `scripts/session/_keep_rate_delta.py` **(new)** — attributes a keep-rate movement to the commits and paths that caused it: blames the `>`N-day Claude cohort at two revs, examines only the paths that differ between them, and reports per `(commit, path)` how many attributable lines were lost or gained. Answers "the series moved — why?" without re-running the full calculator at the old rev. JSON out: `cohort_size`, `changed_paths_examined`, `net_delta`, and `movements` sorted most-negative first. `--old <rev> --new <rev> [--days N] [--repo PATH]`.
+
+### Hooks and settings templates
+
+- No behaviour change beyond what Builds 28, 30 and 38 already describe — this is the commit that lands them, so the Build 39 carry-over note no longer applies: `hooks/claude/skill-library-resolver.sh` (+ `skill-library-resolver.test.sh`, 9 cases), `scripts/utils/check-skill-tiers.py` (+ `check-skill-tiers.test.sh` and `scripts/utils/skill-tier-allow.txt`), the `TIER_GUARD` third check in `hooks/git/pre-commit`, the `[SKILL-LIBRARY]` line in `hooks/claude/session-start-hook.sh`, the `PreToolUse` / `Skill` registration of the resolver in `templates/settings.json.template` and `templates/settings.harness.json.template`, the `~/.claude/skill-library/ktx-data-context/SKILL.md` path fix in `templates/settings.notes.md.template`, and the bare-name → `~/.claude/skill-library/<name>/SKILL.md` rewrites in `hooks/claude/pr-evidence-hook.sh`, `hooks/claude/raindrop-best-practices.sh`, `hooks/claude/skill-permissions-gate.sh`, `scripts/orchestration/daily-orchestrator.sh`, `scripts/pr/detect_base_and_create.sh`, `scripts/pr/log_review.sh` and `scripts/setup/raindrop-setup.sh`.
+
+### Skills
+
+- `skills/repo-drift-review` — the hook-registration extractor's command-path match widened from `.sh|.js|.py` to `.sh|.bash|.zsh|.cjs|.js|.mjs|.ts|.py`, so a hook registered with a `.cjs`, `.mjs`, `.ts`, `.bash` or `.zsh` command is no longer invisible to the drift sweep.
+- `skills/verification-before-completion` — new anti-pattern: **derived copies revert on sync when the source lacks the edit**; verify the canonical source holds the change before claiming done.
+
+### Editor settings
+
+- `.vscode/settings.json` **(new)** — `githubPullRequests.ignoredPullRequestBranches: ["master"]`, so the GitHub Pull Requests extension stops offering to open a PR for the default branch. Editor-local convenience only; nothing in the harness reads it.
 
 ---
 
@@ -2099,5 +2123,5 @@ disown 2>/dev/null || true
 
 The Stop hook should only contain **passive checks** (e.g., nudging housekeeping when observations exceed a threshold). See `.claude/hooks/stop-hook.sh` for the reference implementation.
 
-_Last synced: 2026-10-08_
+_Last synced: 2026-10-11_
 

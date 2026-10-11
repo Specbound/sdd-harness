@@ -249,6 +249,8 @@ sdd-harness/
 │   │   ├── micro_reflect.py        #   Extracts durable facts → [auto-learn] in hot-memory.md
 │   │   ├── _archive_obs.py         #   Archives whole dates out of observations.md into glacier/ — selection is BY DATE, never by count, so a concurrent same-day append can't be destroyed (today is refused)
 │   │   ├── _keep_rate_calc.py      #   Keep Rate calculator — the pinned recipe from skills/keep-rate/SKILL.md, extracted so two readings stay comparable (branch-only + --no-merges, one HEAD-wide blame map, -M -C, --line-porcelain)
+│   │   ├── _keep_rate_classified.py #   Keep Rate split by path class (lockfile / infra / feature) on the same pinned recipe — reports per-class pct plus raw_with_lockfiles and ex_lockfile totals; --unpinned drops -M -C and is NOT comparable with the recorded series
+│   │   ├── _keep_rate_delta.py      #   Attributes a keep-rate movement to the (commit, path) pairs that lost attributable lines between two revs — "the series moved, why?" without re-running the calculator at the old rev
 │   │   └── trust_score.py          #   Applies Judge score delta to hot-memory.md (numbers read from metrics.jsonl); `apply` accepts repeated --delta (one per judge run), applies the median, and records the day inconclusive with delta 0.0 when the samples spread past 2.0
 │   ├── setup/                    #   One-time project setup helpers
 │   │   ├── generate-project-stack.sh # Auto-detect tech stack
@@ -1059,4 +1061,4 @@ The Model Cost section reads session data from `~/.claude/projects/*/`. Pricing 
 
 Private repository. Contact the maintainer for access.
 
-_Last synced: 2026-10-08_
+_Last synced: 2026-10-11_

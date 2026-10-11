@@ -106,6 +106,22 @@ Report:
 - Any files or feature areas with notably low keep rate (potential signal of prompt or context issues)
 - Trend direction vs last measurement
 
+## Canonical Calculators
+
+All three live in the harness source tree at `sdd-harness/scripts/session/` (tracked) and are copied to `.claude/scripts/session/` on install — read the harness copy if the `.claude/` one is missing. All emit JSON on stdout.
+
+| Script | Answers | Invocation |
+|---|---|---|
+| `_keep_rate_calc.py` | the headline rate — Steps 1–2 pinned so two readings stay comparable | `[--days N] [--repo PATH] [--json]` |
+| `_keep_rate_classified.py` | the same rate split by path class: `lockfile` (`pnpm-lock.yaml` / `package-lock.json` / `yarn.lock`), `infra` (dotfiles, build configs, `.github/`, `.claude/`, `*.md`, `*.txt`), `feature` (everything else) — this is the Step 4 Window Artifact Check and the infra-vs-feature split under Expected Churn Patterns, as a script | `[--days N] [--repo PATH] [--unpinned]` |
+| `_keep_rate_delta.py` | why a recorded figure moved — blames the cohort at two revs and reports per `(commit, path)` how many attributable lines were lost or gained between them | `--old <rev> --new <rev> [--days N] [--repo PATH]` |
+
+`_keep_rate_classified.py` reports per-class `added`/`kept`/`pct` plus `raw_with_lockfiles` and `ex_lockfile` totals, and a `basis` string to record alongside the value. Its added lines are classified by the path the commit touched while kept lines are classified by the `HEAD` path they live in now — a line can move between classes, so that asymmetry is inherent to blame-based survival and matches how the series has been recorded since 2026-09-24. Its `--unpinned` flag drops `-M -C` from blame and its output is **not** comparable with the recorded headline series.
+
+`_keep_rate_delta.py` examines only the paths that differ between the two revs, so it answers "the series moved — why?" without re-running the full calculator at the old rev. Output: `cohort_size`, `changed_paths_examined`, `net_delta`, and `movements` sorted most-negative first.
+
+Classified output is a separate series from the aggregate one — see the anti-pattern below on unit-comparability before setting one against the other.
+
 ## Expected Churn Patterns (Anti-Patterns)
 
 Not all low keep-rate signals indicate code quality issues:
