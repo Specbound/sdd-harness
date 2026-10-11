@@ -1,8 +1,9 @@
 #!/bin/bash
 # =============================================================================
-# SDD harness pre-commit guard — hardcoded paths, and regex in embedded Python.
+# SDD harness pre-commit guard — hardcoded paths, regex in embedded Python,
+# and Library-tier skills invoked by bare name.
 # =============================================================================
-# Two checks, both about the harness lying to itself:
+# Three checks, all about the harness lying to itself:
 #
 #   1. scripts/utils/check-no-hardcoded-paths.sh — a machine/user-specific
 #      absolute path must never be committed into harness source. Every path is
@@ -14,7 +15,14 @@
 #      (scripts/utils/no-regex-debt.txt) so existing violations do not block
 #      commits while new ones do.
 #
-# Both run; the commit is blocked if either fails, and both verdicts are shown
+#   3. scripts/utils/check-skill-tiers.py — a skill listed in
+#      scripts/setup/skill-library.txt is installed unlisted, so a command,
+#      agent, hook or script that invokes it by bare name dead-ends ("skill not
+#      installed"). Must reference ~/.claude/skill-library/<name>/SKILL.md, or
+#      the skill must leave the manifest. Added 2026-10-04 after all three spec
+#      approval gates lost proof-collaborative-review this way.
+#
+# All run; the commit is blocked if any fails, and every verdict is shown
 # rather than short-circuiting on the first — fixing one and rediscovering the
 # other on the next attempt wastes a cycle.
 #
@@ -49,6 +57,15 @@ if [ -f "$REGEX_GUARD" ] && command -v python3 >/dev/null 2>&1; then
     echo ""
     echo "pre-commit: BLOCKED — regex in embedded Python (see above)."
     echo "            Write an explicit parser, or emit structured data at the source."
+    FAILED=1
+  fi
+fi
+
+TIER_GUARD="$ROOT/scripts/utils/check-skill-tiers.py"
+if [ -f "$TIER_GUARD" ] && command -v python3 >/dev/null 2>&1; then
+  if ! (cd "$ROOT" && python3 "$TIER_GUARD"); then
+    echo ""
+    echo "pre-commit: BLOCKED — Library-tier skill invoked by bare name (see above)."
     FAILED=1
   fi
 fi

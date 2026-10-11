@@ -175,3 +175,6 @@ Prompt-level warnings to LLM judges don't prevent fabricated citations; document
 ## When to Use
 This skill is applicable to execute the workflow or actions described in the overview.
 _Last synced: 2026-10-06
+
+### ❌ Derived copies revert on sync without source verification
+Derived copies revert on sync if source lacks edit—verify canonical source before claiming done. (source: whisper-pipeline 2026-10-11 [insight, harness-fix])

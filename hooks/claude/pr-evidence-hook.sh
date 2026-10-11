@@ -226,7 +226,7 @@ Rules:
 Capture the BEFORE state while reproducing the problem, before you fix it —
 that is the only moment it is cheap. After the fix it costs a revert.
 
-See the create-pr skill ("Attach Runtime Evidence"). If this PR genuinely has
+See ~/.claude/skill-library/create-pr/SKILL.md ("Attach Runtime Evidence"). If this PR genuinely has
 nothing to show (docs, comments, pure rename), write that one line under
 \`## Evidence\` and proceed — this hook does not block.
 MSG

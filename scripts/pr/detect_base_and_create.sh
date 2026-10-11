@@ -32,7 +32,7 @@ if [ -f ".git/gh-stack" ]; then
   if [ $? -eq 0 ]; then
     echo "[STACK-SUBMITTED] gh-stack layers submitted for $current_branch."
   else
-    echo "WARN: gh stack submit failed: $stack_out — see stacking-pull-requests skill (likely a sync conflict)." >&2
+    echo "WARN: gh stack submit failed: $stack_out — see ~/.claude/skill-library/stacking-pull-requests/SKILL.md (likely a sync conflict)." >&2
   fi
   exit 0
 fi
@@ -98,7 +98,7 @@ current_body="$(gh pr view "$pr_number" --json body --jq '.body' 2>/dev/null)"
   printf '\n\n## Evidence\n'
   printf 'Not captured — this PR was opened automatically on push, before any\n'
   printf 'before/after probe was run. Replace this section with a real capture\n'
-  printf 'before taking the PR out of draft. See the create-pr skill,\n'
+  printf 'before taking the PR out of draft. See ~/.claude/skill-library/create-pr/SKILL.md,\n'
   printf '"Attach Runtime Evidence".\n'
 } > "$tmp_body"
 
@@ -120,6 +120,6 @@ if [ -f "$LOG_SCRIPT" ]; then
   nohup bash "$LOG_SCRIPT" "$pr_number" >/dev/null 2>&1 &
   echo "[PR-AUTO-CREATED] Automated review logging to .claude/memory/pr-reviews/pr-$pr_number.md running in background."
 fi
-echo "Invoke the pr-babysit skill to watch CI/review feedback in the background."
+echo "Read ~/.claude/skill-library/pr-babysit/SKILL.md and follow it to watch CI/review feedback in the background."
 
 # REGISTRATION (see pr-auto-create-hook.sh / pr-mention-nudge.sh for the hooks that call this)
