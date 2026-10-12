@@ -619,3 +619,19 @@ See also: [articles/README.md](../articles/README.md) — same 18-source batch, 
 **Rejected:** one-owning-module / no-duplication / outside-module counters (guardrails-agent's import-linter, eslint-plugin-boundaries, jscpd already cover them), "gates, not promises" (already how the harness works).
 
 See also: [git/README.md](../git/README.md) — same 4-source batch, 2026-10-01 (pi, open-dot).
+
+---
+
+## @sermakarevich — "Evals: how to know whether an AI system actually works"
+**URL:** https://archive.codenewsletter.ai/2106453816757354947 (archived copy of x.com/sermakarevich/status/2106453816757354947; the article itself is x.com/i/article/2106452411397165056)
+**Added:** 2026-10-12
+**Source / Author:** Sergii Makarevych (@sermakarevich), X Article, 2026-10-03/04. **Fetch:** the archive mirror carries only the post. The article returned HTTP 402 at rung 1 and Wayback is blocked for WebFetch (rung 6). Rung 3 worked: `https://api.fxtwitter.com/sermakarevich/status/2106453816757354947` returns the article body as JSON blocks. That went through WebFetch's summarizer, so it was read twice with different prompts; both passes agreed on every figure below.
+
+**What it's about:** A plain-language eval guide built on one toy support assistant. Central claim: "the grader is part of the system you must test." A judge is validated against **human labels**, reported as kappa or as catch rate plus false-fail rate, because raw agreement misleads when most outputs pass. Worked example: 60% agreement against a 57% always-pass baseline, kappa 0.15, 10 of 26 bad replies caught, and a lenient judge (42 passes vs 34 in the labels). Bars: kappa ≥ 0.6 to gate, ≥ 0.8 to run unsupervised, on "at least a few dozen" labelled cases. Also: 60 cases detect only about a 12-point difference; paired comparisons with a regression count; position, length and self-preference biases; "calibrate then trust" (audit the cheap gate once, use it only where it agreed, re-audit when model, judge or domain changes).
+
+**What we added:**
+- Augmentation: `skills/skill-eval-gate/SKILL.md` Phase 3b. Judge validation was one good/bad ranking plus a self-consistency rescore, and the article's own failing judge could pass both: ranking is relative while the gate scores pass/fail absolutely, and self-agreement is not calibration. Now: ≥2 bad references, each a different failure, plus one good; an **absolute catch test** (every bad scored FAIL, the good PASS, catch rate and false-fail rate reported, anything short of 100% discards the run); ranking **in both orders** (position bias); a judge on a **different tier** than the producer where available. Phase 6's `eval-verdict.json` gains a `judge_model` field so a verdict says which judge produced it.
+
+**Rejected:** kappa calibration of `session-judge` against hand-labelled days (the trust score never gates, the routine mostly scores through deterministic `auto-score`, and dozens of human labels is too much user time for a number nothing acts on; "calibrate then trust" for the *cheap* gate shipped instead as auto-score's readability check, see [articles/README.md](../articles/README.md) — "Building Effective Agent Automations"); judge panels with geometric median (`session-judge` already runs 3× with a median and spread gate); "JSON output makes judges less discriminating" (a one-line cited claim, not enough to change a machine-parsed verdict); a CI pass-rate gate (no product pass-rate series here); hallucination detectors and typed judges (external models).
+
+See also: [articles/README.md](../articles/README.md) — same 12-source batch, 2026-10-12.

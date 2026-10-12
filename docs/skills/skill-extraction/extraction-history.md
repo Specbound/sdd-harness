@@ -206,6 +206,23 @@ Side effect: #6 and #7 also paid down two entries of the no-regex debt ledger (`
 
 ---
 
+## Oct 12, 2026 — 12-Source Batch (4 subagents × 3 links, run inline)
+
+**Sources:** 13 links pasted, 12 unique. Three YouTube videos (`dAIIaepNhQM`, `l6GpUvPOVpM`, `T1dQhQAm8Tc`, all rung 4); four `archive.codenewsletter.ai` X-post mirrors (rung 1); four repos (`tester-army/e2e`, `steipete/agent-scripts`, `bastani-inc/atomic`, `composio-community/open-dot`, rung 3 via `gh api`); the claude.dev post "Building effective agent automations" (rung 1). The user approved both proposals.
+
+**What was added (no new skills):**
+1. `scripts/session/trust_score.py` — `auto-score` records an unreadable window (missing `observations.md`, `[detector-down]` in the window, commits with no `session-quality` row, unreadable git history) as `inconclusive` at `0.0` instead of a quiet day; `apply --unreadable SOURCE` for the judge path (claude.dev rule 2)
+2. `agents/kiro/session-judge.md` + `commands/kiro/daily-maintenance.md` — judge window bookmarked from the last trust-score record (capped at 7 days) instead of a fixed 24h; Step 1b readability check (claude.dev rules 1–2)
+3. `skills/skill-eval-gate/SKILL.md` Phase 3b — absolute catch test on ≥2 distinct bad references, ranking in both orders, different-tier judge; `judge_model` in `eval-verdict.json` (@sermakarevich evals article)
+
+**Rejected:** everything else; per-source reasons are in `docs/sources/articles/README.md` and `docs/sources/x/README.md`. `dAIIaepNhQM` is the **same** How I AI Jev video rejected on Oct 1 above, so it was re-read for nothing; check `extraction-history.md` for repeated video IDs before fetching. `open-dot` was likewise already logged on Oct 1.
+
+**Process notes:** all 4 subagents stalled on the 600s stream watchdog, twice each, even after a scoped resume. The work was redone inline. The resume instruction told them to wrap commands in `timeout 90`, but macOS has no `timeout` binary (exit 127). The @sermakarevich article was a 402 at rung 1 and recovered at rung 3 through `api.fxtwitter.com/<user>/status/<post-id>`, which returns X Article bodies. The judge-window snippet first used `[[`, which the lean-ctx allowlist blocks inside the routine, so it was rewritten with `sort`. The post-commit doc-sync bot committed the sources entry and its own doc updates in `9b70117`, between the code commits.
+
+**Open:** the `skill-eval-gate` augmentation could not be validated against a past LLM-rubric run, because no `eval-verdict.json` exists in either skill tree. Running the gate on its own edited text would be circular. The first real LLM-rubric run after 2026-10-12 is its validation.
+
+---
+
 ## Summary Table
 
 | Date | URL | Skill/Artifact Created | Type |
@@ -227,3 +244,4 @@ Side effect: #6 and #7 also paid down two entries of the no-regex debt ledger (`
 | May 18 | huggingface.co/continuous_eval | `skill-extraction` SKILL.md updated (hook candidate assessment phase) | Skill update |
 | Sep 30 | 18-link newsletter batch | 9 augmentations: `model-tiers`, `skill-eval-gate`, `auditing-token-spend`, `synthesizing-daily-briefings`, `hook-design` (+ `hook-replay.py`), `autoresearch-agent`; `token-forensics.py`, `startup-payload-audit.sh`, `prompt-quality-check.sh` | Skill + Script + Hook updates |
 | Oct 1 | pi, open-dot, @tvykruta, How I AI | `tasks-generation.md` refactor-first rule; `lib/pip-cooldown.sh` (+ test); `impeccable@3.6.0` pin | Rule + Script lib + Install pin |
+| Oct 12 | 12-link batch (claude.dev automations, @sermakarevich evals, +10 rejected) | `trust_score.py` unreadable-window guard (+7 tests); judge window bookmark + Step 1b; `skill-eval-gate` Phase 3b catch test + `judge_model` | Script + Agent/Command + Skill updates |
