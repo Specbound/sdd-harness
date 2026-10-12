@@ -1,6 +1,6 @@
 # Session Quality Rubric
 
-Behavioral rubric the `session-judge` agent uses to score the harness's own work over a window (typically the last 24 hours of `observations.md` plus any `[memory-gap]` entries).
+Behavioral rubric the `session-judge` agent uses to score the harness's own work over a window (from the last trust-score record to now, capped at 7 days, of `observations.md` plus any `[memory-gap]` entries).
 
 Single-user, single-scalar. Per-person trust batteries do not apply to this harness — there is one human per installed project.
 
@@ -49,6 +49,8 @@ These are scored deterministically from observation tags — no Judge pass neede
 `[session-charge]` entries are written automatically by the stop hook when the user's session transcript contains unambiguous approval phrases ("that's perfect", "that works!", "great work", etc.). They require no manual action.
 
 `auto-score` is deterministic, so it submits its total as a **single** sample — the multi-sample spread gate that reconciles repeated judge runs is skipped, and the record reports `"spread": null` rather than `0.0`. Because the count is over observation tags, a routine that appended one `[judge]` observation per judge run would multiply every tag it cites; that is why only the caller appends, once, for all runs.
+
+A window scores to zero tags in two different ways: nothing happened, or the producers that write the tags were down. `auto-score` and the judge tell them apart before scoring. A missing `observations.md`, a `[detector-down]` row in the window, or commits with no `session-quality` row make the window **unreadable**: the day records `inconclusive` at `0.0` with the sources named, never as a quiet day.
 
 ## Judging Constraints
 

@@ -443,13 +443,21 @@ def main() -> int:
              f"as inconclusive (delta 0.0).",
     )
     p_apply.add_argument("--summary", type=str, default="")
+    p_apply.add_argument(
+        "--unreadable",
+        action="append",
+        default=[],
+        metavar="SOURCE",
+        help="An input the judge could not read. Repeat once per source; any "
+             "occurrence records the day as inconclusive (delta 0.0).",
+    )
 
     sub.add_parser("show", help="Show current score")
     sub.add_parser("auto-score", help="Score deterministically from observations.md tags")
 
     args = ap.parse_args()
     if args.cmd == "apply":
-        return cmd_apply(args.deltas, args.summary)
+        return cmd_apply(args.deltas, args.summary, unreadable=args.unreadable)
     if args.cmd == "show":
         return cmd_show()
     if args.cmd == "auto-score":

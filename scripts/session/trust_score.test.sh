@@ -159,6 +159,17 @@ case "$OUT" in
     *) bad "same-day re-run still skips" "$OUT" ;;
 esac
 
+# Judges that report an unreadable source force inconclusive even when their
+# deltas agree — agreement on a window nobody could read is not a reading.
+D11="$WORK/apply-unreadable"
+OUT="$(run_apply "$D11" --delta 2.0 --delta 2.0 --delta 2.0 --summary "x" \
+        --unreadable "detector down 2026-10-11")"
+case "$OUT" in
+    *'"status": "inconclusive"'*'"delta_applied": 0.0'*'detector down 2026-10-11'*)
+        ok "apply --unreadable -> inconclusive, 0.0, source named" ;;
+    *) bad "apply --unreadable -> inconclusive, 0.0, source named" "$OUT" ;;
+esac
+
 # `apply` with no --delta at all must fail loudly rather than default to 0.
 D4="$WORK/nodelta"
 mkdir -p "$D4/.claude/memory"

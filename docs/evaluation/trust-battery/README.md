@@ -92,7 +92,7 @@ The stop-hook runs both modes and appends at most **one** observation per type p
 **Model**: Haiku (pattern matching, cheap pass)
 **Trigger**: Step 1 of `/kiro:daily-maintenance`
 
-Reads `observations.md` + `trace.log` for the last 24 hours and applies the rubric in `kiro/settings/rules/session-quality-rubric.md`. Emits a JSON verdict:
+Reads `observations.md` + `trace.log` from the last trust-score record to now (capped at 7 days; a fixed 24h window dropped every missed day), checks the window's inputs were readable, and applies the rubric in `kiro/settings/rules/session-quality-rubric.md`. Emits a JSON verdict:
 
 ```json
 {

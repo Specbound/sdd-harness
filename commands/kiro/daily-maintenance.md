@@ -29,16 +29,29 @@ If the guard trips, return immediately. The individual steps below are also idem
 
 The judge is an LLM at temperature > 0, and its `score_delta` lands in a **cumulative** score that nothing ever revisits. One draw is not a measurement: until this step ran three times, "the score fell 4 points" and "the judge sampled differently" were the same observation. Spawn it **three times** and let Step 4 reconcile them.
 
+First compute the window start. It is the last trust-score record, not a fixed "last 24h" — a missed or late run would otherwise drop a day that nothing ever scores. Cap it at 7 days so a long outage does not hand the judge a month of history:
+
+```bash
+since=$(tail -n 1 .claude/memory/trust-score.jsonl 2>/dev/null | jq -r '.ts // empty')
+floor=$(date -u -v-7d +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -d '7 days ago' +%Y-%m-%dT%H:%M:%SZ)
+# Later of the two. ISO timestamps sort lexically; an empty $since sorts first.
+since=$(printf '%s\n%s\n' "$since" "$floor" | sort | tail -n 1)
+echo "$since"
+```
+
+Substitute it for `<since>` in all three prompts below.
+
 Spawn all three in a **single message** so they run concurrently — they are independent and read-only, so there is no ordering constraint and no reason to pay for three sequential round-trips.
 
 ```
 Task(
   subagent_type="session-judge",
-  description="Score last 24h of harness behavior (run 1 of 3)",
+  description="Score harness behavior since last record (run 1 of 3)",
   prompt="""
-Score the last 24 hours of harness behavior against the rubric.
+Score harness behavior against the rubric.
 
-Window: last 24h (use date -u -d '24 hours ago' +%Y-%m-%dT%H:%M:%SZ if needed).
+Window: <since> .. now. Run Step 1b (readability check) before scoring; if any
+input was unreadable, return score_delta 0 with the "unreadable" list filled.
 
 Files to read:
 - .claude/kiro/settings/rules/session-quality-rubric.md
@@ -64,6 +77,8 @@ Capture all three JSON verdicts. Extract each `score_delta`, plus the `summary` 
 | All 3 verdicts valid | Pass all three deltas to Step 4 |
 | 1–2 verdicts missing or malformed | Log `routine-error: judge-verdict-invalid (N of 3)` as a `[routine-error]` observation, pass **only the valid deltas** to Step 4 |
 | All 3 missing or malformed | Log the same `[routine-error]` and pass a single `--delta 0` |
+
+Also collect every `unreadable` entry across the valid verdicts (union, deduplicated). If any run named one, Step 4 passes them on and the day records as inconclusive — a window one judge could not read was not read, however the other two scored it.
 
 A run that failed is **missing**, not a vote for zero. Substituting 0 for a crashed judge pulls the median toward no-change and manufactures agreement out of a failure.
 
@@ -127,12 +142,14 @@ python3 .claude/scripts/trust_score.py apply \
   --delta "<score_delta run 1>" \
   --delta "<score_delta run 2>" \
   --delta "<score_delta run 3>" \
-  --summary "<summary from the median run, first 80 chars>"
+  --summary "<summary from the median run, first 80 chars>" \
+  --unreadable "<source>"   # one per unreadable source from Step 1; omit if none
 ```
 
 The helper:
 - takes the **median** of the samples, so one outlier draw cannot move the score
 - records the day as **inconclusive** and applies `0.0` when the samples spread by more than `JUDGE_SPREAD_LIMIT` (2.0 on the ±4.5 scale) — a reading that depends on which draw you looked at is not a reading
+- does the same for any `--unreadable` source, and persists the named sources — a failed read is never scored as a quiet day
 - persists the raw `samples`, `spread` and `inconclusive` flag into `trust-score.jsonl`, so an inconclusive day is distinguishable from a day nothing ran
 - clamps the applied delta to `[-4.5, +4.5]`
 - rewrites the `## Harness Trust Score:` line at the top of `hot-memory.md`
