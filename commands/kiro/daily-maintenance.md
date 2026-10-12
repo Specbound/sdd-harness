@@ -285,12 +285,12 @@ Best-effort like the steps above: on a non-zero exit other than a finding, log
 
 
 
-Scan for `[memory-gap]` observations from the last 24h that have no corresponding new memory entry produced by Step 2:
+Scan for `[memory-gap]` observations inside the judge window from Step 1 that have no corresponding new memory entry produced by Step 2. Counting only today's gaps missed every gap from a day the routine did not run:
 
 ```bash
-# Gaps flagged today:
-grep "^- $(date +%Y-%m-%d) \[memory-gap\]:" .claude/memory/observations.md 2>/dev/null | \
-  wc -l
+# Gaps flagged inside the judge window. Substitute the date part (YYYY-MM-DD) of <since>.
+awk -v s="<since date>" '$1 == "-" && $2 >= s && index($3, "[memory-gap") == 1' \
+  .claude/memory/observations.md 2>/dev/null | wc -l
 ```
 
 If the count is > 0 and Step 2's output shows no new memory entries on the same topics, append a single `[routine-alert]` observation so the user sees it next session:
