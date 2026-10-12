@@ -22,6 +22,7 @@ from __future__ import annotations  # PEP 604 (`X | None`) on Python 3.9 hosts
 import argparse
 import json
 import statistics
+import subprocess
 import sys
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -153,10 +154,14 @@ def consensus_delta(deltas: list[float]) -> tuple[float, float | None, bool]:
     return statistics.median(deltas), spread, False
 
 
-def cmd_apply(deltas: list[float], summary: str) -> int:
+def cmd_apply(deltas: list[float], summary: str, unreadable: list[str] | None = None) -> int:
     history = load_history()
     base = current_score(history)
     delta, spread, inconclusive = consensus_delta(deltas)
+    # An unreadable window is inconclusive for the same reason a split judge is:
+    # there is no reading to commit, so the honest delta is 0.0, flagged.
+    if unreadable:
+        delta, inconclusive = 0.0, True
     capped = clamp_delta(delta)
     new_score = clamp_score(base + capped)
     ts = datetime.now(timezone.utc).isoformat(timespec="seconds")
@@ -182,6 +187,7 @@ def cmd_apply(deltas: list[float], summary: str) -> int:
         "samples": deltas,
         "spread": spread,
         "inconclusive": inconclusive,
+        "unreadable": unreadable or [],
     }
     HISTORY.parent.mkdir(parents=True, exist_ok=True)
     with HISTORY.open("a", encoding="utf-8") as f:
@@ -199,6 +205,7 @@ def cmd_apply(deltas: list[float], summary: str) -> int:
         "delta_raw": delta,
         "samples": deltas,
         "spread": spread,
+        "unreadable": unreadable or [],
         "seven_day_delta": seven,
         "header": header,
     }))
@@ -285,6 +292,74 @@ def _parse_observations_since(since: date) -> dict:
     return counts
 
 
+class GitHistoryUnreadable(RuntimeError):
+    """`git` could not report the window's commits, so activity is unknown."""
+
+
+def _commits_since(since: date) -> int:
+    proc = subprocess.run(
+        ["git", "rev-list", "--count", f"--since={since.isoformat()}T00:00:00", "HEAD"],
+        capture_output=True, text=True, check=False,
+    )
+    if proc.returncode != 0:
+        raise GitHistoryUnreadable(proc.stderr.strip() or f"git exited {proc.returncode}")
+    return int(proc.stdout.strip())
+
+
+def _session_quality_ran_since(since: date) -> bool:
+    """True if the session-quality producer wrote any row in the window, idle included."""
+    if not METRICS_FILE.is_file():
+        return False
+    for line in METRICS_FILE.read_text(encoding="utf-8").splitlines():
+        try:
+            rec = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if rec.get("metric") != "session-quality":
+            continue
+        try:
+            if date.fromisoformat(rec["date"]) >= since:
+                return True
+        except (KeyError, ValueError):
+            continue
+    return False
+
+
+def _unreadable_sources(since: date) -> list[str]:
+    """Name every input this window could not be read from.
+
+    "No signals detected" is only a quiet day if the producers ran. A detector
+    that went down, a missing observations file, or commits that no
+    session-quality row covers all produce the same zero tag counts, and were
+    scored as a real 0.0. Each is named here so the day records as unreadable
+    instead. Source: claude.dev, "Building effective agent automations"
+    (2026-10-08), rule 2: report a failed read as unreadable, never as a quiet
+    day. See docs/sources/articles/README.md.
+    """
+    problems: list[str] = []
+    if not OBS_FILE.is_file():
+        problems.append(f"{OBS_FILE} missing")
+    else:
+        down = sorted({
+            parsed[0]
+            for parsed in map(_split_observation, OBS_FILE.read_text(encoding="utf-8").splitlines())
+            if parsed is not None and "detector-down" in parsed[1] and parsed[0] >= since.isoformat()
+        })
+        if down:
+            problems.append("session-signal detector down on " + ", ".join(down))
+    try:
+        commits = _commits_since(since)
+    except GitHistoryUnreadable as e:
+        problems.append(f"git history unreadable ({e})")
+    else:
+        if commits and not _session_quality_ran_since(since):
+            problems.append(
+                f"{commits} commit(s) since {since.isoformat()} but no session-quality row"
+                " — producer down, not idle"
+            )
+    return problems
+
+
 def cmd_auto_score() -> int:
     """Score deterministically from observation tags; no LLM Judge needed."""
     history = load_history()
@@ -299,6 +374,11 @@ def cmd_auto_score() -> int:
         since = date.fromisoformat(history[-1]["ts"][:10]) + timedelta(days=1)
     else:
         since = today
+
+    unreadable = _unreadable_sources(since)
+    if unreadable:
+        return cmd_apply([0.0], "auto-score: inputs unreadable — " + "; ".join(unreadable),
+                         unreadable=unreadable)
 
     c = _parse_observations_since(since)
     charges = min(c["session_charges"], 3)

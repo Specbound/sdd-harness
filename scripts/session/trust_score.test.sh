@@ -168,13 +168,91 @@ else
     ok "apply without --delta exits non-zero"
 fi
 
-# auto-score is deterministic and must keep working through the list plumbing.
-D5="$WORK/auto"
-mkdir -p "$D5/.claude/memory"
-OUT="$( cd "$D5" && python3 "$TARGET" auto-score 2>&1 )"
+# ---------------------------------------------------------------------------
+# auto-score: a quiet day and an unreadable day must not look the same
+# ---------------------------------------------------------------------------
+echo "auto-score readability"
+
+TODAY="$(date +%Y-%m-%d)"
+
+# make_window DIR COMMITS — a git repo with one baseline commit from 2020 (real
+# repos always have history before the window) plus COMMITS empty commits dated
+# now, and an empty observations.md: a window whose inputs are all readable.
+make_window() {
+    local dir="$1" n="$2" i
+    mkdir -p "$dir/.claude/memory"
+    : > "$dir/.claude/memory/observations.md"
+    git -C "$dir" init -q
+    commit() { git -C "$dir" -c user.name=t -c user.email=t@t -c core.hooksPath=/dev/null \
+                   commit -q --allow-empty -m "$1"; }
+    GIT_AUTHOR_DATE=2020-01-01T00:00:00 GIT_COMMITTER_DATE=2020-01-01T00:00:00 commit baseline
+    for ((i = 0; i < n; i++)); do commit "c$i"; done
+}
+auto_score() { ( cd "$1" && python3 "$TARGET" auto-score 2>&1 ); }
+
+# Idle and readable: no commits, nothing tagged. This is the one case where
+# "no signals detected" is true, and it must still apply.
+D5="$WORK/auto-idle"
+make_window "$D5" 0
+OUT="$(auto_score "$D5")"
 case "$OUT" in
-    *'"status": "applied"'*|*'"status": "skipped"'*) ok "auto-score still runs through cmd_apply" ;;
-    *) bad "auto-score still runs through cmd_apply" "$OUT" ;;
+    *'"status": "applied"'*'"unreadable": []'*) ok "idle readable window applies with no unreadable sources" ;;
+    *) bad "idle readable window applies with no unreadable sources" "$OUT" ;;
+esac
+
+# Commits + a session-quality row: producers ran, the window is readable.
+D6="$WORK/auto-active"
+make_window "$D6" 2
+printf '{"date": "%s", "idle": false, "metric": "session-quality", "value": 4}\n' "$TODAY" \
+    > "$D6/.claude/memory/metrics.jsonl"
+OUT="$(auto_score "$D6")"
+case "$OUT" in
+    *'"status": "applied"'*'"delta_applied": 1.0'*) ok "active readable window scores the real signal" ;;
+    *) bad "active readable window scores the real signal" "$OUT" ;;
+esac
+
+# A [detector-down] row in the window: the zero tag count is a failed read.
+D7="$WORK/auto-detector-down"
+make_window "$D7" 0
+echo "- $TODAY [detector-down]: claude --print timed out" > "$D7/.claude/memory/observations.md"
+OUT="$(auto_score "$D7")"
+case "$OUT" in
+    *'"status": "inconclusive"'*'"delta_applied": 0.0'*) ok "detector-down window -> inconclusive, 0.0" ;;
+    *) bad "detector-down window -> inconclusive, 0.0" "$OUT" ;;
+esac
+if grep -q 'session-signal detector down on' "$D7/.claude/memory/trust-score.jsonl" 2>/dev/null; then
+    ok "detector-down named in trust-score.jsonl"
+else
+    bad "detector-down named in trust-score.jsonl" "$(cat "$D7/.claude/memory/trust-score.jsonl" 2>&1)"
+fi
+
+# Commits but no session-quality row: work happened and nothing measured it.
+D8="$WORK/auto-producer-down"
+make_window "$D8" 3
+OUT="$(auto_score "$D8")"
+case "$OUT" in
+    *'"status": "inconclusive"'*'producer down, not idle'*) ok "commits without session-quality -> inconclusive" ;;
+    *) bad "commits without session-quality -> inconclusive" "$OUT" ;;
+esac
+
+# No observations.md at all: the primary input is missing, not empty.
+D9="$WORK/auto-no-obs"
+make_window "$D9" 0
+rm "$D9/.claude/memory/observations.md"
+OUT="$(auto_score "$D9")"
+case "$OUT" in
+    *'"status": "inconclusive"'*'observations.md missing'*) ok "missing observations.md -> inconclusive" ;;
+    *) bad "missing observations.md -> inconclusive" "$OUT" ;;
+esac
+
+# Not a git repo: commit activity is unknown, so it cannot be called idle.
+D10="$WORK/auto-no-git"
+mkdir -p "$D10/.claude/memory"
+: > "$D10/.claude/memory/observations.md"
+OUT="$(auto_score "$D10")"
+case "$OUT" in
+    *'"status": "inconclusive"'*'git history unreadable'*) ok "no git history -> inconclusive" ;;
+    *) bad "no git history -> inconclusive" "$OUT" ;;
 esac
 
 # ---------------------------------------------------------------------------
