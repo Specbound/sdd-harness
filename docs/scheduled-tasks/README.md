@@ -49,7 +49,7 @@ Guards:
 - **A** — Judge + Reflect + Housekeep: score the previous day's observations via the session-quality rubric; convert drain entries into memory updates; archive `observations.md` if >50 entries. The interactive `/kiro:daily-maintenance` pipeline runs the judge **three times** and reconciles the deltas by median; the headless routine prompt still writes one `[judge]` observation and defers scoring to step D
 - **B** — Session Quality Assessment: collect git activity; score session 1–5; append `[session-quality]` observation
 - **C** — Keep Rate Evaluation: find Claude-co-authored commits older than 7 days; compute lines still in HEAD; append `[keep-rate]` observation
-- **D** — Trust Score update: run `trust_score.py auto-score` after B and C are written, so all signals (`[session-charge]`, `[memory-gap]`, `[session-quality]`, `[keep-rate]`) are visible to the scorer. `auto-score` is deterministic and submits a **single** sample, so the multi-sample spread gate is skipped and the record reports `"spread": null` — the gate applies only when `apply` is given one `--delta` per judge run
+- **D** — Trust Score update: run `trust_score.py auto-score` after B and C are written, so all signals (`[session-charge]`, `[memory-gap]`, `[session-quality]`, `[keep-rate]`) are visible to the scorer. `auto-score` is deterministic and submits a **single** sample, so the multi-sample spread gate is skipped and the record reports `"spread": null` — the gate applies only when `apply` is given one `--delta` per judge run. It does check that the window was readable first: a missing `observations.md`, a `[detector-down]` row in the window, commits with no `session-quality` row, or unreadable git history record the day `inconclusive` at `0.0` with the sources named in an `unreadable` field, rather than scoring the zero tag count as a quiet day
 - **E** — Skill Augmentation (Sleep-Phase Knowledge Seeding): invoke `skill-augment-agent` with today's judge verdict. The agent collects `[seed-target:]` observations written by the `action-capture.sh` hook during the Wake phase (failed Bash commands), maps them to skill domains, and loads today's `type: feedback` memories (user corrections) as highest-trust evidence ranked above the LLM judge, generates synthetic worked examples (Dreaming), and applies up to 3 evidence-backed skill improvements. Logs each as `[skill-update]`. Idempotent — skips if `[skill-update]` entries already exist for today. This step closes the full Wake→Sleep cycle: struggles during active sessions automatically become targeted skill updates overnight.
 
 **Channel summary (optional):** after the run, `daily-runner.sh` posts the last ~20 lines of output to your chat channels via `scripts/integrations/channels/notify.py` (title `Daily maintenance — <repo> (exit=<code>)`). No-op unless `~/.env.channels` exists, so the call stays unconditional. Opt out with `SDD_SKIP_CHANNEL_NOTIFY=1`. See [docs/integrations/channels](../integrations/channels/README.md).
@@ -315,5 +315,5 @@ The dashboard's **Scheduled Tasks** tab shows live status for each task, scoped 
 
 ---
 
-_Last synced: 2026-10-08_
+_Last synced: 2026-10-12_
 

@@ -1,6 +1,6 @@
 <!-- L0: Quick reference — all SDD commands with usage examples -->
 
-_Last synced: 2026-10-08_
+_Last synced: 2026-10-12_
 
 # SDD Usage Guide
 
@@ -429,6 +429,8 @@ Idempotent per calendar day (uses today's `[judge]` observation as the sentinel)
 The `## Harness Trust Score:` line at the top of `hot-memory.md` (e.g. `42.3% (▲ +0.8 today, 7d: ▼ -1.1)`) is a single-user health signal. **It never gates harness behavior** — spec phase gates still require explicit human approval regardless of score. Adapted from @nityeshaga's "trust battery" design (April 2026) but scoped down: one battery per project (single developer), informational only, no autonomy tiers.
 
 Starts at 20% on fresh install. Daily cap ±4.5%. History lives in `.claude/memory/trust-score.jsonl` (one record per nightly run). The `auto-score` command incorporates a **session success ratio**: uncorrected sessions (no `session-quality ≤ 2/5` or `memory-gap` on that day) act as a multiplier on existing signals and contribute a ±1.0 baseline — so uneventful sessions now passively charge the battery rather than contributing zero.
+
+That passive credit is only honest when the window was actually readable, so `auto-score` checks first: a missing `observations.md`, a `[detector-down]` row in the window, commits with no `session-quality` row, or git history it cannot read each record the day `inconclusive` at `0.0`, with the sources named in the record's `unreadable` field. Before this, a dead detector produced the same zero tag count as a quiet day and collected the `+1.0` — 2026-10-11 is the recorded instance. The judge path reaches the same state through `apply --unreadable SOURCE`, repeatable once per source. An inconclusive record is not a problem to fix on the score side; fix the named producer.
 
 ### Opt out
 
@@ -868,4 +870,4 @@ Four protocols extracted from [garrytan/gbrain](https://github.com/garrytan/gbra
 
 Full reference: `docs/gbrain-patterns/gbrain-patterns.md`
 
-_Last synced: 2026-10-08_
+_Last synced: 2026-10-12_

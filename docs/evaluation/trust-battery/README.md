@@ -142,7 +142,8 @@ Behavior:
 - Clamps the score to `[0, 100]`
 - **Idempotent per calendar day**: if a record already exists for today, skips without writing
 - Rewrites the `## Harness Trust Score:` line at the top of `hot-memory.md`
-- Appends to `trust-score.jsonl` with raw delta, applied delta, and timestamp for the 7-day trend, plus the raw `samples`, the `spread`, and the `inconclusive` flag
+- Appends to `trust-score.jsonl` with raw delta, applied delta, and timestamp for the 7-day trend, plus the raw `samples`, the `spread`, the `inconclusive` flag, and the `unreadable` list naming any input the window could not be read from
+- Accepts **repeated `--unreadable SOURCE`**, one per input that could not be read; any occurrence forces `inconclusive` and applies `0.0` regardless of the samples
 
 Output arrows: ▲ (up), ▼ (down), ▬ (flat). 7-day delta is `null` until there are records older than 7 days.
 
@@ -161,6 +162,29 @@ The judge is an LLM at temperature > 0, and until 2026-09-03 a single draw from 
 `JUDGE_SPREAD_LIMIT` is **2.0** on the `[-4.5, +4.5]` scale: three runs landing within 2 points of each other are reading the same day, while a wider spread means the reading depends on which draw you looked at, and the honest delta for that day is `0.0` rather than whichever number the middle sample happened to be. An inconclusive day is stored distinguishably from a day nothing ran — it is the helper declining to commit a number it cannot stand behind, not a failure to fix.
 
 Sources: Perrone, *What is Agentic Testing?* (`pass^k` over `pass@k` — a gate that greens on 1-of-3 is not a gate) and Visa's VVAH README (majority-vote false-positive filtering at temperature > 0). See `docs/sources/articles/README.md`.
+
+#### Unreadable windows — inconclusive, not a quiet 0.0
+
+A window scores to zero in two different ways: nothing happened, or the producers that write
+the signals were down. `auto-score` counted tags in `observations.md` and `metrics.jsonl` and
+applied the zero as a real reading either way, so a dead detector read as a clean day —
+2026-10-11 applied `+1.0` on exactly such a day. `_unreadable_sources(since)` now runs before
+any counting and names every input the window could not be read from:
+
+| Condition | Recorded source |
+|---|---|
+| A `[detector-down]` row inside the window | `session-signal detector down on <dates>` — drains could not be counted, so a `+1` may be hiding a `-2` |
+| `observations.md` absent | `<path> missing` — the primary input is missing, not empty |
+| Commits in the window with no `session-quality` row | `N commit(s) since <date> but no session-quality row — producer down, not idle` |
+| `git rev-list` fails | `git history unreadable (<stderr>)` |
+
+When the list is non-empty, `auto-score` applies `0.0` through `cmd_apply(..., unreadable=[...])`,
+which forces `inconclusive` and persists the named sources to `trust-score.jsonl`. The judge path
+reaches the same state through `apply --unreadable SOURCE`. An inconclusive day is therefore
+distinguishable from an idle one, and neither is a problem to fix.
+
+Source: claude.dev, *Building effective agent automations* (2026-10-08), rule 2 — report a failed
+read as unreadable, never as a quiet day. See `docs/sources/articles/README.md`.
 
 ## The Nightly Loop
 
@@ -282,6 +306,7 @@ Check the guard conditions in order:
 - The Judge scored 0 for each run. Causes: empty observations window, every finding lacked evidence (the rubric requires citations), or all observations are already tagged `[judge]` (idempotent skip).
 - Check: `python3 .claude/scripts/trust_score.py show` — if `records > 0` but `score == 20`, the Judge is consistently emitting `score_delta: 0`. Inspect the rubric and recent observations.
 - Check for **inconclusive days** in `trust-score.jsonl` before blaming the rubric: a record with `"inconclusive": true` applied `0.0` because the three judge samples spread past 2.0, which is a disagreement between draws rather than a genuinely flat day. Several in a row point at the rubric being ambiguous on the evidence available, not at the score being stuck.
+- If those records also carry a non-empty `"unreadable"` list, the score is not stuck on the rubric at all — a producer is down. Fix the named source (detector, `observations.md`, the `session-quality` step, git access) and the day becomes scorable again.
 
 ### Routine not registered
 
@@ -318,4 +343,4 @@ The deliberate non-goals above are stable. If any of these come up in a future r
 
 ---
 
-_Last synced: 2026-09-03_
+_Last synced: 2026-10-12_

@@ -77,4 +77,4 @@ A window scores to zero tags in two different ways: nothing happened, or the pro
 
 `score_delta` is the sum of all weights, clamped to `[-4.5, +4.5]`. When the caller collects several runs, each run's `score_delta` is passed to `trust_score.py apply` as its own `--delta`; the median is applied, and a spread above 2.0 across the samples is recorded as inconclusive with a delta of `0.0`.
 
-_Last synced: 2026-09-03_
+_Last synced: 2026-10-12_

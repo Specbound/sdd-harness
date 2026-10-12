@@ -136,6 +136,7 @@ They may signal routine failures. Check logs/orchestrator-errors.log for exit co
 ### ❌ String-keyed failure-mode detection
 String-keyed detectors fail when modes shift (OAuth→502→timeout). Use structural invariant: isApiErrorMessage:true + model:"<synthetic>". (source: daa-llm-evaluation 2026-10-02 [judge] drain 2)
 Timeout also emits isApiErrorMessage + model:<synthetic> (2026-10-03/04 observed), but text search would miss 'timed out'. (source: 2026-10-05 [session-quality])
+Loopback (127.0.0.1) and upstream gateways both emit isApiErrorMessage + model:"<synthetic>". Detect via structural invariant, not text content. (source: 2026-10-12 [routine-alert, insight])
 
 ### ❌ Marking parallel-instance outages as schedule never-fire
 Parallel-instance death: all scheduled routines fire within 10s, all die identically (<25 lines, 1 turn). Indicates auth outage, not scheduler. (source: daa-llm-evaluation 2026-10-02 [judge] drain 1)
@@ -146,6 +147,9 @@ System payloads inflate transcript bytes (92–103 kB) while turn count stays 1.
 ### ❌ Fleet-tick overrun vs never-fire (check orchestrator.log for run start/finish pairs)
 Stalled fleet tick = zero repo artifacts but `run started` with no matching `run finished`; never-fire = no `run started` at all. Overrun needs scheduler fix, not runner hardening. (source: 2026-10-04 [session-quality])
 2026-10-03: 18h37m tick span (three steps held in queue 2-9h each); 2026-10-04 tick never fired. (source: 2026-10-05 [session-quality])
+
+### ❌ Assuming tick-level exit=0 means all steps passed
+A tick can finish exit=0 with failed steps inside. Check per-step `exit=1 duration=...` in orchestrator.log, not just tick-level start/finish. (source: 2026-10-12 [routine-alert, insight])
 ### ❌ Trusting trace-hook error classification
 If error count seems high, verify trace.log's `## Trace / outcome:` — hook substring-matches false positives. (source: 2026-10-07 [debug, insight])
 

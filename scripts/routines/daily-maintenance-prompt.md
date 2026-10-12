@@ -47,6 +47,13 @@ Idempotent — running it twice on the same day is safe.
 Deterministic, so it submits its total as a **single** sample: the multi-sample
 spread gate is skipped and the record reports `"spread": null`, not `0.0`.
 
+It refuses to score a window whose inputs it could not read, because a zero tag
+count is only a quiet day if the producers ran. A missing `observations.md`, a
+`[detector-down]` row in the window, commits with no `session-quality` row, or
+unreadable git history each record the day `inconclusive` at `0.0` with the
+sources named in the record's `unreadable` field. That output is expected, not a
+failure of this step — do not retry it or substitute a score.
+
 ## Step E — Skill Augmentation (Sleep-Phase Knowledge Seeding)
 
 Invoke the `skill-augment-agent` via the Agent tool. Pass this as the task prompt:
@@ -111,4 +118,4 @@ Daily maintenance complete: judge=<delta> session-quality=<N/5> keep-rate=<N%> t
 
 If any step was skipped or failed, replace the value with `skipped` or `failed`.
 
-_Last synced: 2026-10-01_
+_Last synced: 2026-10-12_

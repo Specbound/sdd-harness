@@ -131,4 +131,4 @@ Utility scripts used by the harness. Python scripts are stdlib-only except where
 | `routines/skill-curator-prompt.md` | Prompt for skill curation runs. |
 | `routines/code-review-learning-prompt.md` | Prompt for the self-improving code-review learning sweep. |
 
-_Last synced: 2026-10-11_
+_Last synced: 2026-10-12_
