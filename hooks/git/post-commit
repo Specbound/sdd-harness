@@ -1,5 +1,24 @@
 #!/usr/bin/env bash
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+# REPO_ROOT must come from git itself (not the hook script's own location):
+# a hook file lives under the main repo's .git/hooks/ but git invokes it with
+# cwd set to whichever worktree triggered the commit. Deriving REPO_ROOT from
+# BASH_SOURCE always resolved to the main repo, so hook 3 would cd there and
+# commit/push docs against whatever branch happened to be checked out there —
+# not the branch that actually just got the commit.
+REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0
+
+# Opt-in gate: doc-sync only runs in worktrees explicitly enabled via
+# `git config --worktree hooks.autopilot.enabled true` (requires
+# `git config extensions.worktreeConfig true` once, set in the main worktree).
+# Ad hoc review/PR worktrees created with `git worktree add` are disabled by
+# default, so they can never auto-commit or push docs to the wrong place.
+# (Same flag gates hooks/claude/pr-risk-tier-hook.sh and
+# scripts/pr/detect_base_and_create.sh — one switch for "this worktree may
+# push/create/label things visible outside this session".)
+if [ "$(git config --bool hooks.autopilot.enabled 2>/dev/null)" != "true" ]; then
+  exit 0
+fi
+
 TODAY=$(date +%Y-%m-%d)
 
 CHANGED=$(git diff HEAD~1 --name-only 2>/dev/null)

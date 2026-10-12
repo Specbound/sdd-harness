@@ -41,7 +41,8 @@ cat << MSG
 ║  Skill written: $SKILL_NAME
 ║                                                                ║
 ║  Skills are mini-agents that direct Claude to act. Before     ║
-║  marking this skill complete, invoke agent-permissions-design  ║
+║  marking this skill complete, follow                           ║
+║  ~/.claude/skill-library/agent-permissions-design/SKILL.md     ║
 ║  and verify:                                                   ║
 ║                                                                ║
 ║  1. Tool access — does this skill direct use of destructive    ║

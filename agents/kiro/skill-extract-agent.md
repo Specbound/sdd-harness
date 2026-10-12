@@ -163,7 +163,15 @@ Next: Review the plan, then run /kiro:skill-extract <plan-path>
 
    ---
 
-   **`skill`** → Generate `~/.claude/skills/<name>/SKILL.md`
+   **`skill`** → Generate the skill into the two-tier hierarchy (see `docs/skills/SKILL-HIERARCHY.md`)
+
+   Write the source to `skills/<name>/SKILL.md`. Default every extracted skill to the **Library**
+   tier (it costs no per-prompt context): add `<name>` to `scripts/setup/skill-library.txt` (then
+   `python3 scripts/utils/check-skill-tiers.py` must pass), and
+   add one row to the owning master's table in `skills/<master>/SKILL.md`
+   (`` | `<name>` | <one-line what+when> | `~/.claude/skill-library/<name>/SKILL.md` | ``), picking
+   the master from the 14 domains. Only leave it off the manifest (Listed tier) if a hook or command
+   will `Skill("<name>")` it. The installed location is then `~/.claude/skill-library/<name>/SKILL.md`.
 
    Map to the skill tuple (C, π, T, R):
    - **Applicability Conditions (C)**: When should someone use this? What triggers it?
@@ -246,7 +254,7 @@ Return a summary:
 Extraction Complete
 
 Artifacts created:
-1. [skill]   ~/.claude/skills/<name>/SKILL.md — <description>
+1. [skill]   ~/.claude/skill-library/<name>/SKILL.md — <description> (Library; row added to <master>)
 2. [hook]    ~/.claude/hooks/<name>.sh — <description>
 3. [script]  ~/.claude/scripts/<name>.sh — <description>
 4. [command] ~/.claude/commands/<name>.md — <description>

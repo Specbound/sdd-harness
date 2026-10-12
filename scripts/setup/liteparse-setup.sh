@@ -39,7 +39,7 @@ if [ -z "$VPY" ]; then
 fi
 
 # --- Install liteparse inside the venv (no --user / --break-system-packages needed) ---
-if "$VPY" -m pip install -q --upgrade liteparse >/dev/null 2>&1 \
+if pip_cooldown_install "$VPY" -q --upgrade liteparse >/dev/null \
    && "$VPY" -c 'import liteparse' >/dev/null 2>&1; then
   echo "  liteparse installed (.venv-tools: $("$VPY" --version 2>&1))."
   exit 0

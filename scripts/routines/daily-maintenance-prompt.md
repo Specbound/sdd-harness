@@ -1,6 +1,6 @@
 You are running the local daily maintenance loop for this repository. This invocation runs LOCALLY (not in Anthropic cloud), so you have access to:
 
-- `~/.claude/skills/` via the Skill tool
+- `~/.claude/skills/` via the Skill tool (listed tier only — the `Skill()` tool resolves nothing in `~/.claude/skill-library/`; read those by path instead)
 - The full repo file tree (you are already in the repo's working directory)
 - All slash commands defined in `.claude/commands/`
 
@@ -11,7 +11,7 @@ Execute the seven steps below in order. Each is error-isolated — if one step f
 ## Step A — Daily Maintenance (trust-battery loop)
 
 Read `.claude/commands/kiro/daily-maintenance.md` and execute its pipeline:
-1. Judge — score the last 24h of observations using `kiro/settings/rules/session-quality-rubric.md`. Write the `[judge]` observation as usual, but **do NOT call `trust_score.py apply`** — scoring is handled in Step D (after session-quality and keep-rate are written).
+1. Judge — score the window `daily-maintenance.md` Step 1 computes (from the last trust-score record to now, capped at 7 days, not a fixed 24h) using `kiro/settings/rules/session-quality-rubric.md`, running the judge's Step 1b readability check first. If the judge reports `unreadable` sources, name them in the `[judge]` line — Step D's `auto-score` runs its own readability check and records the day `inconclusive` independently. Write **one** `[judge]` observation covering the run, but **do NOT call `trust_score.py apply`** — scoring is handled in Step D (after session-quality and keep-rate are written). `daily-maintenance.md` runs the judge three times and reconciles the deltas by median before calling `apply`; that reconciliation belongs to `apply`, which this routine does not use, so its three-sample spread gate never applies here. Whatever the run count, only one `[judge]` line is appended — Step D's `auto-score` counts tag occurrences, so a second appended `[judge]` line double-counts every tag it cites.
 2. Reflect — convert drains (especially [memory-gap] entries) into memory updates
 3. Housekeep — archive observations.md if >50 entries
 4. Alert — append `[routine-alert]` if any [memory-gap] entries remain unresolved after reflect
@@ -44,6 +44,15 @@ Run `python3 .claude/scripts/trust_score.py auto-score` from the repo root.
 Reads `observations.md` directly and scores mechanically from tagged signals
 (`[session-charge]`, `[memory-gap]`, `[session-quality]`, `[keep-rate]`).
 Idempotent — running it twice on the same day is safe.
+Deterministic, so it submits its total as a **single** sample: the multi-sample
+spread gate is skipped and the record reports `"spread": null`, not `0.0`.
+
+It refuses to score a window whose inputs it could not read, because a zero tag
+count is only a quiet day if the producers ran. A missing `observations.md`, a
+`[detector-down]` row in the window, commits with no `session-quality` row, or
+unreadable git history each record the day `inconclusive` at `0.0` with the
+sources named in the record's `unreadable` field. That output is expected, not a
+failure of this step — do not retry it or substitute a score.
 
 ## Step E — Skill Augmentation (Sleep-Phase Knowledge Seeding)
 
@@ -108,3 +117,5 @@ Daily maintenance complete: judge=<delta> session-quality=<N/5> keep-rate=<N%> t
 ```
 
 If any step was skipped or failed, replace the value with `skipped` or `failed`.
+
+_Last synced: 2026-10-12_

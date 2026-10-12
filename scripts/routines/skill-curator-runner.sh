@@ -56,7 +56,11 @@ trap 'rm -rf "$LOCK_DIR"' EXIT
 # --- Cadence guard: skip if last run was < MIN_GAP_DAYS ago (unless forced) ---
 if [ "${SKILL_CURATOR_FORCE:-0}" != "1" ] && [ -s "$STATE_FILE" ]; then
   LAST_RAW="$(cat "$STATE_FILE")"
-  LAST_EPOCH="$(date -j -f "%Y-%m-%dT%H:%M:%S%z" "$LAST_RAW" +%s 2>/dev/null \
+  # BSD date's %z wants "+0300", not ISO8601's "+03:00" — strip the colon before
+  # the macOS parse attempt, or LAST_EPOCH silently falls to 0 and the weekly
+  # cadence gate never fires (confirmed: every run since ~2026-08-06 re-swept).
+  LAST_RAW_BSD="$(echo "$LAST_RAW" | sed -E 's/([+-][0-9]{2}):([0-9]{2})$/\1\2/')"
+  LAST_EPOCH="$(date -j -f "%Y-%m-%dT%H:%M:%S%z" "$LAST_RAW_BSD" +%s 2>/dev/null \
               || date -d "$LAST_RAW" +%s 2>/dev/null || echo 0)"
   if [ "$LAST_EPOCH" -gt 0 ]; then
     GAP_DAYS=$(( ($(date +%s) - LAST_EPOCH) / 86400 ))

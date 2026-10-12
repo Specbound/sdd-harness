@@ -75,7 +75,7 @@ sentence yet still need decomposing before either axis is meaningful.
 |---|-----------|---------|-------------|
 | 1 | Off-roadmap (axis 1) | **DEFER** | Stop. Note *why* it's off-roadmap; leave for human. (`wait-to-implement`) |
 | 2 | On-roadmap **and** Program-scale (axis 4) | **PROGRAM** | `/kiro:idea-refine` — charts or updates `specs/_maps/<name>.md`, decomposes the fog into the first ticket-sized slice, then re-triages that slice against rows 3–5. |
-| 3 | On-roadmap **and** Feature-scale **and** Ambiguous (blocks even a spec) | **CLARIFY** | `Skill("questions")` / `/kiro:idea-refine` — resolve the ambiguity, then re-triage. (`needs-info`) |
+| 3 | On-roadmap **and** Feature-scale **and** Ambiguous (blocks even a spec) | **CLARIFY** | `~/.claude/skill-library/questions/SKILL.md` / `/kiro:idea-refine` — resolve the ambiguity, then re-triage. (`needs-info`) |
 | 4 | On-roadmap **and** Feature-scale **and** (Complex **or** Ambiguous-but-spec'able) | **SPEC** | `/kiro:spec-quick` (or `spec-init` for full manual control), seeded with the issue. (`ready-to-spec`) |
 | 5 | On-roadmap **and** Feature-scale **and** Simple **and** Not ambiguous | **ONE-SHOT** | Plan + implement directly (or `/kiro:jira-solve` type-routing for tickets). (`ready-to-implement`) |
 

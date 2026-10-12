@@ -40,6 +40,19 @@ if [ -f ".claude/settings.json" ] && [ -n "$SETTINGS_REPAIR" ] && [ -f "$SETTING
   fi
 fi
 
+# --- Headroom routing self-heal ---
+# headroom-setup.sh wires ANTHROPIC_BASE_URL into ~/.claude/settings.json only
+# after confirming the proxy is healthy, but nothing un-wires it if the proxy
+# dies afterward — and headroom's own SessionStart hook re-asserts that routing
+# every session, so a manual `unset`/edit does not stick. Probe bounded to
+# ~1.5s so a dead proxy never adds noticeable latency to session start; a slow
+# but healthy proxy is left alone (see headroom-unwire-if-dead.py).
+SELFHEAL="${SDD_ROOT:+$SDD_ROOT/scripts/utils/headroom-unwire-if-dead.py}"
+if [ -n "$SELFHEAL" ] && [ -f "$SELFHEAL" ] && [ -f "$HOME/.claude/settings.json" ] \
+   && command -v python3 >/dev/null 2>&1; then
+  python3 "$SELFHEAL" "$HOME/.claude/settings.json" 2>/dev/null || true
+fi
+
 OBS_FILE=".claude/memory/observations.md"
 today=$(date +%Y-%m-%d)
 
@@ -168,8 +181,16 @@ weak_str = ', '.join(f"{d.replace('_',' ')} ({v})" for d, v in weakest)
 icon = '✅' if avg >= 4.0 else '🟡' if avg >= 3.0 else '⚠ '
 print(f"📊 Prompt Quality Baseline (last {len(recent)} agent spawns): {icon} avg {avg}/5 | weakest: {weak_str}")
 if avg < 3.5:
-    print("   → Reminder: front-load context and bound scope on every Agent call. Invoke prompt-quality-assess skill when writing agent prompts.")
+    print("   → Reminder: front-load context and bound scope on every Agent call. Read ~/.claude/skill-library/prompt-quality-assess/SKILL.md when writing agent prompts.")
 PYEOF
+fi
+
+# --- Skill library notice ---
+# Library-tier skills (scripts/setup/skill-library.txt) are installed but unlisted,
+# so an agent asked to use one by name concludes it "isn't installed" and stops.
+# One line tells it where they live; skill-library-resolver.sh catches Skill() calls.
+if [ -d "$HOME/.claude/skill-library" ]; then
+  echo "[SKILL-LIBRARY] Skills not in your list may still be installed at ~/.claude/skill-library/<name>/SKILL.md — check there and Read it before reporting a skill as missing."
 fi
 
 # --- Headroom memory sync (background, non-blocking) ---

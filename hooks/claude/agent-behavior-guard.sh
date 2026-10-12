@@ -50,6 +50,10 @@ ENFORCE = set(x.strip() for x in ENFORCE_RAW.split(",") if x.strip())
 try:
     e = json.load(open(EVENT_FILE))
 except Exception:
+    # Fail closed only when a rule is enforced; monitor mode never blocks.
+    if ENFORCE:
+        print("BLOCKED: agent-behavior-guard could not parse the hook event and enforce mode is on", file=sys.stderr)
+        sys.exit(2)
     sys.exit(0)
 
 tool = e.get("tool_name", "") or ""
@@ -175,7 +179,17 @@ if is_egress:
 
 sys.exit(0)
 PY
+RC=$?
 
+# The Python's exit code IS the verdict. Before 2026-10-01 this line was a bare
+# `exit 0`, so warn()'s sys.exit(2) was discarded and enforce mode never blocked
+# anything. A non-zero exit other than 2 means the guard itself failed (python3
+# missing, crash) — fail closed if a rule is enforced, stay silent if not.
+[ "$RC" -eq 2 ] && exit 2
+if [ "$RC" -ne 0 ] && [ -n "$ENFORCE" ]; then
+  echo "BLOCKED: agent-behavior-guard failed (exit $RC) with enforce mode on — cannot verify this call" >&2
+  exit 2
+fi
 exit 0
 
 # REGISTRATION (settings.json) — wired in templates/settings.json.template:

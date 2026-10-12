@@ -1,200 +1,139 @@
 ---
 name: postgresql
-description: "Design a PostgreSQL-specific schema. Covers best-practices, data types, indexing, constraints, performance patterns, and advanced features"
+description: "PostgreSQL schema design, indexing, data types, RLS, connection pooling, locking, query diagnostics, and performance tuning. Use when designing or reviewing a PostgreSQL schema, choosing indexes/data types, tuning slow queries, configuring connections/pooling, or writing RLS policies, advisory locks, or queue-processing SQL."
 risk: unknown
 source: community
 ---
 
-# PostgreSQL Table Design 
+# PostgreSQL
 
 ## Use this skill when
-
-- Designing a schema for PostgreSQL
-- Selecting data types and constraints
+- Designing a schema for PostgreSQL, selecting data types/constraints
 - Planning indexes, partitions, or RLS policies
+- Diagnosing slow queries (EXPLAIN ANALYZE, pg_stat_statements, VACUUM/ANALYZE)
+- Configuring connection pooling/limits, locking, or queue workers
 - Reviewing tables for scale and maintainability
 
-## Do not use this skill when
-
-- You are targeting a non-PostgreSQL database
-- You only need query tuning without schema changes
-- You require a DB-agnostic modeling guide
+## Do not use skill when
+- Targeting a non-PostgreSQL database or need a DB-agnostic modeling guide
 
 ## Instructions
-
 1. Capture entities, access patterns, and scale targets (rows, QPS, retention).
 2. Choose data types and constraints that enforce invariants.
-3. Add indexes for real query paths and validate with `EXPLAIN`.
-4. Plan partitioning or RLS where required by scale or access control.
-5. Review migration impact and apply changes safely.
+3. Add indexes for real query paths and validate with `EXPLAIN (ANALYZE, BUFFERS)`.
+4. Plan partitioning, RLS, or pooling where required by scale or access control.
+5. Review migration impact and apply changes safely (see Safe Schema Evolution).
 
 ## Safety
-
 - Avoid destructive DDL on production without backups and a rollback plan.
 - Use migrations and staging validation before applying schema changes.
 
 ## Core Rules
+- **PRIMARY KEY**: prefer `BIGINT GENERATED ALWAYS AS IDENTITY`; `UUID` only for global uniqueness/opacity (`uuidv7()` on PG18+, else `gen_random_uuid()`). Not always needed for time-series/event/log data.
+- **Normalize first (3NF)**; denormalize only for measured, high-ROI reads. Premature denormalization creates maintenance burden.
+- **NOT NULL** wherever semantically required; use **DEFAULT**s for common values.
+- Index access paths you actually query: PK/unique (auto), **FK columns (manual — Postgres does not auto-index these!)**, frequent filters/sorts, join keys.
+- Prefer `TIMESTAMPTZ` for event time, `NUMERIC` for money, `TEXT` for strings, `BIGINT`/`DOUBLE PRECISION` (or `NUMERIC` for exact decimals) for numbers.
 
-- Define a **PRIMARY KEY** for reference tables (users, orders, etc.). Not always needed for time-series/event/log data. When used, prefer `BIGINT GENERATED ALWAYS AS IDENTITY`; use `UUID` only when global uniqueness/opacity is needed.
-- **Normalize first (to 3NF)** to eliminate data redundancy and update anomalies; denormalize **only** for measured, high-ROI reads where join performance is proven problematic. Premature denormalization creates maintenance burden.
-- Add **NOT NULL** everywhere it’s semantically required; use **DEFAULT**s for common values.
-- Create **indexes for access paths you actually query**: PK/unique (auto), **FK columns (manual!)**, frequent filters/sorts, and join keys.
-- Prefer **TIMESTAMPTZ** for event time; **NUMERIC** for money; **TEXT** for strings; **BIGINT** for integer values, **DOUBLE PRECISION** for floats (or `NUMERIC` for exact decimal arithmetic).
-
-## PostgreSQL “Gotchas”
-
-- **Identifiers**: unquoted → lowercased. Avoid quoted/mixed-case names. Convention: use `snake_case` for table/column names.
-- **Unique + NULLs**: UNIQUE allows multiple NULLs. Use `UNIQUE (...) NULLS NOT DISTINCT` (PG15+) to restrict to one NULL.
-- **FK indexes**: PostgreSQL **does not** auto-index FK columns. Add them.
-- **No silent coercions**: length/precision overflows error out (no truncation). Example: inserting 999 into `NUMERIC(2,0)` fails with error, unlike some databases that silently truncate or round.
-- **Sequences/identity have gaps** (normal; don't "fix"). Rollbacks, crashes, and concurrent transactions create gaps in ID sequences (1, 2, 5, 6...). This is expected behavior—don't try to make IDs consecutive.
-- **Heap storage**: no clustered PK by default (unlike SQL Server/MySQL InnoDB); `CLUSTER` is one-off reorganization, not maintained on subsequent inserts. Row order on disk is insertion order unless explicitly clustered.
-- **MVCC**: updates/deletes leave dead tuples; vacuum handles them—design to avoid hot wide-row churn.
+## Gotchas
+- Unquoted identifiers lowercase; use `snake_case`, avoid quoted/mixed-case names.
+- `UNIQUE` allows multiple NULLs; use `NULLS NOT DISTINCT` (PG15+) to restrict to one.
+- Overflows error out (no silent truncation/round), unlike some other databases.
+- Sequence/identity gaps are normal (rollbacks, crashes, concurrency) — don't "fix" them.
+- No clustered PK by default; `CLUSTER` is a one-off reorg, not maintained on inserts.
+- MVCC: updates/deletes leave dead tuples — avoid hot wide-row churn; vacuum handles the rest.
 
 ## Data Types
-
-- **IDs**: `BIGINT GENERATED ALWAYS AS IDENTITY` preferred (`GENERATED BY DEFAULT` also fine); `UUID` when merging/federating/used in a distributed system or for opaque IDs. Generate with `uuidv7()` (preferred if using PG18+) or `gen_random_uuid()` (if using an older PG version).
-- **Integers**: prefer `BIGINT` unless storage space is critical; `INTEGER` for smaller ranges; avoid `SMALLINT` unless constrained.
-- **Floats**: prefer `DOUBLE PRECISION` over `REAL` unless storage space is critical. Use `NUMERIC` for exact decimal arithmetic.
-- **Strings**: prefer `TEXT`; if length limits needed, use `CHECK (LENGTH(col) <= n)` instead of `VARCHAR(n)`; avoid `CHAR(n)`. Use `BYTEA` for binary data. Large strings/binary (>2KB default threshold) automatically stored in TOAST with compression. TOAST storage: `PLAIN` (no TOAST), `EXTENDED` (compress + out-of-line), `EXTERNAL` (out-of-line, no compress), `MAIN` (compress, keep in-line if possible). Default `EXTENDED` usually optimal. Control with `ALTER TABLE tbl ALTER COLUMN col SET STORAGE strategy` and `ALTER TABLE tbl SET (toast_tuple_target = 4096)` for threshold. Case-insensitive: for locale/accent handling use non-deterministic collations; for plain ASCII use expression indexes on `LOWER(col)` (preferred unless column needs case-insensitive PK/FK/UNIQUE) or `CITEXT`.
-- **Money**: `NUMERIC(p,s)` (never float).
-- **Time**: `TIMESTAMPTZ` for timestamps; `DATE` for date-only; `INTERVAL` for durations. Avoid `TIMESTAMP` (without timezone). Use `now()` for transaction start time, `clock_timestamp()` for current wall-clock time.
-- **Booleans**: `BOOLEAN` with `NOT NULL` constraint unless tri-state values are required.
-- **Enums**: `CREATE TYPE ... AS ENUM` for small, stable sets (e.g. US states, days of week). For business-logic-driven and evolving values (e.g. order statuses) → use TEXT (or INT) + CHECK or lookup table.
-- **Arrays**: `TEXT[]`, `INTEGER[]`, etc. Use for ordered lists where you query elements. Index with **GIN** for containment (`@>`, `<@`) and overlap (`&&`) queries. Access: `arr[1]` (1-indexed), `arr[1:3]` (slicing). Good for tags, categories; avoid for relations—use junction tables instead. Literal syntax: `'{val1,val2}'` or `ARRAY[val1,val2]`.
-- **Range types**: `daterange`, `numrange`, `tstzrange` for intervals. Support overlap (`&&`), containment (`@>`), operators. Index with **GiST**. Good for scheduling, versioning, numeric ranges. Pick a bounds scheme and use it consistently; prefer `[)` (inclusive/exclusive) by default.
-- **Network types**: `INET` for IP addresses, `CIDR` for network ranges, `MACADDR` for MAC addresses. Support network operators (`<<`, `>>`, `&&`).
-- **Geometric types**: `POINT`, `LINE`, `POLYGON`, `CIRCLE` for 2D spatial data. Index with **GiST**. Consider **PostGIS** for advanced spatial features.
-- **Text search**: `TSVECTOR` for full-text search documents, `TSQUERY` for search queries. Index `tsvector` with **GIN**. Always specify language: `to_tsvector('english', col)` and `to_tsquery('english', 'query')`. Never use single-argument versions. This applies to both index expressions and queries.
-- **Domain types**: `CREATE DOMAIN email AS TEXT CHECK (VALUE ~ '^[^@]+@[^@]+$')` for reusable custom types with validation. Enforces constraints across tables.
-- **Composite types**: `CREATE TYPE address AS (street TEXT, city TEXT, zip TEXT)` for structured data within columns. Access with `(col).field` syntax.
-- **JSONB**: preferred over JSON; index with **GIN**. Use only for optional/semi-structured attrs. ONLY use JSON if the original ordering of the contents MUST be preserved.
-- **Vector types**: `vector` type by `pgvector` for vector similarity search for embeddings.
-
-
-### Do not use the following data types
-- DO NOT use `timestamp` (without time zone); DO use `timestamptz` instead.
-- DO NOT use `char(n)` or `varchar(n)`; DO use `text` instead.
-- DO NOT use `money` type; DO use `numeric` instead.
-- DO NOT use `timetz` type; DO use `timestamptz` instead.
-- DO NOT use `timestamptz(0)` or any other precision specification; DO use `timestamptz` instead
-- DO NOT use `serial` type; DO use `generated always as identity` instead.
-
+- **IDs**: `BIGINT GENERATED ALWAYS AS IDENTITY` (or `GENERATED BY DEFAULT`); `UUID` for distributed/opaque IDs.
+- **Integers**: `BIGINT` unless storage-critical, then `INTEGER`; avoid `SMALLINT` unless constrained.
+- **Floats**: `DOUBLE PRECISION` over `REAL`; `NUMERIC` for exact decimal arithmetic (always for money).
+- **Strings**: `TEXT`; enforce length with `CHECK (LENGTH(col) <= n)`, not `VARCHAR(n)`/`CHAR(n)`. `BYTEA` for binary. Large values auto-TOAST (>2KB); control with `ALTER TABLE ... ALTER COLUMN col SET STORAGE strategy`. Case-insensitive: expression index on `LOWER(col)`, or `CITEXT` if needed in PK/FK/UNIQUE.
+- **Time**: `TIMESTAMPTZ` (never plain `TIMESTAMP`/`TIMETZ`/precision-qualified), `DATE`, `INTERVAL`. `now()` = transaction start; `clock_timestamp()` = current wall-clock.
+- **Booleans**: `BOOLEAN NOT NULL` unless tri-state needed.
+- **Enums**: `CREATE TYPE ... AS ENUM` for small, stable sets; `TEXT`/`INT` + `CHECK` or lookup table for evolving, business-logic-driven values.
+- **Arrays**: `TEXT[]`, `INTEGER[]` for ordered lists you query elements of; index with **GIN** (`@>`, `<@`, `&&`). Good for tags; use junction tables for relations.
+- **Ranges**: `daterange`/`numrange`/`tstzrange`; index **GiST**; pick a bounds scheme (`[)` default) and stay consistent.
+- **Network**: `INET`, `CIDR`, `MACADDR`. **Geometric**: `POINT`/`LINE`/`POLYGON`/`CIRCLE`, index GiST, consider PostGIS.
+- **Text search**: `TSVECTOR`/`TSQUERY`, index GIN; always specify language (`to_tsvector('english', col)`), never the single-arg form.
+- **Domain/composite types**: `CREATE DOMAIN email AS TEXT CHECK (...)`; `CREATE TYPE address AS (street TEXT, city TEXT)`, access via `(col).field`.
+- **JSONB** preferred over JSON (GIN index); use JSON only when original key order must be preserved.
+- **Vector**: `vector` type via `pgvector` for embeddings.
+- Never: `timestamp`/`timetz`/`timestamptz(n)` (use plain `timestamptz`), `char(n)`/`varchar(n)` (use `text`), `money` (use `numeric`), `serial` (use `generated always as identity`).
 
 ## Table Types
-
-- **Regular**: default; fully durable, logged.
-- **TEMPORARY**: session-scoped, auto-dropped, not logged. Faster for scratch work.
-- **UNLOGGED**: persistent but not crash-safe. Faster writes; good for caches/staging.
-
-## Row-Level Security
-
-Enable with `ALTER TABLE tbl ENABLE ROW LEVEL SECURITY`. Create policies: `CREATE POLICY user_access ON orders FOR SELECT TO app_users USING (user_id = current_user_id())`. Built-in user-based access control at the row level.
+Regular (durable) · `TEMPORARY` (session-scoped, auto-dropped) · `UNLOGGED` (persistent, not crash-safe — fast writes for caches/staging).
 
 ## Constraints
-
-- **PK**: implicit UNIQUE + NOT NULL; creates a B-tree index.
-- **FK**: specify `ON DELETE/UPDATE` action (`CASCADE`, `RESTRICT`, `SET NULL`, `SET DEFAULT`). Add explicit index on referencing column—speeds up joins and prevents locking issues on parent deletes/updates. Use `DEFERRABLE INITIALLY DEFERRED` for circular FK dependencies checked at transaction end.
-- **UNIQUE**: creates a B-tree index; allows multiple NULLs unless `NULLS NOT DISTINCT` (PG15+). Standard behavior: `(1, NULL)` and `(1, NULL)` are allowed. With `NULLS NOT DISTINCT`: only one `(1, NULL)` allowed. Prefer `NULLS NOT DISTINCT` unless you specifically need duplicate NULLs.
-- **CHECK**: row-local constraints; NULL values pass the check (three-valued logic). Example: `CHECK (price > 0)` allows NULL prices. Combine with `NOT NULL` to enforce: `price NUMERIC NOT NULL CHECK (price > 0)`.
-- **EXCLUDE**: prevents overlapping values using operators. `EXCLUDE USING gist (room_id WITH =, booking_period WITH &&)` prevents double-booking rooms. Requires appropriate index type (often GiST).
+- **PK**: implicit UNIQUE + NOT NULL, B-tree index.
+- **FK**: specify `ON DELETE/UPDATE` action; manually index the referencing column; `DEFERRABLE INITIALLY DEFERRED` for circular deps checked at commit.
+- **UNIQUE**: B-tree; allows multiple NULLs unless `NULLS NOT DISTINCT` (PG15+).
+- **CHECK**: NULL passes the check (3-valued logic) — combine with `NOT NULL` to fully enforce.
+- **EXCLUDE**: `EXCLUDE USING gist (room_id WITH =, booking_period WITH &&)` prevents overlap, e.g. double-booking.
 
 ## Indexing
-
-- **B-tree**: default for equality/range queries (`=`, `<`, `>`, `BETWEEN`, `ORDER BY`)
-- **Composite**: order matters—index used if equality on leftmost prefix (`WHERE a = ? AND b > ?` uses index on `(a,b)`, but `WHERE b = ?` does not). Put most selective/frequently filtered columns first.
-- **Covering**: `CREATE INDEX ON tbl (id) INCLUDE (name, email)` - includes non-key columns for index-only scans without visiting table.
-- **Partial**: for hot subsets (`WHERE status = 'active'` → `CREATE INDEX ON tbl (user_id) WHERE status = 'active'`). Any query with `status = 'active'` can use this index.
-- **Expression**: for computed search keys (`CREATE INDEX ON tbl (LOWER(email))`). Expression must match exactly in WHERE clause: `WHERE LOWER(email) = 'user@example.com'`.
-- **GIN**: JSONB containment/existence, arrays (`@>`, `?`), full-text search (`@@`)
-- **GiST**: ranges, geometry, exclusion constraints
-- **BRIN**: very large, naturally ordered data (time-series)—minimal storage overhead. Effective when row order on disk correlates with indexed column (insertion order or after `CLUSTER`).
+- **B-tree**: default for `=`,`<`,`>`,`BETWEEN`,`ORDER BY`.
+- **Composite**: usable only on a leftmost-prefix match; most selective/frequent column first.
+- **Covering**: `CREATE INDEX ON tbl (id) INCLUDE (name, email)` for index-only scans.
+- **Partial**: `CREATE INDEX ON tbl (user_id) WHERE status = 'active'` for hot subsets.
+- **Expression**: `CREATE INDEX ON tbl (LOWER(email))` — WHERE clause must match the expression exactly.
+- **GIN**: JSONB/array containment, full-text. **GiST**: ranges, geometry, exclusion. **BRIN**: huge, naturally-ordered data (time-series), minimal storage.
 
 ## Partitioning
+- Use for very large tables (>100M rows) filtered consistently on the partition key, or where data is pruned/replaced in bulk periodically.
+- **RANGE** (time-series): `PARTITION BY RANGE (created_at)`. **LIST**: discrete values. **HASH**: even distribution, no natural key.
+- Requires `CHECK` constraints for planner pruning (auto on declarative partitioning, PG10+). Prefer declarative partitioning/hypertables (TimescaleDB) over table inheritance.
+- Limitations: no global UNIQUE (partition key must be in PK/UNIQUE); FKs from partitioned tables unsupported — use triggers.
 
-- Use for very large tables (>100M rows) where queries consistently filter on partition key (often time/date).
-- Alternate use: use for tables where data maintenance tasks dictates e.g. data pruned or bulk replaced periodically
-- **RANGE**: common for time-series (`PARTITION BY RANGE (created_at)`). Create partitions: `CREATE TABLE logs_2024_01 PARTITION OF logs FOR VALUES FROM ('2024-01-01') TO ('2024-02-01')`. **TimescaleDB** automates time-based or ID-based partitioning with retention policies and compression.
-- **LIST**: for discrete values (`PARTITION BY LIST (region)`). Example: `FOR VALUES IN ('us-east', 'us-west')`.
-- **HASH**: for even distribution when no natural key (`PARTITION BY HASH (user_id)`). Creates N partitions with modulus.
-- **Constraint exclusion**: requires `CHECK` constraints on partitions for query planner to prune. Auto-created for declarative partitioning (PG10+).
-- Prefer declarative partitioning or hypertables. Do NOT use table inheritance.
-- **Limitations**: no global UNIQUE constraints—include partition key in PK/UNIQUE. FKs from partitioned tables not supported; use triggers.
+## Connection Management
+- Pool connections (each costs 1-3MB RAM; unpooled apps exhaust `max_connections` under load). Use PgBouncer between app and DB; size `pool_size ≈ (CPU cores * 2) + spindle_count`. Transaction mode fits most apps; session mode needed for prepared statements/temp tables.
+- Size `max_connections` to RAM: roughly `(RAM_MB / 5MB) - reserved`, but 100-200 is usually better for query performance than the theoretical max. Keep `work_mem * max_connections` under ~25% of RAM.
+- Monitor: `SELECT count(*), state FROM pg_stat_activity GROUP BY state;`
+
+## Row-Level Security
+- Enable: `ALTER TABLE tbl ENABLE ROW LEVEL SECURITY;` then `CREATE POLICY name ON tbl FOR SELECT TO role USING (condition);`.
+- **Wrap per-row function calls in a scalar subquery** — `USING ((select auth.uid()) = user_id)` not `USING (auth.uid() = user_id)`; the latter re-evaluates per row (100x+ slower at scale).
+- For complex checks, use a `SECURITY DEFINER` function (`set search_path = ''`) and call it wrapped in `(select ...)` from the policy.
+- Always index columns used in RLS policies.
+
+## Concurrency & Locking
+- **Advisory locks** for app-level coordination without lock rows: `pg_advisory_lock`/`pg_advisory_unlock` (session-scoped) or `pg_advisory_xact_lock` (released on commit/rollback). Use `pg_try_advisory_lock` for non-blocking attempts.
+- **SKIP LOCKED** for queue workers so they don't block on each other's claimed rows: `SELECT ... FROM jobs WHERE status='pending' ORDER BY created_at LIMIT 1 FOR UPDATE SKIP LOCKED`. Prefer the atomic form: `UPDATE jobs SET status='processing' WHERE id = (SELECT id FROM jobs WHERE status='pending' ORDER BY created_at LIMIT 1 FOR UPDATE SKIP LOCKED) RETURNING *;`
+- Keep transactions short to reduce lock contention and bloat.
+
+## Query Diagnostics & Monitoring
+- **EXPLAIN (ANALYZE, BUFFERS)** before guessing. Watch for: `Seq Scan` on large tables (missing index), high `Rows Removed by Filter` (poor selectivity), `Buffers: read >> hit` (needs more cache/memory), `Sort Method: external merge` (`work_mem` too low).
+- **pg_stat_statements**: `CREATE EXTENSION pg_stat_statements;` then query `total_exec_time`/`mean_exec_time`/`calls` to find the worst offenders; `pg_stat_statements_reset()` after tuning.
+- **VACUUM/ANALYZE**: stale stats cause bad plans. `ANALYZE tbl;` after bulk changes; check staleness via `pg_stat_user_tables.last_analyze`. Tune autovacuum per table for high-churn tables: `ALTER TABLE t SET (autovacuum_vacuum_scale_factor = 0.05, autovacuum_analyze_scale_factor = 0.02);`
+
+## Data Access Patterns
+- **Eliminate N+1 queries**: batch with `= ANY($1::bigint[])` or a `JOIN`, not one query per loop iteration.
+- **Cursor/keyset pagination over OFFSET**: `WHERE id > :last_id ORDER BY id LIMIT 20` stays O(1) regardless of page depth; `OFFSET` rescans every skipped row. For multi-column sort, compare the full tuple: `WHERE (created_at, id) > (:last_created_at, :last_id)`.
+- **Upsert**: `ON CONFLICT (cols) DO UPDATE SET ... WHERE excluded.col IS DISTINCT FROM tbl.col` to skip no-op writes; requires an exact-matching UNIQUE index (partial indexes don't qualify); `DO NOTHING` is cheaper when no update is needed.
 
 ## Special Considerations
+**Update-heavy**: separate hot/cold columns into different tables; `fillfactor=90` to enable HOT updates; avoid updating indexed columns; partition hot rows away from stable data.
+**Insert-heavy**: minimize indexes; use `COPY`/multi-row `INSERT`; `UNLOGGED` tables for rebuildable staging; defer index creation on bulk loads; partition by time/hash; prefer a natural key (e.g. `(timestamp, device_id)`) over a surrogate PK when possible.
 
-### Update-Heavy Tables
-
-- **Separate hot/cold columns**—put frequently updated columns in separate table to minimize bloat.
-- **Use `fillfactor=90`** to leave space for HOT updates that avoid index maintenance.
-- **Avoid updating indexed columns**—prevents beneficial HOT updates.
-- **Partition by update patterns**—separate frequently updated rows in a different partition from stable data.
-
-### Insert-Heavy Workloads
-
-- **Minimize indexes**—only create what you query; every index slows inserts.
-- **Use `COPY` or multi-row `INSERT`** instead of single-row inserts.
-- **UNLOGGED tables** for rebuildable staging data—much faster writes.
-- **Defer index creation** for bulk loads—>drop index, load data, recreate indexes.
-- **Partition by time/hash** to distribute load. **TimescaleDB** automates partitioning and compression of insert-heavy data.
-- **Use a natural key for primary key** such as a (timestamp, device_id) if enforcing global uniqueness is important many insert-heavy tables don't need a primary key at all.
-- If you do need a surrogate key, **Prefer `BIGINT GENERATED ALWAYS AS IDENTITY` over `UUID`**.
-
-### Upsert-Friendly Design
-
-- **Requires UNIQUE index** on conflict target columns—`ON CONFLICT (col1, col2)` needs exact matching unique index (partial indexes don't work).
-- **Use `EXCLUDED.column`** to reference would-be-inserted values; only update columns that actually changed to reduce write overhead.
-- **`DO NOTHING` faster** than `DO UPDATE` when no actual update needed.
-
-### Safe Schema Evolution
-
-- **Transactional DDL**: most DDL operations can run in transactions and be rolled back—`BEGIN; ALTER TABLE...; ROLLBACK;` for safe testing.
-- **Concurrent index creation**: `CREATE INDEX CONCURRENTLY` avoids blocking writes but can't run in transactions.
-- **Volatile defaults cause rewrites**: adding `NOT NULL` columns with volatile defaults (e.g., `now()`, `gen_random_uuid()`) rewrites entire table. Non-volatile defaults are fast.
-- **Drop constraints before columns**: `ALTER TABLE DROP CONSTRAINT` then `DROP COLUMN` to avoid dependency issues.
-- **Function signature changes**: `CREATE OR REPLACE` with different arguments creates overloads, not replacements. DROP old version if no overload desired.
+## Safe Schema Evolution
+- Most DDL is transactional — test with `BEGIN; ALTER TABLE ...; ROLLBACK;`.
+- `CREATE INDEX CONCURRENTLY` avoids blocking writes but can't run inside a transaction.
+- Adding a `NOT NULL` column with a **volatile** default (`now()`, `gen_random_uuid()`) rewrites the whole table; non-volatile defaults are fast.
+- Drop constraints before dropping the column they reference.
+- `CREATE OR REPLACE FUNCTION` with a different signature creates an overload, not a replacement — `DROP` the old one if that's not wanted.
 
 ## Generated Columns
-
-- `... GENERATED ALWAYS AS (<expr>) STORED` for computed, indexable fields. PG18+ adds `VIRTUAL` columns (computed on read, not stored).
+`col TYPE GENERATED ALWAYS AS (<expr>) STORED` for computed, indexable fields. PG18+ adds `VIRTUAL` (computed on read, not stored).
 
 ## Extensions
-
-- **`pgcrypto`**: `crypt()` for password hashing.
-- **`uuid-ossp`**: alternative UUID functions; prefer `pgcrypto` for new projects.
-- **`pg_trgm`**: fuzzy text search with `%` operator, `similarity()` function. Index with GIN for `LIKE '%pattern%'` acceleration.
-- **`citext`**: case-insensitive text type. Prefer expression indexes on `LOWER(col)` unless you need case-insensitive constraints.
-- **`btree_gin`/`btree_gist`**: enable mixed-type indexes (e.g., GIN index on both JSONB and text columns).
-- **`hstore`**: key-value pairs; mostly superseded by JSONB but useful for simple string mappings.
-- **`timescaledb`**: essential for time-series—automated partitioning, retention, compression, continuous aggregates.
-- **`postgis`**: comprehensive geospatial support beyond basic geometric types—essential for location-based applications.
-- **`pgvector`**: vector similarity search for embeddings.
-- **`pgaudit`**: audit logging for all database activity.
+`pgcrypto` (hashing, prefer over `uuid-ossp`) · `pg_trgm` (fuzzy `LIKE '%x%'` via GIN) · `citext` · `btree_gin`/`btree_gist` (mixed-type GIN/GiST) · `hstore` (superseded by JSONB) · `timescaledb` (time-series partitioning/retention) · `postgis` (geospatial) · `pgvector` (embeddings) · `pgaudit` (audit logging).
 
 ## JSONB Guidance
-
-- Prefer `JSONB` with **GIN** index.
-- Default: `CREATE INDEX ON tbl USING GIN (jsonb_col);` → accelerates:
-  - **Containment** `jsonb_col @> '{"k":"v"}'`
-  - **Key existence** `jsonb_col ? 'k'`, **any/all keys** `?\|`, `?&`
-  - **Path containment** on nested docs
-  - **Disjunction** `jsonb_col @> ANY(ARRAY['{"status":"active"}', '{"status":"pending"}'])`
-- Heavy `@>` workloads: consider opclass `jsonb_path_ops` for smaller/faster containment-only indexes:
-  - `CREATE INDEX ON tbl USING GIN (jsonb_col jsonb_path_ops);`
-  - **Trade-off**: loses support for key existence (`?`, `?|`, `?&`) queries—only supports containment (`@>`)
-- Equality/range on a specific scalar field: extract and index with B-tree (generated column or expression):
-  - `ALTER TABLE tbl ADD COLUMN price INT GENERATED ALWAYS AS ((jsonb_col->>'price')::INT) STORED;`
-  - `CREATE INDEX ON tbl (price);`
-  - Prefer queries like `WHERE price BETWEEN 100 AND 500` (uses B-tree) over `WHERE (jsonb_col->>'price')::INT BETWEEN 100 AND 500` without index.
-- Arrays inside JSONB: use GIN + `@>` for containment (e.g., tags). Consider `jsonb_path_ops` if only doing containment.
-- Keep core relations in tables; use JSONB for optional/variable attributes.
-- Use constraints to limit allowed JSONB values in a column e.g. `config JSONB NOT NULL CHECK(jsonb_typeof(config) = 'object')`
-
+- Default: `CREATE INDEX ON tbl USING GIN (jsonb_col);` accelerates containment (`@>`), key existence (`?`, `?|`, `?&`), path containment.
+- Heavy `@>`-only workloads: `jsonb_path_ops` opclass is smaller/faster but drops key-existence support.
+- Scalar field needing equality/range: extract to a generated column + B-tree index (`... GENERATED ALWAYS AS ((jsonb_col->>'price')::INT) STORED`) rather than casting inline in the WHERE clause.
+- Arrays inside JSONB: GIN + `@>`. Keep core relations in real columns; JSONB for optional/variable attrs. Constrain shape with `CHECK (jsonb_typeof(col) = 'object')`.
 
 ## Examples
-
-### Users
-
 ```sql
 CREATE TABLE users (
   user_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -203,12 +142,7 @@ CREATE TABLE users (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE UNIQUE INDEX ON users (LOWER(email));
-CREATE INDEX ON users (created_at);
-```
 
-### Orders
-
-```sql
 CREATE TABLE orders (
   order_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   user_id BIGINT NOT NULL REFERENCES users(user_id),
@@ -217,12 +151,7 @@ CREATE TABLE orders (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX ON orders (user_id);
-CREATE INDEX ON orders (created_at);
-```
 
-### JSONB
-
-```sql
 CREATE TABLE profiles (
   user_id BIGINT PRIMARY KEY REFERENCES users(user_id),
   attrs JSONB NOT NULL DEFAULT '{}',

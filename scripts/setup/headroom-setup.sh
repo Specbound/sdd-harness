@@ -31,27 +31,31 @@ echo "  Installing headroom-ai globally..."
 INSTALLED_GLOBALLY=0
 
 if command -v uv >/dev/null 2>&1; then
-    EXTRAS_FILE="$__here/headroom-extras.txt"
     # headroom-ai is a Rust extension (maturin). No pre-built wheel for Python 3.14+,
     # so try 3.12 first where binary wheels exist, then fall back to default.
-    if uv tool install "$HEADROOM_PKG" --python 3.12 \
-          --with-requirements "$EXTRAS_FILE" -q 2>/dev/null \
-       || uv tool install "$HEADROOM_PKG" \
-          --with-requirements "$EXTRAS_FILE" -q 2>/dev/null; then
+    # Install with headroom-ai's own `[proxy]` extra rather than the hand-maintained
+    # headroom-extras.txt requirements list this used to pass via --with-requirements:
+    # that list drifted behind the actual proxy dependency tree (missing `mcp`, then
+    # `magika`), each gap producing a silent launchd crash-loop — exit 1, zero
+    # stdout/stderr — that took hours to trace to "No module named 'X'" buried in
+    # the deployment's own runner.log. `[proxy]` is declared by the package itself,
+    # so it tracks whatever the proxy actually needs release over release.
+    if uv tool install "$HEADROOM_PKG[proxy]" --python 3.12 -q 2>/dev/null \
+       || uv tool install "$HEADROOM_PKG[proxy]" -q 2>/dev/null; then
         echo "    Installed via uv tool."
         INSTALLED_GLOBALLY=1
     fi
 fi
 
 if [ "$INSTALLED_GLOBALLY" -eq 0 ] && command -v pipx >/dev/null 2>&1; then
-    if pipx install "$HEADROOM_PKG" -q 2>/dev/null || pipx upgrade "$HEADROOM_PKG" -q 2>/dev/null; then
+    if pipx install "$HEADROOM_PKG[proxy]" -q 2>/dev/null || pipx upgrade "$HEADROOM_PKG[proxy]" -q 2>/dev/null; then
         echo "    Installed via pipx."
         INSTALLED_GLOBALLY=1
     fi
 fi
 
 if [ "$INSTALLED_GLOBALLY" -eq 0 ]; then
-    if pip install --user "$HEADROOM_PKG" -q 2>/dev/null; then
+    if pip install --user "$HEADROOM_PKG[proxy]" -q 2>/dev/null; then
         echo "    Installed via pip --user."
         INSTALLED_GLOBALLY=1
     fi

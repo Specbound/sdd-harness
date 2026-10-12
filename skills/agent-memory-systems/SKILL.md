@@ -1,130 +1,15 @@
 ---
 name: agent-memory-systems
-description: "Memory is the cornerstone of intelligent agents. Without it, every interaction starts from zero. This skill covers the architecture of agent memory: short-term (context window), long-term (vector s..."
-source: vibeship-spawner-skills (Apache 2.0)
-risk: unknown
+description: "Use when designing or debugging agent memory: choosing a memory tier/type, scoring or ranking retrieved memories, picking file vs. structured (vector/graph) storage, or avoiding cross-session/cross-user memory failures."
 ---
 
 # Agent Memory Systems
 
-You are a cognitive architect who understands that memory makes agents intelligent.
-You've built memory systems for agents handling millions of interactions. You know
-that the hard part isn't storing - it's retrieving the right memory at the right time.
+Memory failures look like intelligence failures. When an agent "forgets" or gives inconsistent answers, it's almost always a **retrieval** problem, not a storage problem — good memory architecture is 20% storage, 80% retrieval design.
 
-Your core insight: Memory failures look like intelligence failures. When an agent
-"forgets" or gives inconsistent answers, it's almost always a retrieval problem,
-not a storage problem. You obsess over chunking strategies, embedding quality,
-and retrieval ranking — because good memory architecture is 20% storage and 80%
-retrieval design.
+## The Three Tiers
 
-## Capabilities
-
-- agent-memory
-- long-term-memory
-- short-term-memory
-- working-memory
-- episodic-memory
-- semantic-memory
-- procedural-memory
-- memory-retrieval
-- memory-formation
-- memory-decay
-
-## Patterns
-
-### Memory Type Architecture
-
-Choosing the right memory type for different information
-
-### Vector Store Selection Pattern
-
-Choosing the right vector database for your use case
-
-### Chunking Strategy Pattern
-
-Breaking documents into retrievable chunks
-
-## Memory Scoring
-
-### Retrieval Ranking — Generative Agents Formula
-
-When retrieving memories, rank candidates by a weighted score combining three signals
-(from Park et al., 2023 — *Generative Agents*):
-
-```python
-import math
-from datetime import datetime
-
-def memory_score(
-    relevance: float,      # cosine similarity 0–1
-    importance: float,     # stored at write time 0–1
-    created_at: datetime,
-    decay_factor: float = 0.995  # per-hour decay
-) -> float:
-    hours_old = (datetime.utcnow() - created_at).total_seconds() / 3600
-    recency = math.pow(decay_factor, hours_old)
-    return relevance * 0.4 + importance * 0.3 + recency * 0.3
-```
-
-**Key parameters:**
-- `decay_factor = 0.995` → a memory from 24 hours ago retains ~88% of its recency score; 1 week ≈ 60%
-- Weights (0.4 / 0.3 / 0.3) are a starting point — tune based on whether freshness or relevance matters more for your domain
-- Use this score to re-rank after initial vector retrieval (retrieve top-20 by cosine, re-rank by `memory_score`, return top-k)
-
-### Importance Scoring at Write Time
-
-Filter noise at the source before it enters the store. Before persisting any memory,
-ask a fast/cheap model to score its importance on 0–1:
-
-```python
-async def score_importance(client, content: str) -> float:
-    """Returns 0.0–1.0. Only store memories above your threshold (e.g. 0.5)."""
-    response = await client.messages.create(
-        model="claude-haiku-4-5-20251001",
-        max_tokens=10,
-        messages=[{"role": "user", "content": (
-            f"Rate importance for saving across future sessions (0.0–1.0).\n"
-            f"0.0=trivial greeting  0.5=useful preference  1.0=critical decision\n"
-            f"Info: {content}\nReply with ONLY the number."
-        )}]
-    )
-    import re
-    match = re.search(r"[-+]?\d*\.\d+|\d+", response.content[0].text.strip())
-    return max(0.0, min(1.0, float(match.group()))) if match else 0.5
-```
-
-**Why this matters:** An ever-growing store degrades retrieval — more noise, higher latency,
-more contradictory memories. Importance gating at write time is cheaper and more effective
-than pruning at retrieval time.
-
-**Related:** For consolidation risks (why iterative LLM rewrites of stored memories can
-degrade performance below no-memory baseline), see `agent-memory-consolidation`.
-
-## Anti-Patterns
-
-### ❌ Store Everything Forever
-
-### ❌ Chunk Without Testing Retrieval
-
-### ❌ Single Memory Type for All Data
-
-## ⚠️ Sharp Edges
-
-| Issue | Severity | Solution |
-|-------|----------|----------|
-| Issue | critical | ## Contextual Chunking (Anthropic's approach) |
-| Issue | high | ## Test different sizes |
-| Issue | high | ## Always filter by metadata first |
-| Issue | high | ## Add temporal scoring |
-| Issue | medium | ## Detect conflicts on storage |
-| Issue | medium | ## Budget tokens for different memory types |
-| Issue | medium | ## Track embedding model in metadata |
-
-## Production Memory Ceiling
-
-### The Three Tiers
-
-Every harness memory system lives in exactly one tier:
+Every memory system lives in exactly one tier. The cognitive-science split (semantic/episodic/procedural) describes *what kind* of information is stored; tiers describe *where it lives* — most "memory" discussions conflate the two.
 
 | Tier | What it is | Survives session? | Production in 2026? |
 |---|---|---|---|
@@ -132,47 +17,89 @@ Every harness memory system lives in exactly one tier:
 | **External memory** | Files, vector stores, KGs | Yes — persisted outside weights | All production systems |
 | **Parametric memory** | Knowledge in weights via training | Yes — permanent | Zero production deployments |
 
-The cognitive-science split (semantic/episodic/procedural) describes *what kind* of information is stored; these tiers describe *where it lives*. Most "memory" discussions conflate the two.
+**The Memo Ceiling** (arXiv:2604.27707): retrieval from external memory needs Ω(k²) stored examples to match what parametric memory achieves with O(d) weight updates. More retrieval sophistication helps but doesn't close the gap — external memory is good for *episodic* recall (what happened, what was decided), not a substitute for trained generalization of *procedural* knowledge.
 
-### The Memo Ceiling (arXiv:2604.27707)
+## Memory Layers (within external memory)
 
-"Contextual Agentic Memory is a Memo, Not True Memory" formalizes the hard ceiling: retrieval from external memory needs **Ω(k²) stored examples** to match what parametric memory achieves with **O(d) weight updates**. Every external memory system below operates within this ceiling — more retrieval sophistication helps, but doesn't close the gap.
+| Layer | Persists | Use for |
+|---|---|---|
+| Short-term | Current session only | Conversation state, tool-call intermediates, task checklists |
+| Long-term | Cross-session | User preferences, reusable patterns, growing domain knowledge |
+| Entity | Cross-session | Identity/property/relationship consistency for named entities |
+| Temporal (KG) | Cross-session + time-indexed | "What was true on date X" — valid-from/valid-until queries; prevents stale facts contradicting new ones |
 
-Practical implication: external memory is good enough for *episodic* recall (what happened, what was decided) but cannot match trained generalization for *procedural* knowledge (how to do something across novel contexts).
+## Benchmarks
 
-## Harness Comparison
+**Deep Memory Retrieval (DMR):**
 
-How major shipping harnesses implement external memory (2026):
+| System | DMR Accuracy | Notes |
+|---|---|---|
+| Zep (Temporal KG) | 94.8% | Best accuracy; 90% latency reduction vs. full-context baseline |
+| MemGPT | 93.4% | Good general performance |
+| GraphRAG | ~75–85% | 20–35% gain over baseline RAG; up to 30% less hallucination |
+| Vector RAG | ~60–70% | Loses relationship structure |
+| Recursive Summarization | 35.3% | Severe information loss |
 
-| Harness | Retrieval mechanism | Persistence | Published limit | Key shortcoming |
-|---|---|---|---|---|
-| **Claude Code** | Filename-based selection (separate smaller model call) | Local markdown `~/.claude/projects/*/memory/` | 200-line index, 5 files/turn, no embeddings | Relevantly-named file wins over relevant file; silent truncation |
-| **Managed Agents** | N/A — filesystem mount | `/mnt/memory/`, immutable versions, 8 stores/workspace, 100KB/store | 100KB per store | Built for multi-agent coordination; personal cross-session context needs pattern on top |
-| **Codex** | Grep (substring only) over MEMORY.md | `~/.codex/memories/`, markdown, local | 5,000-token summary, 256 rollouts, 30-day pruning | Paraphrased facts invisible to grep; 6hr idle gate means back-to-back sessions don't consolidate |
-| **Copilot** | Citation verification (JIT against current branch) | Structured objects: `{subject, content, file:line citation, reasoning}` | 28-day expiry | Can't hold ungroundable facts ("prefers minimal abstraction"); repo-scoped only |
-| **OpenClaw** | Hybrid: 70% vector + 30% BM25 | SQLite index, MEMORY.md + daily logs | Compaction is one model turn — what survives is what the model writes | Silent compaction loss; Mem0 plugin required for Auto-Capture reliability |
-| **Hermes** | FTS5 keyword (sessions) | MEMORY.md (2,200 chars) + USER.md (1,375 chars) ≈ 1,300 tokens combined | §-delimited, consolidation at 80% capacity | FTS5 keyword-only; paraphrased facts invisible; ~800 tokens of durable memory |
-
-**Only published real-world metric:** Copilot A/B (p<0.00001) — PR merge rate 83% → 90% with memory on; code-review precision +3%, recall +4%.
-
-## File-Based vs Structured Memory: When Files Lose (LongMemEval-S)
-
-Files (this harness's default: markdown + grep) vs structured stores (embedded atomic facts) trade accuracy for cost:
+**Files vs. structured stores (LongMemEval-S)** — files trade accuracy for cost, not the reverse of common assumption:
 
 | Metric | File-based | Structured | Gap |
 |---|---|---|---|
-| Accuracy (LongMemEval-S) | 44.9% | 73.6% | 29pts |
+| Accuracy | 44.9% | 73.6% | 29pts (widens to 15pts further at 500-session scale) |
 | Tokens per correct answer | 665k | 27k | ~25x |
 | Abstention accuracy | 88.9% | 77.8% | files win |
-| Accuracy at 500-session scale | — | — | gap widens to 15pts further |
 
-Raw dated-fact stores beat LLM-distilled knowledge graphs (Zep 74.6%, Graphiti 53.4%) at 6x less context and 400x less ingest cost — the win isn't "structure beats files," it's "structure beats files on cross-session joins/temporal aggregation specifically."
+Raw dated-fact stores (no LLM-distillation step) beat LLM-distilled knowledge graphs (Zep 74.6%, Graphiti 53.4%) at 6x less context, 400x less ingest cost — the win is "undistilled structure beats files on cross-session joins/temporal aggregation," not "structure beats files" generally. File-based memory is fine for session-scoped recall, small fact counts, human-readable audit trails; it degrades on cross-session joins and temporal aggregation across many sessions — that's the signal to add a structured layer, not before. (Source: pinglin.tw, "The Shapes of Agent Memory"; benchmarked on LongMemEval/LoCoMo.)
 
-**Practical read for this harness:** file-based memory (`.claude/memory/`) is fine for the cases it's used for here — session-scoped recall, small fact counts, human-readable audit trail. It degrades specifically on cross-session joins over long history and temporal aggregation across many sessions. If a future harness need requires querying "what changed across N sessions" at scale, that's the signal to add a structured layer — not before. (Source: pinglin.tw, "The Shapes of Agent Memory", benchmarked on LongMemEval/LoCoMo.)
+## How Shipping Harnesses Do It (2026)
 
-## Related Skills
+| Harness | Retrieval | Persistence | Key shortcoming |
+|---|---|---|---|
+| Claude Code | Filename-based selection (separate model call) | Local markdown, 200-line index, 5 files/turn | Relevantly-named file wins over relevant file; silent truncation |
+| Managed Agents | Filesystem mount | `/mnt/memory/`, immutable versions, 100KB/store | Built for multi-agent coordination, not personal cross-session context |
+| Codex | Grep (substring only) | `~/.codex/memories/` markdown, 30-day pruning | Paraphrased facts invisible to grep; 6hr idle gate blocks back-to-back consolidation |
+| Copilot | Citation verification (JIT vs. current branch) | Structured `{subject, content, file:line, reasoning}`, 28-day expiry | Can't hold ungroundable facts; repo-scoped only |
+| OpenClaw | Hybrid 70% vector + 30% BM25 | SQLite index + MEMORY.md | Silent compaction loss; needs plugin for reliable auto-capture |
+| Hermes | FTS5 keyword only | MEMORY.md + USER.md, ~1.3k tokens combined | Keyword-only misses paraphrases; very small durable budget |
 
-Works well with: `autonomous-agents`, `multi-agent-orchestration`, `llm-architect`, `agent-tool-builder`
+Only published real-world A/B: Copilot, p<0.00001 — PR merge rate 83%→90% with memory on, code-review precision +3%/recall +4%.
 
-## When to Use
-This skill is applicable to execute the workflow or actions described in the overview.
+## Scoring: Rank Retrieved Memories
+
+Generative Agents formula (Park et al. 2023) — re-rank after initial vector retrieval (top-20 by cosine → re-rank by this → return top-k):
+
+```python
+def memory_score(relevance, importance, created_at, decay_factor=0.995):
+    hours_old = (datetime.utcnow() - created_at).total_seconds() / 3600
+    recency = decay_factor ** hours_old
+    return relevance * 0.4 + importance * 0.3 + recency * 0.3
+```
+
+`decay_factor=0.995` → a 24h-old memory retains ~88% of recency score, ~60% at 1 week. Weights (0.4/0.3/0.3) are a starting point — tune per domain.
+
+**Gate at write time, not just retrieval time.** Score importance (0–1) with a cheap model before persisting; only store above a threshold (e.g. 0.5). An ever-growing store degrades retrieval (more noise, higher latency, more contradictions) — gating at write is cheaper than pruning later.
+
+## Which Type, When
+
+| Information type | Use |
+|---|---|
+| Preferences, behavior, identity | Memory block, inline in prompt, < 500 chars |
+| Data, knowledge, facts | Files with hierarchical paths |
+| Procedures, workflows, how-to | Skills (indexed SKILL.md files) |
+| Cross-session episodic log | Append-only file (observations.md pattern) |
+
+## Anti-Patterns
+
+- **Knowledge graphs for agent memory** — benchmark-appealing but underperform in practice: LLM weights don't know your KG's schema, so traversal requires prompt engineering that breaks at scale. The loss is specific to *LLM-distilled* graphs, not structure itself — raw dated-fact stores beat both files and distilled KGs. Prefer files + vector search unless relationship reasoning is the explicit requirement.
+- **SQL-backed memory stores** — same problem as KGs: schema is arbitrary to the model, every query becomes prompt engineering against an opaque structure.
+- **Memory blocks over 500 chars** — inline prompt memory beyond ~500 chars/block crowds out working context; push data to files instead.
+- **Cross-user memory leakage (critical)** — memories from one user accessible to another is a severity-critical bug class, not an edge case. Enforce strict user isolation in the store, not just in the prompt.
+- **Store everything forever** — unbounded growth degrades retrieval; apply the write-time importance gate above.
+- **Shipping a chunking/retrieval strategy untested** — chunk size and retrieval quality interact; validate retrieval on real queries before trusting a chunking choice.
+
+## MCP-Backed Memory (API Shape)
+
+A common pattern for giving an agent durable memory without building storage yourself: expose it as 4 MCP tools — `memory_search(query, type?, tags?)`, `memory_write(key, type, content, tags?)`, `memory_read(key)`, `memory_stats()`. Keying by `key` + `type` + `tags` gives cheap filtering without a full query language. Treat the underlying store as a black box; the 4-verb shape (search/write/read/stats) is the reusable part, not any specific implementation.
+
+## Integration
+
+Builds on context fundamentals (for budgeting what enters context). Connects to multi-agent-patterns for cross-agent shared state, and to context-optimization for memory-based just-in-time loading.

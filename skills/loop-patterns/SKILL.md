@@ -345,6 +345,35 @@ Self-pace this loop. After each iteration, run the check command, read the outpu
 
 ---
 
+### 12. Ticket-Graph Batch Loop
+**Category:** Multi-Agent / Batch  
+**Goal:** A batch of independent tickets/tasks is implemented in parallel worktrees, reviewed, merged to an integration branch, and smoke-tested — in dependency order  
+**Max iterations:** until the batch is fully merged or blocked  
+**Check cmd:** `per-ticket: writer/reviewer pass status; per-batch: integration-branch build + smoke test`  
+**Exit when:** every ticket in the batch is merged to the integration branch and the prod smoke test passes
+
+```
+Start the "Ticket-Graph Batch Loop".
+
+Goal: implement a batch of tickets in dependency order, reviewed and merged to an integration branch, verified by a smoke test
+Max iterations: until the batch is fully merged or blocked
+Between iterations run: check each in-flight ticket's writer/reviewer pass status; once all tickets in the current dependency layer are merged, run the integration branch's build + smoke test
+Exit when: every ticket is merged to the integration branch AND the smoke test passes
+
+Step 1: Build the ticket dependency graph. Group tickets into layers where every ticket in a layer has no unmet dependency on another ticket in the same batch.
+Step 2: For the current layer, dispatch one writer agent per ticket into its own worktree, capped at a fixed concurrency limit (do not fan out unbounded).
+Step 3: Pair each writer's output with a reviewer agent before merge — the reviewer runs independently of the writer, on the writer's diff only.
+Step 4: Merge each reviewed ticket into the integration branch as its layer completes; do not wait for the whole batch if a layer finishes early.
+Step 5: Once every layer is merged, run the integration branch's prod-equivalent smoke test.
+Step 6: Write a handoff report (what merged, what got blocked and why, what the smoke test showed) and feed it back into the next planning pass.
+
+Self-pace this loop. After each iteration, run the check command, read the output, and only continue if the exit condition is not met. Stop when the exit condition passes or the batch is blocked. Give a short status update each pass.
+```
+
+This composes primitives this skill already documents rather than introducing new ones: capped-concurrency fan-out is the "higher-order workspace" DAG shape from the "Build bespoke loops, not heavyweight orchestrators" section above; the writer/reviewer split is the `PR Self-Review`/`gitnexus-pr-review` pattern applied per-ticket instead of per-PR; the human-check-in and fix-the-instructions-not-the-environment discipline are the same ones already named in the Loop Guardrails and `Fresh-Clone Onboarding` sections. This loop is the missing glue that sequences them across a whole batch of tickets, not a new set of principles.
+
+---
+
 ## Authoring a New Loop
 
 Follow the five-field contract. Good loops have:
