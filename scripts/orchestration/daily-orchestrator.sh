@@ -15,6 +15,9 @@ set -u
 __here="$(cd -P "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 . "$__here/../lib/resolve-harness-dir.sh"
 . "$__here/../lib/env-detect.sh"
+# Every routine step below runs under run_bounded — a wall-clock budget
+# (SDD_STEP_BUDGET_S, default 2h) so one hung step cannot hold the tick for days.
+. "$__here/../lib/run-bounded.sh"
 PROJECTS_FILE="$HARNESS_DIR/projects.txt"
 LOG_FILE="$HARNESS_DIR/logs/orchestrator.log"
 ERR_LOG="$HARNESS_DIR/logs/orchestrator-errors.log"
@@ -76,7 +79,7 @@ elif [ "${SDD_SKIP_HARNESS_SYNC:-0}" != "1" ] && [ -f "$HARNESS_DIR/update.sh" ]
     else
       sync_start=$(date +%s)
       sync_errbuf=$(mktemp)
-      bash "$HARNESS_DIR/update.sh" ${SINGLE_REPO:+"$SINGLE_REPO"} > /dev/null 2>"$sync_errbuf"
+      run_bounded bash "$HARNESS_DIR/update.sh" ${SINGLE_REPO:+"$SINGLE_REPO"} > /dev/null 2>"$sync_errbuf" < /dev/null
       sync_exit=$?
       echo "$ts harness: update.sh sync exit=$sync_exit duration=$(($(date +%s) - sync_start))s target=${SINGLE_REPO:-fleet}" >> "$LOG_FILE"
       if [ "$sync_exit" -eq 0 ]; then
@@ -130,7 +133,7 @@ run_one() {
   if [ "$last_day" != "$today" ]; then
     local start=$(date +%s)
     local dm_errbuf; dm_errbuf=$(mktemp)
-    (cd "$repo" && bash .claude/scripts/orchestration/daily-runner.sh) > /dev/null 2>"$dm_errbuf"
+    (cd "$repo" && run_bounded bash .claude/scripts/orchestration/daily-runner.sh) > /dev/null 2>"$dm_errbuf" < /dev/null
     local exit_code=$?
     local duration=$(($(date +%s) - start))
     echo "$ts $repo exit=$exit_code duration=${duration}s" >> "$LOG_FILE"
@@ -147,7 +150,7 @@ run_one() {
   if [ "${SDD_SKIP_MACRO_EVAL:-0}" != "1" ] && [ -f "$repo/.claude/scripts/routines/macro-eval-runner.sh" ]; then
     local me_start=$(date +%s)
     local me_errbuf; me_errbuf=$(mktemp)
-    (cd "$repo" && bash .claude/scripts/routines/macro-eval-runner.sh) > /dev/null 2>"$me_errbuf"
+    (cd "$repo" && run_bounded bash .claude/scripts/routines/macro-eval-runner.sh) > /dev/null 2>"$me_errbuf" < /dev/null
     local me_exit=$?
     echo "$ts $repo macro-eval exit=$me_exit duration=$(($(date +%s) - me_start))s" >> "$LOG_FILE"
     if [ "$me_exit" -ne 0 ] && [ -s "$me_errbuf" ]; then
@@ -161,7 +164,7 @@ run_one() {
   if [ "${SDD_SKIP_SKILL_CURATOR:-0}" != "1" ] && [ -f "$repo/.claude/scripts/routines/skill-curator-runner.sh" ]; then
     local sc_start=$(date +%s)
     local sc_errbuf; sc_errbuf=$(mktemp)
-    (cd "$repo" && bash .claude/scripts/routines/skill-curator-runner.sh) > /dev/null 2>"$sc_errbuf"
+    (cd "$repo" && run_bounded bash .claude/scripts/routines/skill-curator-runner.sh) > /dev/null 2>"$sc_errbuf" < /dev/null
     local sc_exit=$?
     echo "$ts $repo skill-curator exit=$sc_exit duration=$(($(date +%s) - sc_start))s" >> "$LOG_FILE"
     if [ "$sc_exit" -ne 0 ] && [ -s "$sc_errbuf" ]; then
@@ -175,7 +178,7 @@ run_one() {
   if [ "${SDD_SKIP_HARNESS_HEALTH:-0}" != "1" ] && [ -f "$repo/.claude/scripts/routines/harness-health-runner.sh" ]; then
     local hh_start=$(date +%s)
     local hh_errbuf; hh_errbuf=$(mktemp)
-    (cd "$repo" && bash .claude/scripts/routines/harness-health-runner.sh) > /dev/null 2>"$hh_errbuf"
+    (cd "$repo" && run_bounded bash .claude/scripts/routines/harness-health-runner.sh) > /dev/null 2>"$hh_errbuf" < /dev/null
     local hh_exit=$?
     echo "$ts $repo harness-health exit=$hh_exit duration=$(($(date +%s) - hh_start))s" >> "$LOG_FILE"
     if [ "$hh_exit" -ne 0 ] && [ -s "$hh_errbuf" ]; then
@@ -191,7 +194,7 @@ run_one() {
   if [ "${SDD_SKIP_TOOL_FAILURE_REVIEW:-0}" != "1" ] && [ -f "$repo/.claude/scripts/routines/tool-failure-review-runner.sh" ]; then
     local tf_start=$(date +%s)
     local tf_errbuf; tf_errbuf=$(mktemp)
-    (cd "$repo" && bash .claude/scripts/routines/tool-failure-review-runner.sh) > /dev/null 2>"$tf_errbuf"
+    (cd "$repo" && run_bounded bash .claude/scripts/routines/tool-failure-review-runner.sh) > /dev/null 2>"$tf_errbuf" < /dev/null
     local tf_exit=$?
     echo "$ts $repo tool-failure-review exit=$tf_exit duration=$(($(date +%s) - tf_start))s" >> "$LOG_FILE"
     if [ "$tf_exit" -ne 0 ] && [ -s "$tf_errbuf" ]; then
@@ -208,7 +211,7 @@ run_one() {
   if [ "${SDD_SKIP_CODE_REVIEW_LEARNING:-0}" != "1" ] && [ -f "$repo/.claude/scripts/routines/code-review-learning-runner.sh" ]; then
     local crl_start=$(date +%s)
     local crl_errbuf; crl_errbuf=$(mktemp)
-    (cd "$repo" && bash .claude/scripts/routines/code-review-learning-runner.sh) > /dev/null 2>"$crl_errbuf"
+    (cd "$repo" && run_bounded bash .claude/scripts/routines/code-review-learning-runner.sh) > /dev/null 2>"$crl_errbuf" < /dev/null
     local crl_exit=$?
     echo "$ts $repo code-review-learning exit=$crl_exit duration=$(($(date +%s) - crl_start))s" >> "$LOG_FILE"
     if [ "$crl_exit" -ne 0 ] && [ -s "$crl_errbuf" ]; then
@@ -224,7 +227,7 @@ run_one() {
   if [ "${SDD_SKIP_SECURITY_REPORT:-0}" != "1" ] && [ -f "$repo/.claude/scripts/routines/security-report-runner.sh" ]; then
     local sr_start=$(date +%s)
     local sr_errbuf; sr_errbuf=$(mktemp)
-    (cd "$repo" && bash .claude/scripts/routines/security-report-runner.sh) > /dev/null 2>"$sr_errbuf"
+    (cd "$repo" && run_bounded bash .claude/scripts/routines/security-report-runner.sh) > /dev/null 2>"$sr_errbuf" < /dev/null
     local sr_exit=$?
     echo "$ts $repo security-report exit=$sr_exit duration=$(($(date +%s) - sr_start))s" >> "$LOG_FILE"
     if [ "$sr_exit" -ne 0 ] && [ -s "$sr_errbuf" ]; then
@@ -241,7 +244,7 @@ run_one() {
   if [ "${SDD_SKIP_STARTUP_AUDIT:-0}" != "1" ] && [ -f "$repo/.claude/scripts/routines/startup-payload-audit.sh" ]; then
     local sp_start=$(date +%s)
     local sp_errbuf; sp_errbuf=$(mktemp)
-    (cd "$repo" && bash .claude/scripts/routines/startup-payload-audit.sh) > /dev/null 2>"$sp_errbuf"
+    (cd "$repo" && run_bounded bash .claude/scripts/routines/startup-payload-audit.sh) > /dev/null 2>"$sp_errbuf" < /dev/null
     local sp_exit=$?
     echo "$ts $repo startup-payload exit=$sp_exit duration=$(($(date +%s) - sp_start))s" >> "$LOG_FILE"
     if [ "$sp_exit" -ne 0 ] && [ -s "$sp_errbuf" ]; then
@@ -259,7 +262,7 @@ run_one() {
   if [ "${SDD_SKIP_RTK_NET_EFFECT:-0}" != "1" ] && [ -f "$repo/.claude/scripts/routines/rtk-net-effect-runner.sh" ]; then
     local rne_start=$(date +%s)
     local rne_errbuf; rne_errbuf=$(mktemp)
-    (cd "$repo" && bash .claude/scripts/routines/rtk-net-effect-runner.sh) > /dev/null 2>"$rne_errbuf"
+    (cd "$repo" && run_bounded bash .claude/scripts/routines/rtk-net-effect-runner.sh) > /dev/null 2>"$rne_errbuf" < /dev/null
     local rne_exit=$?
     echo "$ts $repo rtk-net-effect exit=$rne_exit duration=$(($(date +%s) - rne_start))s" >> "$LOG_FILE"
     if [ "$rne_exit" -ne 0 ] && [ -s "$rne_errbuf" ]; then
@@ -275,7 +278,7 @@ run_one() {
   if [ "${SDD_SKIP_RISK_ZONE:-0}" != "1" ] && [ -f "$repo/.claude/scripts/routines/risk-zone-reseed-runner.sh" ]; then
     local rz_start=$(date +%s)
     local rz_errbuf; rz_errbuf=$(mktemp)
-    (cd "$repo" && bash .claude/scripts/routines/risk-zone-reseed-runner.sh) > /dev/null 2>"$rz_errbuf"
+    (cd "$repo" && run_bounded bash .claude/scripts/routines/risk-zone-reseed-runner.sh) > /dev/null 2>"$rz_errbuf" < /dev/null
     local rz_exit=$?
     echo "$ts $repo risk-zone-reseed exit=$rz_exit duration=$(($(date +%s) - rz_start))s" >> "$LOG_FILE"
     if [ "$rz_exit" -ne 0 ] && [ -s "$rz_errbuf" ]; then
@@ -292,7 +295,7 @@ run_one() {
   if [ "${SDD_SKIP_HOOK_CONFIG_AUDIT:-0}" != "1" ] && [ -f "$repo/.claude/scripts/routines/hook-config-audit-runner.sh" ]; then
     local hca_start=$(date +%s)
     local hca_errbuf; hca_errbuf=$(mktemp)
-    (cd "$repo" && bash .claude/scripts/routines/hook-config-audit-runner.sh) > /dev/null 2>"$hca_errbuf"
+    (cd "$repo" && run_bounded bash .claude/scripts/routines/hook-config-audit-runner.sh) > /dev/null 2>"$hca_errbuf" < /dev/null
     local hca_exit=$?
     echo "$ts $repo hook-config-audit exit=$hca_exit duration=$(($(date +%s) - hca_start))s" >> "$LOG_FILE"
     if [ "$hca_exit" -ne 0 ] && [ -s "$hca_errbuf" ]; then
@@ -309,7 +312,7 @@ run_one() {
   if [ "${SDD_SKIP_DAILY_BRIEFING:-0}" != "1" ] && [ -f "$repo/.claude/scripts/routines/daily-briefing-runner.sh" ]; then
     local db_start=$(date +%s)
     local db_errbuf; db_errbuf=$(mktemp)
-    (cd "$repo" && bash .claude/scripts/routines/daily-briefing-runner.sh) > /dev/null 2>"$db_errbuf"
+    (cd "$repo" && run_bounded bash .claude/scripts/routines/daily-briefing-runner.sh) > /dev/null 2>"$db_errbuf" < /dev/null
     local db_exit=$?
     echo "$ts $repo daily-briefing exit=$db_exit duration=$(($(date +%s) - db_start))s" >> "$LOG_FILE"
     if [ "$db_exit" -ne 0 ] && [ -s "$db_errbuf" ]; then
@@ -379,7 +382,7 @@ print((datetime.date.today() - datetime.date.fromisoformat(raw)).days)
     drift_errbuf=$(mktemp)
     drift_outbuf=$(mktemp)
     echo "Read ~/.claude/skill-library/repo-drift-review/SKILL.md and follow it to sweep the SDD harness for drift. Auto-fix what you can. Write the summary to $HARNESS_DIR/reports/drift-review-report.md" | \
-      claude --print --output-format text --permission-mode bypassPermissions > "$drift_outbuf" 2>"$drift_errbuf"
+      run_bounded claude --print --output-format text --permission-mode bypassPermissions > "$drift_outbuf" 2>"$drift_errbuf"
     drift_exit=$?
     echo "$ts harness: drift review exit=$drift_exit" >> "$LOG_FILE"
     if [ "$drift_exit" -eq 0 ]; then
