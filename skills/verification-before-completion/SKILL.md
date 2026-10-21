@@ -167,10 +167,19 @@ Iterative changes to skills, rules, or configs left in modified-uncommitted stat
 Before claiming a finding is fresh, verify it hasn't already been investigated in prior observations. Check observation records for prior-day evidence that addresses it before double-counting in verdicts. (source: daa-llm-evaluation 2026-10-08 [judge])
 
 ### ❌ Replacement claim without verification
-Replacing wrong claim A with correction B requires verifying B is correct, not just that A was wrong. (source: 2026-10-08 [insight])
+Replacing wrong claim A with correction B requires verifying B is correct, not just that A was wrong. (source: sdd-harness 2026-10-08 [insight, friction, pattern])
 
 ### ❌ Prompt instructions alone don't prevent judge hallucinations
-Prompt-level warnings to LLM judges don't prevent fabricated citations; documented 10 times (3 by session-judge). Require structural code verification. (source: 2026-10-08 [routine-error])
+Prompt-level warnings to LLM judges don't prevent fabricated citations; documented 10 times (3 by session-judge). Require structural code verification. (source: kakophonia 2026-10-08 [routine-error])
+
+### ❌ Citing a routine name from orchestrator.log alone
+Only each repo block's leading row is unnamed; the errors log names it but records failures only (0 of 325 blocks are exit=0). (source: kakophonia 2026-10-12 [correction])
+
+### ❌ Treating elapsed-so-far as a finished tick
+A repo row lands when its own block ends, before `run finished`; absent that bookend the tick outcome is undetermined, not healthy. (source: kakophonia 2026-10-12 [correction])
+
+### ❌ Sizing a conclusion from a slice of the series
+n=2 read "fixed cost", n=3 read "growing"; the full series killed both (two sub-minute runs among eight slow). Read every row. (source: kakophonia 2026-10-12 [correction])
 
 ## When to Use
 This skill is applicable to execute the workflow or actions described in the overview.
