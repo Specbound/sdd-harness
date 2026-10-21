@@ -101,6 +101,31 @@ Produce an alignment scorecard:
 
 Agents with fewer than 3 scored entries are excluded from alignment analysis (insufficient data).
 
+### Step 1d: Prompt-Drift Check
+
+Run `bash scripts/quality/prompt-drift-check.sh` (no args — sweeps `CLAUDE.md` and every
+`skills/*/SKILL.md`). It reports, per file, the deletions:insertions ratio across that
+file's full git history. A file with enough history and a near-zero delete ratio is
+flagged `accretion-only` — content only ever gets appended, never pruned, which is how
+skills and CLAUDE.md silently bloat over time even though no single edit looks wrong.
+
+This is advisory input to Step 3, not a metric with its own pass/fail target — a file
+legitimately growing (new real capability) looks identical in this signal to one just
+accumulating unpruned cruft. Cross-reference flagged files against friction patterns
+(Step 2) and memory-gap history before proposing anything: only propose a pruning pass
+on a flagged file if there's independent evidence (stale content, superseded advice,
+duplicate coverage) — the flag alone is not sufficient justification.
+
+Produce a scorecard:
+
+```
+### Prompt-Drift Scorecard
+| File | Commits | Delete Ratio | Flag |
+|------|---------|--------------|------|
+| skills/foo/SKILL.md | 9 | 0.02 | accretion-only |
+| CLAUDE.md | 17 | 0.28 | — |
+```
+
 ### Step 2: Analyze Friction
 
 Scan observations and self-observations for friction patterns:
@@ -281,6 +306,12 @@ Chat summary only (self-observations updated directly):
 |-------|-------------|-----------|------------|-------|------|
 | [agent] | N | X.X | Y% | [trend] | [flag or —] |
 (only agents with 3+ scored entries shown)
+
+## Prompt-Drift Scorecard
+| File | Commits | Delete Ratio | Flag |
+|------|---------|--------------|------|
+| [file] | N | X.XX | [accretion-only or —] |
+(only files with 5+ commits touching them are shown)
 
 ## Friction Patterns
 - [description of each friction pattern found]

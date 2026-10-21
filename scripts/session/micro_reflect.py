@@ -11,12 +11,16 @@ Auto-learned entries are probationary — the nightly housekeeping-agent either
 promotes them to patterns.md (if reinforced) or removes them after 7 days.
 """
 
+from __future__ import annotations
+
 import json
+import os
 import subprocess
 import sys
 from datetime import date
 from pathlib import Path
 
+MODEL = "claude-haiku-4-5-20251001"
 HOT_MEMORY = Path(".claude/memory/hot-memory.md")
 SECTION_HEADER = "## Auto-learned"
 TAG = "auto-learn"
@@ -45,34 +49,33 @@ If nothing is worth remembering permanently, respond with: []"""
 
 
 def _call_llm(prompt: str) -> str | None:
-    try:
-        import anthropic  # type: ignore
-        client = anthropic.Anthropic()
-        msg = client.messages.create(
-            model="claude-haiku-4-5-20251001",
-            max_tokens=512,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        return msg.content[0].text.strip()
-    except ImportError:
-        pass
-    except Exception as e:
-        print(f"WARN: SDK call failed ({e})", file=sys.stderr)
+    """Extract facts via headless Claude Code.
 
+    The `anthropic` SDK path was removed: it required an ANTHROPIC_API_KEY that
+    bills separately from the Claude subscription, and with no key set every call
+    raised and fell through to this same CLI anyway. SDD_HEADLESS=1 keeps the stop
+    hook from launching its own detector when this child session ends.
+    """
     try:
         result = subprocess.run(
-            ["claude", "--print", "--output-format", "text"],
+            ["claude", "--print", "--model", MODEL, "--output-format", "text"],
             input=prompt,
             capture_output=True,
             text=True,
             timeout=60,
+            env={**os.environ, "SDD_HEADLESS": "1"},
+            check=False,
         )
-        if result.returncode == 0:
-            return result.stdout.strip()
-    except Exception as e:
-        print(f"WARN: CLI call failed ({e})", file=sys.stderr)
+    except (FileNotFoundError, subprocess.TimeoutExpired) as e:
+        print(f"WARN: `claude --print` unavailable ({e})", file=sys.stderr)
+        return None
 
-    return None
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout or "").strip()[:200]
+        print(f"WARN: `claude --print` exited {result.returncode}: {detail}", file=sys.stderr)
+        return None
+
+    return result.stdout.strip()
 
 
 def _parse_facts(raw: str) -> list[str]:

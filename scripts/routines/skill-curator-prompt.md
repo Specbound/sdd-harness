@@ -12,17 +12,39 @@ Execute the three phases below in order. Each is error-isolated — if one phase
 
 ## Phase 1 — Skill Quality Audit
 
-Glob all files matching `~/.claude/skills/*/SKILL.md` plus any top-level `~/.claude/skills/SKILL.md`.
+**Run this first, before reading any individual SKILL.md:**
 
-For each skill file:
-1. Read the YAML frontmatter: `name`, `description`, `source`, `risk`
-2. Score against the four SkillOS quality dimensions:
-   - **Task relevance** (0–3): Is the trigger clear? Would a model know when to invoke this?
-   - **Operational validity** (0–3): Are instructions accurate and still executable as written?
-   - **Content quality** (0–3): Is it free of fluff, duplication, and stale references?
-   - **Compression ratio** (0–3): Does it replace more context than it consumes?
-3. Flag skills with total score ≤ 6 as low-quality candidates
-4. Identify duplicate pairs: skills with substantially overlapping scope
+```bash
+python3 $SDD_HARNESS/scripts/skill-quality-scan.py --json
+```
+
+This mechanically scores every skill against the four SkillOS dimensions below —
+do NOT re-derive these scores by reading ~1000 files one at a time. That is
+enough tool calls to exhaust this session's turn/time budget before Phase 4
+(writing the report) ever runs, which is why the report's body froze at
+2026-08-06 for six weeks straight while later runs kept exiting 0 with real
+duration but nothing written: the per-file read approach was eating the whole
+budget on Phase 1 alone. The script is deterministic and reproducible — run it
+again next week and get comparable numbers, closing the "discrepancy vs. last
+week" methodology-drift gap prior reports had to caveat around.
+
+The four dimensions it computes (0–3 each, 12 total):
+- **Task relevance**: Is the trigger clear? (description present + explicit trigger cue)
+- **Operational validity**: body substance as a proxy for executable instructions
+- **Content quality**: body substance, stricter buckets (penalizes thin bodies)
+- **Compression ratio**: body words vs description token cost
+
+It also reports `yaml_defect_count` — skills whose `description:` is the
+literal two-char string `">"` (quoted) instead of a bare `>` fold indicator,
+which silently empties the description at parse time.
+
+Low-quality candidates (`total <= 6`) come straight from its JSON output —
+use them as-is. **Duplicate pairs are the one thing this script cannot do**
+(semantic overlap needs judgment, not a heuristic): identify skills with
+substantially overlapping scope by name/description clustering (e.g. a
+product-family cluster like `fal-audio`/`fal-generate`/`fal-image-edit`), then
+skim only those candidates' bodies to confirm overlap — a targeted read of a
+handful of files, not all ~1000.
 
 Compression heuristic: skill content should be ≤30% of the context it would replace manually.
 
@@ -168,7 +190,15 @@ Total: N skills | X chars | ~Y tokens
 | hot-memory.md recency | ok | last modified: DATE |
 ```
 
-If `reports/skill-curation-report.md` already exists, REPLACE it entirely (this is the canonical weekly snapshot).
+If `reports/skill-curation-report.md` already exists, read it first. Other routines
+(the iterative repair loop, the interactive `/skill-curator` skill) append their own
+dated sections after this phase's structure — `## Iterative Repair Run — DATE`,
+`## Local Curation — DATE`, `## Skill-Eval-Gate Override — DATE`, or any other
+`## ... — DATE` heading not listed in the structure above. Find the FIRST such
+heading in the existing file and keep everything from that line onward verbatim —
+it is history, not this phase's output. REPLACE everything before that boundary
+(or the whole file, if no such heading exists) with the fresh structure below.
+Never delete another routine's appended section to make the file shorter.
 
 ---
 

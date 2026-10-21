@@ -12,7 +12,6 @@ Usage (invoked automatically by Claude Code hook):
 
 import json
 import os
-import re
 import subprocess
 import sys
 from pathlib import Path
@@ -44,6 +43,75 @@ def find_docs_file(project_root: str, ticket: str) -> str | None:
     return None
 
 
+def markdown_section(text: str, heading: str) -> str:
+    """The `heading` block, heading line included, up to the next `## ` or EOF."""
+    start = text.find(heading)
+    if start == -1:
+        return ""
+    nxt = text.find("\n## ", start + len(heading))
+    return text[start:] if nxt == -1 else text[start:nxt]
+
+
+def strip_table_cells(text: str) -> str:
+    """Drop `|…|` spans so markdown tables do not land in the Jira comment.
+
+    Only pairs of pipes on the same line are removed — a lone trailing pipe must
+    not swallow the rest of the document.
+    """
+    out = []
+    i = 0
+    while True:
+        start = text.find("|", i)
+        if start == -1:
+            break
+        end = text.find("|", start + 1)
+        if end == -1:
+            break
+        if "\n" in text[start:end]:
+            out.append(text[i:start + 1])
+            i = start + 1
+            continue
+        out.append(text[i:start])
+        i = end + 1
+    out.append(text[i:])
+    return "".join(out)
+
+
+def extract_metrics(text: str) -> list[str]:
+    """Pull `92%`, `12.5%+` and `34 tests` out of a result section, in order."""
+    found: list[str] = []
+    i, n = 0, len(text)
+    while i < n:
+        if not text[i].isdigit():
+            i += 1
+            continue
+        j = i
+        while j < n and text[j].isdigit():
+            j += 1
+        if text[j:j + 1] == "." and text[j + 1:j + 2].isdigit():
+            j += 1
+            while j < n and text[j].isdigit():
+                j += 1
+        if text[j:j + 1] == "%":
+            j += 1
+            if text[j:j + 1] == "+":
+                j += 1
+            found.append(text[i:j])
+        elif text[j:j + 6] == " tests":
+            j += 6
+            found.append(text[i:j])
+        i = j
+    return found
+
+
+def is_ticket_key(value: str) -> bool:
+    """`ABC-123` — uppercase ASCII project key, hyphen, digits, nothing else."""
+    project, sep, number = value.partition("-")
+    return bool(sep and project and number
+                and project.isascii() and project.isalpha() and project.isupper()
+                and number.isascii() and number.isdigit())
+
+
 def build_comment(ticket: str, project_root: str) -> str:
     # Git context
     branch = run(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=project_root)
@@ -73,10 +141,6 @@ def build_comment(ticket: str, project_root: str) -> str:
     new_tests = [f for f in changed_files if f.startswith("tests/") and f.endswith(".py")]
     new_docs = [f for f in changed_files if f.endswith(".md")]
 
-    # Extract key metrics from docs if present
-    coverage_match = re.search(r"(\d{2,3})\s*test", docs_content, re.IGNORECASE)
-    coverage_pct = re.search(r"~?(\d{2,3}\.?\d*)%\+?", docs_content)
-
     # Build the comment
     lines = [
         f"h3. ✅ Code pushed — {ticket}",
@@ -97,17 +161,11 @@ def build_comment(ticket: str, project_root: str) -> str:
 
     if docs_content:
         # Pull the "What we did" section from docs if available
-        what_section = re.search(
-            r"## The Approach.*?(?=\n## |\Z)", docs_content, re.DOTALL
-        )
-        result_section = re.search(
-            r"## Result.*?(?=\n## |\Z)", docs_content, re.DOTALL
-        )
+        what_section = markdown_section(docs_content, "## The Approach")
+        result_section = markdown_section(docs_content, "## Result")
 
         if what_section:
-            approach_text = what_section.group(0)
-            approach_text = re.sub(r"\|.*?\|", "", approach_text)  # strip tables
-            approach_text = approach_text[:600].strip()
+            approach_text = strip_table_cells(what_section)[:600].strip()
             lines += [
                 "h4. Approach",
                 "",
@@ -117,7 +175,7 @@ def build_comment(ticket: str, project_root: str) -> str:
 
         if result_section:
             # Extract key numbers from the result table
-            nums = re.findall(r"(\d+(?:\.\d+)?%\+?|\d+ tests)", result_section.group(0))
+            nums = extract_metrics(result_section)
             if nums:
                 lines += [
                     "h4. Result",
@@ -159,7 +217,7 @@ def main() -> None:
         sys.exit(0)  # No active Jira session — nothing to do
 
     ticket = STATE_FILE.read_text().strip()
-    if not re.match(r"^[A-Z]+-[0-9]+$", ticket):
+    if not is_ticket_key(ticket):
         STATE_FILE.unlink(missing_ok=True)
         sys.exit(0)
 

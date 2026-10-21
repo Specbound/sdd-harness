@@ -145,7 +145,9 @@ Research on this pattern (cascade routers trying a cheap model first, escalating
 
 ## Effort Level — An Orthogonal Dial
 
-In Claude Code, reasoning **effort** is a separate lever from model choice. Levels: `low`, `medium`, `high`, `xhigh`, `max` (set via `/effort`, `CLAUDE_CODE_EFFORT_LEVEL`, or `effortLevel` in settings; this harness runs `high`). It governs how much the active model thinks per turn — independent of which tier you picked.
+In Claude Code, reasoning **effort** is a separate lever from model choice. Levels: `low`, `medium`, `high`, `xhigh`, `max` (set via `/effort`, `CLAUDE_CODE_EFFORT_LEVEL`, or `effortLevel` in settings). The harness sets none of these, so each session runs the active model's default — Opus 5.5 defaults to `medium` and thinks more at a given level than Opus 5 did, so don't carry over a level tuned for the older model. It governs how much the active model thinks per turn — independent of which tier you picked.
+
+Raise effort only when it saves a retry: ~20K extra thinking tokens cost about the same as a ten-turn retry loop, so the extra thinking pays for itself only when it avoids a retry the task would otherwise need. (source: Osmani, "What a task costs on Opus 5.5", 2026-09-25)
 
 Use it before reaching for a bigger model: a `sonnet` task that fails on reasoning depth may succeed at `high`/`xhigh` effort without paying opus cost. Conversely, drop effort for cheap utility work. If a level exceeds what the active model supports, Claude Code falls back to the highest supported level. `max` removes the token ceiling on reasoning — pair it with the deep/autonomous tiers, not utility work. Note: this is a Claude Code session lever, not an Anthropic SDK `messages.create` parameter — don't write `effort=` into API calls.
 

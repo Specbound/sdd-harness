@@ -1,135 +1,75 @@
 ---
 name: slo-implementation
-description: "Define and implement Service Level Indicators (SLIs) and Service Level Objectives (SLOs) with error budgets and alerting. Use when establishing reliability targets, implementing SRE practices, or m..."
-risk: unknown
-source: community
+description: "Define SLIs/SLOs with error budgets, Prometheus burn-rate alerting, and SLO dashboards. Use when setting reliability targets, implementing SRE error-budget policy, or building SLO-based (not raw-metric) alerts."
 ---
 
-# SLO Implementation
-
-Framework for defining and implementing Service Level Indicators (SLIs), Service Level Objectives (SLOs), and error budgets.
-
-## Do not use this skill when
-
-- The task is unrelated to slo implementation
-- You need a different domain or tool outside this scope
-
-## Instructions
-
-- Clarify goals, constraints, and required inputs.
-- Apply relevant best practices and validate outcomes.
-- Provide actionable steps and verification.
-- If detailed examples are required, open `resources/implementation-playbook.md`.
-
-## Purpose
-
-Implement measurable reliability targets using SLIs, SLOs, and error budgets to balance reliability with innovation velocity.
+Framework for defining SLIs, SLOs, and error budgets, with concrete Prometheus/Grafana implementation.
 
 ## Use this skill when
+- Defining service reliability targets and measuring user-perceived reliability
+- Implementing error budgets and burn-rate alerting
+- Building SLO dashboards or SLO-based (not raw-metric) alerts
+- Running SLO review cadences or setting error-budget policy
 
-- Define service reliability targets
-- Measure user-perceived reliability
-- Implement error budgets
-- Create SLO-based alerts
-- Track reliability goals
+## Do not use this skill when
+- You only need raw metrics/dashboards with no reliability target — see `observability-engineer`
+- The task is unrelated to service reliability targets
 
 ## SLI/SLO/SLA Hierarchy
+```
+SLA (contract w/ customers, often has financial penalty)
+  ↓
+SLO (internal reliability target, stricter than SLA)
+  ↓
+SLI (actual measurement)
+```
 
-```
-SLA (Service Level Agreement)
-  ↓ Contract with customers
-SLO (Service Level Objective)
-  ↓ Internal reliability target
-SLI (Service Level Indicator)
-  ↓ Actual measurement
-```
+## Service Tiers (sets default SLO targets)
+| Tier | Availability | Latency p99 | Error rate | Examples |
+|---|---|---|---|---|
+| Critical | 99.95% | 100ms | 0.001 | payments, auth |
+| Essential | 99.9% | 500ms | 0.01 | search, catalog |
+| Standard | 99.5% | 1000ms | 0.05 | recommendations, analytics |
+| Best-effort | 99.0% | 2000ms | 0.1 | batch, reporting |
 
 ## Defining SLIs
-
-### Common SLI Types
-
-#### 1. Availability SLI
+**Availability:**
 ```promql
-# Successful requests / Total requests
-sum(rate(http_requests_total{status!~"5.."}[28d]))
-/
-sum(rate(http_requests_total[28d]))
+sum(rate(http_requests_total{status!~"5.."}[28d])) / sum(rate(http_requests_total[28d]))
 ```
-
-#### 2. Latency SLI
+**Latency (requests under threshold):**
 ```promql
-# Requests below latency threshold / Total requests
-sum(rate(http_request_duration_seconds_bucket{le="0.5"}[28d]))
-/
-sum(rate(http_request_duration_seconds_count[28d]))
+sum(rate(http_request_duration_seconds_bucket{le="0.5"}[28d])) / sum(rate(http_request_duration_seconds_count[28d]))
 ```
+**Durability:** `storage_writes_successful_total / storage_writes_total`
 
-#### 3. Durability SLI
-```
-# Successful writes / Total writes
-sum(storage_writes_successful_total)
-/
-sum(storage_writes_total)
-```
-
-**Reference:** See `references/slo-definitions.md`
+Pick SLIs from the critical user journey, not whatever's easiest to measure — e.g. a "login" SLI should cover page load + credential POST + dashboard render as separate thresholds, not one blended number.
 
 ## Setting SLO Targets
-
-### Availability SLO Examples
-
 | SLO % | Downtime/Month | Downtime/Year |
-|-------|----------------|---------------|
-| 99%   | 7.2 hours      | 3.65 days     |
-| 99.9% | 43.2 minutes   | 8.76 hours    |
-| 99.95%| 21.6 minutes   | 4.38 hours    |
-| 99.99%| 4.32 minutes   | 52.56 minutes |
+|---|---|---|
+| 99% | 7.2 hours | 3.65 days |
+| 99.9% | 43.2 min | 8.76 hours |
+| 99.95% | 21.6 min | 4.38 hours |
+| 99.99% | 4.32 min | 52.56 min |
 
-### Choose Appropriate SLOs
+Never target 100% — cost rises non-linearly as target approaches it, and it eliminates all room for planned risk (deploys, experiments).
 
-**Consider:**
-- User expectations
-- Business requirements
-- Current performance
-- Cost of reliability
-- Competitor benchmarks
-
-**Example SLOs:**
 ```yaml
 slos:
   - name: api_availability
     target: 99.9
     window: 28d
-    sli: |
-      sum(rate(http_requests_total{status!~"5.."}[28d]))
-      /
-      sum(rate(http_requests_total[28d]))
-
-  - name: api_latency_p95
-    target: 99
-    window: 28d
-    sli: |
-      sum(rate(http_request_duration_seconds_bucket{le="0.5"}[28d]))
-      /
-      sum(rate(http_request_duration_seconds_count[28d]))
+    sli: sum(rate(http_requests_total{status!~"5.."}[28d])) / sum(rate(http_requests_total[28d]))
 ```
 
-## Error Budget Calculation
-
-### Error Budget Formula
-
+## Error Budget
 ```
 Error Budget = 1 - SLO Target
 ```
+99.9% SLO → 0.1% budget = 43.2 min/month. Track remaining budget, not just current compliance.
 
-**Example:**
-- SLO: 99.9% availability
-- Error Budget: 0.1% = 43.2 minutes/month
-- Current Error: 0.05% = 21.6 minutes/month
-- Remaining Budget: 50%
-
-### Error Budget Policy
-
+**Error budget policy** (ties budget consumption to release velocity):
 ```yaml
 error_budget_policy:
   - remaining_budget: 100%
@@ -142,202 +82,77 @@ error_budget_policy:
     action: Feature freeze, focus on reliability
 ```
 
-**Reference:** See `references/error-budget.md`
-
-## SLO Implementation
-
-### Prometheus Recording Rules
-
+## Prometheus Recording Rules
 ```yaml
-# SLI Recording Rules
 groups:
   - name: sli_rules
     interval: 30s
     rules:
-      # Availability SLI
       - record: sli:http_availability:ratio
-        expr: |
-          sum(rate(http_requests_total{status!~"5.."}[28d]))
-          /
-          sum(rate(http_requests_total[28d]))
-
-      # Latency SLI (requests < 500ms)
-      - record: sli:http_latency:ratio
-        expr: |
-          sum(rate(http_request_duration_seconds_bucket{le="0.5"}[28d]))
-          /
-          sum(rate(http_request_duration_seconds_count[28d]))
-
+        expr: sum(rate(http_requests_total{status!~"5.."}[28d])) / sum(rate(http_requests_total[28d]))
   - name: slo_rules
     interval: 5m
     rules:
-      # SLO compliance (1 = meeting SLO, 0 = violating)
       - record: slo:http_availability:compliance
         expr: sli:http_availability:ratio >= bool 0.999
-
-      - record: slo:http_latency:compliance
-        expr: sli:http_latency:ratio >= bool 0.99
-
-      # Error budget remaining (percentage)
       - record: slo:http_availability:error_budget_remaining
-        expr: |
-          (sli:http_availability:ratio - 0.999) / (1 - 0.999) * 100
-
-      # Error budget burn rate
+        expr: (sli:http_availability:ratio - 0.999) / (1 - 0.999) * 100
       - record: slo:http_availability:burn_rate_5m
         expr: |
-          (1 - (
-            sum(rate(http_requests_total{status!~"5.."}[5m]))
-            /
-            sum(rate(http_requests_total[5m]))
-          )) / (1 - 0.999)
+          (1 - (sum(rate(http_requests_total{status!~"5.."}[5m])) / sum(rate(http_requests_total[5m]))))
+          / (1 - 0.999)
 ```
+Precompute burn rate at each window you alert on (5m/1h/30m/6h) as separate recording rules — the alert rules below reference them directly instead of recomputing.
 
-### SLO Alerting Rules
-
+## Multi-Window Burn-Rate Alerting
+A single-window burn-rate alert false-positives on brief blips. Require a short *and* a long window to agree:
 ```yaml
 groups:
   - name: slo_alerts
     interval: 1m
     rules:
-      # Fast burn: 14.4x rate, 1 hour window
-      # Consumes 2% error budget in 1 hour
+      # Fast burn: 14.4x rate -> consumes 2% of 28d budget in 1h
       - alert: SLOErrorBudgetBurnFast
-        expr: |
-          slo:http_availability:burn_rate_1h > 14.4
-          and
-          slo:http_availability:burn_rate_5m > 14.4
+        expr: slo:http_availability:burn_rate_1h > 14.4 and slo:http_availability:burn_rate_5m > 14.4
         for: 2m
-        labels:
-          severity: critical
-        annotations:
-          summary: "Fast error budget burn detected"
-          description: "Error budget burning at {{ $value }}x rate"
+        labels: { severity: critical }
 
-      # Slow burn: 6x rate, 6 hour window
-      # Consumes 5% error budget in 6 hours
+      # Slow burn: 6x rate -> consumes 5% of budget in 6h
       - alert: SLOErrorBudgetBurnSlow
-        expr: |
-          slo:http_availability:burn_rate_6h > 6
-          and
-          slo:http_availability:burn_rate_30m > 6
+        expr: slo:http_availability:burn_rate_6h > 6 and slo:http_availability:burn_rate_30m > 6
         for: 15m
-        labels:
-          severity: warning
-        annotations:
-          summary: "Slow error budget burn detected"
-          description: "Error budget burning at {{ $value }}x rate"
+        labels: { severity: warning }
 
-      # Error budget exhausted
       - alert: SLOErrorBudgetExhausted
         expr: slo:http_availability:error_budget_remaining < 0
         for: 5m
-        labels:
-          severity: critical
-        annotations:
-          summary: "SLO error budget exhausted"
-          description: "Error budget remaining: {{ $value }}%"
+        labels: { severity: critical }
 ```
+Fast burn → page immediately. Slow burn → ticket, not page. The 14.4x/1h and 6x/6h thresholds come from Google's SRE workbook multi-window technique.
 
 ## SLO Dashboard
-
-**Grafana Dashboard Structure:**
-
 ```
-┌────────────────────────────────────┐
-│ SLO Compliance (Current)           │
-│ ✓ 99.95% (Target: 99.9%)          │
-├────────────────────────────────────┤
-│ Error Budget Remaining: 65%        │
-│ ████████░░ 65%                     │
-├────────────────────────────────────┤
-│ SLI Trend (28 days)                │
-│ [Time series graph]                │
-├────────────────────────────────────┤
-│ Burn Rate Analysis                 │
-│ [Burn rate by time window]         │
-└────────────────────────────────────┘
+┌──────────────────────────────────────┐
+│ SLO Compliance: 99.95% (Target 99.9%) │
+│ Error Budget Remaining: 65% ████████░░ │
+│ SLI Trend (28d)       [time series]   │
+│ Burn Rate by Window   [burn rate]     │
+└──────────────────────────────────────┘
 ```
-
-**Example Queries:**
-
 ```promql
-# Current SLO compliance
-sli:http_availability:ratio * 100
-
-# Error budget remaining
-slo:http_availability:error_budget_remaining
-
-# Days until error budget exhausted (at current burn rate)
-(slo:http_availability:error_budget_remaining / 100)
-*
-28
-/
-(1 - sli:http_availability:ratio) * (1 - 0.999)
+# Days until budget exhausted at current burn rate
+(slo:http_availability:error_budget_remaining / 100) * 28 / (1 - sli:http_availability:ratio) * (1 - 0.999)
 ```
 
-## Multi-Window Burn Rate Alerts
-
-```yaml
-# Combination of short and long windows reduces false positives
-rules:
-  - alert: SLOBurnRateHigh
-    expr: |
-      (
-        slo:http_availability:burn_rate_1h > 14.4
-        and
-        slo:http_availability:burn_rate_5m > 14.4
-      )
-      or
-      (
-        slo:http_availability:burn_rate_6h > 6
-        and
-        slo:http_availability:burn_rate_30m > 6
-      )
-    labels:
-      severity: critical
-```
-
-## SLO Review Process
-
-### Weekly Review
-- Current SLO compliance
-- Error budget status
-- Trend analysis
-- Incident impact
-
-### Monthly Review
-- SLO achievement
-- Error budget usage
-- Incident postmortems
-- SLO adjustments
-
-### Quarterly Review
-- SLO relevance
-- Target adjustments
-- Process improvements
-- Tooling enhancements
+## SLO Review Cadence
+- **Weekly** — compliance, error-budget status, trend
+- **Monthly** — SLO achievement, incident impact on budget
+- **Quarterly** — target relevance, process/tooling adjustments
 
 ## Best Practices
-
-1. **Start with user-facing services**
-2. **Use multiple SLIs** (availability, latency, etc.)
-3. **Set achievable SLOs** (don't aim for 100%)
-4. **Implement multi-window alerts** to reduce noise
-5. **Track error budget** consistently
-6. **Review SLOs regularly**
-7. **Document SLO decisions**
-8. **Align with business goals**
-9. **Automate SLO reporting**
-10. **Use SLOs for prioritization**
-
-## Reference Files
-
-- `assets/slo-template.md` - SLO definition template
-- `references/slo-definitions.md` - SLO definition patterns
-- `references/error-budget.md` - Error budget calculations
+Start with user-facing services first · use multiple SLIs per service (availability + latency, not just one) · set achievable targets (never 100%) · multi-window alerts to cut noise · document every SLO decision (target, owner, review date) · use burned budget for release-cadence prioritization, not just a dashboard number.
 
 ## Related Skills
-
-- `prometheus-configuration` - For metric collection
-- `grafana-dashboards` - For SLO visualization
+- `observability-engineer` — metric collection, dashboarding, and alert-routing infrastructure this builds on
+- `prometheus-configuration`, `grafana-dashboards` — tool-specific implementation
+- `incident-responder` — error-budget-exhaustion response

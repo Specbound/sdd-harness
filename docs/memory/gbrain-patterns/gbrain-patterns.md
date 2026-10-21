@@ -21,7 +21,7 @@ Four platform-agnostic protocols are now active in this harness:
 
 ## Pattern 1: Memory-First Lookup
 
-**Skill:** `~/.claude/skills/memory-first-lookup/SKILL.md`
+**Skill:** `~/.claude/skill-library/memory-first-lookup/SKILL.md`
 **Hook:** `gbrain-external-search.sh` (fires on `WebFetch`, `WebSearch`)
 
 Before calling any external API, always check claude-mem first. The lookup chain:
@@ -39,16 +39,16 @@ Also applies when spawning agents: run memory lookup first, then include finding
 
 ## Pattern 2: Model Tiers
 
-**Skill:** `~/.claude/skills/model-tiers/SKILL.md`
+**Skill:** `~/.claude/skill-library/model-tiers/SKILL.md`
 **Hook:** `gbrain-agent-spawn.sh` (fires on every `Agent` call)
 
 | Tier | Model | Use for |
 |---|---|---|
 | utility | `claude-haiku-4-5-20251001` | classification, validation, expansion, dedup |
-| reasoning | `claude-sonnet-4-6` | generation, synthesis, chat — **DEFAULT** |
-| deep | `claude-opus-4-8` | complex multi-step reasoning, high-stakes judgment |
+| reasoning | `claude-sonnet-5` | generation, synthesis, chat — **DEFAULT** |
+| deep | `claude-opus-5` | complex multi-step reasoning, high-stakes judgment |
 | autonomous | `claude-fable-5` | long, multi-sitting autonomous sessions (`/model fable`) |
-| subagent | `claude-sonnet-4-6` | Agent() calls — use sonnet, not opus |
+| subagent | `claude-sonnet-5` | Agent() calls — use sonnet, not opus |
 
 The non-obvious rule: **subagents run sonnet, not opus.** Subagents run multi-turn tool loops; latency compounds and the bottleneck is tool-call reliability, not reasoning depth. Opus buys little here at 3× the cost.
 
@@ -56,7 +56,7 @@ The non-obvious rule: **subagents run sonnet, not opus.** Subagents run multi-tu
 
 ## Pattern 3: Background Work Routing
 
-**Skill:** `~/.claude/skills/background-work-routing/SKILL.md`
+**Skill:** `~/.claude/skill-library/background-work-routing/SKILL.md`
 **Hook:** `gbrain-agent-spawn.sh` (fires on every `Agent` call)
 
 Default mode: **inline**. Switch to background only when a pain signal fires:
@@ -75,7 +75,7 @@ When ≥1 signal fires: offer the switch explicitly, don't switch silently.
 
 ## Pattern 4: Compiled Truth
 
-**Skill:** `~/.claude/skills/compiled-truth-pattern/SKILL.md`
+**Skill:** `~/.claude/skill-library/compiled-truth-pattern/SKILL.md`
 **Hook:** `gbrain-memory-write.sh` (fires on every `save_observation`)
 
 Every living memory observation has two zones:
@@ -108,6 +108,12 @@ Three hooks fire automatically from `$SDD_HARNESS/.claude/settings.json`:
 gbrain-agent-spawn.sh     → PreToolUse on Agent
                             Injects model-tier table + background-routing pain signals + memory-first reminder
                             Fires on every Agent() call before the subagent is spawned
+                            Addresses the PARENT only — PreToolUse:Agent cannot reach the child.
+                            The banner is a request that the caller brief the subagent, not a
+                            guarantee. Always-true conventions are carried into the child by
+                            subagent-context-hook.sh on SubagentStart instead; this hook keeps
+                            the spawn-time decisions only the parent can make (which model,
+                            run mode, what context to hand down).
 
 gbrain-memory-write.sh    → PreToolUse on save_observation
                             Injects compiled-truth two-zone structure + source attribution format
@@ -144,3 +150,5 @@ The `using-superpowers` system requires skill invocation at 1% trigger confidenc
 | Citation fixer, frontmatter guard | Require gbrain's CLI |
 
 To adopt gbrain as the actual knowledge backend: `git clone https://github.com/garrytan/gbrain ~/gbrain && cd ~/gbrain && bun install && gbrain init`. The `INSTALL_FOR_AGENTS.md` in the repo is the 9-step guide.
+
+_Last synced: 2026-09-01_
