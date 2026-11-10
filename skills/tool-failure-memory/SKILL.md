@@ -76,3 +76,8 @@ Write the promotion as a `feedback` or `project` memory (cause + how to apply), 
 - Block or retry tool calls — recall is advisory only.
 - Track *successful* tool calls — only failures are captured.
 - Replace general memory discipline — promotions still pass the memory-discipline transfer test ("would this help a different future task?").
+
+## Anti-Patterns
+
+### ❌ Marking an aggregate signature `resolved` / `promoted`
+Aggregate sigs re-trigger and the hook resets both flags; leave them `open` with a remedy — recall still surfaces it. (source: 2026-10-21 feedback)

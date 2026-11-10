@@ -84,3 +84,8 @@ Server resolves wrong project root; absolute paths rejected while relative paths
 
 ### ❌ Dedup cache lying
 Dedup returns 'unchanged' for never-read files, hiding content. Workaround: pass offset/limit to force read. (source: 2026-10-07 [friction])
+### ❌ Bare ctx_* commands exit 127
+`ctx_*` are MCP tools, not executables — they fail in ANY shell position: bare → exit 127, inside `lean-ctx -c` or `ctx_shell` → allowlist block. Call the MCP tool directly. `lean-ctx -c` itself works for real shell commands (see Shell Hook above); it just cannot run a `ctx_*` name. (source: 2026-10-13, measured)
+
+### ❌ ctx_shell detaches slow commands with no retrieval
+Auto-detaches to `{"state":"running"}` with no polling tool. Use Bash `run_in_background` → /tmp → Read instead. (source: 2026-10-29 observation)

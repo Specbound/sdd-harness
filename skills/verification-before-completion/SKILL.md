@@ -180,6 +180,8 @@ A repo row lands when its own block ends, before `run finished`; absent that boo
 
 ### ❌ Sizing a conclusion from a slice of the series
 n=2 read "fixed cost", n=3 read "growing"; the full series killed both (two sub-minute runs among eight slow). Read every row. (source: kakophonia 2026-10-12 [correction])
+### ❌ Skipping verification because the verifier itself failed
+If a mandatory verification gate stalls or errors before completion, do not treat silence as approval. Gate absence ≠ gate success. Report gate failure and re-run before shipping. (source: 2026-10-24 observation)
 
 ## When to Use
 This skill is applicable to execute the workflow or actions described in the overview.

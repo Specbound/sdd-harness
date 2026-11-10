@@ -178,6 +178,12 @@ data is truth.
 ### ❌ N identical call-site patches instead of root cause
 When identical fixes repeat at N≥2 call sites, root cause lies at common source. Return to Phase 1. (source: 2026-10-08 [insight, harness-fix])
 
+### ❌ Attributing tool rejection to data corruption
+When a tool reports rejection (e.g., grep exit 2 "regex invalid") before reading input, the issue is system code, not data. Tool boundary errors precede file access. Trace system boundaries before suspecting data. (source: 2026-10-24 feedback)
+
+### ❌ Guarding concurrent writes without locking
+Concurrent read-then-write guards (e.g., "skip if tag exists") can race if multiple processes run simultaneously. Both read "absent," both proceed. Use locking or atomic operations, not just guards. (source: 2026-10-24 observation)
+
 ## Quick Reference
 
 | Phase | Key Activities | Success Criteria |

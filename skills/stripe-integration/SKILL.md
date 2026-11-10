@@ -1,456 +1,281 @@
 ---
 name: stripe-integration
-description: "Implement Stripe payment processing for robust, PCI-compliant payment flows including checkout, subscriptions, and webhooks. Use when integrating Stripe payments, building subscription systems, or ..."
+description: "Build Stripe payment flows: Checkout, Payment Intents, subscriptions, signature-verified webhooks, refunds and disputes, idempotency, SCA."
 risk: unknown
 source: community
 ---
 
 # Stripe Integration
 
-Master Stripe payment processing integration for robust, PCI-compliant payment flows including checkout, subscriptions, webhooks, and refunds.
+Server-side Stripe payment flows in Python (`stripe-python`), with the frontend contract
+each flow requires.
 
-## Do not use this skill when
+**This skill ships as `SKILL.md` only — no bundled references, assets, or client wrapper
+files. Everything below is meant to be inlined, not opened from a path.**
 
-- The task is unrelated to stripe integration
-- You need a different domain or tool outside this scope
+## Use when
 
-## Instructions
+- Adding Checkout, Payment Intents, or subscription billing to an application
+- Writing or reviewing a Stripe webhook endpoint
+- Implementing refunds, disputes, or a customer billing portal
+- Debugging a payment that "succeeded" on the client but never fulfilled server-side
 
-- Clarify goals, constraints, and required inputs.
-- Apply relevant best practices and validate outcomes.
-- Provide actionable steps and verification.
-- If detailed examples are required, open `resources/implementation-playbook.md`.
+## Do not use when
 
-## Use this skill when
+- The work is Stripe Connect marketplace split payments or payouts — those add an
+  account-ownership model this skill does not cover
+- The task is PCI scope assessment or compliance paperwork rather than implementation
+- You are using a Stripe wrapper SDK (Lemon Squeezy, Paddle) — the object model differs
 
-- Implementing payment processing in web/mobile applications
-- Setting up subscription billing systems
-- Handling one-time payments and recurring charges
-- Processing refunds and disputes
-- Managing customer payment methods
-- Implementing SCA (Strong Customer Authentication) for European payments
-- Building marketplace payment flows with Stripe Connect
+## SDK version — check before copying anything
 
-## Core Concepts
-
-### 1. Payment Flows
-**Checkout Session (Hosted)**
-- Stripe-hosted payment page
-- Minimal PCI compliance burden
-- Fastest implementation
-- Supports one-time and recurring payments
-
-**Payment Intents (Custom UI)**
-- Full control over payment UI
-- Requires Stripe.js for PCI compliance
-- More complex implementation
-- Better customization options
-
-**Setup Intents (Save Payment Methods)**
-- Collect payment method without charging
-- Used for subscriptions and future payments
-- Requires customer confirmation
-
-### 2. Webhooks
-**Critical Events:**
-- `payment_intent.succeeded`: Payment completed
-- `payment_intent.payment_failed`: Payment failed
-- `customer.subscription.updated`: Subscription changed
-- `customer.subscription.deleted`: Subscription canceled
-- `charge.refunded`: Refund processed
-- `invoice.payment_succeeded`: Subscription payment successful
-
-### 3. Subscriptions
-**Components:**
-- **Product**: What you're selling
-- **Price**: How much and how often
-- **Subscription**: Customer's recurring payment
-- **Invoice**: Generated for each billing cycle
-
-### 4. Customer Management
-- Create and manage customer records
-- Store multiple payment methods
-- Track customer metadata
-- Manage billing details
-
-## Quick Start
+`stripe-python` **v8 removed the `stripe.error` namespace.** Current code is:
 
 ```python
-import stripe
+except stripe.StripeError            # v8+ (current)
+except stripe.error.StripeError      # v7 and older — will AttributeError on v8+
+```
 
-stripe.api_key = "sk_test_..."
+Same move for `SignatureVerificationError`, `CardError`, `InvalidRequestError`. Check with
+`pip show stripe` first; the examples below are v8+.
 
-# Create a checkout session
+Load secrets from the environment, never as module literals:
+
+```python
+import os, stripe
+stripe.api_key = os.environ["STRIPE_SECRET_KEY"]
+WEBHOOK_SECRET = os.environ["STRIPE_WEBHOOK_SECRET"]
+```
+
+## Choosing a flow
+
+| Flow | Use when | Cost |
+|---|---|---|
+| **Checkout Session** (hosted) | Default choice. One-time or recurring. | Stripe owns the UI; lowest PCI scope; fastest |
+| **Payment Intent + Payment Element** | You need the payment form inside your UI | You own the UI; still low PCI scope via Stripe.js |
+| **Setup Intent** | Save a card now, charge later | Required before off-session charges |
+
+Rule of thumb: start with Checkout. Move to Payment Element only when a product
+requirement — not a preference — forces custom UI.
+
+## Idempotency — the thing most integrations miss
+
+Every create call that moves money should carry an idempotency key. A client retry or a
+load-balancer replay without one charges the customer twice.
+
+```python
 session = stripe.checkout.Session.create(
-    payment_method_types=['card'],
-    line_items=[{
-        'price_data': {
-            'currency': 'usd',
-            'product_data': {
-                'name': 'Premium Subscription',
-            },
-            'unit_amount': 2000,  # $20.00
-            'recurring': {
-                'interval': 'month',
-            },
-        },
-        'quantity': 1,
-    }],
-    mode='subscription',
-    success_url='https://yourdomain.com/success?session_id={CHECKOUT_SESSION_ID}',
-    cancel_url='https://yourdomain.com/cancel',
+    ...,
+    idempotency_key=f"checkout:{order_id}",   # stable, derived from YOUR order, not uuid4()
 )
-
-# Redirect user to session.url
-print(session.url)
 ```
 
-## Payment Implementation Patterns
+A random key per attempt is the same as no key. Derive it from the business object.
 
-### Pattern 1: One-Time Payment (Hosted Checkout)
+## Checkout Session (one-time)
+
 ```python
-def create_checkout_session(amount, currency='usd'):
-    """Create a one-time payment checkout session."""
-    try:
-        session = stripe.checkout.Session.create(
-            payment_method_types=['card'],
-            line_items=[{
-                'price_data': {
-                    'currency': currency,
-                    'product_data': {
-                        'name': 'Purchase',
-                        'images': ['https://example.com/product.jpg'],
-                    },
-                    'unit_amount': amount,  # Amount in cents
-                },
-                'quantity': 1,
-            }],
-            mode='payment',
-            success_url='https://yourdomain.com/success?session_id={CHECKOUT_SESSION_ID}',
-            cancel_url='https://yourdomain.com/cancel',
-            metadata={
-                'order_id': 'order_123',
-                'user_id': 'user_456'
-            }
-        )
-        return session
-    except stripe.error.StripeError as e:
-        # Handle error
-        print(f"Stripe error: {e.user_message}")
-        raise
+def create_checkout_session(order_id: str, amount_cents: int, currency: str = "usd"):
+    return stripe.checkout.Session.create(
+        mode="payment",
+        line_items=[{
+            "price_data": {
+                "currency": currency,
+                "product_data": {"name": "Purchase"},
+                "unit_amount": amount_cents,      # smallest currency unit
+            },
+            "quantity": 1,
+        }],
+        success_url="https://example.com/success?session_id={CHECKOUT_SESSION_ID}",
+        cancel_url="https://example.com/cancel",
+        metadata={"order_id": order_id},          # your join key back to your DB
+        idempotency_key=f"checkout:{order_id}",
+    )
+    # Omit payment_method_types entirely. Specifying ["card"] is legacy and
+    # disables every payment method you enabled in the Dashboard.
 ```
 
-### Pattern 2: Custom Payment Intent Flow
+Redirect to `session.url`. **Do not fulfill on the `success_url` redirect** — the customer
+can close the tab, and the URL can be visited directly. Fulfill on the
+`checkout.session.completed` webhook.
+
+## Payment Intent (custom UI)
+
 ```python
-def create_payment_intent(amount, currency='usd', customer_id=None):
-    """Create a payment intent for custom checkout UI."""
+def create_payment_intent(amount_cents: int, customer_id: str | None = None):
     intent = stripe.PaymentIntent.create(
-        amount=amount,
-        currency=currency,
+        amount=amount_cents,
+        currency="usd",
         customer=customer_id,
-        automatic_payment_methods={
-            'enabled': True,
-        },
-        metadata={
-            'integration_check': 'accept_a_payment'
-        }
+        automatic_payment_methods={"enabled": True},
     )
-    return intent.client_secret  # Send to frontend
-
-# Frontend (JavaScript)
-"""
-const stripe = Stripe('pk_test_...');
-const elements = stripe.elements();
-const cardElement = elements.create('card');
-cardElement.mount('#card-element');
-
-const {error, paymentIntent} = await stripe.confirmCardPayment(
-    clientSecret,
-    {
-        payment_method: {
-            card: cardElement,
-            billing_details: {
-                name: 'Customer Name'
-            }
-        }
-    }
-);
-
-if (error) {
-    // Handle error
-} else if (paymentIntent.status === 'succeeded') {
-    // Payment successful
-}
-"""
+    return intent.client_secret
 ```
 
-### Pattern 3: Subscription Creation
-```python
-def create_subscription(customer_id, price_id):
-    """Create a subscription for a customer."""
-    try:
-        subscription = stripe.Subscription.create(
-            customer=customer_id,
-            items=[{'price': price_id}],
-            payment_behavior='default_incomplete',
-            payment_settings={'save_default_payment_method': 'on_subscription'},
-            expand=['latest_invoice.payment_intent'],
-        )
+Frontend uses the **Payment Element** and `confirmPayment`:
 
-        return {
-            'subscription_id': subscription.id,
-            'client_secret': subscription.latest_invoice.payment_intent.client_secret
-        }
-    except stripe.error.StripeError as e:
-        print(f"Subscription creation failed: {e}")
-        raise
+```javascript
+const stripe = Stripe(PUBLISHABLE_KEY);
+const elements = stripe.elements({ clientSecret });
+elements.create("payment").mount("#payment-element");
+
+const { error } = await stripe.confirmPayment({
+  elements,
+  confirmParams: { return_url: "https://example.com/complete" },
+});
+// `confirmCardPayment` + the card-only Element is the legacy path — it does not
+// support the redirect-based methods automatic_payment_methods turns on, and it
+// handles SCA/3DS less completely.
 ```
 
-### Pattern 4: Customer Portal
+SCA/3D Secure is handled by the Element automatically; no extra server code. The
+`return_url` is mandatory because some methods redirect off-site.
+
+## Subscriptions
+
 ```python
-def create_customer_portal_session(customer_id):
-    """Create a portal session for customers to manage subscriptions."""
-    session = stripe.billing_portal.Session.create(
+def create_subscription(customer_id: str, price_id: str):
+    sub = stripe.Subscription.create(
         customer=customer_id,
-        return_url='https://yourdomain.com/account',
+        items=[{"price": price_id}],
+        payment_behavior="default_incomplete",       # don't assume the first charge clears
+        payment_settings={"save_default_payment_method": "on_subscription"},
+        expand=["latest_invoice.payment_intent"],
     )
-    return session.url  # Redirect customer here
+    return {"subscription_id": sub.id,
+            "client_secret": sub.latest_invoice.payment_intent.client_secret}
 ```
 
-## Webhook Handling
+`default_incomplete` is the correct default: it leaves the subscription inactive until the
+first payment confirms, so an SCA challenge does not silently grant access.
 
-### Secure Webhook Endpoint
+Billing portal — cheaper than building cancellation/upgrade UI:
+
+```python
+stripe.billing_portal.Session.create(customer=customer_id,
+                                     return_url="https://example.com/account").url
+```
+
+## Webhooks
+
 ```python
 from flask import Flask, request
-import stripe
-
 app = Flask(__name__)
 
-endpoint_secret = 'whsec_...'
-
-@app.route('/webhook', methods=['POST'])
+@app.post("/webhook")
 def webhook():
-    payload = request.data
-    sig_header = request.headers.get('Stripe-Signature')
-
     try:
         event = stripe.Webhook.construct_event(
-            payload, sig_header, endpoint_secret
+            request.data,                               # RAW bytes — see note below
+            request.headers.get("Stripe-Signature"),
+            WEBHOOK_SECRET,
         )
     except ValueError:
-        # Invalid payload
-        return 'Invalid payload', 400
-    except stripe.error.SignatureVerificationError:
-        # Invalid signature
-        return 'Invalid signature', 400
+        return "Invalid payload", 400
+    except stripe.SignatureVerificationError:           # v8+ namespace
+        return "Invalid signature", 400
 
-    # Handle the event
-    if event['type'] == 'payment_intent.succeeded':
-        payment_intent = event['data']['object']
-        handle_successful_payment(payment_intent)
-    elif event['type'] == 'payment_intent.payment_failed':
-        payment_intent = event['data']['object']
-        handle_failed_payment(payment_intent)
-    elif event['type'] == 'customer.subscription.deleted':
-        subscription = event['data']['object']
-        handle_subscription_canceled(subscription)
+    if already_processed(event["id"]):                  # Stripe retries; events repeat
+        return "", 200
 
-    return 'Success', 200
+    obj = event["data"]["object"]
+    if event["type"] == "checkout.session.completed":
+        enqueue_fulfillment(obj["metadata"]["order_id"])
+    elif event["type"] == "payment_intent.payment_failed":
+        enqueue_failure_notice(obj["id"])
+    elif event["type"] == "customer.subscription.deleted":
+        enqueue_access_revocation(obj["customer"])
+    elif event["type"] == "invoice.payment_succeeded":
+        enqueue_period_extension(obj["subscription"])
 
-def handle_successful_payment(payment_intent):
-    """Process successful payment."""
-    customer_id = payment_intent.get('customer')
-    amount = payment_intent['amount']
-    metadata = payment_intent.get('metadata', {})
-
-    # Update your database
-    # Send confirmation email
-    # Fulfill order
-    print(f"Payment succeeded: {payment_intent['id']}")
-
-def handle_failed_payment(payment_intent):
-    """Handle failed payment."""
-    error = payment_intent.get('last_payment_error', {})
-    print(f"Payment failed: {error.get('message')}")
-    # Notify customer
-    # Update order status
-
-def handle_subscription_canceled(subscription):
-    """Handle subscription cancellation."""
-    customer_id = subscription['customer']
-    # Update user access
-    # Send cancellation email
-    print(f"Subscription canceled: {subscription['id']}")
+    mark_processed(event["id"])
+    return "", 200     # return fast; do the work in a queue, not in the request
 ```
 
-### Webhook Best Practices
-```python
-import hashlib
-import hmac
+Three failure modes that cause real outages:
 
-def verify_webhook_signature(payload, signature, secret):
-    """Manually verify webhook signature."""
-    expected_sig = hmac.new(
-        secret.encode('utf-8'),
-        payload,
-        hashlib.sha256
-    ).hexdigest()
+- **Parsed body breaks verification.** `construct_event` needs the exact raw bytes. Any
+  middleware that JSON-parses and re-serializes first changes whitespace and key order,
+  and every signature fails. In Flask use `request.data` before touching `request.json`;
+  in Express mount `express.raw({type: 'application/json'})` on that route only.
+- **Slow handlers get retried.** Stripe times out around 20s and retries with the same
+  `event.id`. Do fulfillment in a background job and return 200 immediately.
+- **Retries are not duplicates to ignore — they are duplicates to deduplicate.** Key on
+  `event["id"]`, which is stable across retries.
 
-    return hmac.compare_digest(signature, expected_sig)
+### Never hand-roll signature verification
 
-def handle_webhook_idempotently(event_id, handler):
-    """Ensure webhook is processed exactly once."""
-    # Check if event already processed
-    if is_event_processed(event_id):
-        return
+A manual HMAC over the payload alone is wrong and will reject every real event. The
+`Stripe-Signature` header is `t=<timestamp>,v1=<hmac>`, and the signed string is
+`f"{timestamp}.{raw_payload}"` — not the payload by itself. Hand-rolled versions also skip
+the timestamp tolerance check, which is the only thing preventing replay of a captured
+request. Use `construct_event`; it does both.
 
-    # Process event
-    try:
-        handler()
-        mark_event_processed(event_id)
-    except Exception as e:
-        log_error(e)
-        # Stripe will retry failed webhooks
-        raise
-```
-
-## Customer Management
+## Customers, refunds, disputes
 
 ```python
-def create_customer(email, name, payment_method_id=None):
-    """Create a Stripe customer."""
-    customer = stripe.Customer.create(
-        email=email,
-        name=name,
-        payment_method=payment_method_id,
-        invoice_settings={
-            'default_payment_method': payment_method_id
-        } if payment_method_id else None,
-        metadata={
-            'user_id': '12345'
-        }
-    )
-    return customer
+def create_customer(email: str, user_id: str, payment_method_id: str | None = None):
+    kwargs = {"email": email, "metadata": {"user_id": user_id}}
+    if payment_method_id:
+        kwargs["payment_method"] = payment_method_id
+        kwargs["invoice_settings"] = {"default_payment_method": payment_method_id}
+    return stripe.Customer.create(**kwargs)
+    # Passing invoice_settings={"default_payment_method": None} is an API error,
+    # so build the dict conditionally rather than inlining a ternary.
 
-def attach_payment_method(customer_id, payment_method_id):
-    """Attach a payment method to a customer."""
-    stripe.PaymentMethod.attach(
-        payment_method_id,
-        customer=customer_id
-    )
-
-    # Set as default
-    stripe.Customer.modify(
-        customer_id,
-        invoice_settings={
-            'default_payment_method': payment_method_id
-        }
-    )
-
-def list_customer_payment_methods(customer_id):
-    """List all payment methods for a customer."""
-    payment_methods = stripe.PaymentMethod.list(
-        customer=customer_id,
-        type='card'
-    )
-    return payment_methods.data
-```
-
-## Refund Handling
-
-```python
-def create_refund(payment_intent_id, amount=None, reason=None):
-    """Create a refund."""
-    refund_params = {
-        'payment_intent': payment_intent_id
-    }
-
-    if amount:
-        refund_params['amount'] = amount  # Partial refund
-
+def refund(payment_intent_id: str, amount_cents: int | None = None, reason: str | None = None):
+    params = {"payment_intent": payment_intent_id,
+              "idempotency_key": f"refund:{payment_intent_id}"}
+    if amount_cents:
+        params["amount"] = amount_cents          # omit for a full refund
     if reason:
-        refund_params['reason'] = reason  # 'duplicate', 'fraudulent', 'requested_by_customer'
+        params["reason"] = reason                # duplicate | fraudulent | requested_by_customer
+    return stripe.Refund.create(**params)
 
-    refund = stripe.Refund.create(**refund_params)
-    return refund
-
-def handle_dispute(charge_id, evidence):
-    """Update dispute with evidence."""
-    stripe.Dispute.modify(
-        charge_id,
-        evidence={
-            'customer_name': evidence.get('customer_name'),
-            'customer_email_address': evidence.get('customer_email'),
-            'shipping_documentation': evidence.get('shipping_proof'),
-            'customer_communication': evidence.get('communication'),
-        }
-    )
+def submit_dispute_evidence(dispute_id: str, evidence: dict):
+    # dispute_id is dp_..., NOT the charge id. Passing a charge id here 404s.
+    # Find it via stripe.Dispute.list(charge=charge_id).
+    return stripe.Dispute.modify(dispute_id, evidence={
+        "customer_name": evidence.get("customer_name"),
+        "customer_email_address": evidence.get("customer_email"),
+        "shipping_documentation": evidence.get("shipping_proof_file_id"),  # a File id, not a URL
+        "customer_communication": evidence.get("communication_file_id"),
+    })
 ```
+
+Dispute evidence has a hard deadline (`dispute.evidence_details.due_by`). Submitting after
+it loses automatically, so wire `charge.dispute.created` to an alert, not a daily digest.
 
 ## Testing
 
 ```python
-# Use test mode keys
-stripe.api_key = "sk_test_..."
-
-# Test card numbers
 TEST_CARDS = {
-    'success': '4242424242424242',
-    'declined': '4000000000000002',
-    '3d_secure': '4000002500003155',
-    'insufficient_funds': '4000000000009995'
+    "success":            "4242424242424242",
+    "declined":           "4000000000000002",
+    "insufficient_funds": "4000000000009995",
+    "requires_3ds":       "4000002500003155",   # forces an SCA challenge
 }
-
-def test_payment_flow():
-    """Test complete payment flow."""
-    # Create test customer
-    customer = stripe.Customer.create(
-        email="test@example.com"
-    )
-
-    # Create payment intent
-    intent = stripe.PaymentIntent.create(
-        amount=1000,
-        currency='usd',
-        customer=customer.id,
-        payment_method_types=['card']
-    )
-
-    # Confirm with test card
-    confirmed = stripe.PaymentIntent.confirm(
-        intent.id,
-        payment_method='pm_card_visa'  # Test payment method
-    )
-
-    assert confirmed.status == 'succeeded'
 ```
 
-## Resources
+Three tools worth knowing:
 
-- **references/checkout-flows.md**: Detailed checkout implementation
-- **references/webhook-handling.md**: Webhook security and processing
-- **references/subscription-management.md**: Subscription lifecycle
-- **references/customer-management.md**: Customer and payment method handling
-- **references/invoice-generation.md**: Invoicing and billing
-- **assets/stripe-client.py**: Production-ready Stripe client wrapper
-- **assets/webhook-handler.py**: Complete webhook processor
-- **assets/checkout-config.json**: Checkout configuration templates
+- `stripe listen --forward-to localhost:5000/webhook` — the CLI prints a `whsec_` secret
+  for local use. It differs from your Dashboard endpoint secret; using the wrong one is
+  the usual cause of "signature verification failed" in dev.
+- `stripe trigger payment_intent.succeeded` — fire a real event without a real payment.
+- **Test clocks** (`stripe.test_helpers.TestClock.create`) — advance simulated time to test
+  renewals, trial expiry, and dunning. Without them, subscription lifecycle code is
+  effectively untested.
 
-## Best Practices
+## Checklist
 
-1. **Always Use Webhooks**: Don't rely solely on client-side confirmation
-2. **Idempotency**: Handle webhook events idempotently
-3. **Error Handling**: Gracefully handle all Stripe errors
-4. **Test Mode**: Thoroughly test with test keys before production
-5. **Metadata**: Use metadata to link Stripe objects to your database
-6. **Monitoring**: Track payment success rates and errors
-7. **PCI Compliance**: Never handle raw card data on your server
-8. **SCA Ready**: Implement 3D Secure for European payments
-
-## Common Pitfalls
-
-- **Not Verifying Webhooks**: Always verify webhook signatures
-- **Missing Webhook Events**: Handle all relevant webhook events
-- **Hardcoded Amounts**: Use cents/smallest currency unit
-- **No Retry Logic**: Implement retries for API calls
-- **Ignoring Test Mode**: Test all edge cases with test cards
+- [ ] `stripe` version checked; `stripe.error.*` not used on v8+
+- [ ] Secret key and webhook secret read from env, never literals
+- [ ] Idempotency keys derived from business objects on every money-moving create
+- [ ] Fulfillment driven by webhooks, never by the `success_url` redirect
+- [ ] Webhook reads the raw body and verifies with `construct_event`
+- [ ] Webhook deduplicates on `event["id"]` and returns 200 before doing work
+- [ ] Amounts in the smallest currency unit, with zero-decimal currencies (JPY) considered
+- [ ] Subscriptions created with `payment_behavior="default_incomplete"`
+- [ ] Dispute evidence wired to the `due_by` deadline
+- [ ] Subscription lifecycle covered by test clocks, not just a single charge test

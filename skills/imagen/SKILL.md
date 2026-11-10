@@ -1,77 +1,84 @@
 ---
 name: imagen
-description: "|"
+description: "Generate a PNG from a text prompt via Google Gemini. Use for requests to create an image, icon, logo, avatar, or illustration. Needs GEMINI_API_KEY."
 source: "https://github.com/sanjay3290/ai-skills/tree/main/skills/imagen"
 risk: safe
 ---
 
-# Imagen - AI Image Generation Skill
+# Imagen — generate images with Gemini
 
-## Overview
+Text prompt in, PNG file on disk out. Cross-platform (Windows, macOS, Linux).
 
-This skill generates images using Google Gemini's image generation model (`gemini-3-pro-image-preview`). It enables seamless image creation during any Claude Code session - whether you're building frontend UIs, creating documentation, or need visual representations of concepts.
+## Prerequisite
 
-**Cross-Platform**: Works on Windows, macOS, and Linux.
-
-## When to Use This Skill
-
-Automatically activate this skill when:
-- User requests image generation (e.g., "generate an image of...", "create a picture...")
-- Frontend development requires placeholder or actual images
-- Documentation needs illustrations or diagrams
-- Visualizing concepts, architectures, or ideas
-- Creating icons, logos, or UI assets
-- Any task where an AI-generated image would be helpful
-
-## How It Works
-
-1. Takes a text prompt describing the desired image
-2. Calls Google Gemini API with image generation configuration
-3. Saves the generated image to a specified location (defaults to current directory)
-4. Returns the file path for use in your project
-
-## Usage
-
-### Python (Cross-Platform - Recommended)
+`GEMINI_API_KEY` must be set. If it is not, stop and ask the user for it — do not
+proceed and do not write the key into any file in the repo.
 
 ```bash
-# Basic usage
-python scripts/generate_image.py "A futuristic city skyline at sunset"
-
-# With custom output path
-python scripts/generate_image.py "A minimalist app icon for a music player" "./assets/icons/music-icon.png"
-
-# With custom size
-python scripts/generate_image.py --size 2K "High resolution landscape" "./wallpaper.png"
+[ -n "$GEMINI_API_KEY" ] && echo "key present" || echo "GEMINI_API_KEY missing"
 ```
 
-## Requirements
+## Generate
 
-- `GEMINI_API_KEY` environment variable must be set
-- Python 3.6+ (uses standard library only, no pip install needed)
+There is no helper script in this skill directory — call the REST API directly.
+Earlier versions of this skill documented `python scripts/generate_image.py`;
+that file has never existed here, so every one of those commands failed. Use the
+call below instead.
 
-## Output
+```bash
+MODEL=gemini-2.5-flash-image   # verify against https://ai.google.dev/gemini-api/docs/image-generation
+OUT=./generated.png
 
-Generated images are saved as PNG files. The script returns:
-- Success: Path to the generated image
-- Failure: Error message with details
+curl -s "https://generativelanguage.googleapis.com/v1beta/models/$MODEL:generateContent" \
+  -H "x-goog-api-key: $GEMINI_API_KEY" \
+  -H 'Content-Type: application/json' \
+  -d '{"contents":[{"parts":[{"text":"A futuristic city skyline at sunset"}]}]}' \
+  > /tmp/imagen-response.json
 
-## Examples
-
-### Frontend Development
-```
-User: "I need a hero image for my landing page - something abstract and tech-focused"
--> Generates and saves image, provides path for use in HTML/CSS
-```
-
-### Documentation
-```
-User: "Create a diagram showing microservices architecture"
--> Generates visual representation, ready for README or docs
+jq -r '.candidates[0].content.parts[] | select(.inlineData) | .inlineData.data' \
+  /tmp/imagen-response.json | base64 -d > "$OUT"
 ```
 
-### UI Assets
-```
-User: "Generate a placeholder avatar image for the user profile component"
--> Creates image in appropriate size for component use
-```
+Keep the raw response in a file rather than piping straight to `base64` — when the
+call fails you need to read the JSON error, and a pipe will have discarded it.
+On macOS before 10.13 use `base64 -D` instead of `-d`.
+
+Model names in this API family change often and preview names expire. Confirm the
+current image-capable model from the docs link above before the first call in a
+session; if the request returns 404 on the model, that is why.
+
+## Reading the response
+
+Success returns `candidates[].content.parts[]`, where the image part carries
+`inlineData.data` (base64) and `inlineData.mimeType` (`image/png`). Text-only
+parts can appear alongside it — skip any part without `inlineData`.
+
+Failure returns a JSON `error` object. Check it before assuming an empty file is
+an API problem:
+
+- `401` / `403` — key missing, invalid, or not enabled for this API
+- `404` — model name wrong or retired (see above)
+- `400` with a safety block — the prompt was refused; rephrase rather than retry
+- `429` — rate limited; back off before retrying
+
+## After generating
+
+Report the written path, and confirm the file is non-empty (`wc -c`) before
+telling the user it worked — a zero-byte PNG means the parse found no
+`inlineData` part, not that generation succeeded.
+
+Put assets where the project already keeps them (`./assets/`, `./public/`,
+`./static/`) rather than the repo root. Generated images are binaries; ask before
+committing one.
+
+## Typical requests
+
+| User asks for | Prompt shape |
+|---|---|
+| Hero / landing image | Subject + mood + style, no text in image ("abstract tech, deep blue, no lettering") |
+| App icon or logo | "minimalist app icon, flat, centered, solid background" — ask for the target px size |
+| Docs diagram | Describe the boxes and arrows explicitly; for anything load-bearing prefer `mermaid-expert` over a generated raster |
+| Placeholder avatar | "neutral placeholder avatar, soft gradient, no face" |
+
+Image models render text unreliably. For a diagram whose labels must be correct,
+generate SVG/Mermaid instead of calling this skill.

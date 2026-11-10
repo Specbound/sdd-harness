@@ -56,3 +56,8 @@ When a tool repeatedly mislabels outputs (3+ verified instances over weeks) desp
 
 - `resources/implementation-playbook.md` for detailed patterns and examples.
 _Last synced: 2026-10-06
+
+### ❌ Trusting spawn timestamp or status flag without output verification
+Status and spawn time are recorded at start, not completion. An agent marked "pass" at 01:40 may be stalled with partial output. Verify output exists and is parseable, not the timestamp or status field. (source: 2026-10-24 observation)
+### ❌ Trusting harness-generated status columns for agent outcome
+Framework hooks scanning response text for "error"/"failed" keywords produce false positives when agents analyze error messages. Verify artifacts independently. (source: comfyui 2026-10-26 [debug, insight, pattern])
