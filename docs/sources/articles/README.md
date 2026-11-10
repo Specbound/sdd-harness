@@ -1045,7 +1045,7 @@ See also: [git/README.md](../git/README.md) — the `herdrdev/herdr` repo entry,
 
 **What we added:**
 - Augmentation: `skills/skill-eval-gate/SKILL.md` — treatment arm now runs **k=3 with `pass^3`**; baseline stays at 1 run, because Phase 1b already disqualifies any scenario a strong baseline passes. Phase 4's table shows the 3 runs individually and Phase 5 gains an **INCONCLUSIVE** verdict for split runs (2/3 or 1/3), which is the honest reading of a skill whose effect is inside the noise floor and which previously had nowhere to land. Cost 6 → 12 spawns; the skill now says to cut scenarios rather than runs.
-- Augmentation: `scripts/session/trust_score.py` — `apply --delta` is repeatable, applies the **median**, and records the day `inconclusive` with delta `0.0` when samples spread beyond `JUDGE_SPREAD_LIMIT` (2.0 on ±4.5). Raw `samples`/`spread`/`inconclusive` persist to `trust-score.jsonl`. One sample reports `"spread": null`, not `0.0` — unsampled and "sampled and agreed" are different facts. `auto-score` is untouched and deliberately single-sample: it counts tags deterministically, so there is nothing for a spread gate to measure. New: `scripts/session/trust_score.test.sh` (24 cases).
+- Augmentation: `scripts/session/trust_score.py` — `apply --delta` is repeatable, applies the **median**, and records the day `inconclusive` with delta `0.0` when samples spread beyond `JUDGE_SPREAD_LIMIT` (2.0 on ±4.5). Raw `samples`/`spread`/`inconclusive` persist to `trust-score.jsonl`. One sample reports `"spread": null`, not `0.0` — unsampled and "sampled and agreed" are different facts. `auto-score` remains deliberately single-sample: it counts tags deterministically, so there is nothing for a spread gate to measure. (It did gain a separate readability check on 2026-10-12 — an unreadable window records `inconclusive` rather than scoring its zero tag count as a quiet day; that change answers a different source, claude.dev's *Building effective agent automations*, not the spread argument here.) New: `scripts/session/trust_score.test.sh` (24 cases at the time; 31 after the 2026-10-12 readability cases).
 - Augmentation: `commands/kiro/daily-maintenance.md` — Step 1 spawns `session-judge` **3× concurrently**, Step 4 passes all three deltas. A failed run is treated as *missing*, never as a vote for zero, since substituting 0 for a crashed judge manufactures agreement out of a failure.
 - Augmentation: `agents/kiro/session-judge.md` — new **sample mode**. This was a live conflict, not a hypothetical: the agent's own duplicate-run rule made runs 2 and 3 no-op against run 1's `[judge]` observation, which would have silently turned three draws into `[-2, 0, 0]`. Sample mode suppresses the append (the caller writes one line) and suspends the duplicate guard.
 - Augmentation: `scripts/utils/dashboard.py` — the existing Trust Battery tile gained a `⚠ judge split` badge with the raw samples, and a quiet `median of N runs · spread X` line otherwise. Records predating this change render no badge at all.
@@ -1356,3 +1356,90 @@ See also: [x/README.md](../x/README.md) (eric zakariasson's token-efficiency aud
 **Rejected:** train/test split (already `claude-api` Hillclimb Methodology and `skill-eval-gate` Phase 1d), "stronger model scores higher" (Phase 1b), a new build-eval skill (duplicates `skill-eval-gate`, `raindrop-eval-loop`, `macro-eval-sweep`).
 
 **Open finding (unverified):** the harness's own `skills/claude-api` has the same name as Anthropic's `claude-api` skill, which the article says provides the `build-eval` / `hillclimb` / `prompt-audit` sub-commands. The local skill may shadow the official one; not checked.
+
+---
+
+## How We Engineer Safer Agents
+**URL:** https://www.perplexity.ai/hub/blog/how-we-engineer-safer-agents | **Added:** 2026-10-01 | **Source:** Perplexity (2026-09-29)
+
+**Fetch status:** partial. WebFetch got a 403 and the Wayback Machine is blocked for that tool; lean-ctx `ctx_url_read` retrieved the article.
+
+**What it's about:** "Accidental meltdowns": an agent with a legitimate goal hits friction and crosses security boundaries to get past it. Examples are the July 2026 Hugging Face breach and agents probing Data USA with SQL injection. The fix is defense-in-depth under three rules: layers fail independently; at least one layer is deterministic code below the agent ("a safeguard the agent can decline to invoke, or reconfigure, is not a safeguard"); and signals can only reduce authority. Portable Computer's sandbox fails closed — if the sandbox is unavailable, the harness disables itself.
+
+**What we added:**
+- Fix: fail-closed on the guard's own failures in `hooks/claude/git-destructive-guard-hook.sh` and `hooks/claude/ledger-append-only.sh`. A missing `python3` or a malformed event used to collapse to `exit 0`. Each hook now blocks when the raw event touches what it protects.
+- Bug fix: `hooks/claude/agent-behavior-guard.sh` enforce mode never blocked. Its trailing `exit 0` discarded the Python's `sys.exit(2)`. The fix was found while auditing for the fail-closed rule. New `agent-behavior-guard.test.sh` (13 cases); 13 new cases across the three suites fail on the old hooks.
+- Augmentation: `skills/hook-design/SKILL.md` — new "Fail Closed, Narrow Only" section. The canonical stdin-parsing snippet, which itself taught the fail-open `except: print('')` / `|| echo ""` idiom, is corrected.
+
+**Rejected:** the six-layer product stack (SPACE, BrowseSafe, Numbat are Perplexity infrastructure; independent verifier already in `agent-permissions-design` / `secure-agent-design`), the improvement loop (`harness-fix-agent`, `skill-augment-agent`).
+
+**Open:** `hooks/claude/scan-pii.sh` reports "No PII detected" when `opf` errors or its output fails to parse (`|| true`, `except: print(0, "", 0)`). Not fixed: `opf` is not in the lean-ctx shell allowlist, so its clean-file output contract could not be checked.
+
+---
+
+## Building Effective Agent Automations
+**URL:** https://claude.dev/blog/building-effective-agent-automations/ | **Added:** 2026-10-12 | **Source:** Lance Martin & CJ Avilla (claude.dev, 2026-10-08)
+
+**Fetch status:** ok, rung 1. WebFetch returned a detailed outline through its summarizer, so the wording below is one step removed from the article.
+
+**What it's about:** A reference daily-brief agent on Claude Managed Agents (Slack + GitHub in, one Slack post out), organised around six rules for scheduled agents: read from per-source bookmarks, not fixed windows ("a late run leaves a gap and an early run repeats items"); report a failed read as unreadable, never as a quiet day; re-check every item before posting; count a post as sent only when the destination confirms it, then advance bookmarks; re-read preferences each run from a store the agent cannot edit; read-only access plus a per-run spend cap.
+
+**What we added:**
+- Fix: `scripts/session/trust_score.py` — `auto-score` used to apply "no signals detected" as a real 0.0. New `_unreadable_sources()` checks for a missing `observations.md`, a `[detector-down]` row in the window, commits with no `session-quality` row, and unreadable git history. Any hit records the day `inconclusive` at 0.0 with the sources in an `unreadable` field. `apply --unreadable SOURCE` carries the same from the judges. On the real data, 2026-10-11 applied +1.0 on a day the drain detector was down. `trust_score.test.sh` went from 24 to 31 cases.
+- Augmentation: `agents/kiro/session-judge.md` + `commands/kiro/daily-maintenance.md` — the judge window starts at the last trust-score record (capped at 7 days) instead of a fixed "last 24h". New Step 1b refuses to score a window whose inputs were unreadable, and "empty window" is valid only when the window was readable.
+
+**Rejected:** rules 3–4 (the harness posts nothing externally on a schedule), rule 5 (CLAUDE.md and the rubric already play the read-only-preferences role), rule 6 (a subscription has no per-run spend cap), Managed Agents / `ant apply` (needs the API; the harness is subscription-only).
+
+**Same batch, nothing extracted:** a How I AI episode on Jev decision models (`youtube dAIIaepNhQM`; the **same video** was already extracted and rejected on 2026-10-01, see `docs/skills/skill-extraction/extraction-history.md`), an AI-SRE agent on the Claude Agent SDK (`youtube l6GpUvPOVpM`; no production service here, `observability-incident` / `postmortem-to-spec` cover it), and a creator's AI-stack video (`youtube T1dQhQAm8Tc`; its Greptile "grep loop" maps to `/kiro:loop` and `/code-review --fix`, and its PR proof to `pr-evidence-hook.sh`). Four `archive.codenewsletter.ai` X-post mirrors, none extracted so none logged in `x/`: @bcherny on prompting (verification already enforced by `verify-agent` / `pr-evidence-hook.sh`), @kunchenguid on AI-written tests (one unreplicated post; a watch item for `spec-tdd-impl-agent`), Google Cloud Tech on eager vs lazy MCP loading (`ToolSearch` deferred tools and the lean-ctx `ctx_call` gateway already do it), and @sermakarevich, "Evals: how to know whether an AI system actually works" (the linked X Article returned 402 on rung 1; recovered on recheck at rung 3 through the public fxtwitter API, `api.fxtwitter.com/<user>/status/<id>`, which carries X Article bodies; two summarizer passes agreed on every figure). It yielded the `skill-eval-gate` Phase 3b augmentation logged in [x/README.md](../x/README.md). Four repos, none extracted so none logged in `git/`: `tester-army/e2e` (a per-project test framework, no harness consumer), `steipete/agent-scripts` (`sync-skills`, `validate-skills`, `docs-list` all have incumbents; `skill-cleaner` already mined 2026-05-31), `bastani-inc/atomic` (each primitive has an incumbent; Claude login there bills per token), `composio-community/open-dot` (already logged 2026-10-01). The full critic table is in `.claude/reports/skill-extraction-2026-10-12.md` (local).
+
+_Last synced: 2026-10-12_
+
+---
+
+## Are Harnesses Worth the Cost?
+**URL:** https://martinfowler.com/articles/are-harnesses-worth-the-cost.html | **Added:** 2026-10-21 | **Source:** Naresh Jain (martinfowler.com "Exploring Gen AI", 2026-10-13)
+
+**Fetch status:** ok, rung 1. A second WebFetch pass confirmed the results table word for word.
+
+**What it's about:** Codex at low effort on a Java order-API + Kafka task, 10 runs per condition, judged by 178 hidden acceptance tests. Guides (OpenAPI/AsyncAPI specs, examples, a skill) plus independent deterministic sensors (Specmatic contract tests, mocks, timing and config checks) took the cheap model from **3/10** accepted runs to **10/10**, at 33% less than the frontier model unharnessed. On the frontier model the harness cost ~10x the tokens and changed nothing (10/10 either way). Expected results come from outside the agent so one misreading can't land in both code and tests. The author's caveats: small sample, one task, guides and sensors never separated, sensors invoked by the agent rather than after every edit.
+
+**What we added:**
+- Spec augmentation: `specs/model-router/requirements.md` Open Question 5 (local, gitignored), for `/kiro:spec-grill`: should a down-route require an executable-acceptance signal on the work, and should effort become a routed output? It was added as a question, not a requirement, because the spec is approved and 17/30 tasks in.
+
+---
+
+## Cutting our inference bill by 68% by being obsessive about optimization
+**URL:** https://blog.cloudflare.com/obsessive-inference-optimization | **Added:** 2026-10-21 | **Source:** Ryan Skidmore (Cloudflare, 2026-10-19)
+
+**Fetch status:** ok, rung 1. Chart images were not read; their captions were.
+
+**What it's about:** Cloudflare's AI code reviewer cut its average cost from $2.43 to $0.77 per review and its median time from 4m09s to 1m32s. Fixes:
+- Split the shared prompt prefix from per-repo environment text, so first-call cache reads rose from 14-26% to 91-99.5%.
+- Put the reference index in the prompt.
+- Removed a tool sub-reviewers couldn't use, which they had tried to call in 57-76% of sessions.
+- Read files in parallel.
+- Skip reviewers on re-reviews.
+- Made jobs check for cancellation every 15s: 358 of 446 cancelled jobs had kept running.
+
+Randomized splits picked models and effort. High effort cost 61% more than medium for flat important findings (0.28 to 0.30).
+
+**What we added:**
+- Script lib: `scripts/lib/run-bounded.sh` (+ `run-bounded.test.sh`, 15 cases) runs a step under a wall-clock budget in its own process group. On expiry the whole group gets TERM, then KILL 10s later; exit is `124`. `SDD_STEP_BUDGET_S`, default 2h, `off` disables it.
+- Augmentation: `scripts/orchestration/daily-orchestrator.sh` now runs every step under it: the `update.sh` sync, all 12 per-repo runners, and the drift review. Nothing bounded a step before, and the 2026-10-09/10 tick ran 54h and swallowed the following days' ticks. Per-repo runners now also get `< /dev/null`.
+- The effort-split figures feed model-router Open Question 5 (entry above).
+
+**Rejected:** shared cache-prefix layout (Claude Code owns the system prompt and its breakpoints, and the subscription has no per-token bill); stripping unusable tools (the tool-failure ledger already catches failed calls); the "acted-on vs lines 30-40 away" finding metric (the harness has no stream of review findings to score; revisit if `code-review-learning-runner` starts storing them).
+
+**Same batch, nothing extracted:**
+- Meta, "The Thin Orchestrator" (engineering.fb.com, 2026-10-19). The model router is already a non-generative classifier, and kiro commands are already deterministic pipelines with one subagent per task. A five-section subagent template check would add text but no behaviour.
+- Cloudflare, "Clairic" (fetch partial). It is a hosted model. Its extract-then-decide-then-write pattern, where the writer never sees raw input, is already in `secure-agent-design`'s taint-flow and plan-verify sections.
+- YouTube `9tinC8jG7FM` (Owain Lewis, production agent workflow). Ticket-as-spec is SDD specs, red-teaming is `secure-agent-design`, and before/after LLM-judge evals are `skill-eval-gate`.
+- YouTube `jYCvybXPS4s` (Jason Ku, "guidance over prescriptions" in skills). Already covered by CLAUDE.md's 3rd-patch rule and skill-curator. One anecdote, judged by the author. Watch item: `skill-augment-agent` appends anti-pattern rules, which is the patch stacking the video warns about.
+- Three `archive.codenewsletter.ai` X-post mirrors, none logged in `x/`:
+  - @adocomplete, medium effort for ~80% of coding work: anecdote; Cloudflare's measured split is used instead.
+  - @poteto, constraints before skills: already `guardrails-agent`, the oxlint anti-slop rules and `harness-fix`.
+  - Sunra MCP launch: a paid media API ad.
+- A fourth mirror is **unresolved**: the user's paste split the ID across a line break and lost digits. `21089143980342164` returns 404, Wayback is blocked for the tool, the archive index needs a login, and search found nothing. It needs the original 19-digit ID.
+- Two repos, none logged in `git/`:
+  - `mksglu/context-mode`. lean-ctx, headroom and rtk already cover it, and `compaction-discipline-hook.sh` already keeps ruled-out hypotheses. Its 98% benchmark compares hand-written summary scripts, with no task-success check. Its hard WebFetch deny would break skill-extraction's retrieval ladder.
+  - `krishhgg/Insomnia`. A macOS lid-closed power manager; its tmux "continue" nudge is niche.

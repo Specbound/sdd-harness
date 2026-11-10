@@ -43,6 +43,7 @@ Hook output is injected into Claude's context as system messages — Claude read
 - `[HARNESS-POINTER-STALE]` — `~/.sdd-harness-root` points at a directory that does not exist. Names the dead path and the fix (`bash <harness>/update.sh`). Nothing is printed when the pointer is absent (harness never installed globally) or valid.
 - `[HEADROOM-SELFHEAL]` — emitted only when `ANTHROPIC_BASE_URL` was actually stripped because the routed headroom proxy refused the connection. Nothing is printed when routing is healthy, absent, or not pointed at a local proxy.
 - `[SESSION-HANDOFF-AVAILABLE]` — if `.claude/memory/handoff/latest.md` exists and is <24h old, injects a reminder to silently read it before responding to the user's first message. The file is written by `scripts/session/write_handoff.py`, fired from `compaction-discipline-hook.sh` (PreCompact) and `gbrain-agent-spawn.sh` (PreToolUse Agent) — this hook only surfaces it, it never writes it.
+- `[SKILL-LIBRARY]` — if `~/.claude/skill-library` exists, prints a one-line reminder that skills absent from the session's per-prompt listing may still be installed there (`~/.claude/skill-library/<name>/SKILL.md`) and should be checked before reporting a skill as missing. Catches the case where a command, hook, or agent names a Library-tier skill by bare name and the agent concludes it isn't installed; `hooks/claude/skill-library-resolver.sh` catches the same failure at the `Skill()` call site. See `docs/skills/SKILL-HIERARCHY.md`.
 
 **Respects:** `SDD_PROFILE=minimal` env var — skips entirely in minimal profile.
 
@@ -82,6 +83,23 @@ Hook output is injected into Claude's context as system messages — Claude read
 
 ---
 
+### `prompt-hook.sh`
+**Event:** `UserPromptSubmit` — **Matcher:** _(all prompts)_
+
+**Purpose:** Injects `.claude/memory/hot-memory.md` into the prompt as `--- Active Context (hot-memory) ---` … `--- End Active Context ---`.
+
+**Cadence (not every prompt):** hot-memory is ~2k tokens and every injection stays in the transcript, so injecting on each prompt re-sends one more copy on every later API call. It now injects on the **1st prompt of a session**, then **every `SDD_HOT_MEMORY_EVERY` prompts** (default `10`), and on the **first prompt after a compaction** (the summary may have dropped it). Compactions are counted by scanning the transcript at `transcript_path` for `"compact_boundary"`; a change in that count resets the cadence to 1.
+
+**Counter:** `.claude/memory/.prompt-hook/<session_id>.json` holds `{"n": …, "compacts": …}`. On the first prompt of a session the hook drops counter files untouched for 7 days. A `session_id` containing `/`, or one that is absent, is not used as a filename.
+
+**Fail-open:** any failure to read the hook event, parse `SDD_HOT_MEMORY_EVERY`, read a corrupt counter, or write the counter **injects** — a missed injection is invisible, an extra one costs 2k tokens. The reason is printed to stderr as `[prompt-hook] <why> — injecting hot-memory`. A corrupt counter file is reset rather than left to inject forever. Exits silently when `hot-memory.md` is missing or empty.
+
+**Decision logic** runs in an inline `python3` heredoc (stdlib only, no regex) and prints `inject` or `skip`; the shell wrapper only concatenates the file.
+
+**Tests:** `hooks/claude/prompt-hook.test.sh`.
+
+---
+
 ### `frontend-security-nudge.sh`
 **Event:** `UserPromptSubmit` — **Matcher:** _(all prompts, keyword-gated)_
 
@@ -104,7 +122,7 @@ Hook output is injected into Claude's context as system messages — Claude read
 
 **Why it's needed:** This is one of two trigger points (the other is `pr-auto-create-hook.sh` after a successful `git push`) for the PR-babysitting automation — catching the case where the user asks for a PR before pushing, or in a session where the push already happened earlier.
 
-**Output:** `[PR-AUTO-CREATED] PR #N opened against <base> (auto-detected base)` on success, or `[PR-AUTO-CREATED] PR #N already open...` if one exists. Silent (exit 0) on non-matching prompts, outside a git tree, or if `gh` is not installed. If `.git/gh-stack` shows a stack is active for the branch (see `stacking-pull-requests` skill), runs `gh stack submit --auto` instead and outputs `[STACK-SUBMITTED] gh-stack layers submitted for <branch>` in place of the single-PR output.
+**Output:** `[PR-AUTO-CREATED] PR #N opened against <base> (auto-detected base)` on success, or `[PR-AUTO-CREATED] PR #N already open...` if one exists. Silent (exit 0) on non-matching prompts, outside a git tree, or if `gh` is not installed. If `.git/gh-stack` shows a stack is active for the branch (see `~/.claude/skill-library/stacking-pull-requests/SKILL.md` — Library tier, so the stack-submit failure `WARN` names that path rather than a bare skill name), runs `gh stack submit --auto` instead and outputs `[STACK-SUBMITTED] gh-stack layers submitted for <branch>` in place of the single-PR output.
 
 ---
 
@@ -145,7 +163,7 @@ Hook output is injected into Claude's context as system messages — Claude read
 
 **Why it's needed:** Frontend anti-patterns (e.g., CSS property ordering, accessible-name violations, layout anti-patterns) accumulate silently across edits. Catching them at write time, rather than at PR review, costs far fewer tokens and less rework.
 
-**Output:** Anti-pattern warnings with severity; green check if clean. Fails silently if Impeccable is not installed — install with `npm install -g impeccable`.
+**Output:** Anti-pattern warnings with severity; green check if clean. Fails silently if Impeccable is not installed — install with `npm install -g impeccable@3.6.0` (the version `install.sh` pins; npm 10 has no release-age cooldown, so the pin is the guard).
 
 ---
 
@@ -185,11 +203,11 @@ Hook output is injected into Claude's context as system messages — Claude read
 | Command contains | Inferred domain |
 |-----------------|----------------|
 | `pip`, `npm`, `yarn`, `poetry`, `uv` | `dependency-management` |
-| `docker`, `kubectl`, `helm` | `deployment-engineer` |
+| `docker`, `kubectl`, `helm` | `deployment-pipeline-design` |
 | `git` | `git-advanced-workflows` |
 | `curl`, `wget`, `http` | `api-patterns` |
 | `python`, `.py` | `python-pro` |
-| `node`, `npm`, `.ts`, `.tsx` | `nodejs-best-practices` |
+| `node`, `npm`, `.ts`, `.tsx` | `nodejs-backend-patterns` |
 | _(default)_ | `systematic-debugging` |
 
 **Design principle:** "Memory from what agents DO, not just what they say" — extracted from Memori's architecture. The struggle extension adds automatic capture without requiring Claude to decide.
@@ -243,7 +261,7 @@ Hook output is injected into Claude's context as system messages — Claude read
 
 **Why it's needed:** Pairs with `pr-mention-nudge.sh` as the second trigger point for PR-babysitting automation — catches the common case of pushing a branch and expecting a PR to exist, without requiring the user to ask. Made possible by the `templates/settings.json.template` permission change that narrowed the deny rule from blanket `Bash(git push*)` to only force-push variants, so this hook can now observe successful ordinary pushes.
 
-**Output:** `[PR-AUTO-CREATED] PR #N opened against <base> (auto-detected base)` on success, or `[PR-AUTO-CREATED] PR #N already open...` if one exists. Silent (exit 0) on force pushes, failed pushes, outside a git tree, if `gh` is not installed, or if `hooks.autopilot.enabled` is not `true` in git config — `detect_base_and_create.sh` itself gates on `git config --bool hooks.autopilot.enabled`, same opt-in flag as `pr-risk-tier-hook.sh` and the post-commit doc-sync push, so auto-creation defaults off in any worktree that hasn't run `git config --worktree hooks.autopilot.enabled true`. If `.git/gh-stack` shows a stack is active for the branch (see `stacking-pull-requests` skill), runs `gh stack submit --auto` instead and outputs `[STACK-SUBMITTED] gh-stack layers submitted for <branch>` in place of the single-PR output.
+**Output:** `[PR-AUTO-CREATED] PR #N opened against <base> (auto-detected base)` on success, or `[PR-AUTO-CREATED] PR #N already open...` if one exists. Silent (exit 0) on force pushes, failed pushes, outside a git tree, if `gh` is not installed, or if `hooks.autopilot.enabled` is not `true` in git config — `detect_base_and_create.sh` itself gates on `git config --bool hooks.autopilot.enabled`, same opt-in flag as `pr-risk-tier-hook.sh` and the post-commit doc-sync push, so auto-creation defaults off in any worktree that hasn't run `git config --worktree hooks.autopilot.enabled true`. If `.git/gh-stack` shows a stack is active for the branch (see `~/.claude/skill-library/stacking-pull-requests/SKILL.md` — Library tier, so the stack-submit failure `WARN` names that path rather than a bare skill name), runs `gh stack submit --auto` instead and outputs `[STACK-SUBMITTED] gh-stack layers submitted for <branch>` in place of the single-PR output.
 
 **Location:** ships in `hooks/claude/`, copied to each project's `.claude/hooks/`; wired via `PostToolUse` matcher `Bash` in `templates/settings.json.template`, alongside `revert-detect-hook.sh` / `setup-buffer-hook.sh`.
 
@@ -259,7 +277,7 @@ Hook output is injected into Claude's context as system messages — Claude read
 4. Emits the same nudge when the invocation supplies no inspectable body at all — `--fill`, `--fill-first`, or a bare `gh pr create` that opens an editor. Both reach the reviewer with no evidence section.
 5. Stays silent when the body cannot be judged rather than guessing: `--body-file -` (stdin) and an unreadable file produce no output.
 
-**Why it's needed:** `verification-before-completion` requires evidence for claims made in conversation, but that evidence stops at the PR boundary — `create-pr`, `iterate-pr`, and `pr-babysit` contained zero references to evidence artifacts, so the reviewer received the agent's description of its own work and nothing to check it against. The hook enforces the presence of the section; `create-pr` ("Attach Runtime Evidence") teaches what goes in it, including the load-bearing rule that the before-state must be captured while reproducing the problem, since after the fix it costs a revert and is therefore usually written from memory instead.
+**Why it's needed:** `verification-before-completion` requires evidence for claims made in conversation, but that evidence stops at the PR boundary — `create-pr`, `iterate-pr`, and `pr-babysit` contained zero references to evidence artifacts, so the reviewer received the agent's description of its own work and nothing to check it against. The hook enforces the presence of the section; `~/.claude/skill-library/create-pr/SKILL.md` ("Attach Runtime Evidence") teaches what goes in it — the nudge names that installed path rather than the bare skill name, because `create-pr` is Library tier and the Skill tool cannot resolve it — including the load-bearing rule that the before-state must be captured while reproducing the problem, since after the fix it costs a revert and is therefore usually written from memory instead.
 
 **Output / side effect:** Prints a `PR Evidence — missing proof` block to stdout naming which case fired (no inspectable `--body`, or `--body` without the heading), with the required format and the docs-only escape hatch. No files written.
 
@@ -377,6 +395,8 @@ Hook output is injected into Claude's context as system messages — Claude read
 4. **No-LLM classify** — at classification time use nearest-summary lookup (~100ms; no LLM call needed once a topic map exists)
 5. **Long tail** — don't sample aggressively; bugs live in rare clusters (HDBSCAN with no pre-specified count; outliers → `no_match`, not forced)
 
+Plus a discovery-before-eval pointer: read `~/.claude/skill-library/active-observability/SKILL.md` first when the patterns to look for aren't known yet, then `raindrop-eval-loop`. Both are Library tier, so the hook names the path rather than the bare skill name.
+
 **Why it's needed:** Raindrop trace analysis is token-heavy. Without guidance, the natural pattern is to feed raw trace payloads into LLMs one at a time — multiplying cost. These patterns compress the input surface and batch analytical work so trace evaluation runs at ~10–20% of the naïve cost.
 
 **Output:** `╔══ Active Observability (Raindrop) ══╗` rules banner before every Raindrop MCP call.
@@ -440,7 +460,7 @@ Hook output is injected into Claude's context as system messages — Claude read
 ### `skill-permissions-gate.sh`
 **Event:** `PostToolUse` — **Matcher:** `Write|Edit` — _(soft gate, never blocks)_
 
-**Purpose:** After any Write or Edit to a `*/skills/*/SKILL.md` path, prompts Claude to invoke `agent-permissions-design` and verify four dimensions before marking skill creation complete: (1) tool access — does the skill direct Claude to use destructive tools? (2) irreversible action gates — are high-risk steps preceded by a verification instruction? (3) scope boundary — are trigger conditions specific enough to prevent misfire? (4) external access — does the skill touch external services or credentials least-privilege?
+**Purpose:** After any Write or Edit to a `*/skills/*/SKILL.md` path, prompts Claude to follow `~/.claude/skill-library/agent-permissions-design/SKILL.md` (Library tier — referenced by path, not bare name) and verify four dimensions before marking skill creation complete: (1) tool access — does the skill direct Claude to use destructive tools? (2) irreversible action gates — are high-risk steps preceded by a verification instruction? (3) scope boundary — are trigger conditions specific enough to prevent misfire? (4) external access — does the skill touch external services or credentials least-privilege?
 
 **Design principle:** Skills are mini-agents — they direct Claude to take actions with tools. The same rigor applied to AI agent authorization systems (`agent-permissions-design`) applies to skill design: scope it, gate destructive actions, keep triggers tight. Extracted from the VentureBeat article "The AI agent bottleneck isn't model performance — it's permissions" (2026-05-29).
 
@@ -451,6 +471,21 @@ Hook output is injected into Claude's context as system messages — Claude read
 **Output:** `╔══ Skill Permissions Gate ══╗` reminder banner listing the four review dimensions. Silent on no match.
 
 **Location:** `$SDD_HARNESS/.claude/hooks/skill-permissions-gate.sh`
+
+---
+
+### `skill-library-resolver.sh`
+**Event:** `PreToolUse` — **Matcher:** `Skill`
+
+**Purpose:** Resolves `Skill("<name>")` calls the Skill tool's index cannot see. `scripts/setup/sync-skills.sh` installs every skill named in `scripts/setup/skill-library.txt` to `~/.claude/skill-library/`, which is not in the session's per-prompt skill listing — so calling a Library-tier skill by name fails as "unknown skill" even though it is installed. Reads `tool_input.skill` from stdin; if it resolves to a Listed skill (`~/.claude/skills/<name>/SKILL.md` or the project's `.claude/skills/<name>/SKILL.md`) or isn't installed at all, exits 0 and lets the Skill tool handle it normally. If it only exists under `~/.claude/skill-library/<name>/SKILL.md`, blocks (exit 2) with that path so Claude reads it directly instead of concluding the skill is missing.
+
+**Why it's needed:** A bare-name invocation of a Library-tier skill (from a command, another skill, or a headless prompt) used to dead-end silently — all three spec approval gates lost `proof-collaborative-review` this way (2026-10-04). This hook is the runtime backstop at the `Skill()` call site; `scripts/utils/check-skill-tiers.py` (pre-commit) is the static backstop that fails a commit introducing a new bare-name reference, and the `[SKILL-LIBRARY]` line in `session-start-hook.sh` covers text mentions neither tool can parse.
+
+**Output:** Silent (exit 0) on Listed, missing, or plugin/path-qualified skill names. On a Library-tier name: `[skill-library] '<name>' is installed as a Library-tier skill — it is not in the Skill tool's index...` plus the `SKILL.md` path to read, via stderr (exit 2), which Claude Code feeds back into the conversation.
+
+**Tests:** `hooks/claude/skill-library-resolver.test.sh` — 9 cases against a throwaway `HOME` + project tree (Listed allowed, Library-tier blocked, block message names the `skill-library/<name>/SKILL.md` path, project-level `.claude/skills/` wins over the library, unknown name passes through, plugin-qualified name passes through, non-`Skill` tool ignored, malformed stdin ignored, path traversal ignored).
+
+**Location:** ships in `hooks/claude/`, copied to each project's `.claude/hooks/`; wired via `PreToolUse` matcher `Skill` in `templates/settings.json.template` and `templates/settings.harness.json.template`. See `docs/skills/SKILL-HIERARCHY.md`.
 
 ---
 
@@ -565,7 +600,9 @@ Hook output is injected into Claude's context as system messages — Claude read
 
 **What it does not block:** every real producer of these files appends via `>>`/`echo` from a Bash-run hook or routine script — a different tool (`Bash`), never seen by this matcher. Only Claude's own Write/Edit/MultiEdit tool calls against these exact files are blocked.
 
-**Tests:** `hooks/claude/ledger-append-only.test.sh` (12 cases: block per protected file across all three tools, absolute-path match, allow on unrelated memory files and non-Write/Edit tools, and the rotate escape hatch).
+**Fail-closed on its own failures (2026-10-01):** if `python3` is missing or the event is malformed, the parse exits non-zero instead of collapsing to an empty path and `exit 0`. The hook then blocks whenever the raw event names a protected ledger (literal substring match) and allows everything else, so a broken interpreter cannot silently disable the block without also blocking every unrelated Write.
+
+**Tests:** `hooks/claude/ledger-append-only.test.sh` (17 cases: block per protected file across all three tools, absolute-path match, allow on unrelated memory files and non-Write/Edit tools, the rotate escape hatch, and five fail-closed cases — malformed event, non-object `tool_input`, and `python3` off PATH).
 
 **Why it is needed:** Without this hook, an agent under pressure to show improvement could quietly truncate or rewrite `trust-score.jsonl` or `learnings.jsonl` rather than earning the number honestly. The existing `protected-path-hook.sh` guards secrets, not the harness's own history.
 
@@ -750,6 +787,10 @@ cases covering new/missing/current/stale/unreadable/hashless).
 
 **Default mode:** MONITOR ONLY — logs the finding and warns to stderr, always exits 0. Set `SDD_AGENT_GUARD_ENFORCE` to a comma-separated list of rule names (`network_indicator`, `persistence`, `chained_secret_egress`) or `all` to make matching rules hard-block (exit 2), mirroring numbat's monitor→enforce promotion without its rule-file machinery.
 
+**Enforce mode fixed 2026-10-01:** until then the script ended in a bare `exit 0` that discarded the Python's exit code, so enforce mode logged `"mode": "enforce"` findings but **never blocked anything**. The Python's exit code is now the verdict. With any rule enforced, the guard also fails closed on its own failures (malformed event, `python3` missing, crash → exit 2); in monitor mode those stay silent.
+
+**Tests:** `hooks/claude/agent-behavior-guard.test.sh` — 13 cases: each rule blocking under enforce, chained egress scoped to its session, enforce scoped to the named rule, monitor never blocking, and fail-closed vs. monitor on a malformed event and with `python3` off PATH. Runs the hook from a throwaway cwd so it never touches the repo's findings ledger.
+
 **Output / side effect:** Appends one JSON line per finding (monitor or enforce) to `.claude/memory/agent-security-findings.jsonl`. Secret-access events for the chained-egress rule are recorded in `.claude/memory/.agent-behavior-guard-secret-access.jsonl`, keyed by `session_id`.
 
 ---
@@ -767,6 +808,8 @@ The previous implementation regex-stripped quoted segments and then `grep -E`'d 
 
 **Fail-closed behavior:** if the command cannot be parsed (unbalanced quotes) or a destructive-capable verb carries an unresolved expansion (`$VAR`, `$(...)`, backtick) that could expand to a flag, the hook blocks and asks for the literal value. This deliberately over-blocks on a narrow set of high-stakes verbs — `git push`, `git branch`, `git rebase`, `gh repo` — and nowhere else.
 
+The guard also fails closed on **its own** failures (2026-10-01). If `python3` is missing, the event is malformed, or the analyzer crashes, the hook blocks any event that mentions `git` or `gh ` and allows the rest. Before this, both parse steps swallowed errors (`|| echo ""`, `|| REASON=""`) and fell through to `exit 0`, so a broken interpreter silently disabled the only hard-block on destructive git.
+
 **No `ask` verdict, by design:** the hook only ever allows or hard-blocks. The harness's routine runners (`scripts/orchestration/daily-orchestrator.sh`, `scripts/routines/*`) run headless, where a prompt-the-human verdict is unanswerable and silently degrades to a hang or an implicit allow.
 
 **Quoted text still safe:** `git commit -m "document git push --force risks"` is not blocked — `shlex` keeps the message as a single token and the verb resolves to `commit`, which is not checked.
@@ -775,7 +818,7 @@ The previous implementation regex-stripped quoted segments and then `grep -E`'d 
 
 **Output / side effect:** `BLOCKED: ...` to stderr with reason and the offending command, exit 2. Silent (exit 0) on anything else.
 
-**Tests:** `hooks/claude/git-destructive-guard-hook.test.sh` — 46 cases covering baseline blocks, the four regex-era bypasses above, and a false-positive guard block (normal pushes, commit messages that mention `--force`, `git status`, `gh repo view`). Run `bash hooks/claude/git-destructive-guard-hook.test.sh`.
+**Tests:** `hooks/claude/git-destructive-guard-hook.test.sh` — 52 cases covering baseline blocks, the four regex-era bypasses above, six fail-closed cases (malformed event, non-string command, `python3` off PATH), and a false-positive guard block (normal pushes, commit messages that mention `--force`, `git status`, `gh repo view`). Run `bash hooks/claude/git-destructive-guard-hook.test.sh`.
 
 ---
 
@@ -890,7 +933,7 @@ The previous implementation regex-stripped quoted segments and then `grep -E`'d 
 
 Verified directly against `.claude/settings.json` on 2026-09-06 (not just this doc's prior claims):
 
-All 44 registrations below are live — counted with the `jq` command in this section, not carried over from the previous sync. Regenerate this block from the real config with:
+All 44 registrations below are live — counted with the `jq` command in this section, not carried over from the previous sync. (A 45th, `PreToolUse Skill → skill-library-resolver.sh`, was added 2026-10-05 and is now registered in both `templates/settings.json.template` and `templates/settings.harness.json.template` — inserted ahead of each template's existing `Write|Edit` block — as well as spot-checked against the live `.claude/settings.json`; the rest of the block has not been re-verified since 2026-09-06.) Regenerate this block from the real config with:
 
 ```bash
 jq -r '.hooks | to_entries[] | .key as $e | .value[] | .matcher as $m | .hooks[]
@@ -934,6 +977,7 @@ PreToolUse       Agent                                → gbrain-agent-spawn.sh
 PreToolUse       Agent                                → prompt-quality-check.sh  [see docs/prompt-quality/README.md]
 PreToolUse       mcp__…claude-mem…save_observation    → gbrain-memory-write.sh
 PreToolUse       mcp__raindrop__                      → raindrop-best-practices.sh
+PreToolUse       Skill                                 → skill-library-resolver.sh  [added 2026-10-05]
 PreToolUse       WebFetch|WebSearch                   → gbrain-external-search.sh
 PreToolUse       Read|Bash|WebFetch|WebSearch         → agent-behavior-guard.sh
 SubagentStart    (all)                                → subagent-context-hook.sh
@@ -1011,5 +1055,5 @@ denies `git push*` outright where projects only deny force-push.
 
 **No regex, continued (2026-09-30).** `prompt-quality-check.sh` was rewritten off `re` onto the same literal-token pattern: the prompt is tokenized to lowercase words (apostrophes stay inside a word, every other non-alphanumeric character separates, so `double-check` is the two tokens `double check`) and phrases are matched on token boundaries. The rewrite was verified score-identical to the regex version on 94 real Agent prompts, and it added two anti-patterns — `think-instruction` and `show-reasoning-request`. `scripts/routines/startup-payload-audit.sh` lost its `@import` regex the same day in favour of a line-prefix parser. Both are off `scripts/utils/no-regex-debt.txt`; `action-capture.sh` and `stop-hook.sh` are the remaining hooks that regex-parse free text.
 
-_Last synced: 2026-09-30_
+_Last synced: 2026-10-11_
 

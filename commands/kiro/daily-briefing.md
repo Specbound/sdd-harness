@@ -6,8 +6,8 @@ argument-hint: "(no arguments — always runs against .claude/memory/manager/)"
 
 # Daily Briefing
 
-Invoke the `synthesizing-daily-briefings` skill via the Skill tool and follow its
-five-phase workflow exactly.
+Read `~/.claude/skill-library/synthesizing-daily-briefings/SKILL.md` and follow its
+five-phase workflow exactly (the skill lives in the on-demand library, reached by path).
 
 ## Step 0 — Preflight
 

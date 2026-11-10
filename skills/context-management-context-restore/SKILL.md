@@ -1,181 +1,66 @@
 ---
 name: context-management-context-restore
-description: "Use when working with context management context restore"
-risk: unknown
-source: community
+description: "Use when designing or writing session save/restore mechanisms — what to capture before a session ends (compaction, subagent spawn, explicit save), how to structure it for cheap re-reading, and how restoration should surface it without re-injecting full history."
 ---
 
-# Context Restoration: Advanced Semantic Memory Rehydration
+# Context Save & Restore
 
-## Use this skill when
+Session continuity across compaction, subagent handoff, or a fresh session tomorrow depends on writing a small, structured snapshot *before* context is lost — not on reconstructing it afterward. Restoration is then just: read the snapshot, don't replay the transcript.
 
-- Working on context restoration: advanced semantic memory rehydration tasks or workflows
-- Needing guidance, best practices, or checklists for context restoration: advanced semantic memory rehydration
+## Two Trigger Models
 
-## Do not use this skill when
+| Trigger | When it fires | Output |
+|---|---|---|
+| **Automatic snapshot** | Pre-compaction, pre-subagent-spawn — any event that's about to drop context | Single overwritten file (e.g. `handoff/latest.md`) — always the most recent state, no history |
+| **Manual save** | User explicitly asks to checkpoint ("save session X") | Named, timestamped file (e.g. `sessions/session-{date}-{name}.md`) — persists, never overwritten |
 
-- The task is unrelated to context restoration: advanced semantic memory rehydration
-- You need a different domain or tool outside this scope
+Both trigger models write the same structural shape (below); they differ only in overwrite-vs-append and in who initiates the write. A harness needs the automatic one to avoid silent loss at compaction/spawn boundaries, and the manual one for deliberate checkpoints the user wants to return to by name.
 
-## Instructions
+**Surfacing on restore:** don't inject the snapshot into context automatically — surface a short pointer at session start ("a handoff snapshot exists at `<path>`") and let the agent read it on demand. Auto-injecting defeats the point: the whole reason to snapshot was to keep the next context window small.
 
-- Clarify goals, constraints, and required inputs.
-- Apply relevant best practices and validate outcomes.
-- Provide actionable steps and verification.
-- If detailed examples are required, open `resources/implementation-playbook.md`.
+## What to Capture
 
-## Role Statement
+**Progress tracker** (facts, derivable from git/spec state, not opinion):
+- Feature/spec name and path, if one exists
+- Git baseline (earliest relevant commit) and current HEAD
+- Tasks completed vs. remaining (spec task IDs if applicable)
+- Blocking issues, or explicitly "None"
+- Next action — specific enough to execute without re-reading the conversation
 
-Expert Context Restoration Specialist focused on intelligent, semantic-aware context retrieval and reconstruction across complex multi-agent AI workflows. Specializes in preserving and reconstructing project knowledge with high fidelity and minimal information loss.
+**Narrative sections** (evidence-backed, not summarized-from-memory):
 
-## Context Overview
+| Section | Rule |
+|---|---|
+| What WORKED | Every item needs evidence — test output, build success, not "it worked" |
+| What did NOT work | Exact error or reason, not a paraphrase |
+| What has NOT been tried | Specific next approach + steps, not "explore alternatives" |
+| Current state of files | From `git status`/`git diff`, not recollection |
+| Exact next step | Command/action → expected result → what comes after |
 
-The Context Restoration tool is a sophisticated memory management system designed to:
-- Recover and reconstruct project context across distributed AI workflows
-- Enable seamless continuity in complex, long-running projects
-- Provide intelligent, semantically-aware context rehydration
-- Maintain historical knowledge integrity and decision traceability
+## Capture Discipline
 
-## Core Requirements and Arguments
+- **Evidence required** — a "worked" claim without evidence is not a snapshot, it's a guess that will mislead the next session.
+- **No duplication** — don't restate content already in specs, ADRs, commits, or diffs; reference them by path (`specs/checkout-flow/design.md`) instead of copying.
+- **Redact secrets** — strip API keys, tokens, passwords from evidence/errors before they land in a file that will be read (and possibly committed) later.
+- **No opinion** — report facts; let the resuming agent (or human) decide what to do with them.
+- **Bounded size** — 3–7 bullets per section. A snapshot that's as long as the transcript it replaces has failed at its one job.
 
-### Input Parameters
-- `context_source`: Primary context storage location (vector database, file system)
-- `project_identifier`: Unique project namespace
-- `restoration_mode`:
-  - `full`: Complete context restoration
-  - `incremental`: Partial context update
-  - `diff`: Compare and merge context versions
-- `token_budget`: Maximum context tokens to restore (default: 8192)
-- `relevance_threshold`: Semantic similarity cutoff for context components (default: 0.75)
+## Relevance and Staleness
 
-## Advanced Context Retrieval Strategies
+A snapshot is only useful if the reader can tell how stale it is before trusting it:
+- Always timestamp the write.
+- Record the git branch and HEAD/baseline commit so staleness is checkable against current `git log`, not assumed.
+- Prefer pointers over copies for anything that changes independently (specs, commit history) — a copied fact can silently drift from the source; a path reference can't.
+- When restoring, validate the pointer before trusting it: if the referenced spec file no longer exists or HEAD has moved far past the recorded baseline, say so rather than restoring silently.
 
-### 1. Semantic Vector Search
-- Utilize multi-dimensional embedding models for context retrieval
-- Employ cosine similarity and vector clustering techniques
-- Support multi-modal embedding (text, code, architectural diagrams)
+## Anti-Patterns
 
-```python
-def semantic_context_retrieve(project_id, query_vector, top_k=5):
-    """Semantically retrieve most relevant context vectors"""
-    vector_db = VectorDatabase(project_id)
-    matching_contexts = vector_db.search(
-        query_vector,
-        similarity_threshold=0.75,
-        max_results=top_k
-    )
-    return rank_and_filter_contexts(matching_contexts)
-```
+- **Reaching for vector DBs / knowledge graphs for session handoff** — this is a small, short-lived, single-reader artifact; structured markdown read on demand solves it. Add retrieval infrastructure only if you're querying across hundreds of sessions, not for single-session resume (see `agent-memory-systems` for when structured memory actually earns its cost).
+- **Auto-injecting the full snapshot into every new context** — turns a cheap pointer into a permanent tax on every session, defeating the reason it was written small.
+- **Treating the snapshot as a full context replacement** — it's a map back to the evidence (specs, commits, diffs), not a substitute for reading them. A resuming agent that trusts the snapshot's text over the artifacts it points to will repeat the mistakes `agent-memory-systems`' "summary substitution" anti-pattern describes.
+- **One giant file for all sessions** — named per-session files (or an overwritten single "latest" for the automatic case) beat one growing log; a growing log needs its own retrieval problem solved before it's useful.
+- **Vague next-step** — "continue working on the feature" gives the resuming agent nothing to execute; a next step must name a command or action and its expected result.
 
-### 2. Relevance Filtering and Ranking
-- Implement multi-stage relevance scoring
-- Consider temporal decay, semantic similarity, and historical impact
-- Dynamic weighting of context components
+## Integration
 
-```python
-def rank_context_components(contexts, current_state):
-    """Rank context components based on multiple relevance signals"""
-    ranked_contexts = []
-    for context in contexts:
-        relevance_score = calculate_composite_score(
-            semantic_similarity=context.semantic_score,
-            temporal_relevance=context.age_factor,
-            historical_impact=context.decision_weight
-        )
-        ranked_contexts.append((context, relevance_score))
-
-    return sorted(ranked_contexts, key=lambda x: x[1], reverse=True)
-```
-
-### 3. Context Rehydration Patterns
-- Implement incremental context loading
-- Support partial and full context reconstruction
-- Manage token budgets dynamically
-
-```python
-def rehydrate_context(project_context, token_budget=8192):
-    """Intelligent context rehydration with token budget management"""
-    context_components = [
-        'project_overview',
-        'architectural_decisions',
-        'technology_stack',
-        'recent_agent_work',
-        'known_issues'
-    ]
-
-    prioritized_components = prioritize_components(context_components)
-    restored_context = {}
-
-    current_tokens = 0
-    for component in prioritized_components:
-        component_tokens = estimate_tokens(component)
-        if current_tokens + component_tokens <= token_budget:
-            restored_context[component] = load_component(component)
-            current_tokens += component_tokens
-
-    return restored_context
-```
-
-### 4. Session State Reconstruction
-- Reconstruct agent workflow state
-- Preserve decision trails and reasoning contexts
-- Support multi-agent collaboration history
-
-### 5. Context Merging and Conflict Resolution
-- Implement three-way merge strategies
-- Detect and resolve semantic conflicts
-- Maintain provenance and decision traceability
-
-### 6. Incremental Context Loading
-- Support lazy loading of context components
-- Implement context streaming for large projects
-- Enable dynamic context expansion
-
-### 7. Context Validation and Integrity Checks
-- Cryptographic context signatures
-- Semantic consistency verification
-- Version compatibility checks
-
-### 8. Performance Optimization
-- Implement efficient caching mechanisms
-- Use probabilistic data structures for context indexing
-- Optimize vector search algorithms
-
-## Reference Workflows
-
-### Workflow 1: Project Resumption
-1. Retrieve most recent project context
-2. Validate context against current codebase
-3. Selectively restore relevant components
-4. Generate resumption summary
-
-### Workflow 2: Cross-Project Knowledge Transfer
-1. Extract semantic vectors from source project
-2. Map and transfer relevant knowledge
-3. Adapt context to target project's domain
-4. Validate knowledge transferability
-
-## Usage Examples
-
-```bash
-# Full context restoration
-context-restore project:ai-assistant --mode full
-
-# Incremental context update
-context-restore project:web-platform --mode incremental
-
-# Semantic context query
-context-restore project:ml-pipeline --query "model training strategy"
-```
-
-## Integration Patterns
-- RAG (Retrieval Augmented Generation) pipelines
-- Multi-agent workflow coordination
-- Continuous learning systems
-- Enterprise knowledge management
-
-## Future Roadmap
-- Enhanced multi-modal embedding support
-- Quantum-inspired vector search algorithms
-- Self-healing context reconstruction
-- Adaptive learning context strategies
+Pairs with `agent-memory-systems` for longer-lived, cross-session knowledge (preferences, durable facts) — session handoff is deliberately short-lived and single-purpose by contrast. Pairs with `dispatching-parallel-agents` for the subagent-spawn trigger case: a spawning agent's context is about to fork, so a handoff snapshot lets the parent resume cleanly after the subagent returns.

@@ -23,6 +23,6 @@ Merge into the root object of `settings.json` alongside the existing keys:
 }
 ```
 
-- Skill: `~/.claude/skills/ktx-data-context/SKILL.md`
+- Skill: `~/.claude/skill-library/ktx-data-context/SKILL.md`
 - Docs: `docs/skills/ktx-data-context/README.md`
 - Repo: https://github.com/Kaelio/ktx

@@ -1,276 +1,50 @@
 ---
 name: wordpress
-description: "Complete WordPress development workflow covering theme development, plugin creation, WooCommerce integration, performance optimization, and security hardening."
-source: personal
-risk: safe
-domain: software-development
-category: workflow-bundle
-version: 1.0.0
+description: WordPress development — custom themes, plugins, and WooCommerce stores, covering architecture, hooks, REST API, block editor, security hardening, and performance. Use when building, extending, or securing a WordPress site, plugin, theme, or WooCommerce store.
 ---
 
-# WordPress Development Workflow Bundle
+# WordPress Development
 
-## Overview
-
-Comprehensive WordPress development workflow covering theme development, plugin creation, WooCommerce integration, performance optimization, and security. This bundle orchestrates skills for building production-ready WordPress sites and applications.
-
-## When to Use This Workflow
-
-Use this workflow when:
-- Building new WordPress websites
-- Creating custom themes
-- Developing WordPress plugins
-- Setting up WooCommerce stores
-- Optimizing WordPress performance
-- Hardening WordPress security
-
-## Workflow Phases
-
-### Phase 1: WordPress Setup
-
-#### Skills to Invoke
-- `app-builder` - Project scaffolding
-- `environment-setup-guide` - Development environment
-
-#### Actions
-1. Set up local development environment (LocalWP, Docker, or Valet)
-2. Install WordPress
-3. Configure development database
-4. Set up version control
-5. Configure wp-config.php for development
-
-#### Copy-Paste Prompts
-```
-Use @app-builder to scaffold a new WordPress project with modern tooling
-```
-
-### Phase 2: Theme Development
-
-#### Skills to Invoke
-- `frontend-developer` - Component development
-- `frontend-design` - UI implementation
-- `tailwind-patterns` - Styling
-- `web-performance-optimization` - Performance
-
-#### Actions
-1. Design theme architecture
-2. Create theme files (style.css, functions.php, index.php)
-3. Implement template hierarchy
-4. Create custom page templates
-5. Add custom post types and taxonomies
-6. Implement theme customization options
-7. Add responsive design
-
-#### Theme Structure
+## Theme development
+Structure:
 ```
 theme-name/
-├── style.css
-├── functions.php
-├── index.php
-├── header.php
-├── footer.php
-├── sidebar.php
-├── single.php
-├── page.php
-├── archive.php
-├── search.php
-├── 404.php
+├── style.css          # theme header (name, version, etc.)
+├── functions.php      # theme setup, enqueue, custom functions
+├── index.php           # fallback template
+├── header.php / footer.php / sidebar.php
+├── single.php / page.php / archive.php / search.php / 404.php / comments.php
 ├── template-parts/
 ├── inc/
-├── assets/
-│   ├── css/
-│   ├── js/
-│   └── images/
+├── assets/{css,js,images}/
 └── languages/
 ```
+- Follow the WordPress template hierarchy — `index.php` is the fallback; more specific templates (`single-{post_type}.php`, `page-{slug}.php`) override it.
+- `functions.php`: register nav menus, `add_theme_support(...)` (thumbnails, RSS, title-tag, block editor features), register widget areas, enqueue scripts/styles via `wp_enqueue_script`/`wp_enqueue_style` (never inline `<script>`/`<style>` in templates).
+- Block editor (Gutenberg): enable support, register custom blocks, block styles/patterns/templates as needed — don't assume classic-editor-only output.
+- Child themes: use `style.css` `Template:` header pointing at the parent slug; enqueue parent styles before child overrides.
 
-#### Copy-Paste Prompts
-```
-Use @frontend-developer to create a custom WordPress theme with React components
-```
-
-```
-Use @tailwind-patterns to style WordPress theme with modern CSS
-```
-
-### Phase 3: Plugin Development
-
-#### Skills to Invoke
-- `backend-dev-guidelines` - Backend standards
-- `api-design-principles` - API design
-- `auth-implementation-patterns` - Authentication
-
-#### Actions
-1. Design plugin architecture
-2. Create plugin boilerplate
-3. Implement hooks (actions and filters)
-4. Create admin interfaces
-5. Add custom database tables
-6. Implement REST API endpoints
-7. Add settings and options pages
-
-#### Plugin Structure
+## Plugin development
+Structure:
 ```
 plugin-name/
-├── plugin-name.php
+├── plugin-name.php                 # plugin header + bootstrap
 ├── includes/
-│   ├── class-plugin-activator.php
-│   ├── class-plugin-deactivator.php
-│   ├── class-plugin-loader.php
-│   └── class-plugin.php
-├── admin/
-│   ├── class-plugin-admin.php
-│   ├── css/
-│   └── js/
-├── public/
-│   ├── class-plugin-public.php
-│   ├── css/
-│   └── js/
-└── languages/
+│   ├── class-plugin.php
+│   ├── class-loader.php
+│   ├── class-activator.php
+│   └── class-deactivator.php
+├── admin/{class-plugin-admin.php,css/,js/}
+├── public/{class-plugin-public.php,css/,js/}
+├── languages/
+└── vendor/
 ```
+- Use activation/deactivation hooks (`register_activation_hook`, `register_deactivation_hook`) for setup/teardown (e.g. custom table creation, flushing rewrite rules).
+- Build a loader class that centralizes `add_action`/`add_filter` registration instead of scattering hooks across files.
+- Admin UI: `add_menu_page`/`add_options_page` + Settings API (`register_setting`, sections, fields) rather than hand-rolled form handling.
+- Database: custom tables via `dbDelta()` in an activation routine; always use `$wpdb->prepare()` for queries with variables.
 
-#### Copy-Paste Prompts
-```
-Use @backend-dev-guidelines to create a WordPress plugin with proper architecture
-```
-
-### Phase 4: WooCommerce Integration
-
-#### Skills to Invoke
-- `payment-integration` - Payment processing
-- `stripe-integration` - Stripe payments
-- `billing-automation` - Billing workflows
-
-#### Actions
-1. Install and configure WooCommerce
-2. Create custom product types
-3. Customize checkout flow
-4. Integrate payment gateways
-5. Set up shipping methods
-6. Create custom order statuses
-7. Implement subscription products
-8. Add custom email templates
-
-#### Copy-Paste Prompts
-```
-Use @payment-integration to set up WooCommerce with Stripe
-```
-
-```
-Use @billing-automation to create subscription products in WooCommerce
-```
-
-### Phase 5: Performance Optimization
-
-#### Skills to Invoke
-- `web-performance-optimization` - Performance optimization
-- `database-optimizer` - Database optimization
-
-#### Actions
-1. Implement caching (object, page, browser)
-2. Optimize images (lazy loading, WebP)
-3. Minify and combine assets
-4. Enable CDN
-5. Optimize database queries
-6. Implement lazy loading
-7. Configure OPcache
-8. Set up Redis/Memcached
-
-#### Performance Checklist
-- [ ] Page load time < 3 seconds
-- [ ] Time to First Byte < 200ms
-- [ ] Largest Contentful Paint < 2.5s
-- [ ] Cumulative Layout Shift < 0.1
-- [ ] First Input Delay < 100ms
-
-#### Copy-Paste Prompts
-```
-Use @web-performance-optimization to audit and improve WordPress performance
-```
-
-### Phase 6: Security Hardening
-
-#### Skills to Invoke
-- `security-auditor` - Security audit
-- `wordpress-penetration-testing` - WordPress security testing
-- `sast-configuration` - Static analysis
-
-#### Actions
-1. Update WordPress core, themes, plugins
-2. Implement security headers
-3. Configure file permissions
-4. Set up firewall rules
-5. Enable two-factor authentication
-6. Implement rate limiting
-7. Configure security logging
-8. Set up malware scanning
-
-#### Security Checklist
-- [ ] WordPress core updated
-- [ ] All plugins/themes updated
-- [ ] Strong passwords enforced
-- [ ] Two-factor authentication enabled
-- [ ] Security headers configured
-- [ ] XML-RPC disabled or protected
-- [ ] File editing disabled
-- [ ] Database prefix changed
-- [ ] Regular backups configured
-
-#### Copy-Paste Prompts
-```
-Use @wordpress-penetration-testing to audit WordPress security
-```
-
-```
-Use @security-auditor to perform comprehensive security review
-```
-
-### Phase 7: Testing
-
-#### Skills to Invoke
-- `test-automator` - Test automation
-- `playwright-skill` - E2E testing
-- `webapp-testing` - Web app testing
-
-#### Actions
-1. Write unit tests for custom code
-2. Create integration tests
-3. Set up E2E tests
-4. Test cross-browser compatibility
-5. Test responsive design
-6. Performance testing
-7. Security testing
-
-#### Copy-Paste Prompts
-```
-Use @playwright-skill to create E2E tests for WordPress site
-```
-
-### Phase 8: Deployment
-
-#### Skills to Invoke
-- `deployment-engineer` - Deployment
-- `cicd-automation-workflow-automate` - CI/CD
-- `github-actions-templates` - GitHub Actions
-
-#### Actions
-1. Set up staging environment
-2. Configure deployment pipeline
-3. Set up database migrations
-4. Configure environment variables
-5. Enable maintenance mode during deployment
-6. Deploy to production
-7. Verify deployment
-8. Monitor post-deployment
-
-#### Copy-Paste Prompts
-```
-Use @deployment-engineer to set up WordPress deployment pipeline
-```
-
-## WordPress-Specific Workflows
-
-### Custom Post Type Development
+### Custom post type
 ```php
 register_post_type('book', [
     'labels' => [...],
@@ -281,39 +55,44 @@ register_post_type('book', [
 ]);
 ```
 
-### Custom REST API Endpoint
+### REST API endpoint
 ```php
-add_action('rest_api_init', function() {
+add_action('rest_api_init', function () {
     register_rest_route('myplugin/v1', '/books', [
         'methods' => 'GET',
         'callback' => 'get_books',
-        'permission_callback' => '__return_true',
+        'permission_callback' => '__return_true', // tighten for non-public data
     ]);
 });
 ```
 
-### WooCommerce Custom Product Type
+## WooCommerce
+- Store setup: run the setup wizard, then configure tax rules and currency before adding products.
+- Product types: variable products via attributes; custom product type by extending `WC_Product`:
 ```php
-add_action('init', function() {
-    class WC_Product_Custom extends WC_Product {
-        // Custom product implementation
-    }
+add_action('init', function () {
+    class WC_Product_Custom extends WC_Product { /* custom product implementation */ }
 });
 ```
+- Payment gateways: integrate via the relevant gateway's WordPress plugin/SDK (Stripe, PayPal) plus WooCommerce's payment gateway API — don't hand-roll checkout payment handling.
+- Shipping: configure zones first, then methods per zone; test free-shipping thresholds explicitly.
+- Subscriptions/bookings/memberships are WooCommerce extensions, not core — verify the extension is installed/active before writing code against its hooks.
 
-## Quality Gates
+## Security (apply to every plugin/theme, not just "security phase")
+- Verify nonces on every state-changing request (`wp_verify_nonce`, `check_admin_referer`).
+- Capability-check before any privileged action (`current_user_can(...)`), not just hiding the UI.
+- Sanitize all input (`sanitize_text_field`, `sanitize_email`, etc.) and escape all output (`esc_html`, `esc_attr`, `esc_url`) — sanitize on the way in, escape on the way out, always both.
+- Parameterize all custom queries via `$wpdb->prepare()` — never string-concatenate user input into SQL.
+- Disable file editing in production (`define('DISALLOW_FILE_EDIT', true)`), protect or disable XML-RPC if unused, change the default `wp_` table prefix on new installs.
+- Keep core/themes/plugins updated; enforce strong passwords and 2FA for admin accounts.
 
-Before moving to next phase, verify:
-- [ ] All custom code tested
-- [ ] Security scan passed
-- [ ] Performance targets met
-- [ ] Cross-browser tested
-- [ ] Mobile responsive verified
-- [ ] Accessibility checked (WCAG 2.1)
+## Performance
+- Cache at every layer that applies: object cache (Redis/Memcached), page cache, browser cache headers, OPcache for PHP.
+- Images: lazy-load, serve WebP/AVIF where possible, size appropriately instead of shipping full-resolution originals.
+- Minify/combine assets; use a CDN for static assets.
+- Targets to verify against: page load < 3s, TTFB < 200ms, LCP < 2.5s, CLS < 0.1, FID < 100ms.
 
-## Related Workflow Bundles
-
-- `development` - General web development
-- `security-audit` - Security testing
-- `testing-qa` - Testing workflow
-- `ecommerce` - E-commerce development
+## Quality gates
+- **Theme**: all templates render, block editor supported, responsive + accessible (WCAG 2.1), cross-browser tested.
+- **Plugin**: activates cleanly, hooks fire as expected, admin UI functional, inputs sanitized / outputs escaped, tests passing.
+- **WooCommerce**: products display correctly, checkout completes, payments process, shipping calculates, order emails send, mobile-responsive.

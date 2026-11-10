@@ -15,7 +15,7 @@ Critical rules:
    ("no projects.md/people.md yet — run /kiro:daily-briefing interactively once to
    bootstrap"), print that it was skipped, and exit 0. Do not invent projects or people
    to produce a briefing anyway.
-2. Follow the `synthesizing-daily-briefings` skill's five phases exactly, including the
+2. Follow `~/.claude/skill-library/synthesizing-daily-briefings/SKILL.md`'s five phases exactly, including the
    Capture Filter (Phase 5) and the evidence-required / dedup-across-sources rules
    (Phase 3).
 3. For each source (git, GitHub, Jira/Confluence, Slack), check it's actually reachable

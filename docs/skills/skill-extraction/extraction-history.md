@@ -64,7 +64,7 @@ All `/skill-extraction` sessions from harness inception through mid-May 2026. Or
 ### 5. https://github.com/pbakaus/impeccable
 
 **What was added:**
-- `~/.claude/skills/impeccable-audit/SKILL.md` — 27 deterministic anti-pattern rules across 7 domains: typography, color/contrast, spatial design, motion, interaction, responsive, UX writing
+- `~/.claude/skill-library/impeccable-audit/SKILL.md` — 27 deterministic anti-pattern rules across 7 domains: typography, color/contrast, spatial design, motion, interaction, responsive, UX writing
 - AI fingerprint detection for 7 common AI-generated UI patterns (gradient text, glassmorphism, colored left borders, gradient backgrounds, nested cards, identical card grids, pure white backgrounds)
 - Output: structured audit with PASS / NEEDS WORK / BLOCK verdict + file:line references
 
@@ -86,7 +86,7 @@ All `/skill-extraction` sessions from harness inception through mid-May 2026. Or
 **What was added:**
 - `hooks/claude/memory-discipline-hook.sh` — PreToolUse gate on `*/memory/*.md` writes; displays discipline rules before write executes
 - `hooks/claude/compaction-discipline-hook.sh` — PreCompact gate; injects boundary-timing principles (compact at phase boundaries, preserve artifact paths/decisions/open questions, merge not regenerate)
-- `~/.claude/skills/agent-memory-discipline/SKILL.md` — canonical reference
+- `~/.claude/skill-library/agent-memory-discipline/SKILL.md` — canonical reference
 - `~/.claude/skills/context-compression/SKILL.md` updated — new "Compaction Modes and Boundary Timing" section
 
 **Reasoning:** OpenAI cookbook identified memory contamination by case-specific facts as the #1 silent failure mode in long-running agents. Hook-based governance enforces rules automatically rather than relying on prompts that Claude might drift from.
@@ -111,7 +111,7 @@ All `/skill-extraction` sessions from harness inception through mid-May 2026. Or
 - `hooks/claude/gbrain-agent-spawn.sh` — PreToolUse on `Agent` tool; injects model-tier guidance (haiku=classification, sonnet=generation/subagents, opus=deep-reasoning-only) + background-routing pain signals
 - `hooks/claude/gbrain-memory-write.sh` — PreToolUse on `save_observation`; enforces compiled-truth two-zone structure (State section rewrite-in-place at top, Evidence append-only at bottom)
 - `hooks/claude/gbrain-external-search.sh` — PreToolUse on `WebFetch`/`WebSearch`; reminds to run memory-first lookup chain before reaching for external APIs
-- `~/.claude/skills/agent-memory-consolidation/SKILL.md` — episodic-first architecture, 3 failure modes (misgrouping, interference, overfitting), audit checklist
+- `~/.claude/skill-library/agent-memory-consolidation/SKILL.md` — episodic-first architecture, 3 failure modes (misgrouping, interference, overfitting), audit checklist
 
 **Reasoning:** Skills that must be manually invoked get skipped. Hook-based injection fires at the exact moment the protocol is relevant — no invocation needed. The memory consolidation skill addresses generative loop drift where iterative LLM rewrites degrade memory quality below no-memory baseline.
 
@@ -128,7 +128,7 @@ All `/skill-extraction` sessions from harness inception through mid-May 2026. Or
 ### 11. https://code.claude.com/docs/en/goal (Claude Code `/goal` docs)
 
 **What was added:**
-- `~/.claude/skills/goal-mode/` directory created — skill for running any workflow in autonomous mode (Haiku evaluates completion condition after each turn, continues until met) vs interactive mode (permission steps, debuggable)
+- `~/.claude/skill-library/goal-mode/` directory created — skill for running any workflow in autonomous mode (Haiku evaluates completion condition after each turn, continues until met) vs interactive mode (permission steps, debuggable)
 
 **Reasoning:** Existing 53 development workflow skills all required manual step-by-step interaction. No skill covered the pattern of "run this until done without stopping." Goal-mode fills that gap using the built-in `/goal` primitive.
 
@@ -145,9 +145,9 @@ All `/skill-extraction` sessions from harness inception through mid-May 2026. Or
 ### 13. https://github.com/raindrop-ai/workshop...
 
 **What was added:**
-- `~/.claude/skills/raindrop-instrument-agent/SKILL.md`
-- `~/.claude/skills/raindrop-eval-loop/SKILL.md`
-- `~/.claude/skills/raindrop-agent-replay/SKILL.md`
+- `~/.claude/skill-library/raindrop-instrument-agent/SKILL.md`
+- `~/.claude/skill-library/raindrop-eval-loop/SKILL.md`
+- `~/.claude/skill-library/raindrop-agent-replay/SKILL.md`
 - Raindrop Workshop tab integrated into harness dashboard
 - Per-repo tracing configuration across all 3 registered projects
 
@@ -189,6 +189,40 @@ Side effect: #6 and #7 also paid down two entries of the no-regex debt ledger (`
 
 ---
 
+## Oct 1, 2026 — 4-Source Batch (pi, open-dot, @tvykruta thread, How I AI video)
+
+**Sources:** `earendil-works/pi` and `composio-community/open-dot` (READMEs, rung 1), the @tvykruta X thread via its codenewsletter archive (rung 1, partial: posts 8–10 missing; the link was labelled as a newsletter issue but is a single thread), and How I AI `dAIIaepNhQM` (John Lindquist on the Jev decision model, full transcript via rung 4). The user approved all items.
+
+**What was added (no new skills):**
+1. `kiro/settings/rules/tasks-generation.md` — refactor-first task ordering (@tvykruta "two steps, never one")
+2. `scripts/lib/pip-cooldown.sh` (+ test) wired into `lib/venv-tools.sh` and `lib/repo-venv.sh` — `P2D` release-age cooldown on every harness pip/uv install (pi `min-release-age`)
+3. `install.sh` — `impeccable@3.6.0` pin
+
+**Rejected:** open-dot entirely (see git/README.md). The How I AI Jev episode: it needs a third-party API key while harness LLM calls go only through `claude --print`; cheap bulk classification is already covered by `cheap-model-delegation`; and the multi-pass and decision-type tips only apply if you call Jev. This is the third Jev source rejected after the two on 2026-09-30.
+
+**Reasoning:** `better-call` is in the harness source but not installed in `~/.claude/skills` (`Skill("better-call")` returned "Unknown skill"), so #1 was scored by hand with its rubric, both reading orders: MERGE. #2 was first scoped to `.venv-tools` only. A run of `check-harness-deps.sh` showed `harness-requirements.txt` is empty and that `raindrop-ai` actually installs through `repo_pip_install`, so the cooldown moved into a shared lib that both paths use (3 call sites). That makes #2 a security fix for unpinned dependencies, an underserved area, not another generic software-engineering rule.
+
+**Open:** `better-call` not installed globally. Not covered by the cooldown: `headroom-setup.sh` `pip install --user` and the `.venv-tools` pip self-upgrade. A real network install with the cooldown was denied at the permission prompt, so it is verified with fake binaries only.
+
+---
+
+## Oct 12, 2026 — 12-Source Batch (4 subagents × 3 links, run inline)
+
+**Sources:** 13 links pasted, 12 unique. Three YouTube videos (`dAIIaepNhQM`, `l6GpUvPOVpM`, `T1dQhQAm8Tc`, all rung 4); four `archive.codenewsletter.ai` X-post mirrors (rung 1); four repos (`tester-army/e2e`, `steipete/agent-scripts`, `bastani-inc/atomic`, `composio-community/open-dot`, rung 3 via `gh api`); the claude.dev post "Building effective agent automations" (rung 1). The user approved both proposals.
+
+**What was added (no new skills):**
+1. `scripts/session/trust_score.py` — `auto-score` records an unreadable window (missing `observations.md`, `[detector-down]` in the window, commits with no `session-quality` row, unreadable git history) as `inconclusive` at `0.0` instead of a quiet day; `apply --unreadable SOURCE` for the judge path (claude.dev rule 2)
+2. `agents/kiro/session-judge.md` + `commands/kiro/daily-maintenance.md` — judge window bookmarked from the last trust-score record (capped at 7 days) instead of a fixed 24h; Step 1b readability check (claude.dev rules 1–2)
+3. `skills/skill-eval-gate/SKILL.md` Phase 3b — absolute catch test on ≥2 distinct bad references, ranking in both orders, different-tier judge; `judge_model` in `eval-verdict.json` (@sermakarevich evals article)
+
+**Rejected:** everything else; per-source reasons are in `docs/sources/articles/README.md` and `docs/sources/x/README.md`. `dAIIaepNhQM` is the **same** How I AI Jev video rejected on Oct 1 above, so it was re-read for nothing; check `extraction-history.md` for repeated video IDs before fetching. `open-dot` was likewise already logged on Oct 1.
+
+**Process notes:** all 4 subagents stalled on the 600s stream watchdog, twice each, even after a scoped resume. The work was redone inline. The resume instruction told them to wrap commands in `timeout 90`, but macOS has no `timeout` binary (exit 127). The @sermakarevich article was a 402 at rung 1 and recovered at rung 3 through `api.fxtwitter.com/<user>/status/<post-id>`, which returns X Article bodies. The judge-window snippet first used `[[`, which the lean-ctx allowlist blocks inside the routine, so it was rewritten with `sort`. The post-commit doc-sync bot committed the sources entry and its own doc updates in `9b70117`, between the code commits.
+
+**Open:** the `skill-eval-gate` augmentation could not be validated against a past LLM-rubric run, because no `eval-verdict.json` exists in either skill tree. Running the gate on its own edited text would be circular. The first real LLM-rubric run after 2026-10-12 is its validation.
+
+---
+
 ## Summary Table
 
 | Date | URL | Skill/Artifact Created | Type |
@@ -209,3 +243,6 @@ Side effect: #6 and #7 also paid down two entries of the no-regex debt ledger (`
 | May 18 | raindrop-ai/workshop | 3 Raindrop skills + Workshop dashboard integration | Skill + Integration |
 | May 18 | huggingface.co/continuous_eval | `skill-extraction` SKILL.md updated (hook candidate assessment phase) | Skill update |
 | Sep 30 | 18-link newsletter batch | 9 augmentations: `model-tiers`, `skill-eval-gate`, `auditing-token-spend`, `synthesizing-daily-briefings`, `hook-design` (+ `hook-replay.py`), `autoresearch-agent`; `token-forensics.py`, `startup-payload-audit.sh`, `prompt-quality-check.sh` | Skill + Script + Hook updates |
+| Oct 1 | pi, open-dot, @tvykruta, How I AI | `tasks-generation.md` refactor-first rule; `lib/pip-cooldown.sh` (+ test); `impeccable@3.6.0` pin | Rule + Script lib + Install pin |
+| Oct 12 | 12-link batch (claude.dev automations, @sermakarevich evals, +10 rejected) | `trust_score.py` unreadable-window guard (+7 tests); judge window bookmark + Step 1b; `skill-eval-gate` Phase 3b catch test + `judge_model` | Script + Agent/Command + Skill updates |
+| Oct 21 | 12-link batch (Fowler harness cost, Cloudflare inference, +10 rejected, 1 unresolved) | `lib/run-bounded.sh` (+15 tests) wired into every `daily-orchestrator.sh` step; model-router Open Question 5 | Script lib + Orchestrator + Spec question |

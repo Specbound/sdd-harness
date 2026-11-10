@@ -70,7 +70,7 @@ Look for the same `applies_when` shape recurring across ≥2 distinct dates.
 
 ### Step 2: Apply the Three-Part Test
 
-For each candidate from Step 1, read [`writing-behavior-specs`](../../skills/writing-behavior-specs/SKILL.md) → [deciding-what-to-save.md](../../skills/writing-behavior-specs/references/deciding-what-to-save.md) and check all three:
+For each candidate from Step 1, read `~/.claude/skill-library/writing-behavior-specs/SKILL.md` → `~/.claude/skill-library/writing-behavior-specs/references/deciding-what-to-save.md` and check all three:
 
 1. Recognizable situation class
 2. Meaningful choice (not tool syntax, not a one-off procedural detail)

@@ -22,6 +22,14 @@ Framing note: per the taxonomy in *Self-Improvements in Modern Agentic Systems* 
 - Creating a new skill — use `skill-extraction` or `kiro:spec-quick` instead
 - The weekly report hasn't run yet (check `git log -- reports/skill-curation-report.md`)
 
+**Two-tier model (see `docs/skills/SKILL-HIERARCHY.md`).** Only the Listed tier
+(`~/.claude/skills/`, the ~29 masters + pinned skills) costs per-prompt budget — that is the
+correct scope for the description-budget audit below. The ~560 Library skills
+(`~/.claude/skill-library/`) are not listed and do not count; do not "fix" the budget by
+deleting them. Merges/deletes go through `scripts/routines/skill-write.sh` /
+`skill-delete.sh` (tier-aware); after merging a Library skill away, also drop its row from the
+owning master's router table in `skills/<master>/SKILL.md`.
+
 ---
 
 ## Workflow

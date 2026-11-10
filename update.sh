@@ -158,12 +158,7 @@ do_update() {
   # --- Sync harness skills + global commands (runs once per update, not per project) ---
   if [ "${_SDD_GLOBAL_SYNCED:-0}" != "1" ]; then
     if [ -d "$HARNESS_DIR/skills" ]; then
-      mkdir -p "$HOME/.claude/skills"
-      for skill_dir in "$HARNESS_DIR/skills"/*/; do
-        [ -d "$skill_dir" ] || continue
-        sync_dir "${skill_dir%/}" "$HOME/.claude/skills"
-      done
-      echo "  Harness skills synced to ~/.claude/skills/"
+      bash "$HARNESS_DIR/scripts/setup/sync-skills.sh" "$HARNESS_DIR"
     fi
     if [ -d "$HARNESS_DIR/commands/global" ]; then
       mkdir -p "$HOME/.claude/commands"
@@ -349,6 +344,12 @@ echo ""
 echo "Refreshing headroom context compression setup..."
 bash "$HARNESS_DIR/scripts/setup/headroom-setup.sh" || \
   echo "  WARNING: setup/headroom-setup.sh returned non-zero — re-run manually if needed."
+
+# Refresh model router (sentinel + worker services) for all repos.
+echo ""
+echo "Refreshing model router setup..."
+bash "$HARNESS_DIR/scripts/setup/router-setup.sh" || \
+  echo "  WARNING: setup/router-setup.sh returned non-zero — re-run manually if needed."
 
 # Refresh liteparse document parser install (owned in a dedicated >=3.10 venv).
 echo ""

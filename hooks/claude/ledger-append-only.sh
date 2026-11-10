@@ -33,32 +33,6 @@ set -euo pipefail
 
 EVENT=$(cat)
 
-TOOL_NAME=$(echo "$EVENT" | python3 -c "
-import json, sys
-try:
-    e = json.load(sys.stdin)
-    print(e.get('tool_name', ''))
-except Exception:
-    print('')
-" 2>/dev/null || echo "")
-
-case "$TOOL_NAME" in
-    Write|Edit|MultiEdit) ;;
-    *) exit 0 ;;
-esac
-
-FILE_PATH=$(echo "$EVENT" | python3 -c "
-import json, sys
-try:
-    e = json.load(sys.stdin)
-    inp = e.get('tool_input', {})
-    print(inp.get('file_path', inp.get('path', '')))
-except Exception:
-    print('')
-" 2>/dev/null || echo "")
-
-[[ -z "$FILE_PATH" ]] && exit 0
-
 # Literal suffix match only — no regex, per repo-wide ban (ruff.toml TID251).
 PROTECTED_LEDGERS=(
     ".claude/memory/trust-score.jsonl"
@@ -67,6 +41,45 @@ PROTECTED_LEDGERS=(
     ".claude/memory/learnings.jsonl"
     ".claude/memory/observations.md"
 )
+
+# FAIL-CLOSED: if python3 is missing or the event is malformed, the parse exits
+# non-zero. That used to collapse to an empty string and `exit 0` — a broken
+# interpreter silently disabled the block. Now a failed parse blocks whenever
+# the raw event names a protected ledger at all; events that don't are allowed,
+# so a broken python3 does not block every Write. (Perplexity, "How we engineer
+# safer agents", 2026-09-29: a safeguard that can be skipped is not one.)
+fail_closed() {
+    local ledger
+    for ledger in "${PROTECTED_LEDGERS[@]}"; do
+        if [[ "$EVENT" == *"$ledger"* ]]; then
+            echo "BLOCKED: ledger-append-only.sh could not verify this edit" >&2
+            echo "Reason: $1" >&2
+            echo "The event mentions protected ledger $ledger; fix the guard's environment (python3 on PATH, well-formed event)." >&2
+            exit 2
+        fi
+    done
+    exit 0
+}
+
+TOOL_NAME=$(echo "$EVENT" | python3 -c "
+import json, sys
+e = json.load(sys.stdin)
+print(e.get('tool_name', ''))
+" 2>/dev/null) || fail_closed "could not parse the hook event (python3 missing or malformed JSON)"
+
+case "$TOOL_NAME" in
+    Write|Edit|MultiEdit) ;;
+    *) exit 0 ;;
+esac
+
+FILE_PATH=$(echo "$EVENT" | python3 -c "
+import json, sys
+e = json.load(sys.stdin)
+inp = e.get('tool_input', {})
+print(inp.get('file_path', inp.get('path', '')))
+" 2>/dev/null) || fail_closed "could not parse tool_input from the hook event"
+
+[[ -z "$FILE_PATH" ]] && exit 0
 
 MATCHED=""
 for ledger in "${PROTECTED_LEDGERS[@]}"; do

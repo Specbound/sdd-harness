@@ -1,6 +1,6 @@
 # Session Quality Rubric
 
-Behavioral rubric the `session-judge` agent uses to score the harness's own work over a window (typically the last 24 hours of `observations.md` plus any `[memory-gap]` entries).
+Behavioral rubric the `session-judge` agent uses to score the harness's own work over a window (from the last trust-score record to now, capped at 7 days, of `observations.md` plus any `[memory-gap]` entries).
 
 Single-user, single-scalar. Per-person trust batteries do not apply to this harness — there is one human per installed project.
 
@@ -50,6 +50,8 @@ These are scored deterministically from observation tags — no Judge pass neede
 
 `auto-score` is deterministic, so it submits its total as a **single** sample — the multi-sample spread gate that reconciles repeated judge runs is skipped, and the record reports `"spread": null` rather than `0.0`. Because the count is over observation tags, a routine that appended one `[judge]` observation per judge run would multiply every tag it cites; that is why only the caller appends, once, for all runs.
 
+A window scores to zero tags in two different ways: nothing happened, or the producers that write the tags were down. `auto-score` and the judge tell them apart before scoring. A missing `observations.md`, a `[detector-down]` row in the window, or commits with no `session-quality` row make the window **unreadable**: the day records `inconclusive` at `0.0` with the sources named, never as a quiet day.
+
 ## Judging Constraints
 
 - **No proposals.** The judge names what it sees and assigns a weight. It does not recommend fixes, rewrite memories, or edit rules. That is the reflector's job, run separately so the judge has no incentive to soften its own scoring.
@@ -75,4 +77,4 @@ These are scored deterministically from observation tags — no Judge pass neede
 
 `score_delta` is the sum of all weights, clamped to `[-4.5, +4.5]`. When the caller collects several runs, each run's `score_delta` is passed to `trust_score.py apply` as its own `--delta`; the median is applied, and a spread above 2.0 across the samples is recorded as inconclusive with a delta of `0.0`.
 
-_Last synced: 2026-09-03_
+_Last synced: 2026-10-12_

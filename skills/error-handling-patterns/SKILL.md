@@ -46,6 +46,13 @@ Exit 0 ≠ success if errors print to stdout. Parse output for errors before mar
 ### ❌ Substring-matching injected content in serialized output
 Checking for error substrings in responses with injected content (hot-memory.md, interpolated variables) causes false positives. Validate actual status fields, not text content. (source: 2026-09-28 [judge])
 
+### ❌ Misinterpreting operational markers as defects
+Sentinel written at routine-start is idempotent-by-design, not a defect. Read the intended pattern before prescribing a fix. (source: 2026-10-04 [insight])
+
+### ❌ Accepting repeated mislabeling from a tool's classification logic
+When a tool repeatedly mislabels outputs (3+ verified instances over weeks) despite anti-pattern being documented, classification logic requires structural fix, not re-documentation. Escalate for repair before trusting subsequent output. (source: 2026-10-06 [judge] drain)
+
 ## Resources
 
 - `resources/implementation-playbook.md` for detailed patterns and examples.
+_Last synced: 2026-10-06

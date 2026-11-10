@@ -63,7 +63,7 @@ For each drain in the verdict, identify the domain:
 grep -o 'superpowers:[a-z-]*\|kiro:[a-z-]*' .claude/memory/observations.md 2>/dev/null | sort -u
 ```
 
-Deduplicate across all three sources. Cap candidate list at 5 skills. Skip any skill that doesn't exist in `~/.claude/skills/`.
+Deduplicate across all three sources. Cap candidate list at 5 skills. Skip any skill that exists in neither install tier — `~/.claude/skills/` (listed) nor `~/.claude/skill-library/` (on-demand). Most skills live in the library tier; see `docs/skills/SKILL-HIERARCHY.md`.
 
 ### Step 1.5: Load Human-Feedback Memories (highest-trust evidence)
 
@@ -91,7 +91,7 @@ This is Warp's self-improvement loop made explicit: the human override is the go
 
 For each candidate skill, verify it exists:
 ```bash
-ls ~/.claude/skills/<skill-name>/SKILL.md 2>/dev/null
+ls ~/.claude/skills/<skill-name>/SKILL.md ~/.claude/skill-library/<skill-name>/SKILL.md 2>/dev/null
 ```
 
 Skip if not found. Read the first 60 lines of each existing SKILL.md to understand current content.
@@ -171,16 +171,19 @@ Rules:
 ### Step 4: Apply and Log
 
 For each approved skill update:
-1. Read the current `~/.claude/skills/<skill-name>/SKILL.md`, apply the edit to its full text
+1. Read the current installed `SKILL.md` — `~/.claude/skill-library/<skill-name>/SKILL.md` for a
+   skill listed in `scripts/setup/skill-library.txt`, `~/.claude/skills/<skill-name>/SKILL.md`
+   otherwise — apply the edit to its full text
    in memory, write the result to a temp file, then apply with
    `.claude/scripts/routines/skill-write.sh <skill-name> <temp-file>`:
    - Anti-patterns go in an existing `## Anti-Patterns` section, or append one at the end
    - Learned patterns go in an existing `## Patterns` section, or append a `## Session-Learned Patterns` section at the end
    - "When to use" additions go in the existing when-to-use section
-   - **Never Edit/Write `~/.claude/skills/<name>/SKILL.md` directly.** Most skills here are
+   - **Never Edit/Write the installed `SKILL.md` directly** (either tier). Most skills there are
      synced from this repo's `skills/<name>/` by `update.sh` on a 4h launchd tick, regardless
      of session activity — a direct edit to the installed copy alone is silently reverted by
-     the next tick. `skill-write.sh` updates both copies and keeps a timestamped backup.
+     the next tick. `skill-write.sh` updates both copies, picks the right tier from the
+     manifest, and keeps a timestamped backup.
 
 2. Append a `[skill-update]` observation to `.claude/memory/observations.md`:
    ```
@@ -217,6 +220,6 @@ No skill-relevant drains or invocations found in today's observations.
 - **Max 3 skills/day**: Prevents skill file churn from noisy judge verdicts
 - **150-char limit per addition**: Forces concise, high-signal additions
 - **Harness-scope by default**: Prefer augmenting skills the harness actively uses over community skills
-- **Skip on missing file**: If `~/.claude/skills/<name>/SKILL.md` does not exist, skip silently
+- **Skip on missing file**: If the skill's `SKILL.md` exists in neither `~/.claude/skills/<name>/` nor `~/.claude/skill-library/<name>/`, skip silently
 
 **Note**: You execute tasks autonomously. Return final report only when complete.

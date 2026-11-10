@@ -452,8 +452,11 @@ install_global_tools() {
   elif command -v impeccable >/dev/null 2>&1; then
     ok "impeccable already installed"
   else
-    if confirm "Install impeccable globally?  (npm install -g impeccable)"; then
-      npm install -g impeccable
+    # Pinned: an unpinned `npm install -g` takes whatever was published today, and
+    # npm 10 has no min-release-age cooldown to fall back on. Bump deliberately.
+    IMPECCABLE_VERSION="3.6.0"
+    if confirm "Install impeccable globally?  (pinned npm install -g impeccable@$IMPECCABLE_VERSION)"; then
+      npm install -g "impeccable@$IMPECCABLE_VERSION"
       refresh_tool_path
       ok "impeccable installed"
     else
@@ -836,14 +839,9 @@ install_globals() {
   # --- Serena MCP server: user scope, pinned release (see script header) ---
   bash "$HARNESS_DIR/scripts/setup/serena-reconcile.sh" --global || true
 
-  # --- Install harness skills globally ---
+  # --- Install harness skills globally (split listed vs on-demand library) ---
   if [ -d "$HARNESS_DIR/skills" ]; then
-    mkdir -p "$HOME/.claude/skills"
-    for skill_dir in "$HARNESS_DIR/skills"/*/; do
-      [ -d "$skill_dir" ] || continue
-      sync_dir "${skill_dir%/}" "$HOME/.claude/skills"
-    done
-    echo "  Harness skills installed to ~/.claude/skills/"
+    bash "$HARNESS_DIR/scripts/setup/sync-skills.sh" "$HARNESS_DIR"
   fi
 
   # --- Install global hooks (caveman, lean-ctx) to ~/.claude/hooks/ ---
@@ -956,6 +954,12 @@ install_globals() {
   echo "Setting up headroom ctx compression..."
   bash "$HARNESS_DIR/scripts/setup/headroom-setup.sh" || \
     echo "  WARNING: setup/headroom-setup.sh returned non-zero — re-run manually if needed."
+
+  # --- Model router (sentinel + worker services) ---
+  echo ""
+  echo "Setting up model router..."
+  bash "$HARNESS_DIR/scripts/setup/router-setup.sh" || \
+    echo "  WARNING: setup/router-setup.sh returned non-zero — re-run manually if needed."
 
   # --- LiteParse doc parser (owned in a dedicated >=3.10 venv) ---
   echo ""

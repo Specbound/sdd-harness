@@ -148,17 +148,40 @@ thing the gate never checks.
 
 Validate it before trusting a single score:
 
-1. Build **two reference answers** for one real scenario: a deliberately bad one
-   (over-built, or minimal-but-incomplete — whichever failure the skill is supposed
-   to prevent) and a clearly good one.
-2. Ask the judge to rank them, with the same rubric, same model, temperature 0.
-3. **If the judge does not rank the good one strictly above the bad one, discard the
-   entire run.** Fix the rubric and start over. Scores from an unvalidated judge are
-   not weak evidence; they are no evidence.
+1. Build **reference answers** for one real scenario: one clearly good answer and
+   **at least two bad ones, each showing a different failure** the skill is supposed
+   to prevent (over-built, minimal-but-incomplete, the wrong construct — whichever
+   apply). One bad answer tests one failure; the judge is only validated for the
+   failures it was shown.
+2. **Absolute catch test.** Score each reference on its own, with the same rubric, same
+   model, temperature 0. Every bad one must score **FAIL** and the good one **PASS**.
+   Report the **catch rate** (bad scored FAIL / bad total) and the **false-fail rate**
+   (good scored FAIL). Anything below 100% catch, or a false-fail, discards the run —
+   fix the rubric and start over. Ranking is not enough: the gate scores each run
+   pass/fail in absolute terms, and a lenient judge can rank good above bad while
+   passing both. Raw agreement hides this too, because when most outputs pass, a judge
+   that passes everything agrees most of the time (Makarevych's worked example: 60%
+   agreement against a 57% always-pass baseline, kappa 0.15, 10 of 26 bad replies
+   caught).
+3. **Rank in both orders.** Ask the judge to pick the better of good vs. one bad
+   reference, then again with the two swapped. **If it does not pick the good one both
+   times, discard the entire run** — it is choosing by position, or cannot see the
+   difference. Scores from an unvalidated judge are not weak evidence; they are no
+   evidence.
 4. **Score one real treatment output twice** with the same rubric and model. If the
    verdict flips between the two, the judge is noise at this rubric — discard the run,
-   tighten the rubric, and revalidate. Ranking good above bad proves the judge can see
-   the difference; agreeing with itself proves its scores are stable enough to count.
+   tighten the rubric, and revalidate. The catch test proves the judge sees the
+   failures; agreeing with itself proves its scores are stable enough to count.
+   Self-agreement alone is not validation — a judge can be consistently wrong.
+5. **Judge on a different tier than the producer** where one is available (e.g. a
+   Sonnet judge for Opus runs). Judges prefer their own model's outputs; this harness
+   is Claude-only, so tier diversity is the available mitigation. Record the judge
+   model next to the verdict either way — a score without its judge's identity
+   cannot be re-audited when the judge changes.
+
+Source: Sergii Makarevych, "Evals: how to know whether an AI system actually works"
+(2026-10-04) — "the grader is part of the system you must test". See
+`docs/sources/x/README.md`.
 
 **Pair every quality judgement with a completeness judgement.** A skill can win on
 any "is this lean / clean / focused" rubric by producing less — declining work,
@@ -222,6 +245,7 @@ On **PASS**, write `eval-verdict.json` into the skill's own directory, beside it
   "scenarios": 3,
   "treatment_runs_per_scenario": 3,
   "measured_on_model": "<exact model ID the treatment runs executed under>",
+  "judge_model": "<model ID of the Phase 3b judge, or \"none\" when every check was deterministic>",
   "skill_md_sha256": "<sha256 of the exact SKILL.md bytes that were evaluated>"
 }
 ```
@@ -244,6 +268,14 @@ runs — not from whichever model happens to be reading this file. When the
 subagent model is genuinely not knowable, write `"unknown"` rather than guessing
 or omitting the field. Both read as "cannot be shown to still hold", which is
 correct; a guess reads as current, which is a lie the scan cannot detect.
+
+`judge_model` names the model that applied any LLM rubric (Phase 3b), or `"none"` when
+every scenario was scored deterministically. A judge is part of the measuring
+instrument: when it changes, its catch rate has to be re-audited, and a verdict
+that does not say which judge produced it cannot be. Verdicts written before
+2026-10-12 lack the field. No script reads it yet (`skill-validate-hook.sh` and
+`skill-eval-staleness.py` use `.get()` on their own keys), so its absence breaks
+nothing; it exists for the human or agent re-auditing a verdict.
 
 `scripts/skill-eval-staleness.py` scans every verdict against the running model
 and reports the ones that no longer describe what they claim to. It runs on the

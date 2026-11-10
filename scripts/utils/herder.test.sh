@@ -157,6 +157,45 @@ for label in ["boxB", "UPPER", "my repo/name", "2fix", "", "-x-", "a"*80, "Wörk
     )
 print(ok)')"
 
+# ── Prompt-box completion (/skill, @path) ────────────────────────────────────
+# Throwaway repo + throwaway HOME, so the answers depend only on this fixture and
+# not on whatever ~/.claude happens to hold on this machine.
+CTREE="$(mktemp -d)"
+mkdir -p "$CTREE/repo/.claude/skills/alpha-skill" "$CTREE/repo/.claude/commands/ns" \
+         "$CTREE/repo/src/deep" "$CTREE/home/.claude/skills/user-skill"
+printf -- '---\nname: alpha-skill\ndescription: >\n  folded line one\n  line two\n---\n' \
+  > "$CTREE/repo/.claude/skills/alpha-skill/SKILL.md"
+printf -- '---\ndescription: "namespaced cmd"\n---\n' > "$CTREE/repo/.claude/commands/ns/cmd.md"
+printf -- '---\ndescription: from home\n---\n' > "$CTREE/home/.claude/skills/user-skill/SKILL.md"
+touch "$CTREE/repo/README.md" "$CTREE/repo/src/deep/README.md" "$CTREE/repo/ignored.log"
+printf '*.log\n' > "$CTREE/repo/.gitignore"
+git -C "$CTREE/repo" init -q
+
+complete_py() {
+  (cd "$HERE" && HOME="$CTREE/home" python3 -c "
+import herder
+d = herder.complete('$CTREE/repo', '$1', '$2')
+print(' '.join(i['name'] + ('=' + i['description'] if i.get('description') else '') for i in d['items']))")
+}
+
+check "skills: project, nested command, user, folded description" \
+  "ns:cmd=namespaced cmd user-skill=from home alpha-skill=folded line one line two" \
+  "$(complete_py skill '')"
+check "skills: query filters" "ns:cmd=namespaced cmd" "$(complete_py skill 'ns:')"
+check "files: shallow match ranks first" \
+  "README.md src/deep/README.md" "$(complete_py file 'readme')"
+check "files: gitignored paths are not offered" "" "$(complete_py file 'log')"
+check "files: directories are offered with a trailing slash" \
+  "src/ src/deep/ src/deep/README.md" "$(complete_py file 'src/')"
+check "unknown kind is an error, not an empty list" "HerderError" \
+  "$(cd "$HERE" && python3 -c "
+import herder
+try:
+    herder.complete('$CTREE/repo', 'nope', '')
+except herder.HerderError:
+    print('HerderError')")"
+rm -rf "$CTREE"
+
 # ── Session attribution ──────────────────────────────────────────────────────
 # Regression for a live misattribution: resolution used to pick the newest
 # transcript modified after the spawn. With an interactive session already open

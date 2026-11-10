@@ -190,6 +190,21 @@ expansion (`$VAR`, `$(...)`), the guard cannot prove it is safe. For a small set
 high-stakes verbs, refuse and ask for the literal value — deliberate over-blocking on a
 narrow surface beats a guard that is confidently wrong.
 
+**Fail closed on the guard's own failures too.** The same rule applies one layer down, to
+the guard's machinery rather than its input: a missing interpreter, a malformed event, or
+a crashed analyzer must not resolve to allow. The fail-open shape is an error swallowed
+into an empty string (`|| echo ""`, `except: print('')`) followed by an emptiness check
+that exits 0 — a broken `python3` then disables the control with no signal anywhere.
+Scope the failure block to events that mention the protected surface, using a literal
+match, so a broken dependency does not refuse every call. Equally: a guard that computes
+a refusal must *propagate* it. A heredoc'd analyzer that exits 2 under a script ending in
+a bare `exit 0` has no effect at all — this harness's `agent-behavior-guard.sh` logged
+`"mode": "enforce"` findings while blocking nothing until 2026-10-01 for exactly that
+reason. Both halves were fixed in `git-destructive-guard-hook.sh`,
+`ledger-append-only.sh`, and `agent-behavior-guard.sh` on 2026-10-01, with a
+malformed-event and an interpreter-off-`PATH` case added to each hook's test suite —
+without those two cases a fail-open regression passes the suite.
+
 **Grant matching should be tiered.** If approvals are cached or reused, match secret- and
 credential-tier grants on *exact* command shape, and cheaper tiers loosely. Otherwise an
 approval granted for one command can be replayed by a rewrapped variant that smuggles
@@ -223,7 +238,7 @@ Level-up moves — how to raise the ceiling for a task stuck in a low quadrant, 
 
 - **L0 → smaller pieces:** decompose until sub-tasks fall into checkable or undoable quadrants; keep only the irreducible sensitive core at L0.
 - **L1 → proxy for judgment:** add an LLM-as-judge pass (a *separate* verification model — see Principle 3), or replace subjective eval with a scoped, measurable success contract (e.g. "iterate until conversion ≥3%") that turns taste into a check.
-- **L2 → guardrails as code:** don't default every irreversible action to a human gate — encode it (dry-run-by-default, scoped credentials, feature-flagged rollout, deny-list hard-blocks). This harness already does this for git/gh: `hooks/claude/agent-behavior-guard.sh` and the destructive-op PreToolUse block hard-fail rather than prompt a human per call.
+- **L2 → guardrails as code:** don't default every irreversible action to a human gate — encode it (dry-run-by-default, scoped credentials, feature-flagged rollout, deny-list hard-blocks). This harness already does this for git/gh: the destructive-op PreToolUse block hard-fails rather than prompting a human per call. `hooks/claude/agent-behavior-guard.sh` is the partial case worth knowing — it is monitor-only by default and only hard-blocks for rules named in `SDD_AGENT_GUARD_ENFORCE`, and that enforce path discarded its own verdict until 2026-10-01, so it logged findings while blocking nothing. Encoding a guardrail is not the same as having one enforced; check that the exit code reaches the tool call.
 - **L3 → sharpen the signal:** the bottleneck at this level isn't trust, it's knowing there's real work to do — invest in the thing that tells a scheduled/autonomous agent *when* to act (clear trigger conditions), not further loosening its permissions.
 
 This axis composes with the Ladder of Agency below — checkability narrows which rungs are reachable, reversibility (Step 4) narrows further within that.

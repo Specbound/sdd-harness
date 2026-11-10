@@ -106,6 +106,22 @@ Report:
 - Any files or feature areas with notably low keep rate (potential signal of prompt or context issues)
 - Trend direction vs last measurement
 
+## Canonical Calculators
+
+All three live in the harness source tree at `sdd-harness/scripts/session/` (tracked) and are copied to `.claude/scripts/session/` on install — read the harness copy if the `.claude/` one is missing. All emit JSON on stdout.
+
+| Script | Answers | Invocation |
+|---|---|---|
+| `_keep_rate_calc.py` | the headline rate — Steps 1–2 pinned so two readings stay comparable | `[--days N] [--repo PATH] [--json]` |
+| `_keep_rate_classified.py` | the same rate split by path class: `lockfile` (`pnpm-lock.yaml` / `package-lock.json` / `yarn.lock`), `infra` (dotfiles, build configs, `.github/`, `.claude/`, `*.md`, `*.txt`), `feature` (everything else) — this is the Step 4 Window Artifact Check and the infra-vs-feature split under Expected Churn Patterns, as a script | `[--days N] [--repo PATH] [--unpinned]` |
+| `_keep_rate_delta.py` | why a recorded figure moved — blames the cohort at two revs and reports per `(commit, path)` how many attributable lines were lost or gained between them | `--old <rev> --new <rev> [--days N] [--repo PATH]` |
+
+`_keep_rate_classified.py` reports per-class `added`/`kept`/`pct` plus `raw_with_lockfiles` and `ex_lockfile` totals, and a `basis` string to record alongside the value. Its added lines are classified by the path the commit touched while kept lines are classified by the `HEAD` path they live in now — a line can move between classes, so that asymmetry is inherent to blame-based survival and matches how the series has been recorded since 2026-09-24. Its `--unpinned` flag drops `-M -C` from blame and its output is **not** comparable with the recorded headline series.
+
+`_keep_rate_delta.py` examines only the paths that differ between the two revs, so it answers "the series moved — why?" without re-running the full calculator at the old rev. Output: `cohort_size`, `changed_paths_examined`, `net_delta`, and `movements` sorted most-negative first.
+
+Classified output is a separate series from the aggregate one — see the anti-pattern below on unit-comparability before setting one against the other.
+
 ## Expected Churn Patterns (Anti-Patterns)
 
 Not all low keep-rate signals indicate code quality issues:
@@ -140,6 +156,9 @@ Blaming only commit's own paths loses renamed files. Build blame map over all te
 ### ❌ Changing blame flags mid-measurement
 Per-commit reattribution reaches 4.7pt under `-M -C` (e.g. 8df5ed3 93.6→98.3). Pin flags consistently and record choice per Step 2. (source: 2026-08-31 [keep-rate])
 
+### ❌ Unbounded keep-rate window
+_keep_rate_calc.py has no upper-window default and scores full history (~7 years). Use --days to bound the window; --end-date not available. (source: 2026-10-02 [keep-rate])
+
 ### ❌ Root commit diffs without empty-tree fallback
 `git diff <commit>^..<commit>` fails on root commits; detect via `git rev-parse --verify "<commit>^"` and use empty-tree 4b825dc642cb6eb9a060e54bf8d69288fbee4904.
 
@@ -165,3 +184,17 @@ Calculator methodology changes (clamp logic, reattribution rules) invalidate com
 
 ### ✓ Durable script path verified
 Write to sdd-harness/scripts/session/ first, copy to .claude/. Verified at 2026-09-30 358-file reinstall. Still untracked, unsafe from git clean. (source: daa-llm-evaluation 2026-09-30 [keep-rate])
+
+### ❌ Treating classified calculator as unit-comparable with aggregate
+Classified split (feature/infra) incomparable with 81.66% aggregate series. Use only as baseline for future classified-mode runs. (source: daa-llm-evaluation 2026-10-02 [keep-rate])
+
+### ❌ Generated scripts defaulting to untracked state
+New calculator scripts (_keep_rate_classified.py, _keep_rate_delta.py) created untracked; same class as prior losses. Write to tracked path first. (source: daa-llm-evaluation 2026-10-02 [judge] drain 4)
+
+### ❌ Calculator parameters without bounds validation
+`_keep_rate_classified.py --days 300` returns commits:0 + all-null percentages silently; unbounded params produce undetectable meaningless results. (source: 2026-10-05 [keep-rate])
+### ❌ Using --days flag to bound window lookback (supersedes line 143-144)
+`--days` trims the recent end (grace floor), not a lookback bound. Comparability comes from stable md5 + unmoved HEAD. (source: 2026-10-04 [keep-rate])
+
+### ✓ Record calculator md5 alongside rate
+Without md5 hash and HEAD hash recorded, "stable flags" claims become unverifiable. Record both with each measurement. (source: 2026-10-07 [keep-rate])

@@ -249,7 +249,9 @@ sdd-harness/
 │   │   ├── micro_reflect.py        #   Extracts durable facts → [auto-learn] in hot-memory.md
 │   │   ├── _archive_obs.py         #   Archives whole dates out of observations.md into glacier/ — selection is BY DATE, never by count, so a concurrent same-day append can't be destroyed (today is refused)
 │   │   ├── _keep_rate_calc.py      #   Keep Rate calculator — the pinned recipe from skills/keep-rate/SKILL.md, extracted so two readings stay comparable (branch-only + --no-merges, one HEAD-wide blame map, -M -C, --line-porcelain)
-│   │   └── trust_score.py          #   Applies Judge score delta to hot-memory.md (numbers read from metrics.jsonl); `apply` accepts repeated --delta (one per judge run), applies the median, and records the day inconclusive with delta 0.0 when the samples spread past 2.0
+│   │   ├── _keep_rate_classified.py #   Keep Rate split by path class (lockfile / infra / feature) on the same pinned recipe — reports per-class pct plus raw_with_lockfiles and ex_lockfile totals; --unpinned drops -M -C and is NOT comparable with the recorded series
+│   │   ├── _keep_rate_delta.py      #   Attributes a keep-rate movement to the (commit, path) pairs that lost attributable lines between two revs — "the series moved, why?" without re-running the calculator at the old rev
+│   │   └── trust_score.py          #   Applies Judge score delta to hot-memory.md (numbers read from metrics.jsonl); `apply` accepts repeated --delta (one per judge run), applies the median, and records the day inconclusive with delta 0.0 when the samples spread past 2.0 or when any --unreadable source is named; `auto-score` names its own unreadable sources (missing observations.md, a [detector-down] row, commits with no session-quality row, unreadable git history) instead of scoring a zero tag count as a quiet day
 │   ├── setup/                    #   One-time project setup helpers
 │   │   ├── generate-project-stack.sh # Auto-detect tech stack
 │   │   ├── check-settings-json.sh    # Strict-JSON validation of settings files and templates
@@ -274,6 +276,8 @@ sdd-harness/
 │       ├── check-no-hardcoded-paths.sh  # Verify no machine-specific paths in harness sources (*.sh, *.py, *.json, *.template + the generated .claude/settings.json); run by the harness repo's .git/hooks/pre-commit
 │       ├── check-no-regex.py    #     Extends the repo-wide regex ban to Python embedded in shell heredocs, where ruff's TID251 cannot reach. Runs in .git/hooks/pre-commit against a shrinking debt ledger
 │       ├── no-regex-debt.txt    #     The ledger check-no-regex.py reads. Listed files are known debt and do not fail; a file that is fixed but still listed DOES fail, so the ledger can only shrink
+│       ├── check-skill-tiers.py #     Fails the commit when a Library-tier skill (listed in setup/skill-library.txt) is referenced by bare name instead of its ~/.claude/skill-library/<name>/SKILL.md path. Third guard in .git/hooks/pre-commit
+│       ├── skill-tier-allow.txt #     Exemption list read by check-skill-tiers.py — one "<repo-relative path> <skill name>" pair per line, for mentions a human reads rather than text an agent acts on
 │       └── check-fleet-registration.sh  # Find harness-installed repos missing from projects.txt (they get no routines and appear on no dashboard)
 │
 ├── hooks/                        # Claude Code and Git lifecycle hooks
@@ -285,7 +289,8 @@ sdd-harness/
 │   │   ├── test-integrity-guard.sh #   PostToolUse(Write/Edit/MultiEdit): soft gate flagging "gradient descent to green" — weakened test assertions, added skips, lowered coverage thresholds. Detection is literal-token membership plus pathlib, not regex (2026-09-03)
 │   │   ├── pr-evidence-hook.sh   #     PreToolUse(Bash): soft gate on `gh pr create` — nudges when the PR body carries no `## Evidence` section. Never blocks; the command is tokenized with shlex and matched token-by-token
 │   │   ├── setup-buffer-hook.sh  #     PostToolUse(Bash): buffers setup-pattern commands to .claude/memory/.setup-session-buffer.log (flushed by stop-hook)
-│   │   ├── skill-permissions-gate.sh # PostToolUse(Write/Edit): soft gate on */skills/*/SKILL.md — prompts agent-permissions-design review
+│   │   ├── skill-permissions-gate.sh # PostToolUse(Write/Edit): soft gate on */skills/*/SKILL.md — prompts a ~/.claude/skill-library/agent-permissions-design/SKILL.md review, named by installed path (Library tier, so Skill("agent-permissions-design") cannot resolve it)
+│   │   ├── skill-library-resolver.sh # PreToolUse(Skill): hard block (exit 2) when a Skill("name") call resolves to a Library-tier install absent from the Skill tool's index — names the ~/.claude/skill-library/<name>/SKILL.md path to read instead. Listed, plugin, and genuinely-missing names pass through
 │   │   ├── js-quality-gate-hook.sh #   PostToolUse(Write/Edit/MultiEdit): runs oxlint (or eslint) on .ts/.tsx/.js/.jsx writes — the JS half of the ruff gate; no-ops when neither linter is installed
 │   │   ├── todo-focus-hook.sh    #     PostToolUse(TodoWrite): names competing in_progress items when more than one is active (soft, exit 2)
 │   │   ├── claudemd-edit-notice.sh #   PostToolUse(Write/Edit/MultiEdit): says a just-written CLAUDE.md/CLAUDE.local.md/AGENTS.md is NOT active in the running session — instruction files are read once at session start (soft, exit 2). Basename match via jq, never substring. Opt out: SDD_SKIP_CLAUDEMD_NOTICE=1
@@ -302,7 +307,7 @@ sdd-harness/
 │   │   ├── caveman-statusline.sh #     Statusline command: emits [CAVEMAN] / [CAVEMAN:ULTRA] badge + live context-usage meter (color-coded %ctx)
 │   │   └── lean-ctx-rewrite.sh  #     PreToolUse(Bash): rewrites common shell commands to lean-ctx equivalents
 │   └── git/                      # Git lifecycle hooks (copied to .git/hooks/ on install/update)
-│       ├── pre-commit            #     Harness repo only: runs check-no-hardcoded-paths.sh (machine-specific paths) and check-no-regex.py (regex in embedded Python). Both run and both verdicts print — it does not short-circuit on the first failure — and either one blocks the commit. Never propagated to downstream projects
+│       ├── pre-commit            #     Harness repo only: runs check-no-hardcoded-paths.sh (machine-specific paths), check-no-regex.py (regex in embedded Python), and check-skill-tiers.py (Library-tier skill invoked by bare name). All run and every verdict prints — it does not short-circuit on the first failure — and any one blocks the commit. Never propagated to downstream projects
 │       └── post-commit           #     On commit: detects doc-sync/harness-update work, then runs it in ONE detached job (log: .git/post-commit-docsync.log) that auto-commits/pushes only the .md files touched; serialized on .git/post-commit-docsync.lock so concurrent commits skip instead of racing the git index
 │
 ├── templates/                    # Project-level templates
@@ -537,7 +542,7 @@ Based on the methodology from ["Automating Skill Acquisition through Large-Scale
 **3-stage pipeline**:
 1. **Structural analysis** — Map repo architecture and module boundaries
 2. **Semantic scoring** — Score against the 4-criteria rubric from the paper
-3. **SKILL.md generation** — Produce standalone skill files for `~/.claude/skills/`
+3. **SKILL.md generation** — Produce standalone skill files into the two-tier skill hierarchy (see **Skill Hierarchy** below): Library tier by default, registered under a domain master
 
 **Quality gates** (applied to every new skill before it is logged):
 - **Phase 5b — SkillOS Quality Gate**: scores task relevance, operational validity, content quality, and compression. Failures block completion until fixed.
@@ -564,6 +569,31 @@ Based on the methodology from ["Automating Skill Acquisition through Large-Scale
 | `diff-teach` | Compound Engineering v3.20 | Two-turn predict-then-reveal drill for diffs/commits/time-windows — closes comprehension debt on agent-written code the user never read line-by-line. Merged with incumbent `code-documentation-code-explain` |
 
 See [docs/skills/skill-extraction/README.md](docs/skills/skill-extraction/README.md) for the full extracted skills index.
+
+---
+
+## Skill Hierarchy
+
+The harness ships ~570 skills. Listing every one in every prompt cost ~13k tokens per API
+call, so skills install into **two tiers**, fronted by **14 domain-router "master" skills**:
+
+| Tier | Install path | In every prompt? | Holds |
+|---|---|---|---|
+| **Listed** | `~/.claude/skills/` | yes | the 14 masters + a small pinned set (~29 total) |
+| **Library** | `~/.claude/skill-library/` | no | everything else (~560), reached on demand |
+
+A master (`backend-dev`, `security`, `code-quality`, `ai-ml-agents`, …) holds no technique —
+its body is a routing table of its domain's sub-skills (`name | one-line | path`). An agent
+sees the 14 master descriptions, opens the relevant one(s), and **reads the sub-skill by path**;
+it may pull as many as the task needs. This cut the per-call skill-listing cost from ~13.3k to
+~5.0k while keeping every skill reachable.
+
+`scripts/setup/sync-skills.sh` (run by `install.sh`/`update.sh`) routes each skill by
+`scripts/setup/skill-library.txt`. New skills default to the Library tier; only skills
+hard-invoked by a hook/command via `Skill("x")` stay Listed; any other caller must name a
+Library skill by its `~/.claude/skill-library/<name>/SKILL.md` path (pre-commit
+`scripts/utils/check-skill-tiers.py` enforces this). Full rules, and how to register a
+new skill, are in **[docs/skills/SKILL-HIERARCHY.md](docs/skills/SKILL-HIERARCHY.md)**.
 
 ---
 
@@ -688,7 +718,7 @@ echo 'bash "$(git rev-parse --show-toplevel)/.claude/hooks/scan-pii.sh" --staged
   >> .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit
 ```
 
-> **In the harness repo itself**, `.git/hooks/pre-commit` is owned by `hooks/git/pre-commit` (the hardcoded-path guard, and since 2026-09-03 the embedded-Python regex guard alongside it), which `install.sh` / `update.sh` rewrite on every run — a line appended there is lost at the next install or update. Add the scan-pii line to `hooks/git/pre-commit` in the source tree instead. In any other project the slot is free: the harness guard is deliberately not propagated downstream, and the installer leaves a pre-commit it doesn't recognise alone.
+> **In the harness repo itself**, `.git/hooks/pre-commit` is owned by `hooks/git/pre-commit` (the hardcoded-path guard, the embedded-Python regex guard since 2026-09-03, and the Library-tier skill-bare-name guard since 2026-10-04), which `install.sh` / `update.sh` rewrite on every run — a line appended there is lost at the next install or update. Add the scan-pii line to `hooks/git/pre-commit` in the source tree instead. In any other project the slot is free: the harness guard is deliberately not propagated downstream, and the installer leaves a pre-commit it doesn't recognise alone.
 
 See [docs/security/privacy-filter/README.md](docs/security/privacy-filter/README.md).
 
@@ -706,13 +736,13 @@ The integration adds three artifacts:
 
 ```bash
 # One-time CLI setup (enables the auto-scan hook)
-npm install -g impeccable
+npm install -g impeccable@3.6.0
 
 # On-demand audit
 /impeccable-audit [component name or "focus: motion"]
 ```
 
-The hook exits silently if the CLI is not installed — nothing blocks. Once installed, violations surface immediately after writing frontend files, before the next action.
+The version is pinned: `install.sh` installs `impeccable@$IMPECCABLE_VERSION` (3.6.0), because npm 10 offers no release-age cooldown and an unpinned global install takes whatever was published that day. The hook exits silently if the CLI is not installed — nothing blocks. Once installed, violations surface immediately after writing frontend files, before the next action.
 
 Key anti-patterns caught: `background-clip: text` gradient text, `backdrop-filter` glassmorphism, colored left borders, identical card grids, nested cards, pure white backgrounds (`#ffffff`), gray text on colored backgrounds, `ease-in`/`ease-out` easing, missing `:focus-visible` states.
 
@@ -753,11 +783,11 @@ Install once with Homebrew (`brew install rtk && rtk init -g`) and the global ho
 
 ### Session Start Hook (`hooks/claude/session-start-hook.sh`)
 
-Runs when a Claude Code session starts (SessionStart). First reads `$HOME/.sdd-harness-root` — the single stored pointer to the harness — and, if it names a directory that no longer exists, prints `[HARNESS-POINTER-STALE]` with the dead path and the fix (`bash <harness>/update.sh`), since a moved harness silently deactivates every cross-repo hook on the machine. Then self-heals `.claude/settings.json` by running `scripts/setup/repair-settings-json.py` (located via that same pointer) against the current project, ahead of every other check — Claude Code silently drops a malformed settings file, so every permission rule and hook in it stops working with no in-session error. When the repair changes something it prints `[SETTINGS-REPAIRED]` plus a note that this session's rules are inactive until the next session start; a healthy or missing file produces no output. Next, a headroom routing self-heal: `headroom-setup.sh` wires `ANTHROPIC_BASE_URL` into `~/.claude/settings.json` only after confirming the proxy is healthy, but nothing un-wires it if the proxy dies afterward, and headroom's own SessionStart hook re-asserts that routing every session, so a manual unset/edit doesn't stick. `scripts/utils/headroom-unwire-if-dead.py` runs against `~/.claude/settings.json` (bounded ~1.5s connect probe, so a dead proxy adds no noticeable session-start latency), stripping `ANTHROPIC_BASE_URL` when the routed host refuses the connection; a healthy or unrouted proxy is a silent no-op. Then two modes: (1) if no local `daily-runner.sh` is installed — checks if today's `[judge]` sentinel is absent from `observations.md` and asks Claude to run `/kiro:daily-maintenance`; (2) if `daily-runner.sh` is installed and stale (>24h or never ran) — fires it in the background via `nohup` silently, without consuming session context. Also checks if the per-repo CLAUDE.md review is >2 weeks stale (`.claude/memory/.last-claudemd-review`) and asks Claude to run `/claudemd-review` if so. Also surfaces a fresh (<24h) session-handoff snapshot at `.claude/memory/handoff/latest.md` — written by `scripts/session/write_handoff.py` from `compaction-discipline-hook.sh` and `gbrain-agent-spawn.sh` — with a reminder to read it before responding. Additionally runs a background headroom memory sync (`scripts/utils/sync-memories-to-headroom.py`) when headroom is installed — bidirectional: harness memories to headroom SQLite and new headroom extractions to MEMORY.md.
+Runs when a Claude Code session starts (SessionStart). First reads `$HOME/.sdd-harness-root` — the single stored pointer to the harness — and, if it names a directory that no longer exists, prints `[HARNESS-POINTER-STALE]` with the dead path and the fix (`bash <harness>/update.sh`), since a moved harness silently deactivates every cross-repo hook on the machine. Then self-heals `.claude/settings.json` by running `scripts/setup/repair-settings-json.py` (located via that same pointer) against the current project, ahead of every other check — Claude Code silently drops a malformed settings file, so every permission rule and hook in it stops working with no in-session error. When the repair changes something it prints `[SETTINGS-REPAIRED]` plus a note that this session's rules are inactive until the next session start; a healthy or missing file produces no output. Next, a headroom routing self-heal: `headroom-setup.sh` wires `ANTHROPIC_BASE_URL` into `~/.claude/settings.json` only after confirming the proxy is healthy, but nothing un-wires it if the proxy dies afterward, and headroom's own SessionStart hook re-asserts that routing every session, so a manual unset/edit doesn't stick. `scripts/utils/headroom-unwire-if-dead.py` runs against `~/.claude/settings.json` (bounded ~1.5s connect probe, so a dead proxy adds no noticeable session-start latency), stripping `ANTHROPIC_BASE_URL` when the routed host refuses the connection; a healthy or unrouted proxy is a silent no-op. Then two modes: (1) if no local `daily-runner.sh` is installed — checks if today's `[judge]` sentinel is absent from `observations.md` and asks Claude to run `/kiro:daily-maintenance`; (2) if `daily-runner.sh` is installed and stale (>24h or never ran) — fires it in the background via `nohup` silently, without consuming session context. Also checks if the per-repo CLAUDE.md review is >2 weeks stale (`.claude/memory/.last-claudemd-review`) and asks Claude to run `/claudemd-review` if so. Also surfaces a fresh (<24h) session-handoff snapshot at `.claude/memory/handoff/latest.md` — written by `scripts/session/write_handoff.py` from `compaction-discipline-hook.sh` and `gbrain-agent-spawn.sh` — with a reminder to read it before responding. Additionally runs a background headroom memory sync (`scripts/utils/sync-memories-to-headroom.py`) when headroom is installed — bidirectional: harness memories to headroom SQLite and new headroom extractions to MEMORY.md. Finally, when `~/.claude/skill-library/` exists, prints a one-line `[SKILL-LIBRARY]` notice: skills absent from the session's per-prompt listing may still be installed there as `~/.claude/skill-library/<name>/SKILL.md` and should be read before reporting a skill as missing — `hooks/claude/skill-library-resolver.sh` catches the same failure at the `Skill()` call site.
 
 ### Context Priming Hook (`hooks/claude/prompt-hook.sh`)
 
-Runs before every user prompt (UserPromptSubmit). Injects the contents of `hot-memory.md` into context so the agent always has current priorities, active specs, and recent decisions.
+Runs on UserPromptSubmit and injects the contents of `hot-memory.md` into context so the agent has current priorities, active specs, and recent decisions — but **not on every prompt**. hot-memory is ~2k tokens and each injection stays in the transcript, so injecting every time re-sends one more copy on every later API call. It injects on the first prompt of a session, then every `SDD_HOT_MEMORY_EVERY` prompts (default 10), and on the first prompt after a compaction (the summary may have dropped it). The per-session counter lives in `.claude/memory/.prompt-hook/<session_id>.json`, and counters untouched for a week are pruned on each new session. Fails **open**: an unreadable hook event, a bad `SDD_HOT_MEMORY_EVERY`, or a counter it cannot read or write all inject with the reason on stderr, because a missed injection is invisible while an extra one only costs tokens. No-ops if hot-memory is missing or empty. Tests: `hooks/claude/prompt-hook.test.sh`.
 
 ### Frontend Security Nudge (`hooks/claude/frontend-security-nudge.sh`)
 
@@ -769,7 +799,7 @@ Runs before every user prompt (UserPromptSubmit). When the prompt combines build
 
 ### Raindrop Best Practices (`hooks/claude/raindrop-best-practices.sh`)
 
-Fires before any Raindrop Workshop MCP tool call (`mcp__raindrop__` matcher). Injects five active-observability patterns: batch facets (multiple dimensions → one LLM call), facet-first summarization before clustering, 128K token cap on input, no-LLM nearest-summary classification, and long-tail sampling with HDBSCAN. Ensures trace analysis runs at a fraction of the naïve cost.
+Fires before any Raindrop Workshop MCP tool call (`mcp__raindrop__` matcher). Injects five active-observability patterns: batch facets (multiple dimensions → one LLM call), facet-first summarization before clustering, 128K token cap on input, no-LLM nearest-summary classification, and long-tail sampling with HDBSCAN. Ensures trace analysis runs at a fraction of the naïve cost. Its discovery-before-eval pointer names `~/.claude/skill-library/active-observability/SKILL.md` by installed path — that skill is Library tier, so a bare-name mention would dead-end.
 
 ### Headless Envelope (`hooks/claude/headless-envelope-hook.sh`)
 
@@ -1031,4 +1061,4 @@ The Model Cost section reads session data from `~/.claude/projects/*/`. Pricing 
 
 Private repository. Contact the maintainer for access.
 
-_Last synced: 2026-09-30_
+_Last synced: 2026-10-12_

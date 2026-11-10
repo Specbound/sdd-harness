@@ -176,7 +176,7 @@ The goal of the harness is to be self-sustaining. A skill the user must remember
 Before including any candidate in the proposal, apply the harness critic test. For each candidate, answer:
 
 1. **Already covered?** Does any existing skill, hook, script, or command cover >70% of this capability?
-   → If YES, do **not** immediately reject. Invoke `Skill("better-call")` to compare the challenger against the incumbent. Use its verdict to determine the proposal path (see Step 3f below). Never default to rejection just because something already exists — the incumbent isn't automatically better.
+   → If YES, do **not** immediately reject. Follow `~/.claude/skill-library/better-call/SKILL.md` to compare the challenger against the incumbent. Use its verdict to determine the proposal path (see Step 3f below). Never default to rejection just because something already exists — the incumbent isn't automatically better.
 2. **Hollow addition?** Does this add new *behavior*, or just new *text* the user could look up elsewhere? → If documentation only, skip.
 3. **Maintenance cost justified?** Will the harness be measurably better with this? Or is this a "nice to have" that adds noise? → If uncertain, skip.
 4. **Better as augmentation?** Could this be a single added section in an existing artifact rather than its own file? → Augment, don't create.
@@ -301,7 +301,7 @@ If any dimension fails, fix before proceeding:
 
 ### Phase 5c: Identity Alignment Check (for all new skills)
 
-After the SkillOS Quality Gate passes, invoke `Skill("agent-identity")` in **Mode B (skill identity check)**. This validates the new skill's identity sharpness against four dimensions:
+After the SkillOS Quality Gate passes, follow `~/.claude/skill-library/agent-identity/SKILL.md` in **Mode B (skill identity check)**. This validates the new skill's identity sharpness against four dimensions:
 
 1. **Description specificity** — Does the description predict WHEN the skill fires?
 2. **Trigger sharpness** — Are `When to Activate` conditions falsifiable?
@@ -322,7 +322,7 @@ Examples that warrant a companion verify skill:
 - Sampling output for correctness or plausibility
 - Checking logs, error output, or side effects
 
-If YES → invoke `Skill("verification-skill-authoring")` to create a companion `<domain>-verify` skill before proceeding to Phase 6.
+If YES → follow `~/.claude/skill-library/verification-skill-authoring/SKILL.md` to create a companion `<domain>-verify` skill before proceeding to Phase 6.
 
 If NO (pure logic, already covered by CI, or the skill itself IS a verification skill) → skip and proceed.
 

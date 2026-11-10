@@ -79,7 +79,7 @@ for f in "$HARNESS/.claude/settings.json" \
   [ -f "$f" ] || continue
   echo "=== $f"
   jq -r '.hooks // {} | to_entries[] | .value[] | (.hooks // [.])[] | .command' "$f" \
-    | grep -oE '[^ "]+\.(sh|js|py)'
+    | grep -oE '[^ "]+\.(sh|bash|zsh|c?js|mjs|ts|py)'
 done
 ```
 

@@ -21,7 +21,7 @@ Four platform-agnostic protocols are now active in this harness:
 
 ## Pattern 1: Memory-First Lookup
 
-**Skill:** `~/.claude/skills/memory-first-lookup/SKILL.md`
+**Skill:** `~/.claude/skill-library/memory-first-lookup/SKILL.md`
 **Hook:** `gbrain-external-search.sh` (fires on `WebFetch`, `WebSearch`)
 
 Before calling any external API, always check claude-mem first. The lookup chain:
@@ -39,7 +39,7 @@ Also applies when spawning agents: run memory lookup first, then include finding
 
 ## Pattern 2: Model Tiers
 
-**Skill:** `~/.claude/skills/model-tiers/SKILL.md`
+**Skill:** `~/.claude/skill-library/model-tiers/SKILL.md`
 **Hook:** `gbrain-agent-spawn.sh` (fires on every `Agent` call)
 
 | Tier | Model | Use for |
@@ -56,7 +56,7 @@ The non-obvious rule: **subagents run sonnet, not opus.** Subagents run multi-tu
 
 ## Pattern 3: Background Work Routing
 
-**Skill:** `~/.claude/skills/background-work-routing/SKILL.md`
+**Skill:** `~/.claude/skill-library/background-work-routing/SKILL.md`
 **Hook:** `gbrain-agent-spawn.sh` (fires on every `Agent` call)
 
 Default mode: **inline**. Switch to background only when a pain signal fires:
@@ -75,7 +75,7 @@ When ≥1 signal fires: offer the switch explicitly, don't switch silently.
 
 ## Pattern 4: Compiled Truth
 
-**Skill:** `~/.claude/skills/compiled-truth-pattern/SKILL.md`
+**Skill:** `~/.claude/skill-library/compiled-truth-pattern/SKILL.md`
 **Hook:** `gbrain-memory-write.sh` (fires on every `save_observation`)
 
 Every living memory observation has two zones:

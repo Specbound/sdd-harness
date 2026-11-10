@@ -31,8 +31,8 @@ VALIDATOR=".claude/scripts/pr/validate_review_json.py"
 
 mkdir -p "$REVIEW_DIR"
 
-PROMPT="Review PR #$PR_NUMBER using the gitnexus-pr-review skill (fall back to the
-code-reviewer skill if the GitNexus index is stale or unavailable). Write the
+PROMPT="Review PR #$PR_NUMBER following ~/.claude/skill-library/gitnexus-pr-review/SKILL.md (fall back to
+~/.claude/skill-library/code-reviewer/SKILL.md if the GitNexus index is stale or unavailable). Write the
 human-readable review to $OUT_MD using gitnexus-pr-review's Review Output Format.
 Then, per gitnexus-pr-review's Output Contract section, ALSO write the
 structured $OUT_JSON (review.json schema: verdict, body, comments[] with

@@ -30,7 +30,7 @@ If you catch yourself writing "the harness should...", "consider...", "memory ne
 ## Execution Protocol
 
 You will receive a prompt containing:
-- The window boundary (ISO timestamps, default: last 24h)
+- The window boundary (ISO timestamps; default: from the last trust-score record to now, capped at 7 days)
 - Paths to read
 
 ### Step 0: Load Context
@@ -43,7 +43,19 @@ You will receive a prompt containing:
 
 ### Step 1: Isolate the Window
 
-Filter observations to the target window (default last 24h). Reject entries already tagged `[judge]` within the window — they are prior verdicts, not new evidence.
+Filter observations to the target window (default: from the last trust-score record to now, capped at 7 days). Reject entries already tagged `[judge]` within the window — they are prior verdicts, not new evidence.
+
+A fixed "last 24h" lost every day a run was missed: a late run leaves a gap, an early run repeats items. The window starts where the last scored one ended instead.
+
+### Step 1b: Check the Window Was Readable
+
+Before scoring, confirm every input could be read. Each failed check names one unreadable source:
+
+- `.claude/memory/observations.md` is missing
+- a `[detector-down]` observation falls inside the window (drains could not be counted, so any charge may be hiding a drain)
+- `git log --since=<window start> --oneline` shows commits, but the window holds no `[session-quality]` observation and no `session-quality` row in `.claude/memory/metrics.jsonl` (the producer was down, not idle)
+
+If any source is unreadable, do not score: emit `score_delta: 0` with `"unreadable": ["<source>", ...]` and a summary naming them. A failed read is never a quiet day. The window still closes: its inputs do not backfill, so the next window starts after it rather than re-reading it forever.
 
 ### Step 2: Score Charges
 
@@ -95,6 +107,7 @@ Return the JSON verdict as the final message. Do not narrate.
     {"tag": "re-explanation", "evidence": "observations.md 2026-04-20 [memory-gap]", "weight": -2}
   ],
   "score_delta": -1.0,
+  "unreadable": [],
   "summary": "Strong root-cause fix offset by one re-explanation of the Jira project id."
 }
 ```
@@ -105,7 +118,7 @@ Also append the one-line `[judge]` observation to `observations.md` as described
 
 - **No evidence → no score.** If you cannot cite an observation or trace line, the entry is 0 and discarded.
 - **No write access beyond observations.md.** You do not edit hot-memory, patterns, or the rubric itself. Scoreboard updates are done by the orchestrator (`/kiro:daily-maintenance`), not by you.
-- **Empty window is valid.** If the window has no scorable activity, emit `{..., "score_delta": 0, "summary": "No meaningful activity in window."}` and append no observation.
+- **Empty window is valid only if readable.** If Step 1b found no unreadable source and the window has no scorable activity, emit `{..., "score_delta": 0, "summary": "No meaningful activity in window."}` and append no observation. If Step 1b found one, the verdict carries `"unreadable"` instead and the summary says so — never "No meaningful activity".
 - **Duplicate run.** If a `[judge]` entry already exists for today, emit `{..., "score_delta": 0, "summary": "Already judged for this window (idempotent no-op)."}` and append nothing. **Exception: sample mode** (see Step 5) — when the caller has told you not to append, this rule is suspended and you score the window normally. Otherwise runs 2 and 3 of a 3-sample batch would no-op against run 1's entry.
 
 ## Trace

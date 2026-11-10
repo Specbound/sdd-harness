@@ -1,6 +1,6 @@
 <!-- L0: Quick reference — all SDD commands with usage examples -->
 
-_Last synced: 2026-09-30_
+_Last synced: 2026-10-12_
 
 # SDD Usage Guide
 
@@ -409,7 +409,7 @@ Each setup script also **preflights** that the orchestrator can actually run und
 
 Pipeline:
 
-1. **`session-judge`, run 3×** — independent adversarial scorer. Reads the last 24h of `observations.md` + trace log, applies the rubric in `kiro/settings/rules/session-quality-rubric.md`, emits a JSON verdict (±1 charges, -2 drains, ±4.5%/day cap). **Proposes no fixes** — if the same agent scored and improved, it would optimize for score, not work.
+1. **`session-judge`, run 3×** — independent adversarial scorer. Reads `observations.md` + trace log since the last trust-score record (capped at 7 days), refuses to score a window whose inputs were unreadable (a `[detector-down]` row, commits with no session-quality row), applies the rubric in `kiro/settings/rules/session-quality-rubric.md`, emits a JSON verdict (±1 charges, -2 drains, ±4.5%/day cap). **Proposes no fixes** — if the same agent scored and improved, it would optimize for score, not work.
    The judge is an LLM at temperature > 0 and its verdict lands in a cumulative score nothing ever revisits, so a single draw is not a measurement — until this ran three times, "the score fell 4 points" and "the judge sampled differently" were the same observation. It is spawned **three times in a single message** (the runs are independent and read-only, so they run concurrently), with no run told about the others and no variation between prompts. Only the *caller* appends the `[judge]` observation, one line covering all three — three subagents each appending their own would triple-count every tag into `trust_score.py auto-score`, which counts tag occurrences. A run that fails is **missing**, not a vote for zero; substituting `0` for a crashed judge pulls the median toward no-change and manufactures agreement out of a failure.
 2. **`/kiro:reflect`** — consumes the Judge's drains as priority signals, converts them into new memory entries or pattern promotions.
 3. **`/kiro:housekeeping`** — prunes/archives observations, enforces memory caps.
@@ -429,6 +429,8 @@ Idempotent per calendar day (uses today's `[judge]` observation as the sentinel)
 The `## Harness Trust Score:` line at the top of `hot-memory.md` (e.g. `42.3% (▲ +0.8 today, 7d: ▼ -1.1)`) is a single-user health signal. **It never gates harness behavior** — spec phase gates still require explicit human approval regardless of score. Adapted from @nityeshaga's "trust battery" design (April 2026) but scoped down: one battery per project (single developer), informational only, no autonomy tiers.
 
 Starts at 20% on fresh install. Daily cap ±4.5%. History lives in `.claude/memory/trust-score.jsonl` (one record per nightly run). The `auto-score` command incorporates a **session success ratio**: uncorrected sessions (no `session-quality ≤ 2/5` or `memory-gap` on that day) act as a multiplier on existing signals and contribute a ±1.0 baseline — so uneventful sessions now passively charge the battery rather than contributing zero.
+
+That passive credit is only honest when the window was actually readable, so `auto-score` checks first: a missing `observations.md`, a `[detector-down]` row in the window, commits with no `session-quality` row, or git history it cannot read each record the day `inconclusive` at `0.0`, with the sources named in the record's `unreadable` field. Before this, a dead detector produced the same zero tag count as a quiet day and collected the `+1.0` — 2026-10-11 is the recorded instance. The judge path reaches the same state through `apply --unreadable SOURCE`, repeatable once per source. An inconclusive record is not a problem to fix on the score side; fix the named producer.
 
 ### Opt out
 
@@ -567,7 +569,7 @@ Generates skills from an approved extraction plan, or runs the full pipeline wit
 /kiro:skill-extract https://github.com/org/repo -y
 ```
 
-Output: `~/.claude/skills/<name>/SKILL.md` for each extracted skill.
+Output: `~/.claude/skill-library/<name>/SKILL.md` for each extracted skill (Library tier; a row is added to the owning domain master — see `docs/skills/SKILL-HIERARCHY.md`).
 
 Every new skill passes quality gates and a companion check before it is logged to the sources index:
 - **Phase 5b — SkillOS Quality Gate**: task relevance, operational validity, content quality, compression (≤5,000 words). Failures block completion.
@@ -647,15 +649,19 @@ The **cache-cost stat card** shows what share of a session's token spend was cac
 
 Backed by [Herdr](https://herdr.dev) via `scripts/utils/herder.py`. `herdr server` is a headless daemon needing no TTY, and every `herdr workspace|tab|pane|agent` subcommand answers with JSON on stdout, so nothing in this path pattern-matches terminal text. It is used instead of the `claude --print` primitive the skill-curator endpoints use because `--print` is a one-shot pipe with nothing to attach to; a Herdr-started session can be joined from a terminal mid-run with `herdr agent attach <name>`.
 
-The API endpoints (`/api/herder-status`, `-list`, `-options`, `-spawn`, `-prompt`, `-read`, `-stream`, `-stop`) are guarded by **two independent checks**, either of which alone is bypassable: a per-process `X-Herder-Token` that only the page served by this process holds, and an `Origin` allowlist. An *absent* Origin is allowed (browsers send none on same-origin GET/POST) while a *present but foreign* one is rejected, so a page that somehow learned the token still cannot drive the dashboard from another site.
+The API endpoints (`/api/herder-status`, `-list`, `-options`, `-spawn`, `-prompt`, `-read`, `-stream`, `-stop`, `-complete`) are guarded by **two independent checks**, either of which alone is bypassable: a per-process `X-Herder-Token` that only the page served by this process holds, and an `Origin` allowlist. An *absent* Origin is allowed (browsers send none on same-origin GET/POST) while a *present but foreign* one is rejected, so a page that somehow learned the token still cannot drive the dashboard from another site.
 
 **Talking to an agent (chat, not a popup).** Each agent card holds the conversation inline: a scrolling message feed, a reply `textarea` (Enter sends, Shift+Enter inserts a newline), a 📎 button that attaches `@filename` chips, and `send`. Attached files are appended to the outgoing prompt as a trailing `Files: @a @b` line, then the chips clear. The feed auto-scrolls only when you were already at the bottom, so reading back through history is not yanked forward by the next message. It renders assistant **text** events from `/api/herder-stream`; reasoning and tool-call events are not shown in the chat. Sending posts to `/api/herder-prompt` refreshes the feed immediately and again after 1s. With the **live tail** checkbox on, every card's feed refreshes on the 5s roster poll, not just an opened one.
+
+Agent text is rendered as **markdown** — headings, lists, fenced code, inline `code`, tables — because agents answer in markdown and escaped plain text read as one run-on paragraph. Parsing is line- and character-scanning only (no regex, per the repo-wide ban), and every piece of agent text still passes through `_hdEsc` before it reaches `innerHTML`. Chat text is clipped at 20,000 characters (`CHAT_TEXT_LIMIT`) rather than folded onto one line, so a long answer keeps its list and fence structure.
+
+**Prompt-box completion.** Both the spawn prompt and each reply box complete the way Claude Code's own input does: `/` at the start completes a skill or command, `@` at the start of any word completes a repo path. Candidates come from `/api/herder-complete` → `herder.complete()`, which reads the target repo off disk (project `.claude/` → user `~/.claude/` → plugins, namespaced `plugin:name`; nested commands as `/kiro:spec-init`) and lists files via `git ls-files --cached --others --exclude-standard`, so gitignored paths are never offered. Results are cached 30s per repo, ranked like a fuzzy finder with shallower-then-shorter tie-breaking, and capped at 50.
 
 The raw pane sits below the chat in a collapsed `raw pane` disclosure. Opening it populates the `<pre>` with the full raw session output via `herderUpdateChat` (refreshes on disclosure open and on live-tail 5s polls).
 
 Two undocumented Herdr behaviours are handled here. A spawned pane inherits `CLAUDE_CODE_CHILD_SESSION`, which turns transcript saving **off** — that would make every herder-spawned session invisible to `scripts/utils/token-forensics.py` and to `agents/kiro/session-judge.md`, so it is scrubbed both in the server env and per-workspace via `--env`. And `herdr agent read` returns raw pane text rather than a JSON envelope, with failures arriving as JSON on stderr, so both are handled separately from the normal JSON path.
 
-Known limitation: spawning into a repo Claude Code has never been opened in fails with `agent_not_ready`, because Claude stops on its first-run "do you trust the files in this folder?" prompt. Open that repo by hand once.
+Known limitation: spawning into a repo Claude Code has never been opened in fails with `agent_not_ready`, because Claude stops on an interactive startup dialog — the first-run "do you trust the files in this folder?" prompt, or "New MCP server found" when the repo's `.mcp.json` registers a server that has not been approved yet (seen 2026-10-01 right after GitNexus setup wrote one). The pane is read **before** the failed workspace is closed, so the error names the actual dialog and the card shows the captured prompt text in a red block instead of a bare `agent_not_ready`. Open that repo by hand once with `claude` and answer it.
 
 See `docs/workflow/superpowers/specs/2026-05-14-harness-dashboard-design.md` for the full section spec (gitignored — local only).
 
@@ -693,7 +699,7 @@ Traces emit whenever an instrumented agent processes a request:
 
 Triggered manually from the dashboard. Claude reads Workshop traces, writes `pytest` assertions from them, runs the tests, and auto-fixes failures (max 3 cycles). Budget ~5k–30k tokens.
 
-Skill: `~/.claude/skills/raindrop-eval-loop/SKILL.md`
+Skill: `~/.claude/skill-library/raindrop-eval-loop/SKILL.md`
 
 ### Instrumenting a new repo
 
@@ -725,8 +731,8 @@ Use before committing UI work, or when a component "looks AI-generated."
 If `impeccable` is installed globally, every Write/Edit to a frontend file (`.tsx`, `.jsx`, `.css`, `.vue`, `.svelte`, `.html`) is automatically scanned and violations are surfaced inline. No extra commands needed.
 
 ```bash
-# One-time setup
-npm install -g impeccable
+# One-time setup (pinned — same version install.sh installs)
+npm install -g impeccable@3.6.0
 ```
 
 ### Key anti-patterns flagged
@@ -849,19 +855,19 @@ Four protocols extracted from [garrytan/gbrain](https://github.com/garrytan/gbra
 
 ### The four patterns
 
-**Memory-First Lookup** (`~/.claude/skills/memory-first-lookup/`) — Always run `mcp__plugin_claude-mem_mcp-search__search` before reaching for external APIs. The lookup chain: keyword search → semantic search → get_observations → external only if memory is empty.
+**Memory-First Lookup** (`~/.claude/skill-library/memory-first-lookup/`) — Always run `mcp__plugin_claude-mem_mcp-search__search` before reaching for external APIs. The lookup chain: keyword search → semantic search → get_observations → external only if memory is empty.
 
-**Model Tiers** (`~/.claude/skills/model-tiers/`) — Match model to task type:
+**Model Tiers** (`~/.claude/skill-library/model-tiers/`) — Match model to task type:
 - `haiku-4-5` (`claude-haiku-4-5-20251001`) for classification, validation, dedup (utility)
 - `sonnet-5` (`claude-sonnet-5`) for generation, synthesis, agent work (default)
 - `opus-5` (`claude-opus-5`) only for deep multi-step reasoning (upgrade when sonnet consistently fails)
 - `fable-5` for long, multi-sitting autonomous sessions (`/model fable`)
 - Subagents always use `sonnet`, not opus — latency compounds in tool loops
 
-**Background Work Routing** (`~/.claude/skills/background-work-routing/`) — Stay inline unless a pain signal fires: gateway restart, state drop, parallel > 3, runtime > 5 min, or user frustration. Offer the switch explicitly; never switch silently.
+**Background Work Routing** (`~/.claude/skill-library/background-work-routing/`) — Stay inline unless a pain signal fires: gateway restart, state drop, parallel > 3, runtime > 5 min, or user frustration. Offer the switch explicitly; never switch silently.
 
-**Compiled Truth Pattern** (`~/.claude/skills/compiled-truth-pattern/`) — Every memory observation has two zones: `## State` (rewrite in place when evidence changes, each fact cited) and `## Evidence / Timeline` (append-only dated log, never edited).
+**Compiled Truth Pattern** (`~/.claude/skill-library/compiled-truth-pattern/`) — Every memory observation has two zones: `## State` (rewrite in place when evidence changes, each fact cited) and `## Evidence / Timeline` (append-only dated log, never edited).
 
 Full reference: `docs/gbrain-patterns/gbrain-patterns.md`
 
-_Last synced: 2026-09-30_
+_Last synced: 2026-10-12_

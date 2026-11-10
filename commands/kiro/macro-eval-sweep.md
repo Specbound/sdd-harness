@@ -23,7 +23,7 @@ mcp__raindrop__query_traces  →  SELECT COUNT(*) AS n FROM runs_with_hints;
 
 ## Step 1 — Load the methodology
 
-Invoke the `evaluation/macro` skill via the Skill tool and follow its five-phase workflow. The phases below bind that methodology to Raindrop's tables. The full SQL/scoring reference is in `~/.claude/skills/evaluation/references/pipeline-reference.md`.
+Read `~/.claude/skill-library/evaluation/macro/SKILL.md` and follow its five-phase workflow. The phases below bind that methodology to Raindrop's tables. The full SQL/scoring reference is in `~/.claude/skill-library/evaluation/references/pipeline-reference.md`.
 
 ## Step 2 — Population window (Phase 1)
 

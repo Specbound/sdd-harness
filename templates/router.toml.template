@@ -1,0 +1,80 @@
+# ~/.sdd-router/router.toml — shipped as a template, never with secrets.
+# Policy only: thresholds, lane->rung buckets, tier-family order, context-window
+# default, escalation bounds. No model ids, no api.typesafe.ai host, no secrets.
+# Model identity is discovered at runtime from the harness's pricing catalogue
+# (scripts/router/config.py), never declared here (R5.1).
+schema_version = 1
+
+[router]
+port = 8799
+# upstream is written by router-setup.sh from the value it replaces — never a
+# literal committed here.
+upstream = ""
+
+[classifier]
+backend        = "jeff"                      # jeff | julia1 | none
+base_url       = "http://127.0.0.1:8000"      # jeff's default port, loopback only
+# Name of the environment variable holding the bearer key — never the key
+# itself. The router reads this var name, then reads the var at call
+# time; no key value is ever written to this file.
+api_key_env    = "JEFF_API_KEY"
+timeout_ms     = 400
+circuit_open_s = 60
+scale_max      = 10
+
+[policy]
+# Thresholds lean pessimistic on purpose: a local classifier's accuracy is
+# weaker than a hosted one on reasoning-heavy items, which is exactly the
+# signal a down-route depends on. Correctness-first means a missed saving is
+# cheaper than a bad route.
+#
+# safe_default and long_context_model are filled in by router-setup.sh from
+# the harness's discovered catalogue — never a hand-written model id (R5.1).
+safe_default        = "<catalog key>"
+confidence_floor     = 0.55
+privacy_threshold    = 0.80
+long_context_tokens  = 60000
+long_context_model   = "<catalog key>"
+
+escalation_window_s      = 120   # re-ask window that counts as an escalation signal
+max_tiers_above_baseline = 1     # how far above the inbound model an escalation may climb
+
+# Family order, weakest/cheapest-class first. Hand-maintained but tiny and
+# rare to touch — a new model CLASS ships roughly annually, not per release.
+# A family absent here sorts after every listed one, by price alone among the
+# unlisted — so a brand-new family is still routable the day it appears in the
+# catalogue, just undifferentiated by rung until this list is updated.
+[tier_families]
+order = ["haiku", "sonnet", "opus", "fable", "mythos"]
+
+# Lanes map to a RUNG on the family+generation ladder — not to a model id and
+# not to raw price. rung 0 = weakest/cheapest rung, -1 = strongest. A new
+# model entering the pricing catalogue re-ranks the ladder with no edit here,
+# as long as its family is already listed in [tier_families] above.
+[policy.lanes.code]
+score_buckets = [
+  { max = 3, rung = 0 },
+  { max = 7, rung = 1 },
+  { max = 10, rung = -1 },
+]
+
+# The one fact the discovered catalogue does not carry: context window.
+# `default` applies to any model without an override below, so an unknown
+# model is never trusted with a request larger than it can hold (R5.7).
+[context_windows]
+default = 200000
+
+# Optional per-model overrides (disable an entry, or set a window for a
+# discovered id) and optional local models (slice 2) go here. Left empty in
+# the shipped template — no model id belongs in this file (R5.1, R9.4).
+# Example shape, commented out:
+#
+# [overrides."<discovered id>"]
+# enabled = false
+#
+# [local.<name>]
+# protocol       = "openai"
+# endpoint       = "http://127.0.0.1:11434/v1"
+# context_window = 32768
+# price_in       = 0.0
+# price_out      = 0.0
