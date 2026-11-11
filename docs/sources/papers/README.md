@@ -185,3 +185,21 @@ See also: [articles/README.md](../articles/README.md) — same 6-source batch, 2
 **Rejected:** replaying the daily-maintenance reflect loop (its inputs are free-text observations, nothing exact to replay); "only replace the incumbent if the candidate scores better" (already `harness-health-prompt.md` step c).
 
 See also: [articles/README.md](../articles/README.md) — same 18-source batch, 2026-09-30.
+
+---
+
+## You Don't Need Long Context
+**arXiv:** 2611.05306
+**Year:** 2026 | **Authors:** Belcak et al. (NVIDIA)
+**Added:** 2026-11-11
+
+**Retrieval:** ok — abstract page and `arxiv.org/html/2611.05306v1`. The Appendix G compaction prompt text was cut off; its structure was read in Appendix A.
+
+**What it's about:** An agent works in a fixed-size window (e.g. 48K, compacting at 36K) and restarts in a fresh conversation with the task plus a short self-written state brief. Across 13 benchmarks with Opus 4.5 and GPT 5.6 Sol this cost little or no accuracy. SWE-bench Verified rose (Opus 70.0 → 74.8); FRAMES was the one consistent loser (−1.3 to −3.7). The authors model the cost savings on long tasks at 2–9×. The most portable finding: the best brief is forward-looking. It holds the task near-verbatim, the current and next steps, and the completion criteria. Narrative summaries did worse because they weight every fact equally and over-weight what repeated.
+
+**What we added:**
+- Augmentation: `hooks/claude/compaction-discipline-hook.sh` — new FORWARD BRIEF block (original task near-verbatim, completion criteria, current then next steps), which the PreCompact banner injects before every compaction. Caveat: the evidence comes from step-wise mini-swe-agent loops, not Claude Code's compactor, and the lift here is unmeasured.
+
+**Rejected:** per-action compaction (Claude Code's loop cannot be configured for it), semantic state space models (a training proposal), offloading long inputs to files (lean-ctx, headroom), a searchable full-history log (the funes rejection in `git/README.md`).
+
+See also: [articles/README.md](../articles/README.md) — same 21-link batch, 2026-11-11.

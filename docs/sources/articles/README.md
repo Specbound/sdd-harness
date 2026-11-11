@@ -1443,3 +1443,67 @@ Randomized splits picked models and effort. High effort cost 61% more than mediu
 - Two repos, none logged in `git/`:
   - `mksglu/context-mode`. lean-ctx, headroom and rtk already cover it, and `compaction-discipline-hook.sh` already keeps ruled-out hypotheses. Its 98% benchmark compares hand-written summary scripts, with no task-success check. Its hard WebFetch deny would break skill-extraction's retrieval ladder.
   - `krishhgg/Insomnia`. A macOS lid-closed power manager; its tmux "continue" nudge is niche.
+
+---
+
+## AI Agent Guardrails: Approval Gates and Blast-Radius Control
+**URL:** https://dev.to/hassann/ai-agent-guardrails-approval-gates-and-blast-radius-control-23hl | **Added:** 2026-11-11 | **Source:** Hassann (dev.to, cross-posted from apidog.com)
+
+**Fetch status:** ok, rung 1.
+
+**What it's about:** Five guardrail layers for agents: an allowlist of actions by consequence with default-deny; approval gates that show the exact payload and log every decision; dry-run mode; blast-radius limits (scoped credentials, per-action hourly quotas, spend caps); and tests that prove each gate fires, by mocking the dangerous endpoint and asserting zero live calls. Its main line: "a guardrail you have not tested is a guardrail you do not have."
+
+**What we added:**
+- Script + git hook: `scripts/utils/check-hook-tests.py` (+ `check-hook-tests.test.sh`, 13 cases) and the `scripts/utils/hook-test-debt.txt` ledger, wired as the 4th check in `hooks/git/pre-commit`. Every hook that can block (`exit 2`, `permissionDecision` deny/ask, `"decision": "block"`) needs a sibling `*.test.sh`. Measured at extraction: 4 of 10 blocking hooks had none (`ai-writing-guard-hook.sh`, `lean-ctx-nudge-hook.sh`, `scan-pii.sh`, `verification-retry-hook.sh`), and only 15 of 51 hooks had tests at all. These 4 are seeded as debt; the ledger only shrinks.
+
+**Rejected:** default-deny and approval gates (Claude Code permission `ask` mode plus `git-destructive-guard-hook.sh` and the protected-path / risk-zone / skill-permissions gates), dry-run (Plan mode), per-action quotas and spend caps (no money-moving external actions; retry loops already capped by `verification-retry-hook.sh`), approval logging (`action-capture.sh`, `reject-feedback-hook.sh`, `agent-trace-hook.sh`).
+
+---
+
+## Cole Medin — dashboard for an AI software factory (YouTube)
+**URL:** https://www.youtube.com/watch?v=YHKuUjicB3M | **Added:** 2026-11-11 | **Source:** Cole Medin (YouTube)
+
+**Fetch status:** ok, rung 4 (`youtube-transcript-api`, full English transcript).
+
+**What it's about:** A tour of the dashboard over an Archon-workflow software factory with every agent turn stored in Neon Postgres. Panels: workflow map, key-decision log, diff between factory versions, failure-cause breakdown, per-version scorecard, regression scenarios, an "owner" tab that collects decisions waiting on the human, and rewind through Neon branching. Includes sponsor segments.
+
+**What we added:**
+- Augmentation: `commands/kiro/daily-briefing.md` Step 1b — lists open `needs-user` entries from `specs/*/choices.md`, the harness's version of the "owner" tab. Before this, `auditing-spec-choices` surfaced them only at spec close (Phase 7). At extraction there were 23 `needs-user` mentions across 3 repos with no consumer. The model reads each file whole, because a later audit pass can resolve an earlier entry; counting matches would be text-parsing and would over-count.
+
+**Rejected:** decision log (ERRORS.md, memory, SETUP-GUIDE changelog), version diff (`git diff`), failure breakdown (tool-failure ledger, Session Health panel), scorecard (keep-rate, session-quality), trace store (Raindrop Workshop, `agent-trace-hook.sh`), workflow-map picture (big build, low payoff), Neon rewind (infrastructure the harness doesn't use).
+
+---
+
+## Theo (t3.gg) — hill-climbing T3 Code's UI with a model "council" (YouTube)
+**URL:** https://www.youtube.com/watch?v=xq0eB8vxeqk | **Added:** 2026-11-11 | **Source:** Theo Browne (YouTube)
+
+**Fetch status:** ok, rung 4 (transcript, last ~19 tokens cut). The exact video title was not captured.
+
+**What it's about:** A goal loop run until 3–5 judges from different providers all scored the UI at least 9/10; about 18 hours, $250–400. Findings: untouched reference apps rose from 8.3 to 9.1 as the candidate improved (the scale drifted); a judge told the target may inflate toward it; adding reference apps to the comparison dropped the same PR from 9 to 7.4; and an 88-case eval of past misroutes let tool descriptions shrink to a third at the same score.
+
+**What we added:**
+- Augmentation: `skills/llm-evaluation/SKILL.md` "Controls that are not optional" gained two rules: anchor each scoring round to fixed reference items and report the gap to them (a reference whose score moves means the scale moved), and never tell the judge the target threshold. The evidence is one creator's run, so these sit as controls, not measured findings. The harness's own judges (`session-judge`, `skill-eval-gate`) are not exposed to either failure today.
+
+**Rejected:** multi-provider council (subscription only, no other keys; rejected before), score-gated goal loops (`validate-adversarial`, loop patterns), cheap-first judge cascade (no multi-judge panel), tool-description shrink (the "Automating Eval Design and Hillclimbing" entry above plus `skill-eval-gate`).
+
+**Same batch (2026-11-11, 21 links), nothing extracted:**
+- `githubnext/ace` (git, partial: README only). Host-run team channels over Tailscale; the harness is single-user and Herder already spawns local sessions. "Lanes" are undocumented in the README.
+- Two `archive.codenewsletter.ai` X-post mirrors, not logged in `x/`:
+  - `2117099613022732412` (@_dylanga, "scan hot paths for sequential async calls"): `validate-perf-agent` already checks sequential awaits.
+  - `2117734977312047537` (Greg Isenberg's agent stack): a tool list; every item maps to an existing piece (spec-grill, GitNexus, headroom, Serena, harness-fix, daily-maintenance).
+- A third mirror is **unresolved**: `2112102` is a 7-digit truncation of a 19-digit X status ID. Rung 1 returned 404, Wayback failed, search found nothing. It needs the full ID.
+- `archive.superhuman.ai/2118063143167693011` (ClaudeDevs thread): background-subagent status lines now written by a cheap model from condensed notes. A platform change that needs CLI ≥ 2.1.316 and nothing in the harness.
+- Scalekit AgentKit (vendor page): the token-vault idea rejected earlier as onecli (`git/README.md`); `secure-agent-design` Pattern 4 covers runtime credential injection.
+- Alperen Keles, "Bug Finding Considered Harmful?": covered by CLAUDE.md's 3rd-patch rule, `systematic-debugging` and `/code-review` effort levels.
+- Anthropic Cookbook, "Dreaming with a dynamic workflow" (Managed Agents): needs API billing; `reflect-agent`, `housekeeping-agent` and `agent-memory-consolidation` already do the work.
+- `steipete/agent-scripts` (git): already reviewed 2026-10-12; commits since are Codex-only.
+- "How Top Silicon Valley Engineers Build Software Factories" (factory-engineering.netlify.app, 5 modules): already logged or covered (dark-factory entry, `issue-triage-routing`, `session-judge`, `skill-augment-agent`).
+- `firecrawl/firecrawl` (git): its edge is the paid cloud proxy tier, which fixes none of the logged retrieval failures. Its README tells agents to fetch a remote sign-up skill; treated as data and not followed.
+- YouTube `TVhhmhvCovg` (Theo, same council run as above): same verdicts.
+- Product Hunt Harness² (Google Research, arXiv 2610.14224): `skill-eval-gate` and the daily-maintenance loop cover propose-probe-compose and cross-task lessons.
+- `skillsynchq/txcript` (git): cross-harness transcript conversion; the harness runs Claude Code only, and the session-search part repeats the funes rejection.
+- Databricks, "MemCurrent": the design the harness already has (index at session start, nightly consolidation).
+- Vercel, "Making every harness durable": built for multi-tenant cloud functions. Watch item: tag non-replayable actions (push, PR comment) so a resumed session checks before redoing them; no incident yet.
+- Hamel Husain, "Decision Model Evals": the 4th Jev-family rejection; it needs third-party keys and a human-labelled set the harness lacks.
+
+See also: [papers/README.md](../papers/README.md) — same batch, arXiv 2611.05306.

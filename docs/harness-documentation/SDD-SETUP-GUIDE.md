@@ -6,6 +6,26 @@
 
 ---
 
+## Recent Changes (2026-11-11 — Harness Build 44)
+
+From the 2026-11-11 21-link extraction batch (4 extracted, 16 rejected, 1 unresolved).
+
+### Scripts / git hooks
+
+- `scripts/utils/check-hook-tests.py` **(new)** — every hook in `hooks/claude/` or `hooks/global/` that can block a tool call (`exit 2`, `permissionDecision` deny/ask, `"decision": "block"`, found on non-comment lines) must have a sibling `*.test.sh`. Ratchets against a shrinking ledger, `scripts/utils/hook-test-debt.txt`, seeded with the 4 untested blocking hooks of 10 (`ai-writing-guard-hook.sh`, `lean-ctx-nudge-hook.sh`, `scan-pii.sh`, `verification-retry-hook.sh`). Fails on a new untested blocking hook and on a stale ledger entry. `--list` prints every blocking hook with its test status. Tests: `check-hook-tests.test.sh` (13 cases).
+- `hooks/git/pre-commit` — runs that guard as a 4th check (`HOOK_TEST_GUARD`), alongside paths, no-regex and skill tiers.
+
+### Hooks
+
+- `hooks/claude/compaction-discipline-hook.sh` — new FORWARD BRIEF block: the compaction summary keeps the original task near-verbatim, the completion criteria, and current then next steps, written as a brief for the next step rather than a story of the past (arXiv 2611.05306).
+
+### Commands / skills
+
+- `commands/kiro/daily-briefing.md` — new Step 1b lists open `needs-user` entries from `specs/*/choices.md`, so decisions waiting on the user show up between audit passes, not only at spec close.
+- `skills/llm-evaluation` — two more judge controls: anchor each scoring round to fixed reference items and report the gap (a reference whose score moves means the scale moved), and never tell the judge the target threshold.
+
+---
+
 ## Recent Changes (2026-11-11 — Harness Build 43)
 
 ### Skills
