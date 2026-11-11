@@ -278,6 +278,8 @@ sdd-harness/
 │       ├── no-regex-debt.txt    #     The ledger check-no-regex.py reads. Listed files are known debt and do not fail; a file that is fixed but still listed DOES fail, so the ledger can only shrink
 │       ├── check-skill-tiers.py #     Fails the commit when a Library-tier skill (listed in setup/skill-library.txt) is referenced by bare name instead of its ~/.claude/skill-library/<name>/SKILL.md path. Third guard in .git/hooks/pre-commit
 │       ├── skill-tier-allow.txt #     Exemption list read by check-skill-tiers.py — one "<repo-relative path> <skill name>" pair per line, for mentions a human reads rather than text an agent acts on
+│       ├── check-hook-tests.py  #     Fails the commit when a hook in hooks/claude/ or hooks/global/ that can block a tool call (exit 2, permissionDecision deny/ask, "decision": "block") has no sibling *.test.sh. Fourth guard in .git/hooks/pre-commit; --list prints every blocking hook with its test status
+│       ├── hook-test-debt.txt   #     The ledger check-hook-tests.py reads, seeded 2026-11-11 with the 4 untested blocking hooks. Shrink-only: delete a hook's line in the same commit that adds its test
 │       └── check-fleet-registration.sh  # Find harness-installed repos missing from projects.txt (they get no routines and appear on no dashboard)
 │
 ├── hooks/                        # Claude Code and Git lifecycle hooks
@@ -307,7 +309,7 @@ sdd-harness/
 │   │   ├── caveman-statusline.sh #     Statusline command: emits [CAVEMAN] / [CAVEMAN:ULTRA] badge + live context-usage meter (color-coded %ctx)
 │   │   └── lean-ctx-rewrite.sh  #     PreToolUse(Bash): rewrites common shell commands to lean-ctx equivalents
 │   └── git/                      # Git lifecycle hooks (copied to .git/hooks/ on install/update)
-│       ├── pre-commit            #     Harness repo only: runs check-no-hardcoded-paths.sh (machine-specific paths), check-no-regex.py (regex in embedded Python), and check-skill-tiers.py (Library-tier skill invoked by bare name). All run and every verdict prints — it does not short-circuit on the first failure — and any one blocks the commit. Never propagated to downstream projects
+│       ├── pre-commit            #     Harness repo only: runs check-no-hardcoded-paths.sh (machine-specific paths), check-no-regex.py (regex in embedded Python), check-skill-tiers.py (Library-tier skill invoked by bare name), and check-hook-tests.py (blocking hook without a *.test.sh). All run and every verdict prints — it does not short-circuit on the first failure — and any one blocks the commit. Never propagated to downstream projects
 │       └── post-commit           #     On commit: detects doc-sync/harness-update work, then runs it in ONE detached job (log: .git/post-commit-docsync.log) that auto-commits/pushes only the .md files touched; serialized on .git/post-commit-docsync.lock so concurrent commits skip instead of racing the git index
 │
 ├── templates/                    # Project-level templates
@@ -718,7 +720,7 @@ echo 'bash "$(git rev-parse --show-toplevel)/.claude/hooks/scan-pii.sh" --staged
   >> .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit
 ```
 
-> **In the harness repo itself**, `.git/hooks/pre-commit` is owned by `hooks/git/pre-commit` (the hardcoded-path guard, the embedded-Python regex guard since 2026-09-03, and the Library-tier skill-bare-name guard since 2026-10-04), which `install.sh` / `update.sh` rewrite on every run — a line appended there is lost at the next install or update. Add the scan-pii line to `hooks/git/pre-commit` in the source tree instead. In any other project the slot is free: the harness guard is deliberately not propagated downstream, and the installer leaves a pre-commit it doesn't recognise alone.
+> **In the harness repo itself**, `.git/hooks/pre-commit` is owned by `hooks/git/pre-commit` (the hardcoded-path guard, the embedded-Python regex guard since 2026-09-03, the Library-tier skill-bare-name guard since 2026-10-04, and the untested-blocking-hook guard since 2026-11-11), which `install.sh` / `update.sh` rewrite on every run — a line appended there is lost at the next install or update. Add the scan-pii line to `hooks/git/pre-commit` in the source tree instead. In any other project the slot is free: the harness guard is deliberately not propagated downstream, and the installer leaves a pre-commit it doesn't recognise alone.
 
 See [docs/security/privacy-filter/README.md](docs/security/privacy-filter/README.md).
 
@@ -1061,4 +1063,4 @@ The Model Cost section reads session data from `~/.claude/projects/*/`. Pricing 
 
 Private repository. Contact the maintainer for access.
 
-_Last synced: 2026-10-12_
+_Last synced: 2026-11-11_

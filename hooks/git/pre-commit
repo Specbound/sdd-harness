@@ -1,9 +1,9 @@
 #!/bin/bash
 # =============================================================================
 # SDD harness pre-commit guard — hardcoded paths, regex in embedded Python,
-# and Library-tier skills invoked by bare name.
+# Library-tier skills invoked by bare name, and untested blocking hooks.
 # =============================================================================
-# Three checks, all about the harness lying to itself:
+# Four checks, all about the harness lying to itself:
 #
 #   1. scripts/utils/check-no-hardcoded-paths.sh — a machine/user-specific
 #      absolute path must never be committed into harness source. Every path is
@@ -21,6 +21,12 @@
 #      installed"). Must reference ~/.claude/skill-library/<name>/SKILL.md, or
 #      the skill must leave the manifest. Added 2026-10-04 after all three spec
 #      approval gates lost proof-collaborative-review this way.
+#
+#   4. scripts/utils/check-hook-tests.py — every hook that can block a tool call
+#      (exit 2, permissionDecision deny/ask, "decision": "block") needs a sibling
+#      *.test.sh. An untested gate that stops firing looks identical to one with
+#      nothing to block. Shrinking debt ledger: scripts/utils/hook-test-debt.txt.
+#      Added 2026-11-11 (dev.to "AI Agent Guardrails" extraction).
 #
 # All run; the commit is blocked if any fails, and every verdict is shown
 # rather than short-circuiting on the first — fixing one and rediscovering the
@@ -66,6 +72,15 @@ if [ -f "$TIER_GUARD" ] && command -v python3 >/dev/null 2>&1; then
   if ! (cd "$ROOT" && python3 "$TIER_GUARD"); then
     echo ""
     echo "pre-commit: BLOCKED — Library-tier skill invoked by bare name (see above)."
+    FAILED=1
+  fi
+fi
+
+HOOK_TEST_GUARD="$ROOT/scripts/utils/check-hook-tests.py"
+if [ -f "$HOOK_TEST_GUARD" ] && command -v python3 >/dev/null 2>&1; then
+  if ! (cd "$ROOT" && python3 "$HOOK_TEST_GUARD"); then
+    echo ""
+    echo "pre-commit: BLOCKED — blocking hook without a *.test.sh (see above)."
     FAILED=1
   fi
 fi
