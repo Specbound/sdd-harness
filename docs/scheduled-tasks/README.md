@@ -331,5 +331,5 @@ The dashboard's **Scheduled Tasks** tab shows live status for each task, scoped 
 
 ---
 
-_Last synced: 2026-10-12_
+_Last synced: 2026-11-11_
 

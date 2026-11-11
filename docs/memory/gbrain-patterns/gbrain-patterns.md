@@ -42,15 +42,16 @@ Also applies when spawning agents: run memory lookup first, then include finding
 **Skill:** `~/.claude/skill-library/model-tiers/SKILL.md`
 **Hook:** `gbrain-agent-spawn.sh` (fires on every `Agent` call)
 
-| Tier | Model | Use for |
+| Tier | Alias | Use for |
 |---|---|---|
-| utility | `claude-haiku-4-5-20251001` | classification, validation, expansion, dedup |
-| reasoning | `claude-sonnet-5` | generation, synthesis, chat — **DEFAULT** |
-| deep | `claude-opus-5` | complex multi-step reasoning, high-stakes judgment |
-| autonomous | `claude-fable-5` | long, multi-sitting autonomous sessions (`/model fable`) |
-| subagent | `claude-sonnet-5` | Agent() calls — use sonnet, not opus |
+| utility | `haiku` | classification, routing, extraction; subagents that search/read/summarize |
+| scoped | `sonnet` | well-scoped coding, repeated agent tasks (review, drafting), chat |
+| default | `opus` | everyday engineering and judgment calls — **DEFAULT when unsure** |
+| frontier | `fable` | major migrations, architecture, long unattended runs |
 
-The non-obvious rule: **subagents run sonnet, not opus.** Subagents run multi-turn tool loops; latency compounds and the bottleneck is tool-call reliability, not reasoning depth. Opus buys little here at 3× the cost.
+Name models by alias, not pinned ID — aliases track the current lineup, and the weekly `model-staleness-runner.sh` flags pinned mentions the live lineup has superseded. If a tier falls short: self-verification first, then effort +1, then the next model up.
+
+The non-obvious rule: **a subagent that only reads and reports runs `haiku`** — wrong answers are cheap to spot and the main model keeps the judgment calls. A subagent that makes judgment calls of its own needs the tier that judgment needs.
 
 ---
 
@@ -151,4 +152,4 @@ The `using-superpowers` system requires skill invocation at 1% trigger confidenc
 
 To adopt gbrain as the actual knowledge backend: `git clone https://github.com/garrytan/gbrain ~/gbrain && cd ~/gbrain && bun install && gbrain init`. The `INSTALL_FOR_AGENTS.md` in the repo is the 9-step guide.
 
-_Last synced: 2026-09-01_
+_Last synced: 2026-11-11_

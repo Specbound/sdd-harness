@@ -1,6 +1,6 @@
 <!-- L0: Quick reference — all SDD commands with usage examples -->
 
-_Last synced: 2026-10-12_
+_Last synced: 2026-11-11_
 
 # SDD Usage Guide
 
@@ -858,11 +858,11 @@ Four protocols extracted from [garrytan/gbrain](https://github.com/garrytan/gbra
 **Memory-First Lookup** (`~/.claude/skill-library/memory-first-lookup/`) — Always run `mcp__plugin_claude-mem_mcp-search__search` before reaching for external APIs. The lookup chain: keyword search → semantic search → get_observations → external only if memory is empty.
 
 **Model Tiers** (`~/.claude/skill-library/model-tiers/`) — Match model to task type:
-- `haiku-4-5` (`claude-haiku-4-5-20251001`) for classification, validation, dedup (utility)
-- `sonnet-5` (`claude-sonnet-5`) for generation, synthesis, agent work (default)
-- `opus-5` (`claude-opus-5`) only for deep multi-step reasoning (upgrade when sonnet consistently fails)
-- `fable-5` for long, multi-sitting autonomous sessions (`/model fable`)
-- Subagents always use `sonnet`, not opus — latency compounds in tool loops
+- `haiku` for classification, routing, extraction, and subagents that only search/read/summarize (utility)
+- `sonnet` for well-scoped coding and repeated agent tasks — review, drafting (scoped)
+- `opus` for everyday engineering and judgment calls — the default when unsure
+- `fable` for major migrations, architecture, and long unattended runs (`/model fable`)
+- Name models by alias, not pinned ID; the weekly `model-staleness-runner.sh` flags pinned mentions the live lineup has superseded
 
 **Background Work Routing** (`~/.claude/skill-library/background-work-routing/`) — Stay inline unless a pain signal fires: gateway restart, state drop, parallel > 3, runtime > 5 min, or user frustration. Offer the switch explicitly; never switch silently.
 
@@ -870,4 +870,4 @@ Four protocols extracted from [garrytan/gbrain](https://github.com/garrytan/gbra
 
 Full reference: `docs/gbrain-patterns/gbrain-patterns.md`
 
-_Last synced: 2026-10-12_
+_Last synced: 2026-11-11_

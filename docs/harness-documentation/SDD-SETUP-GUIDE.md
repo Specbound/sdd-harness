@@ -16,6 +16,9 @@ From the 2026-11-11 9-link extraction batch (4 extracted, 6 rejected), plus a li
 - `scripts/routines/model-staleness-runner.sh` **(new)** — weekly, deterministic, harness-only; writes `.claude/reports/model-staleness.json`. On exit 2 it keeps the previous report and does not stamp the run, so the next tick retries. Wired into `daily-orchestrator.sh` `run_one()`; opt out `SDD_SKIP_MODEL_STALENESS=1`, cadence `MODEL_STALENESS_GAP_DAYS`.
 - `scripts/session/micro_reflect.py`, `scripts/session/detect_reexplanation.py` — `claude --print --model` now uses the `haiku` alias instead of the pinned `claude-haiku-4-5-20251001`.
 
+- `scripts/session/detect_reexplanation.py`, `scripts/session/micro_reflect.py` — `MODEL` is now the `haiku` alias instead of the pinned `claude-haiku-4-5-20251001`, so a release cannot strand either `claude --print` call on a retired snapshot.
+- `scripts/utils/check-skill-tiers.py` — `SKIP_NAMES` adds `model-mention-allow.txt` and `model-mention-debt.txt` (data files that name skills, not prompts).
+
 ### Hooks
 - `session-start-hook.sh` — prints `[MODEL-STALE] N model mention(s) superseded…` while the last report has findings.
 - `gbrain-agent-spawn.sh` — the model-tier reminder names aliases only and follows the 2026-11-09 guidance (haiku for read-and-report subagents, opus when unsure, fable for the hardest work).
@@ -24,7 +27,7 @@ From the 2026-11-11 9-link extraction batch (4 extracted, 6 rejected), plus a li
 ### Commands / skills / templates
 - `skills/model-tiers` — rewritten against the live lineup: aliases instead of pinned IDs, 4 tiers with opus as the default when unsure, Haiku for subagents that only read and report, the corrected ~2× price step (it said Opus cost 3× Sonnet), escalation order (self-verification → effort +1 → next model up at lower effort), run cheap first and re-run only failures, switching models only at a natural break, and `effort` correctly described as an API parameter too. New **Staying Current** section points at the routine.
 - `commands/global/claudemd-review.md` — two new rubric dimensions: **Contradicted by code** (each rule checked against the code as followed / contradicted / unverifiable / ahead-of-code (gated); behavior-changing contradictions only) and **Text-only invariant** (must-never-break rules with no hook or deny rule behind them). Claimed contradictions are re-checked by a fresh subagent before they reach the report.
-- `templates/CLAUDE.md.template` + `CLAUDE.md` — two Rules: follow the code when an instruction file disagrees and list each mismatch, except gated rules (the instruction is intentionally ahead of the code); and a feature that only fits by bolting it on counts as a design change, so stop and recommend the refactor.
+- `templates/CLAUDE.md.template` + `CLAUDE.md` — two Rules: follow the code when an instruction file disagrees and list each mismatch, except rules a gate enforces — pre-commit, lint, or a `*-debt.txt` ledger such as `no-regex-debt.txt` — where the code is the side still catching up; and a feature that only fits by bolting it on counts as a design change, so stop and recommend the refactor.
 
 ## Recent Changes (2026-11-11 — Harness Build 44)
 
