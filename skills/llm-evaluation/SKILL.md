@@ -1,517 +1,143 @@
 ---
 name: llm-evaluation
-description: "Implement comprehensive evaluation strategies for LLM applications using automated metrics, human feedback, and benchmarking. Use when testing LLM performance, measuring AI application quality, or ..."
+description: "Evaluate LLM applications with task-appropriate metrics, LLM-as-judge, and regression gates. Use when building an eval suite, choosing between BLEU/ROUGE/BERTScore/judge scoring, debugging a judge that disagrees with humans, or deciding whether a prompt or model change actually improved anything."
 risk: unknown
 source: community
 ---
 
 # LLM Evaluation
 
-Master comprehensive evaluation strategies for LLM applications, from automated metrics to human evaluation and A/B testing.
-
-## Do not use this skill when
-
-- The task is unrelated to llm evaluation
-- You need a different domain or tool outside this scope
-
-## Instructions
-
-- Clarify goals, constraints, and required inputs.
-- Apply relevant best practices and validate outcomes.
-- Provide actionable steps and verification.
-- If detailed examples are required, open `resources/implementation-playbook.md`.
+The hard part is not computing a metric — it is picking one that moves when quality
+moves. Most LLM eval failures are a metric that stays flat through a real regression,
+or a judge that scores a change the humans dislike.
 
 ## Use this skill when
 
-- Measuring LLM application performance systematically
-- Comparing different models or prompts
-- Detecting performance regressions before deployment
-- Validating improvements from prompt changes
-- Building confidence in production systems
-- Establishing baselines and tracking progress over time
-- Debugging unexpected model behavior
-- Building a fast, cheap classifier for structural/nuanced criteria (sarcasm, speaker identity, temporal sentiment) where embeddings fail and LLM judges are too slow/expensive
+- Standing up an eval suite for an LLM feature
+- Choosing a metric for a task type
+- A judge's scores disagree with human reviewers
+- Gating a prompt/model change on evidence rather than vibes
 
-## Core Evaluation Types
+## Pick the metric from the task
 
-### 1. Automated Metrics
-Fast, repeatable, scalable evaluation using computed scores.
+| Task | Use | Do not use |
+|---|---|---|
+| Classification, extraction, routing | Accuracy / P / R / F1 against labels | Judge scoring |
+| Code generation | Execute the code; pass@k on real tests | BLEU |
+| Translation, short summarization with references | chrF, BERTScore, COMET | BLEU alone |
+| Open-ended generation, chat, writing | Pairwise LLM-as-judge + human spot-check | BLEU, ROUGE |
+| RAG answers | Groundedness + retrieval recall@k, scored separately | End-to-end score alone |
 
-**Text Generation:**
-- **BLEU**: N-gram overlap (translation)
-- **ROUGE**: Recall-oriented (summarization)
-- **METEOR**: Semantic similarity
-- **BERTScore**: Embedding-based similarity
-- **Perplexity**: Language model confidence
+**BLEU and ROUGE measure n-gram overlap with a reference.** For open-ended generation
+there is no single correct string, so they punish valid paraphrase and reward copying.
+They remain reasonable for translation and reference-bound summarization. If you cannot
+name the reference, the metric is wrong for the task.
 
-**Classification:**
-- **Accuracy**: Percentage correct
-- **Precision/Recall/F1**: Class-specific performance
-- **Confusion Matrix**: Error patterns
-- **AUC-ROC**: Ranking quality
+For RAG, always score retrieval and generation separately. A fused score cannot tell
+"retrieved the wrong chunk" from "had the right chunk and ignored it" — and those have
+opposite fixes.
 
-**Retrieval (RAG):**
-- **MRR**: Mean Reciprocal Rank
-- **NDCG**: Normalized Discounted Cumulative Gain
-- **Precision@K**: Relevant in top K
-- **Recall@K**: Coverage in top K
+## Reference-based metrics
 
-### 2. Human Evaluation
-Manual assessment for quality aspects difficult to automate.
-
-**Dimensions:**
-- **Accuracy**: Factual correctness
-- **Coherence**: Logical flow
-- **Relevance**: Answers the question
-- **Fluency**: Natural language quality
-- **Safety**: No harmful content
-- **Helpfulness**: Useful to the user
-
-### 3. LLM-as-Judge
-Use stronger LLMs to evaluate weaker model outputs.
-
-**Approaches:**
-- **Pointwise**: Score individual responses
-- **Pairwise**: Compare two responses
-- **Reference-based**: Compare to gold standard
-- **Reference-free**: Judge without ground truth
-
-### 4. Hidden State Probes (non-generative classifier)
-When an LLM reads "does content X satisfy criterion Y?", the answer is already computed in the residual stream before any token is generated. Capture that geometry; skip generation entirely.
-
-**When to use over LLM-as-Judge:**
-- Criteria are structural/nuanced (sarcasm, speaker identity, temporal sentiment) — embeddings blind, generation expensive
-- Need calibrated probabilities, not prose scores ("7/10" is vibes; a probe gives a real P(criterion met))
-- Running at embedding-classifier cost/latency but requiring LLM-depth reasoning
-- Evaluating millions of items in batch (10–100× cheaper than generation)
-
-**When NOT to use:**
-- Need chain-of-thought reasoning (probe captures pre-CoT geometry — allow this grace)
-- Using a proprietary/API-only model (requires access to hidden states → local/open model only)
-- Criterion changes constantly and retraining is impractical
-- Sample size too small to train/calibrate the MLP head reliably
-
-**The recipe (5 steps):**
-1. **Base model**: Small open model (Granite 4.0 micro, Qwen, etc. — few-billion params). Apply a LoRA (optional but recommended).
-2. **Prompt template**: Fixed structure ending with a seed token that channels judgment geometry:
-   ```
-   <content_to_be_judged>{content}</content_to_be_judged>
-   <judgment_criteria>{criterion}</judgment_criteria>
-   Criteria met? Assessment:
-   ```
-3. **Training set**: Generate (criterion, content, label) triples — a few thousand, frontier-model-generated, varying the criterion. Criterion variety is the key: it teaches the MLP to read "does content satisfy criterion" generically, not any specific criterion.
-4. **Extract + fit**: Forward-pass each triple, grab hidden state at the seed token position at ~60–75% depth (middle layers hold rich meaning representations). Fit a small MLP (or linear probe) on those vectors, outputting one logit.
-5. **Calibrate**: Isotonic regression so 0.7 means 70% of positives — not raw logit vibes.
-
-**The LoRA trick (optional, high ROI):** Don't train the LoRA to classify. Train it to *write* verdicts. For each training triple, a frontier model writes a one-sentence judgment (`ASSESSMENT: The content does not satisfy the criterion because…`). LoRA trains on next-token loss to produce that text. At inference: never generate — stop at the seed token, read the hidden state. The text is scaffolding; its only job is to crystallize the decision geometry before the model speaks. Then you never let it speak.
-
-**Result:** One frozen model + one tiny MLP = any classifier you write in English at inference time. No per-criterion training ever.
-
-## Quick Start
+Use a maintained library rather than hand-rolling. `evaluate` (Hugging Face) wraps most
+of these with consistent inputs:
 
 ```python
-from llm_eval import EvaluationSuite, Metric
+import evaluate
 
-# Define evaluation suite
-suite = EvaluationSuite([
-    Metric.accuracy(),
-    Metric.bleu(),
-    Metric.bertscore(),
-    Metric.custom(name="groundedness", fn=check_groundedness)
-])
+chrf = evaluate.load("chrf")
+bertscore = evaluate.load("bertscore")
 
-# Prepare test cases
-test_cases = [
-    {
-        "input": "What is the capital of France?",
-        "expected": "Paris",
-        "context": "France is a country in Europe. Paris is its capital."
-    },
-    # ... more test cases
-]
+preds = ["A cat is sitting on the mat"]
+refs  = ["The cat sat on the mat"]
 
-# Run evaluation
-results = suite.evaluate(
-    model=your_model,
-    test_cases=test_cases
-)
-
-print(f"Overall Accuracy: {results.metrics['accuracy']}")
-print(f"BLEU Score: {results.metrics['bleu']}")
+chrf.compute(predictions=preds, references=refs)
+bertscore.compute(predictions=preds, references=refs, lang="en")
 ```
 
-## Automated Metrics Implementation
+Report the distribution, not just the mean — a mean hides a bimodal split where the
+model is excellent on most inputs and broken on one segment. Always look at the worst
+decile by hand.
 
-### BLEU Score
+## LLM-as-judge
+
+Pairwise beats absolute. Models are poorly calibrated on "rate this 1-10" and much more
+reliable at "which of these two is better."
+
 ```python
-from nltk.translate.bleu_score import sentence_bleu, SmoothingFunction
-
-def calculate_bleu(reference, hypothesis):
-    """Calculate BLEU score between reference and hypothesis."""
-    smoothie = SmoothingFunction().method4
-
-    return sentence_bleu(
-        [reference.split()],
-        hypothesis.split(),
-        smoothing_function=smoothie
-    )
-
-# Usage
-bleu = calculate_bleu(
-    reference="The cat sat on the mat",
-    hypothesis="A cat is sitting on the mat"
-)
-```
-
-### ROUGE Score
-```python
-from rouge_score import rouge_scorer
-
-def calculate_rouge(reference, hypothesis):
-    """Calculate ROUGE scores."""
-    scorer = rouge_scorer.RougeScorer(['rouge1', 'rouge2', 'rougeL'], use_stemmer=True)
-    scores = scorer.score(reference, hypothesis)
-
-    return {
-        'rouge1': scores['rouge1'].fmeasure,
-        'rouge2': scores['rouge2'].fmeasure,
-        'rougeL': scores['rougeL'].fmeasure
-    }
-```
-
-### BERTScore
-```python
-from bert_score import score
-
-def calculate_bertscore(references, hypotheses):
-    """Calculate BERTScore using pre-trained BERT."""
-    P, R, F1 = score(
-        hypotheses,
-        references,
-        lang='en',
-        model_type='microsoft/deberta-xlarge-mnli'
-    )
-
-    return {
-        'precision': P.mean().item(),
-        'recall': R.mean().item(),
-        'f1': F1.mean().item()
-    }
-```
-
-### Custom Metrics
-```python
-def calculate_groundedness(response, context):
-    """Check if response is grounded in provided context."""
-    # Use NLI model to check entailment
-    from transformers import pipeline
-
-    nli = pipeline("text-classification", model="microsoft/deberta-large-mnli")
-
-    result = nli(f"{context} [SEP] {response}")[0]
-
-    # Return confidence that response is entailed by context
-    return result['score'] if result['label'] == 'ENTAILMENT' else 0.0
-
-def calculate_toxicity(text):
-    """Measure toxicity in generated text."""
-    from detoxify import Detoxify
-
-    results = Detoxify('original').predict(text)
-    return max(results.values())  # Return highest toxicity score
-
-def calculate_factuality(claim, knowledge_base):
-    """Verify factual claims against knowledge base."""
-    # Implementation depends on your knowledge base
-    # Could use retrieval + NLI, or fact-checking API
-    pass
-```
-
-## LLM-as-Judge Patterns
-
-### Single Output Evaluation
-```python
-def llm_judge_quality(response, question):
-    """Use GPT-5 to judge response quality."""
-    prompt = f"""Rate the following response on a scale of 1-10 for:
-1. Accuracy (factually correct)
-2. Helpfulness (answers the question)
-3. Clarity (well-written and understandable)
+JUDGE = """Compare two answers to the same question.
 
 Question: {question}
-Response: {response}
+A: {answer_a}
+B: {answer_b}
 
-Provide ratings in JSON format:
-{{
-  "accuracy": <1-10>,
-  "helpfulness": <1-10>,
-  "clarity": <1-10>,
-  "reasoning": "<brief explanation>"
-}}
-"""
-
-    result = openai.ChatCompletion.create(
-        model="gpt-5",
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0
-    )
-
-    return json.loads(result.choices[0].message.content)
+Judge on: factual correctness first, then completeness, then clarity.
+Ignore length and formatting. Think step by step, then end with exactly
+one line: VERDICT: A, VERDICT: B, or VERDICT: TIE."""
 ```
 
-### Pairwise Comparison
+Controls that are not optional:
+
+- **Position bias.** Judges favor one slot. Run every pair twice with A/B swapped and
+  count a flip as a tie. Without this you will measure slot order.
+- **Calibrate against humans.** Hand-label 50–100 pairs, measure judge-vs-human
+  agreement (Cohen's κ). Below ~0.6, fix the rubric before trusting any judge number.
+- **Judge ≠ generator.** Scoring a model's output with itself inflates the score.
+- **Self-consistency is not accuracy.** A judge that repeats its own verdict reliably
+  can be reliably wrong.
+
+Judge scores are a cheap proxy for human preference, and they are only as good as that
+measured agreement. Report the κ alongside the win rate or the number means nothing.
+
+## Regression gates
+
+The suite only earns its keep if it blocks a bad change.
+
 ```python
-def compare_responses(question, response_a, response_b):
-    """Compare two responses using LLM judge."""
-    prompt = f"""Compare these two responses to the question and determine which is better.
+import json, pathlib
 
-Question: {question}
+GOLDEN = pathlib.Path("evals/golden.jsonl")
+THRESHOLD = 0.02   # absolute drop tolerated
 
-Response A: {response_a}
-
-Response B: {response_b}
-
-Which response is better and why? Consider accuracy, helpfulness, and clarity.
-
-Answer with JSON:
-{{
-  "winner": "A" or "B" or "tie",
-  "reasoning": "<explanation>",
-  "confidence": <1-10>
-}}
-"""
-
-    result = openai.ChatCompletion.create(
-        model="gpt-5",
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0
-    )
-
-    return json.loads(result.choices[0].message.content)
+def gate(new_scores, baseline_path="evals/baseline.json"):
+    baseline = json.loads(pathlib.Path(baseline_path).read_text())
+    failures = [
+        (k, baseline[k], new_scores[k])
+        for k in baseline
+        if new_scores[k] < baseline[k] - THRESHOLD
+    ]
+    if failures:
+        for k, old, new in failures:
+            print(f"REGRESSION {k}: {old:.3f} -> {new:.3f}")
+        raise SystemExit(1)
 ```
 
-## Human Evaluation Frameworks
+- Freeze a golden set and version it next to the code. An eval set that drifts with the
+  model measures nothing across time.
+- Keep per-segment scores, not one aggregate. Aggregates mask a regression confined to
+  one input class.
+- Pin temperature (ideally 0) and the model version. An unpinned model silently changes
+  the baseline under you.
+- Hold out a set you never iterate on. Anything you tune against is training data.
 
-### Annotation Guidelines
-```python
-class AnnotationTask:
-    """Structure for human annotation task."""
+## Is the difference real?
 
-    def __init__(self, response, question, context=None):
-        self.response = response
-        self.question = question
-        self.context = context
+Two prompts scoring 0.71 and 0.73 on 100 examples is usually noise.
 
-    def get_annotation_form(self):
-        return {
-            "question": self.question,
-            "context": self.context,
-            "response": self.response,
-            "ratings": {
-                "accuracy": {
-                    "scale": "1-5",
-                    "description": "Is the response factually correct?"
-                },
-                "relevance": {
-                    "scale": "1-5",
-                    "description": "Does it answer the question?"
-                },
-                "coherence": {
-                    "scale": "1-5",
-                    "description": "Is it logically consistent?"
-                }
-            },
-            "issues": {
-                "factual_error": False,
-                "hallucination": False,
-                "off_topic": False,
-                "unsafe_content": False
-            },
-            "feedback": ""
-        }
-```
+- Paired comparison on the **same** inputs — never compare two independent samples when
+  you can pair them.
+- Bootstrap the difference (resample the paired per-item deltas, take the 2.5/97.5
+  percentiles). If that interval straddles zero, you have no result.
+- For pairwise judge wins, a binomial test on wins-vs-losses (ties dropped) is enough.
+- Sample size first: detecting a 2-point difference needs hundreds of examples, not 30.
 
-### Inter-Rater Agreement
-```python
-from sklearn.metrics import cohen_kappa_score
+## Failure modes
 
-def calculate_agreement(rater1_scores, rater2_scores):
-    """Calculate inter-rater agreement."""
-    kappa = cohen_kappa_score(rater1_scores, rater2_scores)
-
-    interpretation = {
-        kappa < 0: "Poor",
-        kappa < 0.2: "Slight",
-        kappa < 0.4: "Fair",
-        kappa < 0.6: "Moderate",
-        kappa < 0.8: "Substantial",
-        kappa <= 1.0: "Almost Perfect"
-    }
-
-    return {
-        "kappa": kappa,
-        "interpretation": interpretation[True]
-    }
-```
-
-## A/B Testing
-
-### Statistical Testing Framework
-```python
-from scipy import stats
-import numpy as np
-
-class ABTest:
-    def __init__(self, variant_a_name="A", variant_b_name="B"):
-        self.variant_a = {"name": variant_a_name, "scores": []}
-        self.variant_b = {"name": variant_b_name, "scores": []}
-
-    def add_result(self, variant, score):
-        """Add evaluation result for a variant."""
-        if variant == "A":
-            self.variant_a["scores"].append(score)
-        else:
-            self.variant_b["scores"].append(score)
-
-    def analyze(self, alpha=0.05):
-        """Perform statistical analysis."""
-        a_scores = self.variant_a["scores"]
-        b_scores = self.variant_b["scores"]
-
-        # T-test
-        t_stat, p_value = stats.ttest_ind(a_scores, b_scores)
-
-        # Effect size (Cohen's d)
-        pooled_std = np.sqrt((np.std(a_scores)**2 + np.std(b_scores)**2) / 2)
-        cohens_d = (np.mean(b_scores) - np.mean(a_scores)) / pooled_std
-
-        return {
-            "variant_a_mean": np.mean(a_scores),
-            "variant_b_mean": np.mean(b_scores),
-            "difference": np.mean(b_scores) - np.mean(a_scores),
-            "relative_improvement": (np.mean(b_scores) - np.mean(a_scores)) / np.mean(a_scores),
-            "p_value": p_value,
-            "statistically_significant": p_value < alpha,
-            "cohens_d": cohens_d,
-            "effect_size": self.interpret_cohens_d(cohens_d),
-            "winner": "B" if np.mean(b_scores) > np.mean(a_scores) else "A"
-        }
-
-    @staticmethod
-    def interpret_cohens_d(d):
-        """Interpret Cohen's d effect size."""
-        abs_d = abs(d)
-        if abs_d < 0.2:
-            return "negligible"
-        elif abs_d < 0.5:
-            return "small"
-        elif abs_d < 0.8:
-            return "medium"
-        else:
-            return "large"
-```
-
-## Regression Testing
-
-### Regression Detection
-```python
-class RegressionDetector:
-    def __init__(self, baseline_results, threshold=0.05):
-        self.baseline = baseline_results
-        self.threshold = threshold
-
-    def check_for_regression(self, new_results):
-        """Detect if new results show regression."""
-        regressions = []
-
-        for metric in self.baseline.keys():
-            baseline_score = self.baseline[metric]
-            new_score = new_results.get(metric)
-
-            if new_score is None:
-                continue
-
-            # Calculate relative change
-            relative_change = (new_score - baseline_score) / baseline_score
-
-            # Flag if significant decrease
-            if relative_change < -self.threshold:
-                regressions.append({
-                    "metric": metric,
-                    "baseline": baseline_score,
-                    "current": new_score,
-                    "change": relative_change
-                })
-
-        return {
-            "has_regression": len(regressions) > 0,
-            "regressions": regressions
-        }
-```
-
-## Benchmarking
-
-### Running Benchmarks
-```python
-class BenchmarkRunner:
-    def __init__(self, benchmark_dataset):
-        self.dataset = benchmark_dataset
-
-    def run_benchmark(self, model, metrics):
-        """Run model on benchmark and calculate metrics."""
-        results = {metric.name: [] for metric in metrics}
-
-        for example in self.dataset:
-            # Generate prediction
-            prediction = model.predict(example["input"])
-
-            # Calculate each metric
-            for metric in metrics:
-                score = metric.calculate(
-                    prediction=prediction,
-                    reference=example["reference"],
-                    context=example.get("context")
-                )
-                results[metric.name].append(score)
-
-        # Aggregate results
-        return {
-            metric: {
-                "mean": np.mean(scores),
-                "std": np.std(scores),
-                "min": min(scores),
-                "max": max(scores)
-            }
-            for metric, scores in results.items()
-        }
-```
-
-## Resources
-
-- **references/metrics.md**: Comprehensive metric guide
-- **references/human-evaluation.md**: Annotation best practices
-- **references/benchmarking.md**: Standard benchmarks
-- **references/a-b-testing.md**: Statistical testing guide
-- **references/regression-testing.md**: CI/CD integration
-- **assets/evaluation-framework.py**: Complete evaluation harness
-- **assets/benchmark-dataset.jsonl**: Example datasets
-- **scripts/evaluate-model.py**: Automated evaluation runner
-
-## Best Practices
-
-1. **Multiple Metrics**: Use diverse metrics for comprehensive view
-2. **Representative Data**: Test on real-world, diverse examples
-3. **Baselines**: Always compare against baseline performance
-4. **Statistical Rigor**: Use proper statistical tests for comparisons
-5. **Continuous Evaluation**: Integrate into CI/CD pipeline
-6. **Human Validation**: Combine automated metrics with human judgment
-7. **Error Analysis**: Investigate failures to understand weaknesses
-8. **Version Control**: Track evaluation results over time
-
-## Common Pitfalls
-
-- **Single Metric Obsession**: Optimizing for one metric at the expense of others
-- **Small Sample Size**: Drawing conclusions from too few examples
-- **Data Contamination**: Testing on training data
-- **Ignoring Variance**: Not accounting for statistical uncertainty
-- **Metric Mismatch**: Using metrics not aligned with business goals
+- **Optimizing the metric.** Every metric becomes a target and then stops measuring.
+  Re-check against humans periodically.
+- **Evaluating only the happy path.** Include adversarial, empty, overlong, and
+  wrong-language inputs — production has them.
+- **One number for the whole system.** Score retrieval, generation, and formatting
+  separately or you cannot act on a drop.
+- **No human in the loop, ever.** Automated eval drifts from user-perceived quality.
+  Budget a periodic manual review; it is what recalibrates everything else.

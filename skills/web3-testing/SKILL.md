@@ -1,166 +1,171 @@
 ---
 name: web3-testing
-description: "Test smart contracts comprehensively using Hardhat and Foundry with unit tests, integration tests, and mainnet forking. Use when testing Solidity contracts, setting up blockchain test suites, or va..."
+description: "Test Solidity contracts with Hardhat and Foundry: fixtures, fuzz and invariant tests, mainnet forking, gas and coverage checks."
 risk: unknown
 source: community
 ---
 
 # Web3 Smart Contract Testing
 
-Master comprehensive testing strategies for smart contracts using Hardhat, Foundry, and advanced testing patterns.
+Patterns for testing Solidity contracts with Hardhat (JS/TS) and Foundry (Solidity).
 
-## Do not use this skill when
+**This skill ships as `SKILL.md` only — there are no bundled reference, asset, or script
+files. Everything below is meant to be read and inlined, not opened from a path.**
 
-- The task is unrelated to web3 smart contract testing
-- You need a different domain or tool outside this scope
+## Use when
 
-## Instructions
+- Writing or reviewing a Hardhat/Foundry test suite for Solidity contracts
+- Setting up mainnet-fork tests against live protocol addresses
+- Adding fuzz or invariant tests to catch edge cases unit tests miss
+- Diagnosing gas regressions or coverage gaps in a contract repo
 
-- Clarify goals, constraints, and required inputs.
-- Apply relevant best practices and validate outcomes.
-- Provide actionable steps and verification.
-- If detailed examples are required, open `resources/implementation-playbook.md`.
+## Do not use when
 
-## Use this skill when
+- The task is contract *authoring* or auditing rather than testing — the failure modes
+  and tooling differ; reach for a Solidity security skill instead
+- The chain is non-EVM (Solana, Cosmos, Move) — none of this tooling applies
+- The question is about frontend web3 (wagmi/viem/ethers in an app), not contract tests
 
-- Writing unit tests for smart contracts
-- Setting up integration test suites
-- Performing gas optimization testing
-- Fuzzing for edge cases
-- Forking mainnet for realistic testing
-- Automating test coverage reporting
-- Verifying contracts on Etherscan
+## Version check — do this first
 
-## Hardhat Testing Setup
+These examples assume **Hardhat 2 + `@nomicfoundation/hardhat-toolbox` v5+, which bundles
+ethers v6**. Two traps:
+
+- **ethers v5 → v6 renames break silently in tests.** `ethers.utils.parseEther` →
+  `ethers.parseEther`; `contract.address` → `await contract.getAddress()`;
+  `await Contract.deploy()` no longer waits — add `await c.waitForDeployment()`;
+  `receipt.gasUsed` is a **bigint**, so compare against `50000n`, not `50000`.
+- **Hardhat 3 renamed the toolbox packages** (`hardhat-toolbox-mocha-ethers` /
+  `hardhat-toolbox-viem`) and switched the default runner. Check `package.json` before
+  copying config; do not assume the plugin names below.
+
+Verify with `npx hardhat --version` and the `ethers` entry in `package.json` before
+writing the first test.
+
+## Hardhat config
 
 ```javascript
 // hardhat.config.js
-require("@nomicfoundation/hardhat-toolbox");
-require("@nomiclabs/hardhat-etherscan");
-require("hardhat-gas-reporter");
-require("solidity-coverage");
+require("@nomicfoundation/hardhat-toolbox");   // includes ethers v6, chai matchers, coverage, gas reporter
+require("@nomicfoundation/hardhat-verify");    // NOT @nomiclabs/hardhat-etherscan — that package is deprecated
 
 module.exports = {
   solidity: {
-    version: "0.8.19",
-    settings: {
-      optimizer: {
-        enabled: true,
-        runs: 200,
-      },
-    },
+    version: "0.8.28",
+    settings: { optimizer: { enabled: true, runs: 200 } },
   },
   networks: {
     hardhat: {
       forking: {
         url: process.env.MAINNET_RPC_URL,
-        blockNumber: 15000000,
+        blockNumber: 15000000,   // pin the block — an unpinned fork makes tests non-reproducible and defeats RPC caching
       },
     },
-    goerli: {
-      url: process.env.GOERLI_RPC_URL,
+    sepolia: {                   // goerli is dead; sepolia/holesky are the live testnets
+      url: process.env.SEPOLIA_RPC_URL,
       accounts: [process.env.PRIVATE_KEY],
     },
   },
-  gasReporter: {
-    enabled: true,
-    currency: "USD",
-    coinmarketcap: process.env.COINMARKETCAP_API_KEY,
-  },
-  etherscan: {
-    apiKey: process.env.ETHERSCAN_API_KEY,
-  },
+  gasReporter: { enabled: process.env.REPORT_GAS === "true", currency: "USD" },
+  etherscan: { apiKey: process.env.ETHERSCAN_API_KEY },
 };
 ```
 
-## Unit Testing Patterns
+## Hardhat: fixtures are the core pattern
+
+`loadFixture` snapshots after the first run and reverts to that snapshot for every later
+test. It is both faster and safer than `beforeEach` redeployment — state cannot leak
+between tests.
 
 ```javascript
 const { expect } = require("chai");
 const { ethers } = require("hardhat");
-const {
-  loadFixture,
-  time,
-} = require("@nomicfoundation/hardhat-network-helpers");
+const { loadFixture, time } = require("@nomicfoundation/hardhat-network-helpers");
 
-describe("Token Contract", function () {
-  // Fixture for test setup
+describe("Token", function () {
   async function deployTokenFixture() {
     const [owner, addr1, addr2] = await ethers.getSigners();
-
     const Token = await ethers.getContractFactory("Token");
     const token = await Token.deploy();
-
+    await token.waitForDeployment();        // v6: deploy() does not wait
     return { token, owner, addr1, addr2 };
   }
 
-  describe("Deployment", function () {
-    it("Should set the right owner", async function () {
-      const { token, owner } = await loadFixture(deployTokenFixture);
-      expect(await token.owner()).to.equal(owner.address);
-    });
-
-    it("Should assign total supply to owner", async function () {
-      const { token, owner } = await loadFixture(deployTokenFixture);
-      const ownerBalance = await token.balanceOf(owner.address);
-      expect(await token.totalSupply()).to.equal(ownerBalance);
-    });
+  it("assigns total supply to the owner", async function () {
+    const { token, owner } = await loadFixture(deployTokenFixture);
+    expect(await token.totalSupply()).to.equal(await token.balanceOf(owner.address));
   });
 
-  describe("Transactions", function () {
-    it("Should transfer tokens between accounts", async function () {
-      const { token, owner, addr1 } = await loadFixture(deployTokenFixture);
-
-      await expect(token.transfer(addr1.address, 50)).to.changeTokenBalances(
-        token,
-        [owner, addr1],
-        [-50, 50],
-      );
-    });
-
-    it("Should fail if sender doesn't have enough tokens", async function () {
-      const { token, addr1 } = await loadFixture(deployTokenFixture);
-      const initialBalance = await token.balanceOf(addr1.address);
-
-      await expect(
-        token.connect(addr1).transfer(owner.address, 1),
-      ).to.be.revertedWith("Insufficient balance");
-    });
-
-    it("Should emit Transfer event", async function () {
-      const { token, owner, addr1 } = await loadFixture(deployTokenFixture);
-
-      await expect(token.transfer(addr1.address, 50))
-        .to.emit(token, "Transfer")
-        .withArgs(owner.address, addr1.address, 50);
-    });
+  it("transfers between accounts", async function () {
+    const { token, owner, addr1 } = await loadFixture(deployTokenFixture);
+    await expect(token.transfer(addr1.address, 50))
+      .to.changeTokenBalances(token, [owner, addr1], [-50, 50]);
   });
 
-  describe("Time-based tests", function () {
-    it("Should handle time-locked operations", async function () {
-      const { token } = await loadFixture(deployTokenFixture);
-
-      // Increase time by 1 day
-      await time.increase(86400);
-
-      // Test time-dependent functionality
-    });
+  it("reverts when the sender is short", async function () {
+    const { token, owner, addr1 } = await loadFixture(deployTokenFixture);
+    // Destructure EVERY signer you reference. Referencing an undeclared `owner`
+    // here throws ReferenceError, and the test still "passes" under a bare
+    // `.to.be.reverted` assertion — a classic false green.
+    await expect(token.connect(addr1).transfer(owner.address, 1))
+      .to.be.revertedWithCustomError(token, "ERC20InsufficientBalance");
+      // OpenZeppelin v5 uses custom errors. Pre-v5 string reverts need
+      // .revertedWith("ERC20: transfer amount exceeds balance") instead.
   });
 
-  describe("Gas optimization", function () {
-    it("Should use gas efficiently", async function () {
-      const { token } = await loadFixture(deployTokenFixture);
+  it("emits Transfer", async function () {
+    const { token, owner, addr1 } = await loadFixture(deployTokenFixture);
+    await expect(token.transfer(addr1.address, 50))
+      .to.emit(token, "Transfer").withArgs(owner.address, addr1.address, 50);
+  });
 
-      const tx = await token.transfer(addr1.address, 100);
-      const receipt = await tx.wait();
+  it("respects a time lock", async function () {
+    const { token } = await loadFixture(deployTokenFixture);
+    await time.increase(86400);              // advance one day; do not sleep
+    // assert the time-gated path
+  });
 
-      expect(receipt.gasUsed).to.be.lessThan(50000);
-    });
+  it("stays under the gas budget", async function () {
+    const { token, addr1 } = await loadFixture(deployTokenFixture);
+    const receipt = await (await token.transfer(addr1.address, 100)).wait();
+    expect(receipt.gasUsed).to.be.lessThan(50000n);   // bigint in ethers v6
   });
 });
 ```
 
-## Foundry Testing (Forge)
+**Prefer `loadFixture` over manual `evm_snapshot`/`evm_revert`.** Hand-rolled snapshots are
+still correct, but they are easy to leak across `describe` blocks and `loadFixture` already
+does the same thing with less code.
+
+## Hardhat: mainnet forking
+
+```javascript
+describe("fork", function () {
+  let dai, router;
+
+  before(async function () {
+    await network.provider.request({
+      method: "hardhat_reset",
+      params: [{ forking: { jsonRpcUrl: process.env.MAINNET_RPC_URL, blockNumber: 15000000 } }],
+    });
+    dai = await ethers.getContractAt("IERC20", "0x6B175474E89094C44Da98b954EedeAC495271d0F");
+    router = await ethers.getContractAt("IUniswapV2Router", "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D");
+  });
+
+  it("moves real DAI from a whale", async function () {
+    const whale = "0x...";                  // pick a holder that is funded AT the pinned block
+    await network.provider.request({ method: "hardhat_impersonateAccount", params: [whale] });
+    await network.provider.request({ method: "hardhat_setBalance", params: [whale, "0x1000000000000000000"] });
+    // ^ impersonation grants signing, NOT gas. Without setBalance the tx reverts
+    //   with "insufficient funds" and the failure looks like a contract bug.
+    const signer = await ethers.getSigner(whale);
+    const [, addr1] = await ethers.getSigners();
+    await dai.connect(signer).transfer(addr1.address, ethers.parseEther("1000"));
+  });
+});
+```
+
+## Foundry (forge)
 
 ```solidity
 // SPDX-License-Identifier: MIT
@@ -173,257 +178,139 @@ contract TokenTest is Test {
     Token token;
     address owner = address(1);
     address user1 = address(2);
-    address user2 = address(3);
 
     function setUp() public {
         vm.prank(owner);
         token = new Token();
     }
 
-    function testInitialSupply() public {
-        assertEq(token.totalSupply(), 1000000 * 10**18);
-    }
-
-    function testTransfer() public {
+    function test_Transfer() public {
         vm.prank(owner);
         token.transfer(user1, 100);
-
         assertEq(token.balanceOf(user1), 100);
-        assertEq(token.balanceOf(owner), token.totalSupply() - 100);
     }
 
-    function testFailTransferInsufficientBalance() public {
+    // Use vm.expectRevert, not the testFail* prefix — testFail* is deprecated in
+    // forge-std and passes on ANY revert, including an unrelated one you did not mean
+    // to trigger. expectRevert pins the exact reason.
+    function test_RevertWhen_InsufficientBalance() public {
         vm.prank(user1);
-        token.transfer(user2, 100); // Should fail
+        vm.expectRevert(abi.encodeWithSignature("ERC20InsufficientBalance(address,uint256,uint256)", user1, 0, 100));
+        token.transfer(owner, 100);
     }
 
-    function testCannotTransferToZeroAddress() public {
-        vm.prank(owner);
-        vm.expectRevert("Invalid recipient");
-        token.transfer(address(0), 100);
-    }
-
-    // Fuzzing test
-    function testFuzzTransfer(uint256 amount) public {
+    // Fuzzing: forge calls this ~256x with random inputs. vm.assume discards
+    // invalid draws; too broad an assume silently starves the run — check the
+    // "rejected" counter in the output.
+    function testFuzz_Transfer(uint256 amount) public {
         vm.assume(amount > 0 && amount <= token.totalSupply());
-
         vm.prank(owner);
         token.transfer(user1, amount);
-
         assertEq(token.balanceOf(user1), amount);
     }
 
-    // Test with cheatcodes
-    function testDealAndPrank() public {
-        // Give ETH to address
-        vm.deal(user1, 10 ether);
-
-        // Impersonate address
-        vm.prank(user1);
-
-        // Test functionality
-        assertEq(user1.balance, 10 ether);
-    }
-
-    // Mainnet fork test
-    function testForkMainnet() public {
-        vm.createSelectFork("https://eth-mainnet.alchemyapi.io/v2/...");
-
-        // Interact with mainnet contracts
+    function test_Fork() public {
+        vm.createSelectFork(vm.envString("MAINNET_RPC_URL"), 15000000);
         address dai = 0x6B175474E89094C44Da98b954EedeAC495271d0F;
-        assertEq(IERC20(dai).symbol(), "DAI");
+        assertEq(IERC20Metadata(dai).symbol(), "DAI");   // symbol() is on IERC20Metadata, not IERC20
     }
 }
 ```
 
-## Advanced Testing Patterns
+### Invariant tests — the thing unit tests cannot do
 
-### Snapshot and Revert
+A fuzz test checks one function against random inputs. An **invariant** test checks a
+property that must hold after *any* sequence of calls — this is where real protocol bugs
+surface.
 
-```javascript
-describe("Complex State Changes", function () {
-  let snapshotId;
+```solidity
+import {StdInvariant} from "forge-std/StdInvariant.sol";
 
-  beforeEach(async function () {
-    snapshotId = await network.provider.send("evm_snapshot");
-  });
+contract TokenInvariants is StdInvariant, Test {
+    Token token;
 
-  afterEach(async function () {
-    await network.provider.send("evm_revert", [snapshotId]);
-  });
+    function setUp() public {
+        token = new Token();
+        targetContract(address(token));   // restrict the random call surface
+    }
 
-  it("Test 1", async function () {
-    // Make state changes
-  });
-
-  it("Test 2", async function () {
-    // State reverted, clean slate
-  });
-});
+    function invariant_TotalSupplyEqualsSumOfBalances() public view {
+        assertEq(token.totalSupply(), token.balanceOf(address(this)) /* + tracked holders */);
+    }
+}
 ```
 
-### Mainnet Forking
+Tune depth/runs in `foundry.toml` under `[invariant]` — the defaults are shallow enough to
+miss multi-step bugs.
 
-```javascript
-describe("Mainnet Fork Tests", function () {
-  let uniswapRouter, dai, usdc;
+### Useful cheatcodes
 
-  before(async function () {
-    await network.provider.request({
-      method: "hardhat_reset",
-      params: [
-        {
-          forking: {
-            jsonRpcUrl: process.env.MAINNET_RPC_URL,
-            blockNumber: 15000000,
-          },
-        },
-      ],
-    });
+| Cheatcode | Effect |
+|---|---|
+| `vm.prank(a)` | next call only comes from `a`; `startPrank`/`stopPrank` for a span |
+| `vm.deal(a, 10 ether)` | set ETH balance |
+| `vm.warp(t)` / `vm.roll(n)` | set timestamp / block number |
+| `vm.expectRevert(bytes)` | assert the next call reverts with that exact data |
+| `vm.expectEmit(...)` | assert the next event matches |
+| `vm.envString("KEY")` | read env (keeps RPC URLs out of the repo) |
 
-    // Connect to existing mainnet contracts
-    uniswapRouter = await ethers.getContractAt(
-      "IUniswapV2Router",
-      "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D",
-    );
-
-    dai = await ethers.getContractAt(
-      "IERC20",
-      "0x6B175474E89094C44Da98b954EedeAC495271d0F",
-    );
-  });
-
-  it("Should swap on Uniswap", async function () {
-    // Test with real Uniswap contracts
-  });
-});
-```
-
-### Impersonating Accounts
-
-```javascript
-it("Should impersonate whale account", async function () {
-  const whaleAddress = "0x...";
-
-  await network.provider.request({
-    method: "hardhat_impersonateAccount",
-    params: [whaleAddress],
-  });
-
-  const whale = await ethers.getSigner(whaleAddress);
-
-  // Use whale's tokens
-  await dai
-    .connect(whale)
-    .transfer(addr1.address, ethers.utils.parseEther("1000"));
-});
-```
-
-## Gas Optimization Testing
-
-```javascript
-const { expect } = require("chai");
-
-describe("Gas Optimization", function () {
-  it("Compare gas usage between implementations", async function () {
-    const Implementation1 =
-      await ethers.getContractFactory("OptimizedContract");
-    const Implementation2 = await ethers.getContractFactory(
-      "UnoptimizedContract",
-    );
-
-    const contract1 = await Implementation1.deploy();
-    const contract2 = await Implementation2.deploy();
-
-    const tx1 = await contract1.doSomething();
-    const receipt1 = await tx1.wait();
-
-    const tx2 = await contract2.doSomething();
-    const receipt2 = await tx2.wait();
-
-    console.log("Optimized gas:", receipt1.gasUsed.toString());
-    console.log("Unoptimized gas:", receipt2.gasUsed.toString());
-
-    expect(receipt1.gasUsed).to.be.lessThan(receipt2.gasUsed);
-  });
-});
-```
-
-## Coverage Reporting
+## Coverage and gas
 
 ```bash
-# Generate coverage report
-npx hardhat coverage
-
-# Output shows:
-# File                | % Stmts | % Branch | % Funcs | % Lines |
-# -------------------|---------|----------|---------|---------|
-# contracts/Token.sol |   100   |   90     |   100   |   95    |
+npx hardhat coverage              # Hardhat: istanbul-style report
+forge coverage                    # Foundry equivalent
+forge test --gas-report           # per-function gas table
+forge snapshot --check            # fail CI if gas regressed vs .gas-snapshot
 ```
 
-## Contract Verification
+`forge snapshot --check` is the one that actually prevents gas regressions — a
+`console.log` comparison in a test does not fail the build.
 
-```javascript
-// Verify on Etherscan
-await hre.run("verify:verify", {
-  address: contractAddress,
-  constructorArguments: [arg1, arg2],
-});
-```
+## Verification
 
 ```bash
-# Or via CLI
-npx hardhat verify --network mainnet CONTRACT_ADDRESS "Constructor arg1" "arg2"
+npx hardhat verify --network mainnet CONTRACT_ADDRESS "arg1" "arg2"
+forge verify-contract CONTRACT_ADDRESS src/Token.sol:Token --chain mainnet
 ```
 
-## CI/CD Integration
+Constructor args must match the deployed bytecode exactly, including types — a `uint256`
+passed where the constructor takes `uint128` fails verification with an unhelpful error.
+
+## CI
 
 ```yaml
 # .github/workflows/test.yml
 name: Tests
-
 on: [push, pull_request]
-
 jobs:
   test:
     runs-on: ubuntu-latest
-
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions/setup-node@v2
-        with:
-          node-version: "16"
-
-      - run: npm install
+      - uses: actions/checkout@v4
+        with: { submodules: recursive }     # Foundry deps are git submodules
+      - uses: actions/setup-node@v4
+        with: { node-version: "20" }
+      - uses: foundry-rs/foundry-toolchain@v1
+      - run: npm ci
       - run: npx hardhat compile
       - run: npx hardhat test
-      - run: npx hardhat coverage
-
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v2
+      - run: forge test -vvv
+      - run: forge snapshot --check
+    env:
+      MAINNET_RPC_URL: ${{ secrets.MAINNET_RPC_URL }}
 ```
 
-## Resources
+Fork tests need an RPC secret in CI. Without it they either skip silently or fail on every
+PR from a fork of the repo — decide which, and make it explicit.
 
-- **references/hardhat-setup.md**: Hardhat configuration guide
-- **references/foundry-setup.md**: Foundry testing framework
-- **references/test-patterns.md**: Testing best practices
-- **references/mainnet-forking.md**: Fork testing strategies
-- **references/contract-verification.md**: Etherscan verification
-- **assets/hardhat-config.js**: Complete Hardhat configuration
-- **assets/test-suite.js**: Comprehensive test examples
-- **assets/foundry.toml**: Foundry configuration
-- **scripts/test-contract.sh**: Automated testing script
+## Checklist
 
-## Best Practices
-
-1. **Test Coverage**: Aim for >90% coverage
-2. **Edge Cases**: Test boundary conditions
-3. **Gas Limits**: Verify functions don't hit block gas limit
-4. **Reentrancy**: Test for reentrancy vulnerabilities
-5. **Access Control**: Test unauthorized access attempts
-6. **Events**: Verify event emissions
-7. **Fixtures**: Use fixtures to avoid code duplication
-8. **Mainnet Fork**: Test with real contracts
-9. **Fuzzing**: Use property-based testing
-10. **CI/CD**: Automate testing on every commit
+- [ ] ethers major version confirmed against `package.json` before copying any snippet
+- [ ] Fork block number pinned, not latest
+- [ ] Every signer referenced in a test is destructured from the fixture
+- [ ] Impersonated accounts given a balance via `hardhat_setBalance`
+- [ ] Revert assertions name the specific error, never bare `.to.be.reverted`
+- [ ] Fuzz tests checked for a high `rejected` count from over-broad `vm.assume`
+- [ ] At least one invariant covering a supply/accounting property
+- [ ] Access control and reentrancy paths have explicit negative tests
+- [ ] `forge snapshot --check` wired into CI

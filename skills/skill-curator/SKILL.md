@@ -207,3 +207,8 @@ it is the signal that the next pass has to remove skills, not shorten them.
 ### Phase 6: Update Source Log
 
 Append a curation entry to `reports/skill-curation-report.md` under a new `## Local Curation — [date]` section noting what was merged/compressed/deleted and the description budget before/after.
+
+## Anti-Patterns
+
+### ❌ Auditing descriptions while the body accumulates duplicates
+Phase 2 reads descriptions only: keep-rate:178 restates :176, error-handling-patterns:55 restates :53 - flagged, not cut. (source: 2026-10-27 [judge])

@@ -124,8 +124,8 @@ Example: 2026-10-03 daily-maintenance died in queue; marker read start time, not
 ### ❌ Scheduler no-show vs true idle
 Never-fired run leaves zero artifacts, indistinguishable from idle. Check cadence before marking idle. (source: 2026-09-27 [routine-error, insight])
 
-### ❌ Census-hole detection for scheduler never-fire
-Zero transcripts+observations+metrics across BOTH repos for one day indicates scheduler never-fire, not idle. Sentinel check alone misses this. (source: daa-llm-evaluation 2026-09-30 [judge])
+### ❌ Zero-across-channels without TOOL CALL count
+No transcript at all = never-fired. A short transcript with 0 tool calls = died at launch. Both leave zero artifacts, so check the transcript. (source: aiq-zora-agent-skill-foundation 2026-10-18 [insight, debug, escaped, enforceable], 2026-10-22 [skill-update-flagged])
 
 ### ❌ Reading the subagent scratch dir as the transcript channel
 Transcripts live in ~/.claude/projects/<slug>/; /private/tmp/claude-*/<slug>/ is subagent scratch. An empty tasks/ there is normal, not a dead session. (source: 2026-09-30 [session-quality])
@@ -155,3 +155,50 @@ If error count seems high, verify trace.log's `## Trace / outcome:` — hook sub
 
 ### ❌ isApiErrorMessage alone in a transcript that read this skill
 Marker appears in skill text; require co-occurrence with model:"<synthetic>" to avoid self-match. (source: 2026-10-07 [session-quality])
+### ❌ Grepping transcripts for outage signatures without excluding injected context
+Hot-memory injected by UserPromptSubmit quotes "502", "authentication_failed", "Agent stalled" — every transcript self-matches. (source: 2026-10-17 [session-quality])
+
+### ❌ Fleet-mode starvation masked as idle
+Orchestrator servicing one repo per invocation starves others for days; zero observations look idle. Check if siblings ran in that window. (source: 2026-10-18 [judge])
+
+### ❌ Dating a transcript by its file mtime
+A midnight-crossing run is last written the next day, so mtime dating empties the prior date; use session start time. (source: 2026-10-21)
+
+### ❌ Relative memory paths without repo root verification
+Relative .claude/memory paths can resolve to sibling repo if mounted as working directory. Verify absolute path matches repo root. (source: aiq-zora-agent-skill-foundation 2026-10-22 [judge])
+
+### ❌ Recursive find over the transcripts dir
+Subagent transcripts also sit at <session>/subagents/, not only in /private/tmp scratch; recursive find inflates session counts. Use -maxdepth 1. (source: 2026-10-23 [session-quality])
+
+### ❌ Auth kills discriminated by tool-call count
+Auth kills can land mid-run after substantial work; tool_use == 0 unreliable. Check last assistant message for 401, not tool count. (source: 2026-10-25 [routine-alert])
+
+### ❌ Transcript presence without routine marker check
+Per-repo transcripts or session starts do not prove daily-maintenance fired; check .last-routine-run timestamp + observation date histogram. (source: aiq-zora-agent-skill-foundation 2026-10-26 [routine-alert])
+
+### ❌ Relying on harness trace.log status for routine outcome
+Trace.log status scans response for keywords, falsely failing agents quoting errors and passing killed ones. Verify with independent artifact channels. (source: comfyui 2026-10-26 [debug, insight, pattern])
+
+### ❌ Zero local `[skill-update]` lines read as no skill work
+Cross-repo sessions log the write in the originating repo; 6 such lines sat in siblings on 10-26/27, sdd-harness 0. (source: 2026-10-27 [judge])
+
+### ❌ Assuming mtime census survives between syncs
+Fleet sync erases earlier daily buckets (LAST-WRITE-WINS); trust only same-day window counts. (source: aiq-zora-agent-skill-foundation 2026-10-28 [debug, insight, escaped])
+
+### ❌ Inline zsh census loop fabricates output
+Zsh `set -- $var` doesn't word-split, so a failed find still prints `0`. The empty result looks identical to a real empty window—silent and indistinguishable. (source: 2026-10-31 [session-quality]). Write loops to script files, run under bash.
+
+### ❌ Shell arithmetic blocked in ctx_shell commands
+`$((day+1))` and other shell arithmetic inside ctx_shell is hard-blocked by lean-ctx allowlist (exit 126). Day-window loops must use explicit literal date pairs. (source: 2026-10-31 [session-quality])
+
+### ❌ Five channels miss already-running sessions finishing
+Five new-work channels miss a continuing session; add find -newermt D ! -newermt D+1. (source: aiq-zora-ai-engine 2026-10-28 [session-quality])
+
+### ❌ .last-routine-run marker only stamps latest run
+.last-routine-run stamps only the latest run, so it cannot evidence a prior day. (source: aiq-zora-ai-engine 2026-10-28 [session-quality])
+
+### ❌ Per-repo starvation confused with fleet-wide quiet
+One busy sibling = quiet day, not starvation. Only all siblings quiet = fleet-wide quiet. Count siblings per repo, not globally. (source: 2026-10-31 [session-quality])
+
+### ❌ Keeping a prior row's idle marking for continuity
+Zero user sessions means `--idle` (see Idle windows above); continuity with earlier rows never overrides it. Backfill, don't match. (2026-10-29)

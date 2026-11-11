@@ -266,3 +266,10 @@ Done!
 
 **Alternative workflow:**
 - **superpowers:executing-plans** - Use for parallel session instead of same-session execution
+## Anti-Patterns
+
+### ❌ File-read-first subagent briefs stall at 600s watchdog
+Briefs opening with `cat <file>` stall progress reporting; watchdog kills subagent. Lead with action: START NOW. (source: comfyui 2026-10-21 [judge])
+
+### ❌ Spawning a subagent type that is defined but not registered
+agents/kiro/session-judge.md exists but Agent() answers "not found" instantly; inline it into general-purpose. (source: 2026-10-27 [judge])

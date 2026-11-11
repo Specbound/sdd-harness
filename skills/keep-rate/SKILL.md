@@ -63,7 +63,7 @@ If the calculator script is missing, rebuild it from this Step — the recipe is
 ### Step 3 — Aggregate
 
 - Per-commit keep rate
-- Overall project keep rate (last 30 days of Claude commits)
+- Overall project keep rate (every Claude commit older than the `--days` grace floor, default 7d — there is no upper bound, so the cohort only grows)
 - Trend: compare to previous period's rate
 
 ### Step 4 — Interpret
@@ -75,19 +75,19 @@ If the calculator script is missing, rebuild it from this Step — the recipe is
 | 40–60% | Warning — code getting substantially reworked |
 | < 40% | Alert — agent output is being rejected or heavily rewritten |
 
-**Window Artifact Check:** Before flagging a sharp drop in keep-rate, verify whether a large durable commit just aged past 30 days (removed from denominator) or a large low-survival commit entered the 7-30d window. Recompute keeping only feature code, excluding infra/revert/churn commits. High feature-code survival with low aggregate = window shift, not a quality drain. (source: 2026-07-29 patterns)
+**Window Artifact Check:** Before flagging a sharp drop, check whether the cohort itself moved: commits only ever enter it (past the 7d floor) and never age out, so a drop means a large low-survival commit just crossed the floor, not that a durable one left. Recompute keeping only feature code, excluding infra/revert/churn commits. High feature-code survival with low aggregate = cohort shift, not a quality drain. (source: 2026-07-29 patterns, cohort corrected 2026-10-13)
 
 **Baseline Recording Note:** Record git-blame flags used; pinning `-M -C` reattributes lines that later commits moved within the codebase, causing per-commit variance up to 4.7pt (8df5ed3 93.6→98.3, 0a9946c 99.9→92.4). Blame-based keep rates are incomparable across different flag settings. (source: 2026-08-31 [keep-rate])
 
 ### Step 5 — Record as observation
 
-Prose observation in `.claude/memory/observations.md` (trend, window notes, outliers):
+Text observation in `.claude/memory/observations.md` (trend, window notes, outliers):
 
 ```
 - YYYY-MM-DD [keep-rate]: Keep Rate = X% (N commits, M lines). Trend: ↑/↓/→ vs last period. [any notable pattern]
 ```
 
-Structured measurement — the dashboard reads **only** this, never the prose:
+Structured measurement — the dashboard reads **only** this, never the text:
 
 ```bash
 .claude/scripts/session/record_metric.py --metric keep-rate --value X \
@@ -169,7 +169,7 @@ The denominator must count all touched paths; deleted/renamed files are silently
 Use `os.path.isfile` when processing `git ls-files` output; worktree/gitlink entries are directories. (source: daa-llm-evaluation 2026-09-09 [keep-rate])
 
 ### ❌ Empty cohort as 0% rate
-When 'last 30 days' window empties (all commits older), Keep Rate is undefined not 0%. (source: 2026-09-27 [keep-rate])
+The cohort cannot empty by aging — it has no upper bound. With zero Claude commits past the 7d floor, Keep Rate is undefined, not 0%. (source: 2026-09-27 [keep-rate], corrected 2026-10-13)
 
 ### ❌ Writing generated scripts only to ~/.claude/scripts
 Generated scripts must be written to /Users/user/GitHub/sdd-harness/scripts/ first; ~/.claude/ bulk reinstalls wipe all scripts. (source: daa-llm-evaluation 2026-09-28 [judge])
@@ -179,6 +179,12 @@ If _keep_rate_calc.py is missing from .claude/scripts/session/, check ~/GitHub/s
 
 ### ❌ Comparing keep-rate across calculator implementation changes
 Calculator methodology changes (clamp logic, reattribution rules) invalidate comparability same as blame-flag changes do. Record methodology version/hash when changes occur. (source: 2026-09-28 [keep-rate])
+
+### ❌ Stated 30-day window is not enforced
+Fixed 2026-10-13: Steps 3-4 now state the real cohort. The calculator enforces a `--days` grace cutoff (default 7d) and no upper bound; readings that narrated a 30d window are not comparable to current ones. (source: 2026-10-08 observation)
+
+### ❌ Flat keep-rate on unchanged HEAD as stable trend
+Identical readings on static HEAD = frozen cohort, not trend. Cohort can't shrink (commits only enter). Rerun only after commits land or git pull. (source: aiq-zora-agent-skill-foundation 2026-10-22 [keep-rate])
 
 ## Session-Learned Patterns
 
@@ -198,3 +204,8 @@ New calculator scripts (_keep_rate_classified.py, _keep_rate_delta.py) created u
 
 ### ✓ Record calculator md5 alongside rate
 Without md5 hash and HEAD hash recorded, "stable flags" claims become unverifiable. Record both with each measurement. (source: 2026-10-07 [keep-rate])
+### ❌ Suspending a frozen-cohort reading instead of flagging it
+record_metric.py replaces same (date,metric) rows, so re-runs can't duplicate. When the loop reruns anyway, pass --idle to exclude it from averages. (source: 2026-10-23 [keep-rate])
+
+### ✓ Passing --idle on frozen readings prevents self-paying loop
+When cohort is frozen (HEAD unchanged), pass --idle to exclude from average so trust credit skips that run. (source: aiq-zora-agent-skill-foundation 2026-10-26 [keep-rate])
