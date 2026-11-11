@@ -27,6 +27,14 @@ Check `.claude/memory/manager/` exists and contains at least one of `projects.md
 Follow `synthesizing-daily-briefings` Phases 1–5 in order: load/bootstrap, gather signal
 since last run, filter/tier/dedup, write the briefing, update the ledger.
 
+## Step 1b — Decisions Waiting on the User
+
+Read every `specs/*/choices.md` in this repo. List each entry whose current verdict is
+`needs-user` as a briefing item (spec, decision, the provisional call taken), P1 unless
+the entry says it blocks work. Read each file whole rather than counting matches: a later
+audit pass can resolve an earlier `needs-user`, and only the latest verdict per decision
+counts. No `choices.md` files, or none open → omit the section; do not write "none".
+
 ## Step 2 — Report Location
 
 Write the briefing to `.claude/reports/daily-briefings/<TODAY>.md`, leading with a
