@@ -6,6 +6,26 @@
 
 ---
 
+## Recent Changes (2026-11-11 — Harness Build 45)
+
+From the 2026-11-11 9-link extraction batch (4 extracted, 6 rejected), plus a live model-staleness check.
+
+### Scripts / routines
+- `scripts/utils/model-staleness.py` **(new)** — stdlib-only, no `re`. Fetches the live lineup from `platform.claude.com/docs/en/models/overview.md` (its "Claude API ID" table row; no API key), scans `skills/ agents/ commands/ hooks/ scripts/ templates/ rules/ kiro/` plus root `CLAUDE.md`/`AGENTS.md` for model IDs (`claude-opus-4-8`, `claude-3-5-sonnet-…`) and prose names (`Opus 4.8`), and reports each mention older (`stale`) or newer (`newer`) than the current model of its family. Exit 0 clean / 1 findings / 2 live page unreadable — never "clean" on a failed fetch. Tests: `model-staleness.test.sh` (16 offline cases, fixture live page).
+- `scripts/utils/model-mention-allow.txt` **(new)** — mentions that are correct as written (test fixtures, quoted benchmarks, citations, the caveman-savings Haiku baseline pin). `scripts/utils/model-mention-debt.txt` **(new)** — 72 known-stale mentions seeded 2026-11-11 (dashboard pricing constants still on Sonnet 4.6 rates, `caveman-stats.js` price table, vendored skill examples), counted not reported, so a release shows up as fresh findings. Same pattern as `no-regex-debt.txt`.
+- `scripts/routines/model-staleness-runner.sh` **(new)** — weekly, deterministic, harness-only; writes `.claude/reports/model-staleness.json`. On exit 2 it keeps the previous report and does not stamp the run, so the next tick retries. Wired into `daily-orchestrator.sh` `run_one()`; opt out `SDD_SKIP_MODEL_STALENESS=1`, cadence `MODEL_STALENESS_GAP_DAYS`.
+- `scripts/session/micro_reflect.py`, `scripts/session/detect_reexplanation.py` — `claude --print --model` now uses the `haiku` alias instead of the pinned `claude-haiku-4-5-20251001`.
+
+### Hooks
+- `session-start-hook.sh` — prints `[MODEL-STALE] N model mention(s) superseded…` while the last report has findings.
+- `gbrain-agent-spawn.sh` — the model-tier reminder names aliases only and follows the 2026-11-09 guidance (haiku for read-and-report subagents, opus when unsure, fable for the hardest work).
+- `agent-commit-attribution-hook.sh` — the suggested trailer no longer hardcodes "Claude Opus 5"; it asks for the model your system prompt names.
+
+### Commands / skills / templates
+- `skills/model-tiers` — rewritten against the live lineup: aliases instead of pinned IDs, 4 tiers with opus as the default when unsure, Haiku for subagents that only read and report, the corrected ~2× price step (it said Opus cost 3× Sonnet), escalation order (self-verification → effort +1 → next model up at lower effort), run cheap first and re-run only failures, switching models only at a natural break, and `effort` correctly described as an API parameter too. New **Staying Current** section points at the routine.
+- `commands/global/claudemd-review.md` — two new rubric dimensions: **Contradicted by code** (each rule checked against the code as followed / contradicted / unverifiable / ahead-of-code (gated); behavior-changing contradictions only) and **Text-only invariant** (must-never-break rules with no hook or deny rule behind them). Claimed contradictions are re-checked by a fresh subagent before they reach the report.
+- `templates/CLAUDE.md.template` + `CLAUDE.md` — two Rules: follow the code when an instruction file disagrees and list each mismatch, except gated rules (the instruction is intentionally ahead of the code); and a feature that only fits by bolting it on counts as a design change, so stop and recommend the refactor.
+
 ## Recent Changes (2026-11-11 — Harness Build 44)
 
 From the 2026-11-11 21-link extraction batch (4 extracted, 16 rejected, 1 unresolved).

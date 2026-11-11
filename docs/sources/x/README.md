@@ -635,3 +635,21 @@ See also: [git/README.md](../git/README.md) — same 4-source batch, 2026-10-01 
 **Rejected:** kappa calibration of `session-judge` against hand-labelled days (the trust score never gates, the routine mostly scores through deterministic `auto-score`, and dozens of human labels is too much user time for a number nothing acts on; "calibrate then trust" for the *cheap* gate shipped instead as auto-score's readability check, see [articles/README.md](../articles/README.md) — "Building Effective Agent Automations"); judge panels with geometric median (`session-judge` already runs 3× with a median and spread gate); "JSON output makes judges less discriminating" (a one-line cited claim, not enough to change a machine-parsed verdict); a CI pass-rate gate (no product pass-rate series here); hallucination detectors and typed judges (external models).
 
 See also: [articles/README.md](../articles/README.md) — same 12-source batch, 2026-10-12.
+
+---
+
+## @LimestoneHQ, @atmoio, @_khrus, @esrtweet — instruction files vs code, bolt-on features, deep modules, keep it simple (4 threads)
+**URLs:** https://archive.codenewsletter.ai/2119808229236699466 · https://archive.codenewsletter.ai/2119525790723494116 · https://archive.codenewsletter.ai/2118971805885239777 · https://archive.codenewsletter.ai/2119518719923585140 (archived copies of the x.com posts)
+**Added:** 2026-11-11
+**Source / Author:** Limestone Digital, Mo, Chris, Eric S. Raymond (X, 2026-11-07 → 11-09). **Fetch:** ok, rung 1 (archive mirror), all four full threads.
+
+**What it's about:** (1) Limestone summarises Xu & Wu, arXiv 2610.30571: agents followed a stale CLAUDE.md/AGENTS.md over the code in 90.1% of choices, and one user-level sentence giving the code precedence moved that to 91.4% code-following. They add their own audit prompt that checks each rule against the code (with a fresh judge) and turns must-never-break rules into hooks. (2) Mo: tell the agent to stop and recommend a refactor rather than bolt on a feature that doesn't fit. (3) Chris: "deepen modules and simplify interfaces" (Ousterhout) as an anti-slop pass on every PR plus a nightly run. (4) ESR: keep LLM use simple; workflow scaffolding copes with models that will soon be smarter.
+
+**What we added:**
+- Augmentation: `templates/CLAUDE.md.template` + `CLAUDE.md` — the precedence rule, scoped: follow the code and list each mismatch, **except** rules a gate enforces (pre-commit, lint, a `*-debt.txt` ledger), where the instruction is intentionally ahead of the code. Without the exception the rule would tell agents to copy regex from the 13 files on `no-regex-debt.txt`. The exception is untested by the paper. The paper put the sentence in the user-level file; the user's private `~/.claude/CLAUDE.md` was left alone.
+- Augmentation: `commands/global/claudemd-review.md` — **Contradicted by code** and **Text-only invariant** rubric dimensions, plus fresh-subagent verification of claimed contradictions (the Limestone prompt's `<check>` and `<hooks>` steps). Already automatic: `session-start-hook.sh` fires the review every 14 days.
+- Augmentation (Mo): same Rules line — a feature that only fits by bolting it on counts as design-affecting, so plan first and recommend the refactor. `better-call`: AUGMENT both passes (16 vs 20, reversed 16 vs 21).
+
+**Rejected:** Chris's deepening pass (`better-call` AUGMENT 19 vs 21 vs `simplify-agent`, but overruled on the hollow-addition and domain-saturation checks: models already know Ousterhout, and an unattended nightly refactor would churn code and hurt keep-rate). ESR is an opinion with nothing to build, though it supports skill-extraction's default-skip rule.
+
+See also: [papers/README.md](../papers/README.md) — arXiv 2610.30571; [articles/README.md](../articles/README.md) — same 9-link batch, 2026-11-11.

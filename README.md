@@ -241,6 +241,7 @@ sdd-harness/
 │   │   ├── tool-failure-review-runner.sh
 │   │   ├── security-report-runner.sh
 │   │   ├── hook-config-audit-runner.sh # Weekly self-audit of the harness's own hooks/settings.json/.mcp.json (secrets, network-exfil, over-broad permissions)
+│   │   ├── model-staleness-runner.sh # Weekly (harness only): model mentions vs the live Claude lineup → .claude/reports/model-staleness.json
 │   │   ├── skill-write.sh        #     Single source of truth for writing any file inside a skill's directory (source + installed together)
 │   │   └── skill-delete.sh       #     Pairs with skill-write.sh — deletes both source and installed copies of a skill
 │   ├── session/                  #   Session signal processing
@@ -273,6 +274,7 @@ sdd-harness/
 │       ├── sync-memories-to-headroom.py # Bidirectional harness memory ↔ headroom sync
 │       ├── headroom-unwire-if-dead.py # Self-heal: strips ANTHROPIC_BASE_URL from settings.json when the routed headroom proxy refuses the connection; called by session-start-hook.sh every session
 │       ├── hook-config-audit.py  #     Weekly self-audit of the harness's own .claude/hooks/ + settings.json/settings.local.json/.mcp.json — secrets, network-exfil patterns, over-broad permission grants
+│       ├── model-staleness.py    #     Flags model IDs/names the live lineup (platform.claude.com) superseded; + model-mention-allow.txt / model-mention-debt.txt ledgers
 │       ├── check-no-hardcoded-paths.sh  # Verify no machine-specific paths in harness sources (*.sh, *.py, *.json, *.template + the generated .claude/settings.json); run by the harness repo's .git/hooks/pre-commit
 │       ├── check-no-regex.py    #     Extends the repo-wide regex ban to Python embedded in shell heredocs, where ruff's TID251 cannot reach. Runs in .git/hooks/pre-commit against a shrinking debt ledger
 │       ├── no-regex-debt.txt    #     The ledger check-no-regex.py reads. Listed files are known debt and do not fail; a file that is fixed but still listed DOES fail, so the ledger can only shrink

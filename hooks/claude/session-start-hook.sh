@@ -123,6 +123,17 @@ if [ "$should_review" = "1" ]; then
   echo "After the review completes, write today's date to $CLAUDEMD_STATE."
 fi
 
+# --- Model-staleness findings (written weekly by model-staleness-runner.sh) ---
+# One line, only while the last live check found mentions the lineup superseded.
+MODEL_STALE_REPORT=".claude/reports/model-staleness.json"
+if [ -f "$MODEL_STALE_REPORT" ] && command -v jq >/dev/null 2>&1; then
+  ms_total=$(jq -r '.total_findings // 0' "$MODEL_STALE_REPORT" 2>/dev/null || echo 0)
+  if [ "${ms_total:-0}" -gt 0 ] 2>/dev/null; then
+    ms_checked=$(jq -r '.checked_at // "unknown"' "$MODEL_STALE_REPORT" 2>/dev/null)
+    echo "[MODEL-STALE] $ms_total model mention(s) superseded by the live lineup (checked $ms_checked) — see $MODEL_STALE_REPORT. Update each (prefer an alias) or allowlist it in scripts/utils/model-mention-allow.txt."
+  fi
+fi
+
 # --- Steering bootstrap (first session after install) ---
 # install.sh drops .steering-bootstrap-pending when a freshly-installed project
 # has no steering files yet. Prompt steering once, inside a real session where the

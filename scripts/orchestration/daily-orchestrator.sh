@@ -304,6 +304,23 @@ run_one() {
     rm -f "$hca_errbuf"
   fi
 
+  # Model-staleness check — compares every Claude model name/ID in the harness's
+  # skills/agents/commands/hooks/scripts against the live lineup on
+  # platform.claude.com. Deterministic (no LLM call). Self-paces to weekly
+  # (MIN_GAP_DAYS=7). Harness-only; non-harness repos exit 0 immediately.
+  # Opt out with SDD_SKIP_MODEL_STALENESS=1.
+  if [ "${SDD_SKIP_MODEL_STALENESS:-0}" != "1" ] && [ -f "$repo/.claude/scripts/routines/model-staleness-runner.sh" ]; then
+    local ms_start=$(date +%s)
+    local ms_errbuf; ms_errbuf=$(mktemp)
+    (cd "$repo" && run_bounded bash .claude/scripts/routines/model-staleness-runner.sh) > /dev/null 2>"$ms_errbuf" < /dev/null
+    local ms_exit=$?
+    echo "$ts $repo model-staleness exit=$ms_exit duration=$(($(date +%s) - ms_start))s" >> "$LOG_FILE"
+    if [ "$ms_exit" -ne 0 ] && [ -s "$ms_errbuf" ]; then
+      { echo "--- $ts $repo model-staleness (exit=$ms_exit) ---"; cat "$ms_errbuf"; } >> "$ERR_LOG"
+    fi
+    rm -f "$ms_errbuf"
+  fi
+
   # Daily briefing — synthesizes a prioritized status digest from
   # .claude/memory/manager/{projects,people}.md plus connected live sources. Self-paces
   # to daily (MIN_GAP_DAYS=1); the runner's own deterministic guard no-ops for free

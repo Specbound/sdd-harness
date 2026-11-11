@@ -11,7 +11,8 @@
 - `ERRORS.md` — check before suggesting solutions to problems; log approaches that took 2+ attempts
 
 ## Rules
-- Plan before multi-file or design-affecting changes — use Plan mode for back-and-forth. Sketch 2-3 approaches when the design is genuinely open; otherwise pick one and say why.
+- Plan before multi-file or design-affecting changes — use Plan mode for back-and-forth. Sketch 2-3 approaches when the design is genuinely open; otherwise pick one and say why. A feature that only fits by bolting it on is design-affecting: stop before building and recommend the refactor that would let it fit.
+- When an instruction file and the existing code disagree, follow the code's conventions and list each mismatch in your final reply — except rules a gate enforces (pre-commit, lint, a `*-debt.txt` ledger such as `no-regex-debt.txt`), where the code is the side still catching up
 - Features with clear correctness criteria need an approved spec in `specs/` before implementation — prefer an executable spec (failing test suite) or reference implementation over plain markdown. Markdown stays the default for open-ended/UX work. Bugfixes, perf work, and tooling do not need a spec.
 - Atomic commits per task (one task = one commit, code only)
 - Never skip the human review gate between spec phases

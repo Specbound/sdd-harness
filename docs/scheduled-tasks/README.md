@@ -158,6 +158,22 @@ Guards:
 
 ---
 
+### Weekly Model-Staleness Check
+**Runner:** `.claude/scripts/routines/model-staleness-runner.sh`
+**Cadence:** Weekly (`MODEL_STALENESS_GAP_DAYS`, default 7; deterministic — no LLM call)
+**Scope:** Harness repo only (exits 0 where `docs/scheduled-tasks/` is absent)
+
+**What it does:**
+- Wraps `.claude/scripts/utils/model-staleness.py`: fetches the live Claude lineup from `platform.claude.com/docs/en/models/overview.md` and flags every model ID or name in `skills/ agents/ commands/ hooks/ scripts/ templates/ rules/ kiro/` that the lineup has superseded (or that is newer than anything live)
+- Skips mentions listed in `scripts/utils/model-mention-allow.txt` (intentional) and counts, without reporting, those in `scripts/utils/model-mention-debt.txt` (known backlog), so a model release shows up as fresh findings
+- Writes `.claude/reports/model-staleness.json`; `session-start-hook.sh` prints `[MODEL-STALE]` while it has findings
+- If the live page can't be read (exit 2), keeps the previous report and does not stamp the run, so the next daily tick retries
+- Wired into `orchestration/daily-orchestrator.sh` `run_one()`
+
+**Opt-out:** `SDD_SKIP_MODEL_STALENESS=1` env var. Run now: `bash scripts/routines/model-staleness-runner.sh --force`.
+
+---
+
 ### Macro-Eval Sweep
 **Runner:** `.claude/scripts/routines/macro-eval-runner.sh`
 **Prompt:** `.claude/scripts/routines/macro-eval-prompt.md`

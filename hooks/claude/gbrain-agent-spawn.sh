@@ -25,11 +25,12 @@ cat << 'RULES'
 ╚═══════════════════════════════════════════════════════════════════╝
 
 MODEL TIERS — match model to task:
-  haiku   (claude-haiku-4-5-20251001) — classification, validation, expansion, dedup
-  sonnet  (claude-sonnet-5)           — generation, synthesis, tool loops [DEFAULT]
-  opus    (claude-opus-5)             — deep reasoning, high-stakes judgment only
-  ↳ Subagents: use SONNET not opus — latency compounds in loops; opus buys little here.
-  ↳ When in doubt: sonnet. Upgrade to opus only after sonnet demonstrably fails.
+  haiku   — classification, routing, extraction; subagents that search/read/summarize
+  sonnet  — well-scoped coding, repeated agent tasks (review, drafting), chat
+  opus    — everyday engineering and judgment calls [DEFAULT when unsure]
+  fable   — major migrations, architecture, long unattended runs
+  ↳ Use aliases, not pinned IDs — aliases track the current lineup.
+  ↳ Falls short? Self-verification first, then effort +1, then the next model up.
 
 BACKGROUND ROUTING — inline unless a pain signal fires:
   ✗ Gateway restarted mid-task  → switch to background

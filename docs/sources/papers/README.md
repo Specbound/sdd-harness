@@ -203,3 +203,15 @@ See also: [articles/README.md](../articles/README.md) — same 18-source batch, 
 **Rejected:** per-action compaction (Claude Code's loop cannot be configured for it), semantic state space models (a training proposal), offloading long inputs to files (lean-ctx, headroom), a searchable full-history log (the funes rejection in `git/README.md`).
 
 See also: [articles/README.md](../articles/README.md) — same 21-link batch, 2026-11-11.
+
+---
+
+## Stale Instruction Files Override the Code in Coding Agents: A One-Sentence Fix
+**arXiv:** 2610.30571 | **Year:** 2026 | **Authors:** Xiaonan Xu, Wenjing Wu
+**Added:** 2026-11-11
+
+**Retrieval:** ok — abstract page only (reached via the @LimestoneHQ thread; the thread's figures match the abstract). Data and code: github.com/WenJing95/stale-docs-data.
+
+**What it's about:** 40 Python projects where the instruction file asks for one convention and the code uses another; Claude Code and Codex CLI each added a feature, 320 runs. Without a fix, 90.1% of choices followed the stale file. Claude Code noticed the conflict in 79/80 runs and followed the file anyway. Codex rewrote working code to match the file in 20/80 runs, breaking the tests in 17. One user-level sentence giving the existing code precedence raised code-following from 4.2% to 91.4% and the test pass rate from 89.4% to 100%. The authors' explanation: the instruction file arrives as an instruction and the code as tool output, which models are trained to weight lower.
+
+**What we added:** the scoped precedence rule in `templates/CLAUDE.md.template` + `CLAUDE.md`, and the **Contradicted by code** dimension in `/claudemd-review` — see [x/README.md](../x/README.md).

@@ -40,7 +40,9 @@ import sys
 from datetime import date
 from pathlib import Path
 
-MODEL = "claude-haiku-4-5-20251001"
+# Alias, not a pinned ID: resolves to the current Haiku, so a model release
+# cannot strand this call on a retired snapshot (model-staleness.py audits pins).
+MODEL = "haiku"
 CLI_TIMEOUT_SECONDS = 120
 
 DETECTION_PROMPT = """\

@@ -1507,3 +1507,33 @@ Randomized splits picked models and effort. High effort cost 61% more than mediu
 - Hamel Husain, "Decision Model Evals": the 4th Jev-family rejection; it needs third-party keys and a human-labelled set the harness lacks.
 
 See also: [papers/README.md](../papers/README.md) — same batch, arXiv 2611.05306.
+
+---
+
+## Which Claude model should you build with? Fable, Opus, Sonnet, or Haiku
+**URL:** https://claude.dev/blog/which-claude-model-should-you-build-with/ | **Added:** 2026-11-11 | **Source:** Addy Osmani, claude.dev Playbooks, 2026-11-09
+
+**Fetch status:** ok, rung 1 (the `.md` copy of the page, full text to the subagent example).
+
+**What it's about:** Model-choice guide for the Haiku 5.5 / Sonnet 5.5 / Opus 5.5 / Fable 5.2 lineup. Start on Opus 5.5 at `medium`; Sonnet for well-scoped work; Haiku for high-volume work and read-and-report subagents; Fable for the hardest work and long unattended runs. Each tier up is ~2× per token. Escalate by adding self-verification first, then one effort level, then the next model up at a lower effort. Past `high`, one more effort level can cost as much as a bigger model. Running cheap and re-running only the failures beat running everything `high` (97% at $0.17 vs 95.3% at $0.29). Switch models at a natural break, because the prompt cache doesn't carry over.
+
+**What we added:**
+- Augmentation: `skills/model-tiers/SKILL.md` — rewritten. It named retired IDs (`claude-sonnet-4-6`, `claude-opus-4-8`), said Opus cost 3× Sonnet (it's 2×), defaulted to Sonnet when unsure, and said effort wasn't an API parameter (it is). `gbrain-agent-spawn.sh` loads this guidance on every Agent call, and its own tier reminder was rewritten to match.
+- Routine: `scripts/utils/model-staleness.py` + `scripts/routines/model-staleness-runner.sh` (weekly, harness-only, deterministic) — requested by the user so this can't go stale again. Every model ID or name in skills/agents/commands/hooks/scripts/templates is checked against the live `platform.claude.com/docs/en/models/overview.md` lineup, and `session-start-hook.sh` prints `[MODEL-STALE]` while findings remain. Allow and debt ledgers sit beside it, seeded with 72 known-stale mentions (dashboard pricing constants, the `caveman-stats.js` price table, vendored skill examples). Two `claude --print` callers moved from a pinned Haiku 4.5 ID to the `haiku` alias.
+
+**Rejected:** fast-mode pricing and Haiku's long-prompt price tier (API billing; the harness runs on the subscription), which models can read which thinking blocks (API-only; Claude Code's `/model` handles it).
+
+---
+
+## How Senior Engineers Do System Design (Full Walkthrough) (YouTube)
+**URL:** https://www.youtube.com/watch?v=5nM5sB_kqYI | **Added:** 2026-11-11
+
+**Fetch status:** partial, rung 1 (`ctx_url_read` transcript mode); first ~3K tokens only, which covers requirements and the six-zone architecture overview.
+
+**What it's about:** Walkthrough of a multi-tenant AI support-desk SaaS: requirements first, then clients / app / identity-and-billing / realtime / data-and-jobs / external zones; stack choice "doesn't matter".
+
+**What we added:** nothing — generic SaaS architecture in a domain models already handle well (skill-extraction check 6).
+
+The batch's three git links (warpdotdev merge-risk skill, 0sec-labs/0 security harness, humanethq/airgap-check) yielded nothing, so they have no `git/README.md` entries. Merge-risk: no PR review flow here, and a single LLM computing its own weighted score is a single-sample judge; its rollback idea is already covered by `ship-agent` and the model-tiers reversibility signal. 0: a whole product duplicating the `security` skill. airgap-check: the harness doesn't deploy offline.
+
+See also: [x/README.md](../x/README.md) — same 9-link batch (4 threads); [papers/README.md](../papers/README.md) — arXiv 2610.30571.

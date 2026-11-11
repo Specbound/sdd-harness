@@ -1,0 +1,43 @@
+# model-mention-allow.txt — model mentions that are SUPPOSED to name an older model.
+# Read by scripts/utils/model-staleness.py; never reported, now or after future releases.
+#
+# Format: <repo-relative path> <mention>   (mention as the report prints it:
+#         a lowercase ID like claude-opus-4-8, or "<family> <version>" like opus 4.5)
+#         <repo-relative path> *           (the whole file)
+# Every line needs a reason. Stale-but-not-yet-fixed mentions belong in
+# model-mention-debt.txt instead — this file is for mentions that are correct as written.
+
+# Test fixtures: inputs that must stay fixed for the tests to mean anything.
+hooks/claude/agent-commit-attribution-hook.test.sh *
+scripts/router/test_config.py *
+scripts/skill-eval-staleness.test.sh *
+scripts/utils/dashboard-usage-dedup.test.sh *
+scripts/utils/token-forensics.test.sh *
+scripts/utils/model-staleness.test.sh *
+
+# The checker's own docstrings and examples.
+scripts/utils/model-staleness.py *
+
+# Metric baseline: caveman savings are measured against this snapshot; moving it
+# would break the time series. Retire deliberately, not on a model release.
+hooks/claude/caveman-savings-hook.sh claude-haiku-4-5-20251001
+
+# Citations and quoted benchmark history (titles and results name the model they were run on).
+scripts/README.md fable 5.1
+scripts/skill-eval-staleness.py fable 5
+scripts/skill-eval-staleness.py fable 5.1
+skills/skill-eval-gate/SKILL.md fable 5.1
+skills/model-tiers/SKILL.md fable 5.1
+skills/tool-design/SKILL.md haiku 4.5
+skills/tool-design/SKILL.md sonnet 4.6
+skills/tool-design/SKILL.md opus 4.5
+skills/session-clean-state/SKILL.md sonnet 4.5
+skills/session-clean-state/SKILL.md opus 4.6
+skills/rtk-token-reduction/SKILL.md opus 4.7
+scripts/integrations/blackhole/SETUP.md fable 5
+
+# Vendored skill's own release history.
+skills/loki-mode/CHANGELOG.md *
+skills/loki-mode/docs/COMPETITIVE-ANALYSIS.md *
+skills/loki-mode/benchmarks/submission-template/README.md *
+skills/loki-mode/benchmarks/submission-template/metadata.yaml *

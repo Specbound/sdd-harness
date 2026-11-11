@@ -190,7 +190,7 @@ cat << 'EOF'
 
   Append to the commit message body:
 
-    Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
+    Co-Authored-By: Claude <model, as your system prompt names it> <noreply@anthropic.com>
 
   (Advisory only — the commit was not blocked. Skip this if the change is
   genuinely hand-authored by the user.)

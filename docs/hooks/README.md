@@ -37,6 +37,7 @@ Hook output is injected into Claude's context as system messages — Claude read
 - Nothing, if maintenance is current and no bootstrap pending (happy path)
 - `[SDD-MAINTENANCE-CATCHUP]` — silently fires `daily-runner.sh` in background via `nohup`
 - `[SDD-MAINTENANCE-DUE]` — injected reminder to run `/kiro:daily-maintenance` (no local runner case)
+- `[MODEL-STALE]` — one line while `.claude/reports/model-staleness.json` (written weekly by `model-staleness-runner.sh`) has findings: model mentions the live Claude lineup has superseded. Silent when the report is absent, clean, or `jq` is missing
 - `[CLAUDEMD-REVIEW-DUE]` — injected reminder to run `/claudemd-review` (>2 weeks stale); the command is the per-repo global command `commands/global/claudemd-review.md`, which audits the current repo's `CLAUDE.md`/`AGENTS.md`, writes `.claude/memory/claudemd-review-report.md`, and stamps `.claude/memory/.last-claudemd-review`
 - `[STEERING-BOOTSTRAP-DUE]` — injected prompt to run `/kiro:steering` (fresh install, no steering files)
 - `[SETTINGS-REPAIRED]` — emitted only when the repair actually changed something (the `OK ` no-op line is filtered out). Followed by a note that Claude Code parsed `settings.json` *before* the repair ran, so that session's permission rules and hooks stay inactive and return at the next session start. Nothing is printed for a healthy or absent `settings.json`.

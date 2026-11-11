@@ -41,7 +41,7 @@ ALLOWLIST = "scripts/utils/skill-tier-allow.txt"
 SURFACES = ("agents", "commands", "hooks", "kiro", "rules", "scripts", "skills", "templates")
 # Files that mention skill names as data or human-facing docs, never as prompts.
 SKIP_NAMES = ("README.md", "skill-library.txt", "no-regex-debt.txt", "check-skill-tiers.py",
-              "skill-tier-allow.txt")
+              "skill-tier-allow.txt", "model-mention-allow.txt", "model-mention-debt.txt")
 SKIP_SUFFIXES = (".test.sh", ".bak")
 TEXT_SUFFIXES = (".md", ".sh", ".py", ".txt", ".json", ".yaml", ".yml", ".template", ".toml")
 CODE_SUFFIXES = (".sh", ".py")
