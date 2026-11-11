@@ -2,7 +2,15 @@
 
 > This file is managed by the SDD harness (`sdd-harness/docs/`).
 > It is the single source of truth — do not edit copies in individual projects.
-> _Last synced: 2026-11-10_
+> _Last synced: 2026-11-11_
+
+---
+
+## Recent Changes (2026-11-11 — Harness Build 43)
+
+### Skills
+
+- `skills/systematic-debugging` — new anti-pattern: **'command not found' blamed on the tool.** When a scheduled runner (launchd routine, git hook, cron) reports `command not found`, check that runner's PATH first — missing `node`/`npx` is a configuration fault (e.g. a mise-managed node absent from the non-interactive PATH), not breakage in the tool that called it.
 
 ---
 
@@ -2178,5 +2186,5 @@ disown 2>/dev/null || true
 
 The Stop hook should only contain **passive checks** (e.g., nudging housekeeping when observations exceed a threshold). See `.claude/hooks/stop-hook.sh` for the reference implementation.
 
-_Last synced: 2026-11-10_
+_Last synced: 2026-11-11_
 
