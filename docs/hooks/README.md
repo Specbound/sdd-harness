@@ -429,6 +429,7 @@ Plus a discovery-before-eval pointer: read `~/.claude/skill-library/active-obser
 - **Preserve:** Working state, open questions, artifact paths, unresolved concerns, decisions + rationale.
 - **Do not over-compress:** Never strip file paths, function names, error messages, specific values.
 - **Fidelity requirements:** Unanswered-question tracking (answered/partial/unanswered + a "Pending Questions" subheading); root causes kept separate from ruled-out hypotheses (with file:line); files grouped into critical/referenced/mentioned tiers instead of a flat list; subagent/Task results treated as primary evidence to preserve in full; A-vs-B option comparisons preserved with which side won. Ported from claude-codex-settings' `intelligent-compact` plugin — concrete additions the rules above state only in the abstract.
+- **Forward brief (2026-11-11):** The summary is a brief for the next step, not a story of the past. It holds the original task near-verbatim, the completion criteria, and the current step followed by the next steps. Source: arXiv 2611.05306 ("You don't need long context"). Narrative summaries weight every fact equally and over-weight what repeated; a task + next-steps + completion-criteria brief did best. That evidence came from a step-wise agent loop, not Claude Code's own compactor, so treat it as directional.
 - **Domain-aware strategy:** Code → chunk-level (keep signatures, drop implementations already acted on). Prose → sentence-level (keep topic sentences, drop elaboration). RAG results → query-aware (filter to last user intent). Conversation → keep decisions and user corrections, drop filler. Tool output → keep errors and key metrics, drop passing output.
 - **Method:** Merge new content into existing summary sections — do not regenerate from scratch.
 
@@ -1055,5 +1056,5 @@ denies `git push*` outright where projects only deny force-push.
 
 **No regex, continued (2026-09-30).** `prompt-quality-check.sh` was rewritten off `re` onto the same literal-token pattern: the prompt is tokenized to lowercase words (apostrophes stay inside a word, every other non-alphanumeric character separates, so `double-check` is the two tokens `double check`) and phrases are matched on token boundaries. The rewrite was verified score-identical to the regex version on 94 real Agent prompts, and it added two anti-patterns — `think-instruction` and `show-reasoning-request`. `scripts/routines/startup-payload-audit.sh` lost its `@import` regex the same day in favour of a line-prefix parser. Both are off `scripts/utils/no-regex-debt.txt`; `action-capture.sh` and `stop-hook.sh` are the remaining hooks that regex-parse free text.
 
-_Last synced: 2026-10-11_
+_Last synced: 2026-11-11_
 
