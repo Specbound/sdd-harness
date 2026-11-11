@@ -85,6 +85,12 @@ Controls that are not optional:
 - **Judge ≠ generator.** Scoring a model's output with itself inflates the score.
 - **Self-consistency is not accuracy.** A judge that repeats its own verdict reliably
   can be reliably wrong.
+- **Anchor every round to fixed references.** Score a few unchanging reference items
+  alongside the candidate each round, and report the candidate's gap to them, not its
+  absolute score. If a reference's score moves, the scale moved — in iterative loops,
+  untouched references have drifted upward as the candidate improved.
+- **Never tell the judge the target.** A judge told "we need 9/10" pulls toward 9.
+  Keep pass thresholds in the harness, out of the judge prompt.
 
 Judge scores are a cheap proxy for human preference, and they are only as good as that
 measured agreement. Report the κ alongside the win rate or the number means nothing.
