@@ -184,6 +184,9 @@ When a tool reports rejection (e.g., grep exit 2 "regex invalid") before reading
 ### ❌ Guarding concurrent writes without locking
 Concurrent read-then-write guards (e.g., "skip if tag exists") can race if multiple processes run simultaneously. Both read "absent," both proceed. Use locking or atomic operations, not just guards. (source: 2026-10-24 observation)
 
+### ❌ 'command not found' blamed on the tool
+Check the scheduled runner's PATH first; missing node/npx is a config fault, not tool breakage. (source: 2026-11-09 kaizen)
+
 ## Quick Reference
 
 | Phase | Key Activities | Success Criteria |
