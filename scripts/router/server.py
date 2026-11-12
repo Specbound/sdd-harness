@@ -47,10 +47,13 @@ Named decisions this module makes that no shipped module already covers
   `UpstreamNotConfigured` takes for its half of this exact problem.
 - **Classifier startup fallback** (`_build_classifier`, `_probe_reachable`).
   R2.5 says an unavailable classifier backend must start the process anyway,
-  in pass-through mode. Construction failure (bad `base_url`) or a one-time
-  startup reachability probe failing both fall back to `NullClassifier` —
-  never attempted again per-request; `NullClassifier` always raises
-  `ClassifierUnavailable`, which the per-request guard already handles.
+  in pass-through mode. Construction failure (bad `base_url`) falls back to
+  `NullClassifier`, which always raises `ClassifierUnavailable` for the
+  per-request guard. An unreachable backend at startup does not: router-ctl.sh
+  starts jeff and the worker together and jeff needs ~30s to load, so a
+  permanent fallback there meant the worker never classified. The real
+  classifier is kept, fails open per request, and its circuit breaker stops
+  retrying until the backend answers.
 
 `_HOP_BY_HOP_HEADERS`, the exact/chunked body-copy helpers, and the
 `_RouterServer` config-holder pattern duplicate `sentinel.py`'s own
@@ -174,7 +177,9 @@ def _last_user_text(body: dict) -> str:
     A tool-loop continuation's user-role message is entirely `tool_result`
     content; those blocks are deliberately skipped, so this returns `""` for
     that turn and `should_classify("")` correctly treats it as PASS_THROUGH
-    (classify.py's own module docstring).
+    (classify.py's own module docstring). Blocks that are harness-injected
+    `<system-reminder>` context (CLAUDE.md, hook output) are skipped too: they
+    are not the user's words and can run to tens of thousands of characters.
     """
     messages = body.get("messages")
     if not isinstance(messages, list):
@@ -189,7 +194,9 @@ def _last_user_text(body: dict) -> str:
             parts = [
                 block.get("text", "")
                 for block in content
-                if isinstance(block, dict) and block.get("type") == "text"
+                if isinstance(block, dict)
+                and block.get("type") == "text"
+                and not str(block.get("text", "")).lstrip().startswith("<system-reminder>")
             ]
             return "".join(parts)
         return ""
@@ -290,8 +297,9 @@ def _probe_reachable(base_url: str) -> bool:
 def _build_classifier(catalog: Catalog) -> Classifier:
     """Construct the configured classifier, falling back to `NullClassifier`
     (R2.5) rather than crashing the process: missing policy, an explicitly
-    disabled backend, a malformed `base_url`, or an unreachable backend at
-    startup all degrade to pass-through instead.
+    disabled backend, or a malformed `base_url` degrade to pass-through
+    instead. An unreachable backend is logged only: requests pass through via
+    the classifier's own fail-open and circuit breaker until it comes up.
     """
     policy = catalog.policy
     if policy is None:
@@ -324,9 +332,8 @@ def _build_classifier(catalog: Catalog) -> Classifier:
 
     if not _probe_reachable(base_url):
         logger.warning(
-            "startup: classifier at %s unreachable — pass-through mode, no classifier", base_url
+            "startup: classifier at %s unreachable — passing through until it answers", base_url
         )
-        return NullClassifier()
     return classifier
 
 

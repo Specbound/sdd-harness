@@ -73,7 +73,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from classify import ClassifierUnavailable, Decision
 from config import Catalog, Ladder, ModelEntry, RouterConfig
 from ledger import Ledger
-from server import build_server
+from server import _last_user_text, build_server
 
 #
 # FIXED (was: filed-not-fixed in task 7.2's own report) — `_forward_headers`
@@ -958,6 +958,33 @@ class StreamingFidelityTests(unittest.TestCase):
                         pass
                 except OSError:
                     pass
+
+
+class LastUserTextTests(unittest.TestCase):
+    def test_system_reminder_blocks_are_not_the_users_words(self) -> None:
+        body = {
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": "<system-reminder>\n" + "CLAUDE.md " * 5000 + "</system-reminder>"},
+                        {"type": "text", "text": "  <system-reminder>hook output</system-reminder>"},
+                        {"type": "text", "text": "fix the router"},
+                    ],
+                }
+            ]
+        }
+
+        self.assertEqual(_last_user_text(body), "fix the router")
+
+    def test_turn_of_only_reminders_is_empty_so_it_passes_through(self) -> None:
+        body = {
+            "messages": [
+                {"role": "user", "content": [{"type": "text", "text": "<system-reminder>x</system-reminder>"}]}
+            ]
+        }
+
+        self.assertEqual(_last_user_text(body), "")
 
 
 if __name__ == "__main__":

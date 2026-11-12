@@ -52,6 +52,12 @@ _LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
 # R2.4/circuit breaker: this many consecutive failures opens the circuit.
 _CONSECUTIVE_FAILURES_TO_OPEN = 3
 
+# Only the tail of the user text is classified. jeff 422-rejects `state` past
+# 20,000 chars, and on CPU its latency grows faster than linearly (measured
+# 2026-11-12: ~0.27s at 500 chars, ~0.36s at 800, ~7s at 8k), so anything long
+# blows the 400ms `timeout_ms` budget. The tail is where a prompt's ask sits.
+_MAX_STATE_CHARS = 500
+
 
 class ClassifierUnavailable(Exception):
     """Raised whenever `classify()` cannot produce a real `Decision`.
@@ -194,7 +200,7 @@ class JeffClassifier:
         # HTTPError handling below rather than special-cased here.
         payload = json.dumps(
             {
-                "state": text,
+                "state": text[-_MAX_STATE_CHARS:],
                 "model": "jev-latest",
                 "questions": {
                     "lane": {

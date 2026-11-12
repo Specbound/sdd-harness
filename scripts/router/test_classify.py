@@ -218,6 +218,18 @@ class ClassifySinglePostTests(_StubServerTestCase):
         self.assertAlmostEqual(decision.confidence, 0.9)
         self.assertGreaterEqual(decision.latency_ms, 0)
 
+    def test_long_text_sends_only_its_tail(self) -> None:
+        # jeff 422s a state past 20,000 chars and is far over budget well
+        # before that; the ask sits at the end of a long prompt.
+        classifier = self.make_classifier()
+        text = "x" * 50_000 + "book me a flight to Austin"
+
+        classifier.classify(text)
+
+        payload = json.loads(self.recorder.requests[0][2])
+        self.assertEqual(len(payload["state"]), 500)
+        self.assertTrue(payload["state"].endswith("book me a flight to Austin"))
+
 
 # ---------------------------------------------------------------------------
 # 1b. A response missing a nested answer key is a new failure mode this real
