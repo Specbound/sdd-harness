@@ -1,0 +1,10 @@
+{
+  "skill": "claudemd-review",
+  "verdict": "PASS",
+  "date": "2026-11-12",
+  "scenarios": 3,
+  "treatment_runs_per_scenario": 3,
+  "measured_on_model": "claude-opus-5-5[1m]",
+  "judge_model": "none",
+  "skill_md_sha256": "186b6ba14c36cbf765f4c2372af6117d9a9ee1cba50e07510d4fd44afb1a1ba9"
+}

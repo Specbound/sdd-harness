@@ -56,6 +56,46 @@ If the link is a GitHub repo, also check:
 
 If the input is plain text (category **x**), skip fetching — the content is the input itself. Summarize it in your own words for the subsequent phases.
 
+#### When retrieval degrades — the recourse ladder
+
+WebFetch failing is the normal case, not the exception: login walls, Cloudflare
+challenges, SPA shells, cross-host redirects, paywalls, and deleted pages all return
+*something*, so a bare "I fetched it" can be false. **Never summarize a page you did
+not actually read**, and never let a partial fetch silently become a confident claim.
+
+First name the failure mode, then walk the ladder from the top. Stop at the first rung
+that returns real content.
+
+| Rung | Try | Good for |
+|---|---|---|
+| 1 | WebFetch the URL directly | most pages |
+| 2 | Re-call with the redirect URL WebFetch handed back | cross-host redirects |
+| 3 | Provider public JSON, no auth: Reddit `<url>.json`, HN `hacker-news.firebaseio.com/v0/item/<id>.json`, Bluesky public XRPC, Mastodon `/api/v1/statuses/<id>`, GitHub `gh api repos/<o>/<r>/contents/<path>` | social + forum posts |
+| 4 | YouTube transcript: `uvx --from youtube-transcript-api youtube_transcript_api <VIDEO_ID> --languages en` | video |
+| 5 | Third-party archive mirrors of the aggregator/newsletter | X posts, newsletters |
+| 6 | Wayback: `https://web.archive.org/web/2/<url>` | dead, changed, or walled pages |
+| 7 | WebSearch for the title plus `transcript` / `summary` / `notes` | anything; yields secondhand only |
+
+Rung-specific notes:
+- **YouTube** — `yt-dlp` is often not installed; do not install it. Bare `timedtext` and
+  InnerTube endpoints are now gated behind a PO token and return empty, and transcript
+  mirror sites mostly 403. Rung 4 is the one that currently works.
+- **Rung 7 is secondhand.** Content obtained this way is a recap, not the source. Label
+  it as such in the report, and never quote it as if it were the source's own words.
+- **Private/deleted content** is a dead end — say so and stop rather than substituting a
+  guess. A private account will not resolve at any rung.
+
+Report retrieval honestly in the extraction output:
+- `Fetch status: ok | partial | failed`, plus which rung succeeded
+- On failure, **which rungs you tried and why each failed** — not a vague "unavailable".
+  The next session needs to know whether to retry or give up.
+- Distinguish **missing** from **zero/absent**: a field the source never mentioned is
+  unknown, not `0`, and not "the source says no". Carry that distinction into the
+  `docs/sources/` entry rather than flattening it.
+
+If no rung returns real content, propose **nothing** from that source. An extraction
+built on a title and a guess is fabrication wearing a citation.
+
 ### Phase 2: Audit the Harness
 
 Before proposing anything, understand what the harness already has. Read in parallel:
@@ -136,7 +176,7 @@ The goal of the harness is to be self-sustaining. A skill the user must remember
 Before including any candidate in the proposal, apply the harness critic test. For each candidate, answer:
 
 1. **Already covered?** Does any existing skill, hook, script, or command cover >70% of this capability?
-   → If YES, do **not** immediately reject. Invoke `Skill("better-call")` to compare the challenger against the incumbent. Use its verdict to determine the proposal path (see Step 3f below). Never default to rejection just because something already exists — the incumbent isn't automatically better.
+   → If YES, do **not** immediately reject. Follow `~/.claude/skill-library/better-call/SKILL.md` to compare the challenger against the incumbent. Use its verdict to determine the proposal path (see Step 3f below). Never default to rejection just because something already exists — the incumbent isn't automatically better.
 2. **Hollow addition?** Does this add new *behavior*, or just new *text* the user could look up elsewhere? → If documentation only, skip.
 3. **Maintenance cost justified?** Will the harness be measurably better with this? Or is this a "nice to have" that adds noise? → If uncertain, skip.
 4. **Better as augmentation?** Could this be a single added section in an existing artifact rather than its own file? → Augment, don't create.
@@ -156,8 +196,9 @@ After `better-call` returns its verdict block, map it to a proposal action:
 | **AUGMENT INCUMBENT** | Propose targeted augmentation of the existing artifact. List only the specific ideas worth extracting; discard the rest of the challenger. |
 | **MERGE** | Propose a unified artifact that supersedes both. Include a plan for removing the old incumbent after the merge lands. |
 | **COEXIST** | Propose both as separate items; justify the non-overlap explicitly in the proposal body. |
+| **INCONCLUSIVE** | `better-call`'s two scoring passes disagreed, so reading order decided it. Keep the incumbent and add the candidate to "Rejected Candidates" with both passes' totals and the label *inconclusive, not rejected on merit* — a later extraction may revisit it with sharper scenarios. Do not adopt on a verdict that flips with presentation order. |
 
-Include the `better-call` score table and verdict in the proposal (for any verdict other than KEEP INCUMBENT) or in the "Rejected Candidates" section (for KEEP INCUMBENT). The user should be able to see exactly how the comparison was made.
+Include the `better-call` score table and verdict in the proposal (for any verdict other than KEEP INCUMBENT) or in the "Rejected Candidates" section (for KEEP INCUMBENT and INCONCLUSIVE). The user should be able to see exactly how the comparison was made.
 
 ### Phase 4: Proposal (REQUIRED — always show before implementing)
 
@@ -210,7 +251,7 @@ After approval, implement each approved item.
 - Keep SKILL.md focused; move extended reference content to a `resources/` subfolder.
 
 **For Hooks:**
-- Write `$HARNESS/hooks/<name>.sh` as a standalone bash script. install.sh/update.sh copy harness hooks into each project's `.claude/hooks/` and chmod them — add the new hook to those copy+chmod lists so it propagates.
+- Write `$HARNESS/hooks/claude/<name>.sh` as a standalone bash script. install.sh/update.sh copy every `hooks/claude/*.sh` into each project's `.claude/hooks/` and chmod them, so a new hook propagates with no installer edit. Files matching `*.test.sh` are skipped by that copy loop — put the hook's test suite in `$HARNESS/hooks/claude/<name>.test.sh` and it stays in the harness repo instead of shipping as a runtime hook.
 - Include a `# REGISTRATION` comment block at the end of the file with the exact settings.json JSON to add. Register it in `templates/settings.json.template` (shipped to projects) so the hook is wired everywhere, not just locally.
 - Use the `update-config` skill to write the local settings.json entry after confirming with the user.
 
@@ -260,7 +301,7 @@ If any dimension fails, fix before proceeding:
 
 ### Phase 5c: Identity Alignment Check (for all new skills)
 
-After the SkillOS Quality Gate passes, invoke `Skill("agent-identity")` in **Mode B (skill identity check)**. This validates the new skill's identity sharpness against four dimensions:
+After the SkillOS Quality Gate passes, follow `~/.claude/skill-library/agent-identity/SKILL.md` in **Mode B (skill identity check)**. This validates the new skill's identity sharpness against four dimensions:
 
 1. **Description specificity** — Does the description predict WHEN the skill fires?
 2. **Trigger sharpness** — Are `When to Activate` conditions falsifiable?
@@ -281,7 +322,7 @@ Examples that warrant a companion verify skill:
 - Sampling output for correctness or plausibility
 - Checking logs, error output, or side effects
 
-If YES → invoke `Skill("verification-skill-authoring")` to create a companion `<domain>-verify` skill before proceeding to Phase 6.
+If YES → follow `~/.claude/skill-library/verification-skill-authoring/SKILL.md` to create a companion `<domain>-verify` skill before proceeding to Phase 6.
 
 If NO (pure logic, already covered by CI, or the skill itself IS a verification skill) → skip and proceed.
 

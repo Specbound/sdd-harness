@@ -14,7 +14,6 @@ and left alone so no permission or hook config is silently lost.
 
 import json
 import os
-import re
 import sys
 
 SERVER_NAME = "gitnexus"
@@ -39,9 +38,45 @@ def load_json(path):
         pass
     # Claude Code tolerates JSON5-style // comments in settings.json
     try:
-        return json.loads(re.sub(r"//[^\n]*", "", raw))
+        return json.loads(_strip_line_comments(raw))
     except json.JSONDecodeError as exc:
         raise UnparseableConfig(path) from exc
+
+
+def _strip_line_comments(text):
+    """Remove `//` line comments from JSONC, leaving `//` inside strings intact.
+
+    Blanket removal corrupts any settings file containing a URL — `"http://x"`
+    becomes `"http:` and a valid config is reported as unparseable.
+    """
+    out = []
+    in_string = False
+    escaped = False
+    i = 0
+    while i < len(text):
+        ch = text[i]
+        if in_string:
+            out.append(ch)
+            if escaped:
+                escaped = False
+            elif ch == "\\":
+                escaped = True
+            elif ch == '"':
+                in_string = False
+            i += 1
+        elif ch == '"':
+            in_string = True
+            out.append(ch)
+            i += 1
+        elif ch == "/" and text[i + 1:i + 2] == "/":
+            newline = text.find("\n", i)
+            if newline == -1:
+                break
+            i = newline
+        else:
+            out.append(ch)
+            i += 1
+    return "".join(out)
 
 
 def dump_json(path, data):

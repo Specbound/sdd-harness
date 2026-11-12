@@ -26,13 +26,13 @@ The extraction follows a three-stage pipeline:
 - Scores each against a 4-criteria rubric (Recurrence, Code Quality, Domain Expertise, Generalizability)
 - **Harness alignment check** — invokes `agent-harness-design` to map each candidate to the 6-component framework (ℛ/ℳ/𝒞/𝒮/𝒪/𝒢) and flag whether the target component is weak/partial/covered before proposing anything
 - **Classifies each candidate into the right artifact type** (skill, hook, script, command, or routine)
-- Cross-references existing `~/.claude/skills/` to avoid duplicates; defaults to extend-not-duplicate when coverage is partial
+- Cross-references existing skills in **both** install tiers — `~/.claude/skills/` (listed) and `~/.claude/skill-library/` (on-demand) — to avoid duplicates; defaults to extend-not-duplicate when coverage is partial
 - Produces a ranked extraction plan for human review
 
 ### Stage 3: Artifact Generation
 - Deep-reads each approved candidate's source code
 - Generates the appropriate artifact based on classification:
-  - `skill` → `~/.claude/skills/<name>/SKILL.md`
+  - `skill` → `~/.claude/skill-library/<name>/SKILL.md` by default (plus a row in its domain master's table and a line in `scripts/setup/skill-library.txt`); `~/.claude/skills/<name>/SKILL.md` only when something must load it by name through the `Skill()` tool — see `docs/skills/SKILL-HIERARCHY.md`
   - `hook` → `~/.claude/hooks/<name>.sh` + registration instructions
   - `script` → `~/.claude/scripts/<name>.sh`
   - `command` → `~/.claude/commands/<name>.md`
@@ -174,4 +174,4 @@ Skills extracted and logged to `docs/sources/` by source type. See the relevant 
 - `rtk` tool install + `caveman` tool install with auto-lite SessionStart hook — from YouTube transcript on Claude Code token reduction strategies (2026-06-02)
 - `multi-agent-patterns` v1.4.0 enhancement — "Dynamic Workflow Patterns" section: 3 failure modes, 6 patterns (classify-and-act, fan-out-and-synthesize, adversarial verification, generate-and-filter, tournament, loop-until-done), composition matrix, `/goal`+`/loop` controls, quarantine pattern, workflow-as-Skill packaging, 8 common mistakes — from movez.substack.com dynamic-workflow article (2026-06-08)
 
-_Last synced: 2026-06-14 (added Phase 5d — Verification Companion Check, syncing with SDD-USAGE.md)_
+_Last synced: 2026-10-01_

@@ -1,5 +1,5 @@
 ---
-description: Audit and scaffold linter complexity rules for deterministic code quality enforcement
+description: Audit and scaffold linter, structural, and type-evidence rules for deterministic code quality enforcement
 allowed-tools: Read, Task
 argument-hint: [action:audit|scaffold|report]
 ---
@@ -11,9 +11,19 @@ argument-hint: [action:audit|scaffold|report]
 
 ## Action Resolution
 
-**audit** — Check existing linter config for complexity rules, report gaps (default)
-**scaffold** — Create or enhance linter config with recommended complexity rules
+**audit** — Check existing config across four independent dimensions, report gaps (default)
+**scaffold** — Create or enhance config with recommended rules
 **report** — Show current enforcement maturity level (L0-L3)
+
+The four dimensions are independent and reported separately — a project can score
+full marks on the first and zero on the rest:
+
+| Dimension | Caps | Typical tool |
+|---|---|---|
+| Complexity | how tangled one function is | ESLint, ruff, clippy, golangci-lint |
+| Type evidence (JS/TS) | how much type information it threw away | oxlint + anti-slop |
+| Assertion strength | whether the tests prove anything | mutmut, Stryker |
+| **Structure** | duplication, dead code, import direction — **across** functions | pyscn, jscpd, knip, import-linter |
 
 If `$1` is empty, default to `audit`.
 
@@ -37,8 +47,11 @@ If steering/tech.md is missing, auto-detect from:
 - go.mod → Go ecosystem
 
 Then execute the requested action:
-- audit: Find and read existing linter configs, check for complexity rules, report what's present and what's missing
-- scaffold: Create or update linter config with recommended complexity baselines
+- audit: Find and read existing configs, check all four dimensions (complexity,
+  type evidence, assertion strength, structure), report what's present and what's missing
+- scaffold: Create or update config with recommended baselines. Structural checks must be
+  proposed delta-gated and agent-callable — a whole-repo structural gate on an existing
+  codebase reports hundreds of findings on its first run and gets switched off.
 - report: Assess project enforcement maturity level (L0-L3) based on what's configured
 
 Reference .claude/kiro/settings/rules/deterministic-enforcement.md for recommended baselines per ecosystem.
@@ -56,6 +69,9 @@ Show the structured guardrails report to the user.
 **If gaps found**:
 - Run `/kiro:guardrails scaffold` to apply recommended rules
 - Review proposed changes before accepting
+- For a structural gap, put the checker's one-line invocation in the project's `CLAUDE.md`
+  as well as CI. The measured benefit comes from the agent calling it mid-session, while
+  it still knows why two copies of something exist; by review time that context is gone.
 
 **If fully configured**:
 - Project has deterministic enforcement in place

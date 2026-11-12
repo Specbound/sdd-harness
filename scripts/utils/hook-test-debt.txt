@@ -1,0 +1,20 @@
+# hook-test debt ledger — blocking hooks that have no sibling *.test.sh.
+#
+# Read by scripts/utils/check-hook-tests.py. Files listed here are KNOWN debt and
+# do not fail the guard. A blocking hook added without a test DOES fail, so the
+# gap cannot widen while the debt is paid down.
+#
+# THE LEDGER ONLY SHRINKS. When you add a test for a hook, delete its line here in
+# the same commit — the guard fails on a stale entry so a tested hook cannot
+# leave a free pass behind for the next untested one.
+#
+# Seeded 2026-11-11 with the 4 untested blocking hooks measured at that date
+# (10 blocking hooks total). Fix order, by how often each fires in real sessions:
+#   1. lean-ctx-nudge-hook.sh      — denies native Read on every large .md
+#   2. ai-writing-guard-hook.sh    — denies writes on banned-word patterns
+#   3. verification-retry-hook.sh  — blocks Stop after repeated failures
+#   4. scan-pii.sh                 — not registered in any settings file yet
+hooks/claude/ai-writing-guard-hook.sh
+hooks/claude/lean-ctx-nudge-hook.sh
+hooks/claude/scan-pii.sh
+hooks/claude/verification-retry-hook.sh

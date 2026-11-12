@@ -34,6 +34,12 @@ Focus on capabilities and outcomes, not code structure.
 
 **End with integration tasks** to wire everything together.
 
+**Refactor first, then build — two steps, never one**: when design.md chose *refactor* or *hybrid* for an area (design-discovery's "extend vs refactor vs wrap"), the feature task touching that area must be preceded by its own behavior-preserving refactor task.
+- The refactor task changes no behavior: existing tests stay green; its `_Requirements:_` line lists the IDs of the feature task it enables
+- It lands as its own commit (one task = one commit), so a failed feature can be reverted without losing the restructuring
+- The feature task builds on the refactored shape, not alongside it
+- Mixing restructuring into a feature task makes regressions unattributable — a red test could be either change
+
 ### 3. Vertical Slicing
 
 **Each task should deliver a thin, end-to-end slice of functionality** — not a horizontal layer.

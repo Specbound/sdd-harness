@@ -18,10 +18,10 @@ description: "Use when the user wants to review a pull request, understand what 
 
 ```
 1. gh pr diff <number>                                    → Get the raw diff
-2. gitnexus_detect_changes({scope: "compare", base_ref: "main"})  → Map diff to affected flows
+2. mcp__gitnexus__detect_changes({scope: "compare", base_ref: "main"})  → Map diff to affected flows
 3. For each changed symbol:
-   gitnexus_impact({target: "<symbol>", direction: "upstream"})    → Blast radius per change
-4. gitnexus_context({name: "<key symbol>"})               → Understand callers/callees
+   mcp__gitnexus__impact({target: "<symbol>", direction: "upstream"})    → Blast radius per change
+4. mcp__gitnexus__context({name: "<key symbol>"})               → Understand callers/callees
 5. READ gitnexus://repo/{name}/processes                   → Check affected execution flows
 6. Summarize findings with risk assessment
 ```
@@ -32,10 +32,10 @@ description: "Use when the user wants to review a pull request, understand what 
 
 ```
 - [ ] Fetch PR diff (gh pr diff or git diff base...head)
-- [ ] gitnexus_detect_changes to map changes to affected execution flows
-- [ ] gitnexus_impact on each non-trivial changed symbol
+- [ ] mcp__gitnexus__detect_changes to map changes to affected execution flows
+- [ ] mcp__gitnexus__impact on each non-trivial changed symbol
 - [ ] Review d=1 items (WILL BREAK) — are callers updated?
-- [ ] gitnexus_context on key changed symbols to understand full picture
+- [ ] mcp__gitnexus__context on key changed symbols to understand full picture
 - [ ] Check if affected processes have test coverage
 - [ ] Assess overall risk level
 - [ ] Write review summary with findings
@@ -63,20 +63,20 @@ description: "Use when the user wants to review a pull request, understand what 
 
 ## Tools
 
-**gitnexus_detect_changes** — map PR diff to affected execution flows:
+**mcp__gitnexus__detect_changes** — map PR diff to affected execution flows:
 
 ```
-gitnexus_detect_changes({scope: "compare", base_ref: "main"})
+mcp__gitnexus__detect_changes({scope: "compare", base_ref: "main"})
 
 → Changed: 8 symbols in 4 files
 → Affected processes: CheckoutFlow, RefundFlow, WebhookHandler
 → Risk: MEDIUM
 ```
 
-**gitnexus_impact** — blast radius per changed symbol:
+**mcp__gitnexus__impact** — blast radius per changed symbol:
 
 ```
-gitnexus_impact({target: "validatePayment", direction: "upstream"})
+mcp__gitnexus__impact({target: "validatePayment", direction: "upstream"})
 
 → d=1 (WILL BREAK):
   - processCheckout (src/checkout.ts:42) [CALLS, 100%]
@@ -86,20 +86,20 @@ gitnexus_impact({target: "validatePayment", direction: "upstream"})
   - checkoutRouter (src/routes/checkout.ts:22) [CALLS, 95%]
 ```
 
-**gitnexus_impact with tests** — check test coverage:
+**mcp__gitnexus__impact with tests** — check test coverage:
 
 ```
-gitnexus_impact({target: "validatePayment", direction: "upstream", includeTests: true})
+mcp__gitnexus__impact({target: "validatePayment", direction: "upstream", includeTests: true})
 
 → Tests that cover this symbol:
   - validatePayment.test.ts [direct]
   - checkout.integration.test.ts [via processCheckout]
 ```
 
-**gitnexus_context** — understand a changed symbol's role:
+**mcp__gitnexus__context** — understand a changed symbol's role:
 
 ```
-gitnexus_context({name: "validatePayment"})
+mcp__gitnexus__context({name: "validatePayment"})
 
 → Incoming calls: processCheckout, webhookHandler
 → Outgoing calls: verifyCard, fetchRates
@@ -112,20 +112,20 @@ gitnexus_context({name: "validatePayment"})
 1. gh pr diff 42 > /tmp/pr42.diff
    → 4 files changed: payments.ts, checkout.ts, types.ts, utils.ts
 
-2. gitnexus_detect_changes({scope: "compare", base_ref: "main"})
+2. mcp__gitnexus__detect_changes({scope: "compare", base_ref: "main"})
    → Changed symbols: validatePayment, PaymentInput, formatAmount
    → Affected processes: CheckoutFlow, RefundFlow
    → Risk: MEDIUM
 
-3. gitnexus_impact({target: "validatePayment", direction: "upstream"})
+3. mcp__gitnexus__impact({target: "validatePayment", direction: "upstream"})
    → d=1: processCheckout, webhookHandler (WILL BREAK)
    → webhookHandler is NOT in the PR diff — potential breakage!
 
-4. gitnexus_impact({target: "PaymentInput", direction: "upstream"})
+4. mcp__gitnexus__impact({target: "PaymentInput", direction: "upstream"})
    → d=1: validatePayment (in PR), createPayment (NOT in PR)
    → createPayment uses the old PaymentInput shape — breaking change!
 
-5. gitnexus_context({name: "formatAmount"})
+5. mcp__gitnexus__context({name: "formatAmount"})
    → Called by 12 functions — but change is backwards-compatible (added optional param)
 
 6. Review summary:
@@ -161,6 +161,15 @@ Structure your review as:
 ### Recommendation
 APPROVE / REQUEST CHANGES / NEEDS DISCUSSION
 ```
+
+## Hybrid Deterministic + Agent Review Pattern
+
+GitNexus's call-graph/impact-analysis approach is one way to separate mechanical work from judgment. A second, complementary split (source: `github.com/alibaba/open-code-review`) is worth applying regardless of which analysis backend is in use:
+
+- **Deterministic layer** (no model call): file selection/bundling (group changed files that belong to the same logical change before review, not one-file-at-a-time), rule-matching by file type (lint/style/security rules applied mechanically per extension), and comment-position/reflection verification (confirm every generated comment's line anchor still exists in the current diff — this harness already does this via `validate_review_json.py`'s anchor check).
+- **Agent layer** (model call): reserved for judgment that can't be reduced to a rule — correctness reasoning, blast-radius assessment, "is this the right approach" calls. Everything the deterministic layer can answer should never reach the model.
+
+**Benchmark the review agent on precision/recall/token-cost, not pass/fail.** A PR review agent that "ran without error" tells you nothing about review quality. Track: what fraction of its comments were real issues (precision), what fraction of real issues it caught (recall), and tokens spent per PR reviewed. Alibaba's own reported figure for this deterministic/agent split is roughly 9x token efficiency versus a general-purpose review agent doing everything through the model — treat that as a claim from the source, not a verified number for this harness, but it's the right kind of metric to track if this pattern is adopted here.
 
 ## Structured Output Contract (review.json)
 
@@ -202,7 +211,10 @@ Rules:
 - Any suggested fix mentioned in a comment must first be checked against the
   repo's real build/lint/test tooling (not asserted from reading alone) before
   it's proposed.
-- After writing `review.json`, validate it: `python3 .claude/scripts/pr/validate_review_json.py <path>`.
+- After writing `review.json`, validate it: `python3 .claude/scripts/pr/validate_review_json.py <path> <pr_number>`.
+  The optional `pr_number` also runs a line-anchor sanity check — each
+  `comments[].line`/`start_line` must still exist in that PR's current diff, catching
+  anchors left stale by a force-push or amended commit between generation and posting.
   Fix and re-validate on any reported error.
 - **This skill NEVER runs `gh pr review`, `gh pr comment`, or `gh api .../reviews`.**
   Writing `review.json` is the entire task — a separate, write-permission-scoped

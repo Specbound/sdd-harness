@@ -22,7 +22,7 @@ cat << 'RULES'
   5. LONG TAIL — don't sample aggressively; bugs live in rare clusters
      (HDBSCAN: no prespecified count, outliers → no_match not forced)
 
-  Discovery before eval: run active-observability skill first if you
+  Discovery before eval: run ~/.claude/skill-library/active-observability/SKILL.md first if you
   don't know what patterns to look for. Then raindrop-eval-loop.
 
 RULES

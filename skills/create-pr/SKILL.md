@@ -1,6 +1,6 @@
 ---
 name: create-pr
-description: "Create pull requests following Sentry conventions. Use when opening PRs, writing PR descriptions, or preparing changes for review. Follows Sentry's code review guidelines."
+description: "Creates pull requests with captured before/after evidence in the body. Use when opening PRs, writing PR descriptions, or preparing changes for review."
 source: "https://github.com/getsentry/skills/tree/main/plugins/sentry-skills/skills/create-pr"
 risk: safe
 ---
@@ -87,6 +87,46 @@ Use this structure for PR descriptions (ignoring any repository PR templates):
 - Links to relevant issues or tickets
 - Context that isn't obvious from the code
 - Notes on specific areas that need careful review
+- An `## Evidence` section (see Step 3b) — this is not a test plan. A test plan
+  states what you intend to check; evidence is the captured result of having
+  checked. The exclusion above bans the former, not the latter.
+
+### Step 3b: Attach Runtime Evidence
+
+Everything else in the description is your own account of your own work. The
+reviewer cannot check it. Give them something they can.
+
+Append to the body:
+
+```markdown
+## Evidence
+**Before:** <symptom reproduced — screenshot, video, or command + output>
+**After:**  <same probe, post-fix — screenshot, video, or command + output>
+```
+
+Which form to use:
+
+| Change has... | Evidence |
+|---|---|
+| A visible surface (UI, report, generated doc) | Before/after screenshot or video |
+| No visible surface (logic, perf, data) | Before/after numbers, or the failing then passing output of the same command |
+| Genuinely nothing to show (docs, comments, pure rename) | One line saying so, under the same heading |
+
+**Use the same probe both times.** A "before" from one command and an "after"
+from a different one proves nothing — it is two unrelated facts side by side.
+
+**Capture the before-state while reproducing the problem, before you fix it.**
+This is the load-bearing rule and the easiest one to skip. Before the fix, the
+capture is one command. After the fix it costs a revert, so it is usually
+skipped, and what gets written instead is a description of the old behavior
+recalled from memory and presented as an observation.
+
+If the before-state is already gone, write `Before: not captured` and say why.
+Never reconstruct it and present it as a capture.
+
+`hooks/claude/pr-evidence-hook.sh` checks for the `## Evidence` heading on
+`gh pr create` and nudges when it is missing. It does not block, and it cannot
+tell real evidence from a plausible-looking paragraph — that part is on you.
 
 ### Step 4: Create the PR
 
@@ -130,6 +170,10 @@ dashboard crashes when accessing user properties. This adds a null check
 and returns a proper 404 response.
 
 Found while investigating SENTRY-5678.
+
+## Evidence
+**Before:** `curl -s /api/users/9821` -> `500`, traceback in api.log:441
+**After:**  `curl -s /api/users/9821` -> `404 {"detail":"not found"}`
 
 Fixes SENTRY-5678
 ```

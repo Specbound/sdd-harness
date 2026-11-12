@@ -75,15 +75,35 @@ printf '{ "mcpServers": ' > "$P/.mcp.json"
 bash "$RECON" "$P" >/dev/null 2>&1
 check "block removed"        "0" "$(grep -c 'gitnexus:start' "$P/CLAUDE.md")"
 
-echo "=== 3. block + index + MCP -> kept, paths repaired ==="
+echo "=== 3. block + index + MCP -> kept, compacted ==="
 P="$(make_proj live yes yes yes)"
 bash "$RECON" "$P" >/dev/null
 check "block kept"           "1" "$(grep -c 'gitnexus:start' "$P/CLAUDE.md")"
+check "block closed"         "1" "$(grep -c 'gitnexus:end' "$P/CLAUDE.md")"
+check "repo name carried"    "1" "$(grep -c 'Indexed as \*\*demo\*\*' "$P/CLAUDE.md")"
+check "impact rule"          "1" "$(grep -c 'MUST run `impact' "$P/CLAUDE.md")"
+check "detect_changes rule"  "1" "$(grep -c 'MUST run `detect_changes' "$P/CLAUDE.md")"
+check "UNKNOWN rule"         "1" "$(grep -c 'risk: UNKNOWN` is unresolved' "$P/CLAUDE.md")"
+check "rename rule"          "1" "$(grep -c 'NEVER rename' "$P/CLAUDE.md")"
+check "old body gone"        "0" "$(grep -c '| Task | Skill |' "$P/CLAUDE.md")"
 check "no project-local path" "0" "$(grep -c '[^/]\.claude/skills/' "$P/CLAUDE.md")"
-check "global paths"         "3" "$(grep -c '~/.claude/skills/gitnexus' "$P/CLAUDE.md")"
+check "head preserved"       "1" "$(grep -c '^## Commands' "$P/CLAUDE.md")"
+check "tail preserved"       "1" "$(grep -c '^## Tail section' "$P/CLAUDE.md")"
 cp "$P/CLAUDE.md" "$ROOT/live-once.md"
 bash "$RECON" "$P" >/dev/null
 check "idempotent"           "" "$(diff "$ROOT/live-once.md" "$P/CLAUDE.md")"
+
+echo "=== 3b. SDD_GITNEXUS_FULL_BLOCK=1 -> upstream body kept, paths repaired ==="
+P="$(make_proj live-full yes yes yes)"
+SDD_GITNEXUS_FULL_BLOCK=1 bash "$RECON" "$P" >/dev/null
+check "no project-local path" "0" "$(grep -c '[^/]\.claude/skills/' "$P/CLAUDE.md")"
+check "global paths"         "3" "$(grep -c '~/.claude/skills/gitnexus' "$P/CLAUDE.md")"
+
+echo "=== 3c. unterminated block -> not compacted, tail kept ==="
+P="$(make_proj live-open yes yes yes)"
+grep -vF 'gitnexus:end' "$P/CLAUDE.md" > "$P/x" && mv "$P/x" "$P/CLAUDE.md"
+bash "$RECON" "$P" >/dev/null
+check "tail preserved"       "1" "$(grep -c '^## Tail section' "$P/CLAUDE.md")"
 
 echo "=== 4. no block -> untouched ==="
 P="$(make_proj noblock no no no)"
@@ -119,7 +139,25 @@ cp "$P/.claude/settings.json" "$ROOT/broken-before.json"
 bash "$RECON" "$P" --wire >/dev/null 2>&1
 check "settings untouched"   "" "$(diff "$ROOT/broken-before.json" "$P/.claude/settings.json")"
 
-echo "=== 9. bad usage ==="
+echo "=== 9. --global pins the CLI (stubbed npm/gitnexus/brew, no network) ==="
+STUB="$ROOT/stub-bin"; mkdir -p "$STUB"
+printf '#!/bin/bash\necho "%s"\n' "\${FAKE_GN_VER:-1.0.0}" > "$STUB/gitnexus"
+printf '#!/bin/bash\necho "npm $*" >> "%s"\n' "$ROOT/calls.log" > "$STUB/npm"
+printf '#!/bin/bash\necho "brew $*" >> "%s"\n[ "$1" = list ] && exit 1\nexit 0\n' "$ROOT/calls.log" > "$STUB/brew"
+chmod +x "$STUB"/*
+: > "$ROOT/calls.log"
+PATH="$STUB:$PATH" FAKE_GN_VER=1.0.0 SDD_GITNEXUS_VERSION=9.9.9 bash "$RECON" --global >/dev/null
+check "off-version -> npm install pinned" "1" \
+  "$(grep -c 'npm install -g gitnexus@9.9.9' "$ROOT/calls.log")"
+if [ "$(uname -s)" = "Darwin" ]; then
+  check "missing openssl@3 -> brew install" "1" "$(grep -c 'brew install openssl@3' "$ROOT/calls.log")"
+fi
+: > "$ROOT/calls.log"
+PATH="$STUB:$PATH" FAKE_GN_VER=9.9.9 SDD_GITNEXUS_VERSION=9.9.9 bash "$RECON" --global >/dev/null
+check "on-version -> no npm call" "0" "$(grep -c '^npm' "$ROOT/calls.log")"
+PATH="$STUB:$PATH" bash "$RECON" --global >/dev/null; check "--global exits 0" "0" "$?"
+
+echo "=== 10. bad usage ==="
 bash "$RECON" 2>/dev/null; check "no args -> 2" "2" "$?"
 bash "$RECON" "$ROOT/does-not-exist" 2>/dev/null; check "bad dir -> 2" "2" "$?"
 

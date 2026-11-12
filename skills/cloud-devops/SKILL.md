@@ -33,7 +33,7 @@ Use this workflow when:
 - `aws-skills` - AWS development
 - `azure-functions` - Azure development
 - `gcp-cloud-run` - GCP development
-- `terraform-skill` - Terraform IaC
+- `terraform-specialist` - Terraform IaC
 - `terraform-specialist` - Advanced Terraform
 
 #### Actions
@@ -49,7 +49,7 @@ Use @cloud-architect to design multi-cloud architecture
 ```
 
 ```
-Use @terraform-skill to provision AWS infrastructure
+Use @terraform-specialist to provision AWS infrastructure
 ```
 
 ### Phase 2: Container Orchestration

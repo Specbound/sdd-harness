@@ -180,6 +180,6 @@ Self-pace this loop. After each iteration, run the check command, read the outpu
 
 ## Notes
 
-- Adapt `npm` commands for the project stack (see `loop-patterns` skill for equivalents: pytest, go test, cargo test)
+- Adapt `npm` commands for the project stack (see `~/.claude/skill-library/loop-patterns/SKILL.md` for equivalents: pytest, go test, cargo test)
 - For loops using `spec.md`: confirm the spec path exists first
 - After loop completes: run `/kiro:verify` to confirm the exit condition is genuinely met

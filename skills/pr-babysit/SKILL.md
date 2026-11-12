@@ -90,6 +90,11 @@ steps rather than re-deriving them here):
    force-push regardless, see Authority Boundary).
 4. Let the watch loop pick up the new CI run automatically.
 
+If the PR carries a `risk:red` or `risk:yellow` label (applied by
+`pr-risk-tier-hook.sh` from `.claude/steering/risk-zones.md` — see the
+`risk-zone-engine` skill), treat that as a signal to read review comments more
+carefully rather than fast-pathing an approval; do not recompute risk here.
+
 ### 5. Stop conditions
 
 Stop the watch (`TaskStop` on the Monitor) when any of:

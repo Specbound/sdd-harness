@@ -1,10 +1,43 @@
 #!/bin/bash
 # =============================================================================
-# SDD harness pre-commit guard — blocks commits that introduce hardcoded paths.
+# SDD harness pre-commit guard — hardcoded paths, regex in embedded Python,
+# Library-tier skills invoked by bare name, untested blocking hooks, and
+# ports claimed by more than one service.
 # =============================================================================
-# Runs scripts/check-no-hardcoded-paths.sh so a machine/user-specific absolute
-# path can never be committed into harness source. Every path must be
-# self-located (scripts/lib/resolve-harness-dir.sh) or computed from $HARNESS_DIR.
+# Five checks, all about the harness lying to itself:
+#
+#   1. scripts/utils/check-no-hardcoded-paths.sh — a machine/user-specific
+#      absolute path must never be committed into harness source. Every path is
+#      self-located (scripts/lib/resolve-harness-dir.sh) or from $HARNESS_DIR.
+#
+#   2. scripts/utils/check-no-regex.py — ruff.toml bans `re` via TID251, but
+#      ruff only reads `.py` files, so the ban never reached the Python living
+#      in shell heredocs. Added 2026-09-03; runs against a shrinking debt ledger
+#      (scripts/utils/no-regex-debt.txt) so existing violations do not block
+#      commits while new ones do.
+#
+#   3. scripts/utils/check-skill-tiers.py — a skill listed in
+#      scripts/setup/skill-library.txt is installed unlisted, so a command,
+#      agent, hook or script that invokes it by bare name dead-ends ("skill not
+#      installed"). Must reference ~/.claude/skill-library/<name>/SKILL.md, or
+#      the skill must leave the manifest. Added 2026-10-04 after all three spec
+#      approval gates lost proof-collaborative-review this way.
+#
+#   4. scripts/utils/check-hook-tests.py — every hook that can block a tool call
+#      (exit 2, permissionDecision deny/ask, "decision": "block") needs a sibling
+#      *.test.sh. An untested gate that stops firing looks identical to one with
+#      nothing to block. Shrinking debt ledger: scripts/utils/hook-test-debt.txt.
+#      Added 2026-11-11 (dev.to "AI Agent Guardrails" extraction).
+#
+#   5. scripts/utils/check-ports.py — every port literal must be registered in
+#      scripts/utils/ports.txt, where a port belongs to exactly one service. A
+#      new service cannot land on a number another one already binds, and a
+#      file cannot borrow an owned port without a registry line saying so.
+#      Added 2026-11-12.
+#
+# All run; the commit is blocked if any fails, and every verdict is shown
+# rather than short-circuiting on the first — fixing one and rediscovering the
+# other on the next attempt wastes a cycle.
 #
 # HARNESS-REPO ONLY. This hook is intentionally NOT propagated to downstream
 # projects by install.sh — a user's own project may legitimately reference
@@ -19,12 +52,56 @@
 set -u
 
 ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0
-GUARD="$ROOT/scripts/utils/check-no-hardcoded-paths.sh"
-[ -f "$GUARD" ] || exit 0   # guard absent (e.g. downstream repo) — do nothing
 
-if ! bash "$GUARD"; then
-  echo ""
-  echo "pre-commit: BLOCKED — hardcoded path(s) above must be made dynamic."
+FAILED=0
+
+PATH_GUARD="$ROOT/scripts/utils/check-no-hardcoded-paths.sh"
+if [ -f "$PATH_GUARD" ]; then      # guard absent (e.g. downstream repo) — skip
+  if ! bash "$PATH_GUARD"; then
+    echo ""
+    echo "pre-commit: BLOCKED — hardcoded path(s) above must be made dynamic."
+    FAILED=1
+  fi
+fi
+
+REGEX_GUARD="$ROOT/scripts/utils/check-no-regex.py"
+if [ -f "$REGEX_GUARD" ] && command -v python3 >/dev/null 2>&1; then
+  if ! python3 "$REGEX_GUARD"; then
+    echo ""
+    echo "pre-commit: BLOCKED — regex in embedded Python (see above)."
+    echo "            Write an explicit parser, or emit structured data at the source."
+    FAILED=1
+  fi
+fi
+
+TIER_GUARD="$ROOT/scripts/utils/check-skill-tiers.py"
+if [ -f "$TIER_GUARD" ] && command -v python3 >/dev/null 2>&1; then
+  if ! (cd "$ROOT" && python3 "$TIER_GUARD"); then
+    echo ""
+    echo "pre-commit: BLOCKED — Library-tier skill invoked by bare name (see above)."
+    FAILED=1
+  fi
+fi
+
+HOOK_TEST_GUARD="$ROOT/scripts/utils/check-hook-tests.py"
+if [ -f "$HOOK_TEST_GUARD" ] && command -v python3 >/dev/null 2>&1; then
+  if ! (cd "$ROOT" && python3 "$HOOK_TEST_GUARD"); then
+    echo ""
+    echo "pre-commit: BLOCKED — blocking hook without a *.test.sh (see above)."
+    FAILED=1
+  fi
+fi
+
+PORT_GUARD="$ROOT/scripts/utils/check-ports.py"
+if [ -f "$PORT_GUARD" ] && command -v python3 >/dev/null 2>&1; then
+  if ! (cd "$ROOT" && python3 "$PORT_GUARD"); then
+    echo ""
+    echo "pre-commit: BLOCKED — port not registered, or claimed twice (see above)."
+    FAILED=1
+  fi
+fi
+
+if [ "$FAILED" -ne 0 ]; then
   echo "            Bypass (discouraged): git commit --no-verify"
   exit 1
 fi

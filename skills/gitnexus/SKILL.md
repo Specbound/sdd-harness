@@ -23,7 +23,7 @@ date: 2026-05-06
 
 GitNexus is the code intelligence layer wired into this harness. It builds a knowledge graph from your codebase — symbols, dependencies, call chains, execution flows — and exposes them via 16 MCP tools. It runs entirely on-device; no data leaves your machine.
 
-**Full docs:** `$SDD_HARNESS/docs/gitnexus/README.md`
+**Full docs:** `$SDD_HARNESS/docs/integrations/gitnexus/README.md`
 
 ---
 
@@ -201,6 +201,7 @@ When `.gitnexus/` exists, these activate without any commands:
 | `/kiro:spec-impl` | Blast radius scan before TDD cycle; tests cover downstream dependents |
 | `/kiro:debug` | Step 2 queries call chain instead of manual grep |
 | `/kiro:skill-extract-scan` | Seeds candidates from Leiden community clusters |
+| Weekly reseed | `risk-zone-reseed-runner.sh` uses `impact` risk levels as one of the signals scored into `.claude/steering/risk-zones.md` — see the `risk-zone-engine` skill |
 
 ---
 

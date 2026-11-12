@@ -62,7 +62,7 @@ Show Subagent summary to user briefly (2-3 lines max).
 
 After the subagent completes:
 
-1. Invoke the `proof-collaborative-review` skill with:
+1. Read `~/.claude/skill-library/proof-collaborative-review/SKILL.md` and follow it with:
    - File: `specs/$1/tasks.md`
    - Title: "$1 — Tasks Review"
 

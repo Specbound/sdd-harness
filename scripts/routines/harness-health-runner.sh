@@ -74,8 +74,29 @@ fi
 
 mkdir -p "docs"
 
-# --- Substitute today's date into prompt ---
+# --- Collect token forensics for Phase 3 ---
+# Run it here rather than letting the prompt shell out: a headless session that
+# has to invoke a script may skip it silently, and the phase would then report
+# on nothing while looking like it ran. Failures degrade to a visible marker,
+# never to fabricated numbers.
+FORENSICS_SCRIPT=".claude/scripts/utils/token-forensics.py"
+if [ -f "$FORENSICS_SCRIPT" ]; then
+  FORENSICS="$(python3 "$FORENSICS_SCRIPT" --days 14 --top 8 2>&1)" \
+    || FORENSICS="(token-forensics.py exited non-zero — Phase 3 has no data)
+$FORENSICS"
+else
+  FORENSICS="(token-forensics.py not installed — Phase 3 skipped)"
+fi
+
+# --- Substitute today's date and forensics into prompt ---
+# Date first, then the forensics block via an env-var read, so a stray
+# TODAY_PLACEHOLDER inside the captured output cannot be substituted, and the
+# report's own characters are never interpreted as sed replacement syntax.
 PROMPT="$(sed "s|TODAY_PLACEHOLDER|$TODAY|g" "$PROMPT_TEMPLATE")"
+PROMPT="$(FORENSICS="$FORENSICS" awk '
+  /^FORENSICS_PLACEHOLDER$/ { print ENVIRON["FORENSICS"]; next }
+  { print }
+' <<< "$PROMPT")"
 
 # --- Mark started ---
 echo "$TIMESTAMP" > "$STATE_FILE"
