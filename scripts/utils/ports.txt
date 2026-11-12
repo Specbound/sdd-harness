@@ -33,3 +33,7 @@
 8799  router-sentinel    templates/router.toml.template
 
 11434 ollama             scripts/utils/ollama_model_test.py
+
+8000  jeff-classifier    scripts/router/router-ctl.sh
+8798  router-worker      scripts/router/router-ctl.sh
+8799  router-sentinel    scripts/router/router-ctl.sh

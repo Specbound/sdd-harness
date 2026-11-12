@@ -1387,8 +1387,23 @@ def render_trust_battery(rd):
     samples      = cur.get("samples") or []
     spread       = cur.get("spread")
     inconclusive = bool(cur.get("inconclusive"))
+    unreadable   = cur.get("unreadable") or []
     sample_html  = ""
-    if inconclusive:
+    # Unreadable inputs are a second route to inconclusive (trust_score.py
+    # cmd_apply) that carries no spread — the judge was never split, its window
+    # was never readable. Checked first so it never reaches the spread format.
+    if unreadable:
+        sample_html = (
+            f'<div style="margin-top:8px;text-align:center">'
+            f'<span style="display:inline-block;background:rgba(249,226,175,0.10);'
+            f'border:1px solid #f9e2af66;border-radius:20px;padding:4px 12px;'
+            f'font-size:12px;font-weight:600;color:#f9e2af" '
+            f'title="The scoring inputs could not be read, so no delta was '
+            f'applied — there was nothing to score.">'
+            f'⚠ inputs unreadable &nbsp;{h("; ".join(unreadable))}'
+            f'</span></div>'
+        )
+    elif inconclusive and spread is not None:
         sample_html = (
             f'<div style="margin-top:8px;text-align:center">'
             f'<span style="display:inline-block;background:rgba(249,226,175,0.10);'

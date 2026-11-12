@@ -1,78 +1,49 @@
 #!/usr/bin/env bash
-# router-setup.sh — install/uninstall the model-router's two persistent
-# services (sentinel + worker) and wire/unwire ANTHROPIC_BASE_URL so `claude`
-# routes through the sentinel.
+# router-setup.sh — configure the model router and wire/unwire
+# ANTHROPIC_BASE_URL in each harness-active project so `claude` sessions there
+# route through the sentinel.
 #
-# THIS IS THE ONLY SETUP STEP THAT CAN TAKE `claude` AWAY FROM YOU: it
-# rewrites the global ANTHROPIC_BASE_URL every `claude` invocation on this
-# machine reads. The ordering below is deliberate and must not be reversed:
-# both services are installed, started, and confirmed answering BEFORE
-# settings.json is ever touched (mirrors headroom-setup.sh's own section-4
-# install -> health-check -> wire pattern).
+# No resident OS service is installed. The sentinel, worker and jeff are
+# started on demand by hooks/claude/router-session-hook.sh (via
+# scripts/router/router-ctl.sh) when a wired project's session starts, and
+# stopped when the last such session ends. Earlier versions installed launchd/
+# systemd services; install and uninstall both remove those if present.
+#
+# Wiring is per project, never global: env.ANTHROPIC_BASE_URL goes into
+# <project>/.claude/settings.local.json for each project in projects.txt whose
+# .claude/settings.json registers router-session-hook.sh — the hook that
+# starts the sentinel. A session in any other directory never points at a
+# router that is not running. settings.local.json is used because update.sh
+# rewrites settings.json from a template; settings.local.json is the user's.
 #
 # Usage:
-#   router-setup.sh [install]   # default — install/wire (idempotent)
-#   router-setup.sh uninstall   # restore the discovered upstream, remove both services
+#   router-setup.sh [install]   # default — configure/wire (idempotent)
+#   router-setup.sh uninstall   # unwire every project, stop processes, remove legacy services
 #
 # What install does:
-#   1. Resolves `uv` (scripts/lib/tool-paths.sh) and a Python interpreter
-#      >=3.11 via `uv python find`/`uv python install 3.12` — never a bare
-#      `python3` (R10.8: this machine's system python3 lacks `tomllib`). The
-#      resolved absolute path goes into every generated service unit.
+#   1. Resolves a Python interpreter >=3.11 via `uv python find`/`uv python
+#      install 3.12` — never a bare `python3` (R10.8: this machine's system
+#      python3 lacks `tomllib`).
 #   2. Writes ~/.sdd-router/router.toml from the template when absent; never
 #      overwrites an existing one.
-#   3. First run only (router.toml absent, or present with an empty
-#      [router].upstream): discovers the current ANTHROPIC_BASE_URL (the SDK
-#      default https://api.anthropic.com when unset) and, once the services
-#      below are confirmed healthy, stores it permanently as
-#      [router].upstream. That field is never rewritten by any later run.
-#   4. Installs+starts the sentinel and worker as persistent, OS-supervised
-#      services — launchd (KeepAlive + ThrottleInterval) on macOS, systemd
-#      (Restart=always + RestartSec) on Linux/systemd-enabled WSL — skipping
-#      cleanly on Git Bash / unsupported OS. Idempotent: an already-loaded
-#      service is left alone.
-#   5. Preflights by sending one real HTTP request through the sentinel's own
-#      public port; exits 1 (touching nothing in settings.json) if nothing
-#      comes back.
-#   6. Writes/repairs ~/.claude/settings.json's env.ANTHROPIC_BASE_URL to the
-#      sentinel's own address: on first run, and again on every later run
-#      where something else (e.g. `headroom init --global --memory claude`,
-#      which update.sh re-runs) reclaimed it back to a different value. A
-#      run where it already points at the sentinel is a pure no-op.
+#   3. First run only (empty [router].upstream): discovers the current
+#      upstream — global ~/.claude/settings.json env.ANTHROPIC_BASE_URL, else
+#      this shell's ANTHROPIC_BASE_URL (e.g. headroom exported from a shell
+#      rc), else the SDK default https://api.anthropic.com — and stores it as
+#      [router].upstream BEFORE anything is started. The sentinel refuses to
+#      start without an upstream, so the old order (start, preflight, then
+#      write) could never succeed on a first run. Never rewritten later.
+#   4. Removes the legacy launchd/systemd units, if any.
+#   5. Preflights by starting the router via router-ctl.sh under a setup-only
+#      session, sending one real HTTP request through the sentinel's public
+#      port, and stopping it again. Exits 1, wiring nothing, on failure.
+#   6. Wires each eligible project's settings.local.json. If the global
+#      settings.json still points at the sentinel (old global wiring), it is
+#      restored to the stored upstream so non-harness sessions keep working.
 #
-# Looped-on-first-run refusal: if, on a first run, ANTHROPIC_BASE_URL already
-# equals the sentinel's own address before router.toml has ever recorded a
-# real upstream, that is unresolvable ambiguity (a self-forwarding loop with
-# no real upstream ever known) — this script refuses and exits 1 rather than
-# guessing, per this repo's fail-loud setup standard.
-#
-# Named scope decision — NOT done here, flagged rather than silently skipped:
-# the worker (server.py) authenticates to jeff using the env var named by
-# router.toml's [classifier].api_key_env (default JEFF_API_KEY), read at call
-# time via os.environ.get(...). jeff-setup.sh generates jeff's own accepted
-# key as JEFF_API_KEYS inside jeff's OWN service environment file
-# (~/.sdd-router/jeff/.jeff-service.env) — a different service, with a
-# different environment, under a different variable name. Nothing wires that
-# value into the worker service's own environment under the api_key_env name.
-# Until that wiring exists, every classify call is unauthenticated: if jeff's
-# JEFF_API_KEYS is non-empty (the default), every call 401s, the circuit
-# breaker opens, and the router permanently (but silently, fail-open) falls
-# back to pass-through — `claude` keeps working, but classification and the
-# cost savings it exists to produce never happen. Task 9.1's own bullets do
-# not mention this wiring, so it is scoped OUT of this script deliberately,
-# not forgotten. Recommendation: a follow-up task should read
-# ~/.sdd-router/jeff/.jeff-service.env's JEFF_API_KEYS value and inject it
-# into the worker service's own environment under router.toml's configured
-# api_key_env name, applying the same chmod-600 discipline jeff-setup.sh's
-# plist already uses IF that wiring lands in a file that embeds the secret
-# directly (launchd has no EnvironmentFile= equivalent); a systemd
-# EnvironmentFile= pointing at the existing, already-600, jeff secret file
-# would not even need a new secret file.
-#
-# Neither service unit this script writes embeds a secret of its own (no
-# API-key wiring happens here — see the scope decision above), so normal file
-# permissions are correct for both the launchd plists and the systemd units
-# this script generates.
+# Looped-on-first-run refusal: if, on a first run, the discovered upstream
+# already equals the sentinel's own address, there is no real upstream to
+# record — this script refuses and exits 1 rather than guessing.
 set -u
 
 __here="$(cd -P "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
@@ -86,35 +57,19 @@ ROUTER_DIR="$HOME/.sdd-router"
 ROUTER_TOML="$ROUTER_DIR/router.toml"
 TEMPLATE_PATH="$HARNESS_DIR/templates/router.toml.template"
 SETTINGS_JSON="$HOME/.claude/settings.json"
+PROJECTS_TXT="${SDD_PROJECTS_TXT:-$HARNESS_DIR/projects.txt}"
+ROUTER_CTL="$HARNESS_DIR/scripts/router/router-ctl.sh"
+ROUTER_HOOK_NAME="router-session-hook.sh"
 # SDK's own hardcoded fallback when ANTHROPIC_BASE_URL is absent/unset
 # entirely (confirmed in the installed anthropic SDK's _client.py).
 SDK_DEFAULT_UPSTREAM="https://api.anthropic.com"
+SETUP_SESSION_ID="router-setup-preflight"
 
-SENTINEL_SCRIPT="$HARNESS_DIR/scripts/router/sentinel.py"
-WORKER_SCRIPT="$HARNESS_DIR/scripts/router/server.py"
-
-SENTINEL_LAUNCHD_LABEL="com.sdd.router-sentinel"
-WORKER_LAUNCHD_LABEL="com.sdd.router-worker"
-SENTINEL_SYSTEMD_UNIT="sdd-router-sentinel.service"
-WORKER_SYSTEMD_UNIT="sdd-router-worker.service"
+LEGACY_LAUNCHD_LABELS="com.sdd.router-sentinel com.sdd.router-worker com.sdd.jeff-classifier"
+LEGACY_SYSTEMD_UNITS="sdd-router-sentinel.service sdd-router-worker.service sdd-jeff-classifier.service"
 
 die() { echo "ERROR: $*" >&2; exit 1; }
 note() { echo "  $*"; }
-
-# Verifies: specs/model-router/requirements.md#10.4 (all four detect_os() cases).
-detect_os() {
-  case "$(uname -s 2>/dev/null)" in
-    Darwin)           echo "macos"   ;;
-    Linux)
-      if grep -qi microsoft /proc/version 2>/dev/null; then
-        echo "wsl"
-      else
-        echo "linux"
-      fi ;;
-    MINGW*|MSYS*|CYGWIN*) echo "gitbash" ;;
-    *) echo "unknown" ;;
-  esac
-}
 
 # ── uv + interpreter resolution (R10.8) ─────────────────────────────────────
 UV_BIN="$(find_tool uv || true)"
@@ -209,34 +164,35 @@ with open(path, "w", encoding="utf-8") as f:
 PY
 }
 
-# ── settings.json — merge-not-overwrite, matching
+# ── settings JSON — merge-not-overwrite, matching
 # scripts/utils/headroom-unwire-if-dead.py's own proven shape exactly: read
 # the whole JSON (missing file treated as {}), mutate only env.ANTHROPIC_BASE_URL,
 # write the whole structure back so every other key survives untouched.
-read_current_base_url() {
-  SETTINGS_JSON_PATH="$SETTINGS_JSON" SDK_DEFAULT="$SDK_DEFAULT_UPSTREAM" "$PYBIN" - <<'PY'
+
+# read_base_url <settings-file> — prints env.ANTHROPIC_BASE_URL, or nothing.
+read_base_url() {
+  SETTINGS_JSON_PATH="$1" "$PYBIN" - <<'PY'
 import json
 import os
 
 path = os.environ["SETTINGS_JSON_PATH"]
-default = os.environ["SDK_DEFAULT"]
-
 try:
     with open(path, encoding="utf-8") as f:
         data = json.load(f)
 except (FileNotFoundError, json.JSONDecodeError):
     data = {}
 
-env = data.get("env")
+env = data.get("env") if isinstance(data, dict) else None
 if not isinstance(env, dict):
     env = {}
 
-print(env.get("ANTHROPIC_BASE_URL") or default)
+print(env.get("ANTHROPIC_BASE_URL") or "", end="")
 PY
 }
 
-write_base_url_to_settings() {
-  SETTINGS_JSON_PATH="$SETTINGS_JSON" NEW_BASE_URL="$1" "$PYBIN" - <<'PY'
+# write_base_url <settings-file> <url>
+write_base_url() {
+  SETTINGS_JSON_PATH="$1" NEW_BASE_URL="$2" "$PYBIN" - <<'PY'
 import json
 import os
 
@@ -266,11 +222,11 @@ with open(path, "w", encoding="utf-8") as f:
 PY
 }
 
-# delete_base_url_from_settings — uninstall's "was never explicitly set"
-# branch: removes the key entirely rather than writing the literal SDK
-# default string, since those are not the same starting state.
-delete_base_url_from_settings() {
-  SETTINGS_JSON_PATH="$SETTINGS_JSON" "$PYBIN" - <<'PY'
+# delete_base_url <settings-file> — removes the key entirely (and an `env`
+# object it leaves empty) rather than writing a default value, since those are
+# not the same starting state.
+delete_base_url() {
+  SETTINGS_JSON_PATH="$1" "$PYBIN" - <<'PY'
 import json
 import os
 
@@ -281,231 +237,146 @@ try:
 except (FileNotFoundError, json.JSONDecodeError):
     raise SystemExit(0)
 
-env = data.get("env")
+env = data.get("env") if isinstance(data, dict) else None
 if isinstance(env, dict) and "ANTHROPIC_BASE_URL" in env:
     del env["ANTHROPIC_BASE_URL"]
+    if not env:
+        del data["env"]
     with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2)
         f.write("\n")
 PY
 }
 
-# ── service install/uninstall — launchd (macOS) / systemd (Linux, incl.
-# systemd-enabled WSL), mirroring jeff-setup.sh's own install_service_macos/
-# install_service_linux mechanics, parametrized for two independent services.
-install_service_macos() {
-  local label="$1" script="$2" logname="$3"
-  shift 3
-  local plist_dir="$HOME/Library/LaunchAgents"
-  local plist_path="$plist_dir/$label.plist"
-  local log_dir="$ROUTER_DIR/.logs"
-  mkdir -p "$plist_dir" "$log_dir"
-
-  if launchctl list "$label" >/dev/null 2>&1; then
-    note "LaunchAgent '$label' already loaded — skipping registration."
-    return 0
-  fi
-
-  {
-    echo '<?xml version="1.0" encoding="UTF-8"?>'
-    echo '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">'
-    echo '<plist version="1.0">'
-    echo '<dict>'
-    echo "    <key>Label</key><string>${label}</string>"
-    echo "    <key>WorkingDirectory</key><string>${ROUTER_DIR}</string>"
-    echo '    <key>ProgramArguments</key>'
-    echo '    <array>'
-    echo "        <string>${PYBIN}</string>"
-    echo "        <string>${script}</string>"
-    for a in "$@"; do
-      echo "        <string>${a}</string>"
-    done
-    echo '    </array>'
-    echo '    <key>RunAtLoad</key><true/>'
-    echo '    <key>KeepAlive</key><true/>'
-    echo '    <key>ThrottleInterval</key><integer>5</integer>'
-    echo "    <key>StandardOutPath</key><string>${log_dir}/${logname}.stdout.log</string>"
-    echo "    <key>StandardErrorPath</key><string>${log_dir}/${logname}.stderr.log</string>"
-    echo '</dict>'
-    echo '</plist>'
-  } > "$plist_path"
-  # No secret is embedded in this plist — see the scope-decision header note.
-
-  if launchctl load -w "$plist_path"; then
-    note "LaunchAgent '$label' registered and started."
+# discover_upstream — global settings.json, then this shell's env, then the
+# SDK default. The shell env matters: headroom-setup exports its proxy from a
+# shell rc, and skipping it would route around headroom.
+discover_upstream() {
+  local from_settings
+  from_settings="$(read_base_url "$SETTINGS_JSON")"
+  if [ -n "$from_settings" ]; then
+    echo "$from_settings"
+  elif [ -n "${ANTHROPIC_BASE_URL:-}" ]; then
+    echo "$ANTHROPIC_BASE_URL"
   else
-    die "launchctl load failed for $plist_path"
+    echo "$SDK_DEFAULT_UPSTREAM"
   fi
 }
 
-install_service_linux() {
-  local unit="$1" script="$2" description="$3"
-  shift 3
-  local unit_dir="$HOME/.config/systemd/user"
-  local unit_path="$unit_dir/$unit"
-  mkdir -p "$unit_dir"
-
-  if systemctl --user is-active --quiet "$unit" 2>/dev/null; then
-    note "systemd user service '$unit' already active — skipping registration."
-    return 0
-  fi
-
-  local exec_args=""
-  for a in "$@"; do
-    exec_args="$exec_args $a"
-  done
-
-  cat > "$unit_path" <<UNIT
-[Unit]
-Description=${description}
-After=network.target
-
-[Service]
-WorkingDirectory=${ROUTER_DIR}
-ExecStart=${PYBIN} ${script}${exec_args}
-Restart=always
-RestartSec=3
-
-[Install]
-WantedBy=default.target
-UNIT
-  # No secret is embedded in this unit — see the scope-decision header note.
-
-  systemctl --user daemon-reload || die "systemctl --user daemon-reload failed"
-  if systemctl --user enable --now "$unit"; then
-    note "systemd user service '$unit' installed and started."
-  else
-    die "systemctl --user enable --now failed for $unit"
-  fi
+# eligible_projects — projects.txt entries whose settings.json registers the
+# hook that starts the sentinel. Literal substring match on the hook's name.
+eligible_projects() {
+  local project
+  [ -f "$PROJECTS_TXT" ] || return 0
+  while IFS= read -r project; do
+    [ -n "$project" ] || continue
+    [ -f "$project/.claude/settings.json" ] || continue
+    grep -qF "$ROUTER_HOOK_NAME" "$project/.claude/settings.json" 2>/dev/null || continue
+    echo "$project"
+  done < "$PROJECTS_TXT"
 }
 
-uninstall_service_macos() {
-  local label="$1"
-  local plist_path="$HOME/Library/LaunchAgents/$label.plist"
-  if launchctl list "$label" >/dev/null 2>&1; then
-    launchctl unload "$plist_path" 2>/dev/null || true
-  fi
-  rm -f "$plist_path"
-  note "Removed LaunchAgent '$label'."
-}
-
-uninstall_service_linux() {
-  local unit="$1"
-  systemctl --user disable --now "$unit" >/dev/null 2>&1 || true
-  rm -f "$HOME/.config/systemd/user/$unit"
-  systemctl --user daemon-reload >/dev/null 2>&1 || true
-  note "Removed systemd user service '$unit'."
-}
-
-# Verifies: specs/model-router/requirements.md#10.4, #4.5a (two independent,
-# OS-supervised services — this pairing is the watchdog).
-install_services() {
-  case "$(detect_os)" in
-    macos)
-      install_service_macos "$SENTINEL_LAUNCHD_LABEL" "$SENTINEL_SCRIPT" "sentinel" --router-toml "$ROUTER_TOML"
-      install_service_macos "$WORKER_LAUNCHD_LABEL" "$WORKER_SCRIPT" "worker" --router-toml "$ROUTER_TOML"
+# ── legacy OS services (pre on-demand design) ───────────────────────────────
+remove_legacy_services() {
+  local label unit plist
+  case "$(uname -s 2>/dev/null)" in
+    Darwin)
+      for label in $LEGACY_LAUNCHD_LABELS; do
+        plist="$HOME/Library/LaunchAgents/$label.plist"
+        if launchctl list "$label" >/dev/null 2>&1; then
+          launchctl unload "$plist" 2>/dev/null || true
+        fi
+        if [ -f "$plist" ]; then
+          rm -f "$plist"
+          note "Removed legacy LaunchAgent '$label' (router now starts on demand)."
+        fi
+      done
       ;;
-    linux)
-      install_service_linux "$SENTINEL_SYSTEMD_UNIT" "$SENTINEL_SCRIPT" "sdd-harness model-router sentinel (front door)" --router-toml "$ROUTER_TOML"
-      install_service_linux "$WORKER_SYSTEMD_UNIT" "$WORKER_SCRIPT" "sdd-harness model-router worker (classifier+policy)" --router-toml "$ROUTER_TOML"
-      ;;
-    wsl)
-      if [ -d /run/systemd/system ] && systemctl --user show-environment >/dev/null 2>&1; then
-        install_service_linux "$SENTINEL_SYSTEMD_UNIT" "$SENTINEL_SCRIPT" "sdd-harness model-router sentinel (front door)" --router-toml "$ROUTER_TOML"
-        install_service_linux "$WORKER_SYSTEMD_UNIT" "$WORKER_SCRIPT" "sdd-harness model-router worker (classifier+policy)" --router-toml "$ROUTER_TOML"
-      else
-        note "Skipping persistent service: WSL without systemd enabled."
-        note "  Enable it (add '[boot]\\nsystemd=true' to /etc/wsl.conf, then 'wsl --shutdown')"
-      fi
-      ;;
-    *)
-      note "Skipping persistent service: no launchd/systemd equivalent for a resident process on this OS."
-      ;;
-  esac
-}
-
-uninstall_services() {
-  case "$(detect_os)" in
-    macos)
-      uninstall_service_macos "$SENTINEL_LAUNCHD_LABEL"
-      uninstall_service_macos "$WORKER_LAUNCHD_LABEL"
-      ;;
-    linux|wsl)
-      uninstall_service_linux "$SENTINEL_SYSTEMD_UNIT"
-      uninstall_service_linux "$WORKER_SYSTEMD_UNIT"
-      ;;
-    *)
-      note "No persistent service to remove on this OS."
+    Linux)
+      command -v systemctl >/dev/null 2>&1 || return 0
+      for unit in $LEGACY_SYSTEMD_UNITS; do
+        if [ -f "$HOME/.config/systemd/user/$unit" ]; then
+          systemctl --user disable --now "$unit" >/dev/null 2>&1 || true
+          rm -f "$HOME/.config/systemd/user/$unit"
+          systemctl --user daemon-reload >/dev/null 2>&1 || true
+          note "Removed legacy systemd unit '$unit' (router now starts on demand)."
+        fi
+      done
       ;;
   esac
 }
 
 # Verifies: specs/model-router/requirements.md#10.3 (setup verifies by
 # executing, not by assuming) — one real request through the sentinel's own
-# public port; exit 1, touching nothing in settings.json, if nothing answers.
+# public port; exit 1, wiring nothing, if nothing answers.
 preflight_sentinel() {
   local url="$1" code
+  bash "$ROUTER_CTL" up "$SETUP_SESSION_ID" \
+    || die "router-ctl.sh could not start the router. Nothing was wired."
   code="$(curl -s -o /dev/null -w '%{http_code}' --connect-timeout 2 -m 5 \
     -X POST "${url}/v1/messages" -H 'Content-Type: application/json' -d '{}' 2>/dev/null || true)"
+  bash "$ROUTER_CTL" down "$SETUP_SESSION_ID" >/dev/null 2>&1 || true
   if [ -z "$code" ] || [ "$code" = "000" ]; then
-    note "Preflight: sentinel not answering yet — retrying once after a short wait..."
-    sleep 2
-    code="$(curl -s -o /dev/null -w '%{http_code}' --connect-timeout 2 -m 5 \
-      -X POST "${url}/v1/messages" -H 'Content-Type: application/json' -d '{}' 2>/dev/null || true)"
-  fi
-  if [ -z "$code" ] || [ "$code" = "000" ]; then
-    die "preflight failed — sentinel at ${url} did not answer (got: ${code:-no response}). Nothing was written to $SETTINGS_JSON."
+    die "preflight failed — sentinel at ${url} did not answer (got: ${code:-no response}). Nothing was wired."
   fi
   note "Preflight passed — sentinel at ${url} answered with HTTP ${code}."
 }
 
-# Verifies: specs/model-router/requirements.md#10.2, #10.5, #3.4, #4.5a (the
-# discover/install/preflight/wire algorithm, idempotent, with looped and
-# reclaimed detection-and-repair).
+# Verifies: specs/model-router/requirements.md#10.2, #10.5, #3.4 (discover/
+# record/preflight/wire, idempotent, with looped detection).
 cmd_install() {
   ensure_router_toml
 
   local fields sep
   fields="$(read_router_fields)" || die "failed to read $ROUTER_TOML (malformed TOML?)"
   sep=$'\x1f'
-  local port upstream_stored
+  local port upstream
   port="${fields%%"$sep"*}"
-  upstream_stored="${fields#*"$sep"}"
+  upstream="${fields#*"$sep"}"
   local own_url="http://127.0.0.1:${port}"
 
-  local is_first_run=0
-  [ -z "$upstream_stored" ] && is_first_run=1
-
-  local current
-  current="$(read_current_base_url)" || die "failed to read $SETTINGS_JSON"
-
-  local discovered_upstream=""
-  if [ "$is_first_run" -eq 1 ]; then
-    if [ "$current" = "$own_url" ]; then
-      die "ANTHROPIC_BASE_URL already equals this router's own address ($own_url), but router.toml has never recorded a real upstream — this would create a self-forwarding loop with no real upstream ever known. Fix ANTHROPIC_BASE_URL in $SETTINGS_JSON manually (unset it, or point it at the real upstream), then re-run. Nothing was changed."
+  if [ -z "$upstream" ]; then
+    upstream="$(discover_upstream)"
+    if [ "$upstream" = "$own_url" ]; then
+      die "ANTHROPIC_BASE_URL already equals this router's own address ($own_url), but router.toml has never recorded a real upstream — this would create a self-forwarding loop with no real upstream ever known. Unset it (or point it at the real upstream), then re-run. Nothing was changed."
     fi
-    discovered_upstream="$current"
+    write_upstream_to_toml "$upstream" || die "failed to write discovered upstream into $ROUTER_TOML"
+    note "Stored discovered upstream ($upstream) in router.toml — permanent; no later run will ever rewrite it."
   fi
 
-  install_services
+  remove_legacy_services
   preflight_sentinel "$own_url"
 
-  if [ "$is_first_run" -eq 1 ]; then
-    write_upstream_to_toml "$discovered_upstream" || die "failed to write discovered upstream into $ROUTER_TOML"
-    note "Stored discovered upstream ($discovered_upstream) in router.toml — permanent; no later run will ever rewrite it."
-    write_base_url_to_settings "$own_url" || die "failed to write ANTHROPIC_BASE_URL into $SETTINGS_JSON"
-    note "Wired ANTHROPIC_BASE_URL -> $own_url in $SETTINGS_JSON."
-  else
-    if [ "$current" = "$own_url" ]; then
-      note "Already wired correctly — ANTHROPIC_BASE_URL already points at $own_url. Nothing to repair."
+  if [ "$(read_base_url "$SETTINGS_JSON")" = "$own_url" ]; then
+    if [ "$upstream" = "$SDK_DEFAULT_UPSTREAM" ]; then
+      delete_base_url "$SETTINGS_JSON" || die "failed to unwire $SETTINGS_JSON"
     else
-      note "ANTHROPIC_BASE_URL was reclaimed (currently: $current) — repairing to $own_url. router.toml's stored upstream ($upstream_stored) is left untouched."
-      write_base_url_to_settings "$own_url" || die "failed to repair ANTHROPIC_BASE_URL in $SETTINGS_JSON"
+      write_base_url "$SETTINGS_JSON" "$upstream" || die "failed to unwire $SETTINGS_JSON"
     fi
+    note "Global $SETTINGS_JSON pointed at the router (old global wiring) — restored to $upstream."
   fi
 
+  local project local_json wired=0
+  while IFS= read -r project; do
+    [ -n "$project" ] || continue
+    local_json="$project/.claude/settings.local.json"
+    if [ "$(read_base_url "$local_json")" = "$own_url" ]; then
+      note "Already wired: $project"
+    else
+      write_base_url "$local_json" "$own_url" || die "failed to write ANTHROPIC_BASE_URL into $local_json"
+      note "Wired ANTHROPIC_BASE_URL -> $own_url in $local_json."
+    fi
+    wired=$((wired+1))
+  done <<EOF
+$(eligible_projects)
+EOF
+
   echo ""
-  echo "router-setup complete. Proxy chain: claude -> sentinel ($own_url) -> worker -> upstream."
+  if [ "$wired" -eq 0 ]; then
+    echo "router-setup complete, but no project is wired: none in $PROJECTS_TXT registers $ROUTER_HOOK_NAME in .claude/settings.json yet (run update.sh in each, then re-run this)."
+  else
+    echo "router-setup complete. $wired project(s) wired. Chain: claude -> sentinel ($own_url) -> worker -> $upstream; started on session start, stopped after the last session ends."
+  fi
 }
 
 # Verifies: specs/model-router/requirements.md#10.5 (removable, restores
@@ -516,25 +387,24 @@ cmd_uninstall() {
     return 0
   fi
 
-  local fields sep
+  local fields sep port
   fields="$(read_router_fields)" || die "failed to read $ROUTER_TOML (malformed TOML?)"
   sep=$'\x1f'
-  local upstream_stored
-  upstream_stored="${fields#*"$sep"}"
+  port="${fields%%"$sep"*}"
+  local own_url="http://127.0.0.1:${port}"
 
-  if [ -z "$upstream_stored" ]; then
-    die "router.toml's [router].upstream is empty — the router was never fully installed (first run never completed successfully). Not safe to guess what to restore; remove $ROUTER_TOML by hand if you want a clean slate."
-  fi
+  local project local_json
+  [ -f "$PROJECTS_TXT" ] && while IFS= read -r project; do
+    [ -n "$project" ] || continue
+    local_json="$project/.claude/settings.local.json"
+    if [ "$(read_base_url "$local_json")" = "$own_url" ]; then
+      delete_base_url "$local_json" || die "failed to unwire $local_json"
+      note "Unwired $local_json."
+    fi
+  done < "$PROJECTS_TXT"
 
-  if [ "$upstream_stored" = "$SDK_DEFAULT_UPSTREAM" ]; then
-    delete_base_url_from_settings || die "failed to remove ANTHROPIC_BASE_URL from $SETTINGS_JSON"
-    note "ANTHROPIC_BASE_URL was unset before router-setup.sh ever ran (stored upstream is the SDK default) — removed the key from $SETTINGS_JSON rather than writing that literal string."
-  else
-    write_base_url_to_settings "$upstream_stored" || die "failed to restore ANTHROPIC_BASE_URL in $SETTINGS_JSON"
-    note "Restored ANTHROPIC_BASE_URL -> $upstream_stored in $SETTINGS_JSON."
-  fi
-
-  uninstall_services
+  bash "$ROUTER_CTL" stop >/dev/null 2>&1 || true
+  remove_legacy_services
 
   echo ""
   echo "router-setup uninstall complete. $ROUTER_TOML is left in place (its stored upstream is reused if you reinstall)."
