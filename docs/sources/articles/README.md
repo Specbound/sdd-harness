@@ -1537,3 +1537,27 @@ See also: [papers/README.md](../papers/README.md) — same batch, arXiv 2611.053
 The batch's three git links (warpdotdev merge-risk skill, 0sec-labs/0 security harness, humanethq/airgap-check) yielded nothing, so they have no `git/README.md` entries. Merge-risk: no PR review flow here, and a single LLM computing its own weighted score is a single-sample judge; its rollback idea is already covered by `ship-agent` and the model-tiers reversibility signal. 0: a whole product duplicating the `security` skill. airgap-check: the harness doesn't deploy offline.
 
 See also: [x/README.md](../x/README.md) — same 9-link batch (4 threads); [papers/README.md](../papers/README.md) — arXiv 2610.30571.
+
+---
+
+## Anthropic — "Prompting Claude Fable 5.2" (primary source for a 2026-11-12 X thread)
+**URL:** https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-fable-5-2
+**Added:** 2026-11-12
+**Source / Author:** Anthropic developer docs. **Fetch:** ok, rung 1 (`ctx_url_read` on the `.md` URL); located via WebSearch after the X summary looked off.
+
+**What it's about:** Fable 5.2 behaviour deltas: effort calibration, early stopping ("Finish the whole task" prompt), code ownership, silent long turns, subagent over-use, accumulating caution, reviewing prompts written for earlier models, report style. Ownership section: with "You are the owner and long-term maintainer of this codebase, and its design is up to you." the model consolidated duplicate code in ~75% of runs vs <10% without; output tokens +70–80%, unrequested changes, occasional behaviour changes PR summaries omitted; "No drive-by refactors" in the same prompt still left >50% consolidation.
+
+**What we added:** the ownership-stance check in `claudemd-review` (command + skill) and the model-change trigger — logged in full under [x/README.md](../x/README.md), 2026-11-12, since the thread was the input.
+
+---
+
+## LangChain — "What Is Eval-Driven Development?" + YouTube "11 More Tiny Coding Agent Fixes"
+**URLs:** https://www.langchain.com/blog/what-is-eval-driven-development · https://www.youtube.com/watch?v=hMEQ4rdaOLw
+**Added:** 2026-11-12
+**Fetch status:** LangChain ok, rung 1 (truncated after "Common mistakes"); YouTube partial, rung 1 transcript — problems 1–5 full text, 6–11 as extracted facts only.
+
+**What it's about:** EDD: per-behaviour spec (when / do / don't / keep intact), dataset before code, baseline run, per-example comparison (averages hide regressions), held-out set against overfitting, pass/fail not 1–10, validate judges against humans. Video: devil's-advocate reviewer, evidence with every claim, user-level testing, rules → hooks, ablate bloated rules, too many subagents, tangents.
+
+**What we added:** nothing. EDD is already `skill-eval-gate` (fail-first calibration, `pass^3`, no baseline-only passes, holdout, Phase 3b judge validation) plus `iterative-repair-loop`'s held-out set. Every video fix maps to an existing artifact (`spec-refactor-agent`/`validate-adversarial`, `kiro:verify`, hooks, `claudemd-review` ablation, `cheap-model-delegation`); the video's subagent advice is superseded by the Fable 5.2 doc above. Sponsor segment ignored.
+
+See also: [x/README.md](../x/README.md) and [git/README.md](../git/README.md) — same 8-link batch, 2026-11-12.

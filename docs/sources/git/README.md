@@ -970,3 +970,15 @@ See also: [articles/README.md](../articles/README.md) — same 18-source batch, 
 **What we added:** nothing. The approval-rule review model overlaps Claude Code's auto-mode classifier and PreToolUse hooks, and a `claude --print` call on every tool call would add a lot of latency. The vault, browser profiles and voice don't apply to a coding harness. Routines and triggers are already covered by `daily-orchestrator.sh`.
 
 See also: [x/README.md](../x/README.md) — same 4-source batch, 2026-10-01 (@tvykruta thread). The batch's YouTube episode (How I AI, Jev decision model) yielded nothing; see `docs/skills/skill-extraction/extraction-history.md`.
+
+---
+
+## github.com/Dodaios/ste80-humanizer + github.com/mintlify/agent-traffic
+**URLs:** https://github.com/Dodaios/ste80-humanizer · https://github.com/mintlify/agent-traffic | **Added:** 2026-11-12
+**Fetch status:** partial, rung 1 — READMEs only.
+
+**What it's about:** ste80-humanizer: two-pass rewrite skill — strip the 26 Wikipedia "signs of AI writing" tells, then restructure "80% of the way to ASD-STE100" (Karpathy, 2026-10-02): one idea per sentence, active voice, ~20/25-word limits. agent-traffic: TS classifier + dataset telling agents, AI crawlers, search crawlers and bots from humans, with IP-range verification against impersonators.
+
+**What we added:** nothing. ste80 Pass 1 is already `ai-writing-guard-hook.sh` (ported from blader/humanizer, 2026-08-02); Pass 2 is prose style in a domain models handle well (skill-extraction check 6) and clashes with caveman mode. agent-traffic classifies web traffic; the harness serves none.
+
+See also: [x/README.md](../x/README.md) and [articles/README.md](../articles/README.md) — same 8-link batch, 2026-11-12.

@@ -81,6 +81,24 @@ Two failure modes live here and nowhere else:
 This does **not** relax the Phase 4 ablation fence — hooks are read as *inputs* here, never
 edited by an ablation experiment.
 
+### Code-Ownership Stance
+
+Newer models change how much they restructure based on who the prompt says owns
+the code. Per Anthropic's *Prompting Claude Fable 5.2* guide: with no ownership
+statement (or code framed as someone else's) the model adds onto existing
+structure even when that duplicates code, and reports nearby bugs instead of
+fixing them. With *"You are the owner and long-term maintainer of this codebase,
+and its design is up to you."* it consolidated duplicates in ~75% of runs vs
+<10% — at the cost of 70–80% more output tokens, unrequested changes, and
+occasional behavior changes to existing features that PR summaries omitted.
+
+Check whether the file states ownership, then recommend per repo — never apply:
+- **User owns it and wants structure improved** → suggest the guide's sentence, quoted exactly. A reworded ownership line is not this fix: the ~75% was measured on that exact wording only, so any paraphrase is an unmeasured prompt.
+- **Minimal-change repos** (vendored, client code, strict blast-radius rules) → it should be absent.
+- **Sentence present alongside a scope-limiting rule** ("no drive-by refactors", blast-radius caps) → flag as a Conflicting Instruction: per the guide the scope rule does **not** cancel it (still >50% consolidation). Pick one.
+
+Guidance is model-specific; note which model the repo runs before recommending.
+
 ### Outdated Gotchas
 
 Flag gotchas that may no longer be true:

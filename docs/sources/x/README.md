@@ -653,3 +653,20 @@ See also: [articles/README.md](../articles/README.md) — same 12-source batch, 
 **Rejected:** Chris's deepening pass (`better-call` AUGMENT 19 vs 21 vs `simplify-agent`, but overruled on the hollow-addition and domain-saturation checks: models already know Ousterhout, and an unattended nightly refactor would churn code and hurt keep-rate). ESR is an opinion with nothing to build, though it supports skill-extraction's default-skip rule.
 
 See also: [papers/README.md](../papers/README.md) — arXiv 2610.30571; [articles/README.md](../articles/README.md) — same 9-link batch, 2026-11-11.
+
+---
+
+## @alexalbert__, @bebuu_ai, @mattpocockuk, @mitchellh — re-audit on new model, "codebase is yours", home repo, push-to-main (4 threads)
+**URLs:** https://archive.codenewsletter.ai/2119884951550386671 · https://archive.codenewsletter.ai/2120080226801820156 · https://archive.codenewsletter.ai/2120260969750540327 · https://archive.codenewsletter.ai/2120221244478083249 (archived copies of the x.com posts)
+**Added:** 2026-11-12
+**Source / Author:** Alex Albert, bebu, Matt Pocock, Mitchell Hashimoto (X, 2026-11-09 → 11-10). **Fetch:** ok, rung 1 (archive mirror), all four full posts.
+
+**What it's about:** (1) Albert: on every new model, prompt "read this entire project and find everything that's broken, inconsistent, inefficient, or no longer needed; fix what you're sure about, list the rest". (2) bebu summarises Anthropic's Fable 5.2 prompting guide: telling the model the codebase is its own flips it from bolting on to consolidating. **The tweet is wrong on both wording and numbers** — checked against the primary doc (see articles/README.md): the sentence is "You are the owner and long-term maintainer of this codebase, and its design is up to you.", the lift is <10% → ~75% (tweet: ~50%), and the doc reports costs the tweet omits (70–80% more output tokens, unrequested changes, scope rules don't cancel it). (3) Pocock: one "home repo" holding skills/steering, pointing at other repos. (4) Hashimoto: trusted push-to-main, anyone can release behind a 15-minute pausable countdown.
+
+**What we added:**
+- Augmentation (Albert): `commands/kiro/daily-maintenance.md` Step 7 — a model change now forces `claudemd-review` due once per model (marker `.claude/memory/.claudemd-review-model`; deleting `.last-claudemd-review` makes `session-start-hook.sh` fire it). The audit itself already existed; only the trigger was missing ("After a major Claude model release" was a When-to-Use line nothing fired).
+- Augmentation (bebu → primary doc): ownership-stance check in `commands/global/claudemd-review.md` (rubric row — the hook-fired path) and `skills/claudemd-review/SKILL.md` (Phase 2). `skill-eval-gate` PASS: S1 recommend-verbatim and S2 token-cost both baseline FAIL → treatment 3/3; S3 negative/holdout (client-owned repo) 3/3 no over-trigger. Phase 1c compression regression caught and fixed ("verbatim" flattened into a paraphrase → pinned with one sentence, re-run passed). Gate measured the new section only. The sentence was deliberately **not** added to `templates/CLAUDE.md.template`: Fable-5.2-specific, and it fights the ≤1-folder blast-radius rule.
+
+**Rejected:** Albert's prompt as its own command (duplicates `/kiro:evolve` + `claudemd-review`); home repo (the harness already is one — `sdd-harness` + `update.sh`); Hashimoto (team culture; the harness cuts no releases).
+
+See also: [articles/README.md](../articles/README.md) and [git/README.md](../git/README.md) — same 8-link batch, 2026-11-12.

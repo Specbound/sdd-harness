@@ -281,6 +281,27 @@ absence as a finding would bury the real ones.
 Best-effort like the steps above: on a non-zero exit other than a finding, log
 `[routine-error]: skill-eval-staleness failed` and continue.
 
+**Model change also makes `claudemd-review` due.** CLAUDE.md rules are tuned to
+a model the same way eval verdicts are — Anthropic's per-model prompting guides
+list instructions to delete or add on upgrade — but the review only fires on its
+14-day cadence. Using the same model ID passed above, compare it to
+`.claude/memory/.claudemd-review-model`:
+
+- File absent → write the model ID to it and stop. A missing marker is unknown
+  history, not a change.
+- Same ID → nothing.
+- Different ID → delete `.claude/memory/.last-claudemd-review` (session-start-hook
+  treats a missing stamp as review-due on the next session), write the new ID to
+  the marker, and append:
+
+```
+- YYYY-MM-DD [routine-alert]: model changed <old> → <new> — claudemd-review forced due
+```
+
+The marker is what keeps this to once per model: `stale-model` counts stay
+non-zero every night until skills are re-measured, so keying on them would
+re-force the review daily. Skipped when the model ID is unknown, like the scan.
+
 ---
 
 
