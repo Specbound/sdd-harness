@@ -138,11 +138,17 @@ live_session_count() {
   echo "$n"
 }
 
-# spawn <name> <workdir> <cmd...> — detached, own process group, pidfile.
+# spawn <name> <workdir> <cmd...> — detached, pidfile. A live pidfile means a
+# previous `up` already started it and it is still loading (jeff takes seconds
+# to open its port) — spawning again would orphan the first instance.
 spawn() {
   local name="$1" workdir="$2"
   shift 2
-  ( cd "$workdir" && nohup "$@" >>"$LOG_DIR/$name.stdout.log" 2>>"$LOG_DIR/$name.stderr.log" </dev/null &
+  pid_alive "$(read_pidfile "$name")" && return 0
+  # `cd` stays its own statement: `cd && nohup ... &` backgrounds the whole
+  # list as a subshell, so $! named that subshell and `kill` orphaned the server.
+  ( cd "$workdir" || exit 1
+    nohup "$@" >>"$LOG_DIR/$name.stdout.log" 2>>"$LOG_DIR/$name.stderr.log" </dev/null &
     echo $! > "$RUN_DIR/$name.pid" )
 }
 
