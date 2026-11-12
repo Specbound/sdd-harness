@@ -183,6 +183,11 @@ which forces `inconclusive` and persists the named sources to `trust-score.jsonl
 reaches the same state through `apply --unreadable SOURCE`. An inconclusive day is therefore
 distinguishable from an idle one, and neither is a problem to fix.
 
+The dashboard's Trust Battery tile shows such a day as an amber `⚠ inputs unreadable` badge listing
+the named sources (`render_trust_battery` in `scripts/utils/dashboard.py`, 2026-11-12). It is checked
+before the `⚠ judge split` badge, which now renders only when `inconclusive` carries a `spread` —
+an unreadable day has none, since the judge was never split.
+
 Source: claude.dev, *Building effective agent automations* (2026-10-08), rule 2 — report a failed
 read as unreadable, never as a quiet day. See `docs/sources/articles/README.md`.
 
@@ -343,4 +348,4 @@ The deliberate non-goals above are stable. If any of these come up in a future r
 
 ---
 
-_Last synced: 2026-10-12_
+_Last synced: 2026-11-12_

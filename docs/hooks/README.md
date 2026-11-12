@@ -26,6 +26,20 @@ Hook output is injected into Claude's context as system messages — Claude read
 
 ## Active Event Hooks
 
+### `router-session-hook.sh`
+**Event:** `SessionStart` and `SessionEnd` — **Matcher:** _(all sessions)_ — registered first in the `SessionStart` list
+
+**Purpose:** Keeps the model router (sentinel + worker + jeff) running only while a harness-active session needs it (added 2026-11-12, replacing the resident launchd/systemd services). Reads `hook_event_name` and `session_id` from the hook input, resolves the harness through `~/.sdd-harness-root`, and calls `scripts/router/router-ctl.sh`: on `SessionStart` it first checks `router-ctl.sh wired "$CLAUDE_PROJECT_DIR"` and, only for a wired project, runs `up <session-id>`; on `SessionEnd` it runs `down <session-id>`, which stops everything once no live session remains.
+
+**Why it's needed:** A project is routed only when `router-setup.sh` wrote `env.ANTHROPIC_BASE_URL` (→ sentinel) into its `.claude/settings.local.json`. Such a session cannot reach the API at all unless the sentinel is listening, so the router must be up before the first request — and nothing else should keep it resident.
+
+**Output / side effect:**
+- Nothing, for an unwired project, a missing session id, or an absent/invalid `~/.sdd-harness-root` (no-op, exit 0)
+- `[ROUTER-DOWN] <router-ctl output>` — a wired session's `up` failed; followed by an instruction to tell the user and fix with `bash <harness>/scripts/setup/router-setup.sh` (or `uninstall` to unroute)
+- `SessionEnd` is always silent
+
+---
+
 ### `session-start-hook.sh`
 **Event:** `SessionStart` — **Matcher:** _(all sessions)_
 
@@ -1057,5 +1071,5 @@ denies `git push*` outright where projects only deny force-push.
 
 **No regex, continued (2026-09-30).** `prompt-quality-check.sh` was rewritten off `re` onto the same literal-token pattern: the prompt is tokenized to lowercase words (apostrophes stay inside a word, every other non-alphanumeric character separates, so `double-check` is the two tokens `double check`) and phrases are matched on token boundaries. The rewrite was verified score-identical to the regex version on 94 real Agent prompts, and it added two anti-patterns — `think-instruction` and `show-reasoning-request`. `scripts/routines/startup-payload-audit.sh` lost its `@import` regex the same day in favour of a line-prefix parser. Both are off `scripts/utils/no-regex-debt.txt`; `action-capture.sh` and `stop-hook.sh` are the remaining hooks that regex-parse free text.
 
-_Last synced: 2026-11-11_
+_Last synced: 2026-11-12_
 
