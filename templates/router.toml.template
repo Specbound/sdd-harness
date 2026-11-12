@@ -18,7 +18,7 @@ base_url       = "http://127.0.0.1:8000"      # jeff's default port, loopback on
 # itself. The router reads this var name, then reads the var at call
 # time; no key value is ever written to this file.
 api_key_env    = "JEFF_API_KEY"
-timeout_ms     = 400
+timeout_ms     = 1000
 circuit_open_s = 60
 scale_max      = 10
 
