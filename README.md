@@ -282,6 +282,8 @@ sdd-harness/
 │       ├── skill-tier-allow.txt #     Exemption list read by check-skill-tiers.py — one "<repo-relative path> <skill name>" pair per line, for mentions a human reads rather than text an agent acts on
 │       ├── check-hook-tests.py  #     Fails the commit when a hook in hooks/claude/ or hooks/global/ that can block a tool call (exit 2, permissionDecision deny/ask, "decision": "block") has no sibling *.test.sh. Fourth guard in .git/hooks/pre-commit; --list prints every blocking hook with its test status
 │       ├── hook-test-debt.txt   #     The ledger check-hook-tests.py reads, seeded 2026-11-11 with the 4 untested blocking hooks. Shrink-only: delete a hook's line in the same commit that adds its test
+│       ├── check-ports.py       #     Fails the commit when a port literal is not registered in ports.txt, when one port is claimed by two services, or when a registry line is stale. Fifth guard in .git/hooks/pre-commit; --list prints every port literal found
+│       ├── ports.txt            #     The port registry check-ports.py reads — one "<port> <service> <path>" line per file that names a port. Pick a new service's port from the numbers not listed here
 │       └── check-fleet-registration.sh  # Find harness-installed repos missing from projects.txt (they get no routines and appear on no dashboard)
 │
 ├── hooks/                        # Claude Code and Git lifecycle hooks
@@ -311,7 +313,7 @@ sdd-harness/
 │   │   ├── caveman-statusline.sh #     Statusline command: emits [CAVEMAN] / [CAVEMAN:ULTRA] badge + live context-usage meter (color-coded %ctx)
 │   │   └── lean-ctx-rewrite.sh  #     PreToolUse(Bash): rewrites common shell commands to lean-ctx equivalents
 │   └── git/                      # Git lifecycle hooks (copied to .git/hooks/ on install/update)
-│       ├── pre-commit            #     Harness repo only: runs check-no-hardcoded-paths.sh (machine-specific paths), check-no-regex.py (regex in embedded Python), check-skill-tiers.py (Library-tier skill invoked by bare name), and check-hook-tests.py (blocking hook without a *.test.sh). All run and every verdict prints — it does not short-circuit on the first failure — and any one blocks the commit. Never propagated to downstream projects
+│       ├── pre-commit            #     Harness repo only: runs check-no-hardcoded-paths.sh (machine-specific paths), check-no-regex.py (regex in embedded Python), check-skill-tiers.py (Library-tier skill invoked by bare name), check-hook-tests.py (blocking hook without a *.test.sh), and check-ports.py (port unregistered or claimed by two services). All run and every verdict prints — it does not short-circuit on the first failure — and any one blocks the commit. Never propagated to downstream projects
 │       └── post-commit           #     On commit: detects doc-sync/harness-update work, then runs it in ONE detached job (log: .git/post-commit-docsync.log) that auto-commits/pushes only the .md files touched; serialized on .git/post-commit-docsync.lock so concurrent commits skip instead of racing the git index
 │
 ├── templates/                    # Project-level templates

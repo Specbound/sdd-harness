@@ -1,9 +1,10 @@
 #!/bin/bash
 # =============================================================================
 # SDD harness pre-commit guard — hardcoded paths, regex in embedded Python,
-# Library-tier skills invoked by bare name, and untested blocking hooks.
+# Library-tier skills invoked by bare name, untested blocking hooks, and
+# ports claimed by more than one service.
 # =============================================================================
-# Four checks, all about the harness lying to itself:
+# Five checks, all about the harness lying to itself:
 #
 #   1. scripts/utils/check-no-hardcoded-paths.sh — a machine/user-specific
 #      absolute path must never be committed into harness source. Every path is
@@ -27,6 +28,12 @@
 #      *.test.sh. An untested gate that stops firing looks identical to one with
 #      nothing to block. Shrinking debt ledger: scripts/utils/hook-test-debt.txt.
 #      Added 2026-11-11 (dev.to "AI Agent Guardrails" extraction).
+#
+#   5. scripts/utils/check-ports.py — every port literal must be registered in
+#      scripts/utils/ports.txt, where a port belongs to exactly one service. A
+#      new service cannot land on a number another one already binds, and a
+#      file cannot borrow an owned port without a registry line saying so.
+#      Added 2026-11-12.
 #
 # All run; the commit is blocked if any fails, and every verdict is shown
 # rather than short-circuiting on the first — fixing one and rediscovering the
@@ -81,6 +88,15 @@ if [ -f "$HOOK_TEST_GUARD" ] && command -v python3 >/dev/null 2>&1; then
   if ! (cd "$ROOT" && python3 "$HOOK_TEST_GUARD"); then
     echo ""
     echo "pre-commit: BLOCKED — blocking hook without a *.test.sh (see above)."
+    FAILED=1
+  fi
+fi
+
+PORT_GUARD="$ROOT/scripts/utils/check-ports.py"
+if [ -f "$PORT_GUARD" ] && command -v python3 >/dev/null 2>&1; then
+  if ! (cd "$ROOT" && python3 "$PORT_GUARD"); then
+    echo ""
+    echo "pre-commit: BLOCKED — port not registered, or claimed twice (see above)."
     FAILED=1
   fi
 fi
