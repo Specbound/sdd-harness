@@ -416,14 +416,16 @@ class SentinelWithRealRouterWorkerTests(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# 4. Worker hang (timeout path): the worker accepts the connection but never
-#    answers — distinct from the connection-refused case above. Uses a short
-#    `worker_timeout_s` override for test speed (R4.5a).
+# 4. Slow worker: the worker accepts the connection and answers only after
+#    `worker_timeout_s` has elapsed. The timeout bounds the connect alone
+#    (design.md: "short connect timeout"), because a worker holding the request
+#    is already forwarding it upstream — falling through here would send the
+#    same request upstream twice. Dead-worker fallback is section 2's job.
 # ---------------------------------------------------------------------------
 
 
 class SentinelWorkerHangTests(unittest.TestCase):
-    """A stub worker that accepts the connection but sleeps past the timeout."""
+    """A stub worker that accepts the connection but answers after the timeout."""
 
     def setUp(self) -> None:
         self.upstream_recorder = _RequestRecorder()
@@ -437,7 +439,7 @@ class SentinelWorkerHangTests(unittest.TestCase):
         self.worker_recorder = _RequestRecorder()
         self.worker_behavior = _StubBehavior("worker")
         self.worker_behavior.mode = "hang"
-        self.worker_behavior.hang_s = 2.0  # far longer than worker_timeout_s below
+        self.worker_behavior.hang_s = 0.5  # 10x worker_timeout_s below
         self.worker_server = _StubServer(
             ("127.0.0.1", 0), _StubHandler, self.worker_recorder, self.worker_behavior
         )
@@ -476,7 +478,7 @@ class SentinelWorkerHangTests(unittest.TestCase):
         thread.join(timeout=5)
 
     # Verifies: specs/model-router/requirements.md#4.5a
-    def test_worker_hang_past_timeout_falls_through_to_upstream_within_budget(
+    def test_slow_worker_is_waited_for_and_request_never_duplicated_upstream(
         self,
     ) -> None:
         started = time.monotonic()
@@ -484,13 +486,12 @@ class SentinelWorkerHangTests(unittest.TestCase):
         elapsed = time.monotonic() - started
 
         self.assertEqual(status, 200)
-        self.assertEqual(body, b"FROM-UPSTREAM")
-        self.assertEqual(len(self.upstream_recorder), 1)
-        # Bounded by the 0.05s connect/read budget (10x generous multiplier
-        # for scheduling jitter), not by however long the worker actually
-        # hangs (2.0s) — this is what proves the timeout is exercised, not
-        # just configured.
-        self.assertLess(elapsed, 0.5)
+        self.assertEqual(body, b"FROM-WORKER")
+        self.assertEqual(len(self.worker_recorder), 1)
+        self.assertEqual(len(self.upstream_recorder), 0)
+        # Proves the wait actually outlasted the 0.05s budget, so the budget
+        # is not being applied to the read.
+        self.assertGreaterEqual(elapsed, 0.5)
 
 
 # ---------------------------------------------------------------------------

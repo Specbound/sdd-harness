@@ -1,8 +1,8 @@
 """scripts/router/sentinel.py — trivial, dependency-free front door (R4.5, R4.5a).
 
 Binds `127.0.0.1:8799`, the address `ANTHROPIC_BASE_URL` points at. On every request it
-tries the worker at `127.0.0.1:8798` first with a short connect/read timeout; connection
-refused, timeout, or any other connection-level failure falls through to the discovered
+tries the worker at `127.0.0.1:8798` first with a short connect timeout; connection
+refused, connect timeout, or any other connection-level failure falls through to the discovered
 upstream directly, unmodified, with no classification/rewrite attempted here at all —
 that is the worker's job (task 7's `server.py`), a different process from this one.
 
@@ -26,6 +26,7 @@ from __future__ import annotations
 import argparse
 import logging
 import sys
+from http.client import HTTPConnection, HTTPException, HTTPResponse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.error import HTTPError, URLError
@@ -45,7 +46,11 @@ WORKER_HOST = "127.0.0.1"
 WORKER_PORT = 8798
 
 # R4.5a: bounds the client-visible outage window for a dead worker to one request's
-# connect/read timeout, not however long the OS service manager takes to restart it.
+# connect timeout, not however long the OS service manager takes to restart it.
+# Connect only (design.md: "short connect timeout"): once the worker has the request it
+# is already forwarding it upstream, and waiting on the upstream's first byte routinely
+# takes far longer than 150ms. A read timeout here abandoned the worker mid-call and
+# re-sent the same request to the upstream — every slow request billed twice, unrouted.
 WORKER_TIMEOUT_S = 0.150
 
 _CHUNK_SIZE = 65536
@@ -123,6 +128,23 @@ def _open(url: str, method: str, headers: dict[str, str], body: bytes, timeout: 
         return exc
 
 
+def _open_worker(
+    host: str, port: int, method: str, path: str, headers: dict[str, str], body: bytes, connect_timeout: float
+) -> HTTPResponse:
+    """Send the request to the worker, bounding only the TCP connect by `connect_timeout`.
+
+    After the connect succeeds the socket is switched to blocking, so a worker that is
+    alive but waiting on its upstream is waited for, never abandoned and re-sent.
+    `http.client` returns non-2xx statuses rather than raising, matching `_open`.
+    """
+    conn = HTTPConnection(host, port, timeout=connect_timeout)
+    conn.connect()
+    assert conn.sock is not None
+    conn.sock.settimeout(None)
+    conn.request(method, path, body=body if body else None, headers=headers)
+    return conn.getresponse()
+
+
 class SentinelHandler(BaseHTTPRequestHandler):
     """Pure byte-forwarding proxy with a two-tier fallback.
 
@@ -170,11 +192,18 @@ class SentinelHandler(BaseHTTPRequestHandler):
         body = self._read_body()
         headers = _forward_headers(self.headers)
 
+        server = self._sentinel_server()
         try:
-            response = _open(
-                self._worker_url(), self.command, headers, body, self._sentinel_server().worker_timeout_s
+            response = _open_worker(
+                server.worker_host,
+                server.worker_port,
+                self.command,
+                self.path,
+                headers,
+                body,
+                server.worker_timeout_s,
             )
-        except (URLError, TimeoutError, OSError) as exc:
+        except (OSError, HTTPException) as exc:
             logger.warning("worker unreachable (%s) — falling through to upstream", exc)
             try:
                 response = _open(self._upstream_url(), self.command, headers, body, None)
@@ -189,10 +218,6 @@ class SentinelHandler(BaseHTTPRequestHandler):
         if length is None:
             return b""
         return self.rfile.read(int(length))
-
-    def _worker_url(self) -> str:
-        server = self._sentinel_server()
-        return f"http://{server.worker_host}:{server.worker_port}{self.path}"
 
     def _upstream_url(self) -> str:
         return f"{self._sentinel_server().upstream.rstrip('/')}{self.path}"
