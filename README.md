@@ -89,7 +89,7 @@ This will:
 - Run `scripts/setup/reconcile-settings-templates.py --sync` **before** generating the harness's own `.claude/settings.json`, so the harness template is derived from the project template plus an explicit harness-only allowlist rather than drifting from it (`update.sh` does this too). The two had silently diverged, and in the harmful direction: hooks were firing in every installed repo while not firing in the repo where they are written and tested. A failure here warns and continues rather than aborting the install
 - Register the project in `projects.txt`
 - Install the git post-commit hook
-- Append the harness-local entries to the project's `.gitignore` (`.claude/`, `specs/`, `CLAUDE.md`, `AGENTS.md`, `ERRORS.md`) — all regenerable output, not source. The list lives in `scripts/lib/project-gitignore.sh` and `update.sh` re-applies it on every sync, so projects installed before an entry existed backfill it automatically
+- Append the harness-local entries to the project's `.gitignore` (`.claude/`, `specs/`, `CLAUDE.md`, `AGENTS.md`, `ERRORS.md`, `.cursor/`, `.serena/`, `.gitnexus/`, `.worktrees/`, `.mcp.json`) — all regenerable output or local tool state, not source — and untrack any of them the project already committed (kept on disk; no opt-out). The list lives in `scripts/lib/project-gitignore.sh` and `update.sh` re-applies it on every sync, so projects installed before an entry existed backfill it automatically
 
 ### Bootstrap project knowledge
 
