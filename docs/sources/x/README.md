@@ -16,7 +16,7 @@ Content passed directly as pasted text to `/skill-extraction` — not a URL, rep
 - Command: `/kiro:daily-maintenance` — nightly orchestrator: Judge → Reflect → Housekeeping → Score → Alert
 - Rule: `kiro/settings/rules/session-quality-rubric.md` — charges (+1, max 5/day) and drains (-2, max 5/day) with evidence requirements. Trust Score is observability only — never gates harness behavior.
 - Hook enhancement: `hooks/claude/stop-hook.sh` — calls detector after each session
-- Docs: `docs/trust-battery/README.md`
+- Docs: `docs/evaluation/trust-battery/README.md`
 
 ---
 

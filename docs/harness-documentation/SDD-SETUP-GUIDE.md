@@ -2206,7 +2206,7 @@ Each harness subsystem has a detailed reference doc:
 | Cog Memory | `docs/memory/README.md` | Tier architecture, file formats, conventions, data flow |
 | Jira Integration | `docs/integrations/jira/README.md` | Hook architecture, scripts, credentials, troubleshooting |
 | AutoResearch | `docs/research/autoresearch/README.md` | Interview protocol, loop mechanics, agent behavior |
-| Trust Battery | `docs/trust-battery/README.md` | Nightly Judge/Reflector loop, rubric, scoreboard, the bookmarked scoring window (last trust-score record → now, capped at 7 days, so a missed run loses no day), `auto-score` session success ratio (uncorrected sessions earn passive positive credit, read from `.claude/memory/.session-history`), the spread gate and unreadable-window gate (both record the day `inconclusive` at `0.0` rather than scoring it), opt-out, non-goals |
+| Trust Battery | `docs/evaluation/trust-battery/README.md` | Nightly Judge/Reflector loop, rubric, scoreboard, the bookmarked scoring window (last trust-score record → now, capped at 7 days, so a missed run loses no day), `auto-score` session success ratio (uncorrected sessions earn passive positive credit, read from `.claude/memory/.session-history`), the spread gate and unreadable-window gate (both record the day `inconclusive` at `0.0` rather than scoring it), opt-out, non-goals |
 | RTK | `docs/context/rtk/README.md` | Token compression proxy — filter coverage, install, configuration, upgrading |
 | Context Hub | [github.com/andrewyng/context-hub](https://github.com/andrewyng/context-hub) | MCP server for third-party API docs (external) |
 | Design Quality | `docs/design/README.md` | Visual design quality integrations index |
