@@ -189,3 +189,6 @@ _Last synced: 2026-10-06
 
 ### ❌ Derived copies revert on sync without source verification
 Derived copies revert on sync if source lacks edit—verify canonical source before claiming done. (source: whisper-pipeline 2026-10-11 [insight, harness-fix])
+
+### ❌ Tests derived from code re-encode its bug
+Check timeout/fallback tests against the spec, not the code; code-derived tests re-encode bugs. (source: sdd-harness 2026-11-13 [insight])

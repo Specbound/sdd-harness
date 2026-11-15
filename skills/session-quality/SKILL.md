@@ -202,3 +202,6 @@ One busy sibling = quiet day, not starvation. Only all siblings quiet = fleet-wi
 
 ### ❌ Keeping a prior row's idle marking for continuity
 Zero user sessions means `--idle` (see Idle windows above); continuity with earlier rows never overrides it. Backfill, don't match. (2026-10-29)
+
+### ❌ Runner-only orchestrator.log slot read as death
+No repo rollup line = same-day skip: rollup runs only when .last-routine-run date != today. Check for an earlier same-day rollup first. (source: 2026-11-13 [debug, insight])

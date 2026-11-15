@@ -2,9 +2,17 @@
 
 > This file is managed by the SDD harness (`sdd-harness/docs/`).
 > It is the single source of truth — do not edit copies in individual projects.
-> _Last synced: 2026-11-12_
+> _Last synced: 2026-11-15_
 
 ---
+
+## Recent Changes (2026-11-15 — Harness Build 48)
+
+Theme: two anti-patterns from 2026-11-13 sessions — a missing log line is not a dead process, and a test written from the code proves nothing about the spec.
+
+### Skills
+- `skills/session-quality` — new anti-pattern **Runner-only orchestrator.log slot read as death**: a slot with no repo rollup line is a same-day skip, since the rollup runs only when `.last-routine-run`'s date != today. Look for an earlier same-day rollup before calling the routine dead.
+- `skills/verification-before-completion` — new anti-pattern **Tests derived from code re-encode its bug**: check timeout/fallback tests against the spec, not the implementation.
 
 ## Recent Changes (2026-11-12 — Harness Build 47)
 
@@ -924,6 +932,8 @@ What the entries above are for (keep this in `settings.notes.md`, not in the JSO
 
 > **Both templates gained a `PreToolUse Skill` block (2026-10-05).** `templates/settings.json.template` and `templates/settings.harness.json.template` each added a new `PreToolUse` entry matching `Skill`, wired to `hooks/claude/skill-library-resolver.sh`, inserted ahead of the existing `Write|Edit` block. It hard-blocks a `Skill("<name>")` call when `<name>` is a Library-tier skill the Skill tool cannot otherwise see, pointing the caller at the `~/.claude/skill-library/<name>/SKILL.md` path to read instead. See Automated Hooks below and `docs/skills/SKILL-HIERARCHY.md`.
 
+> **Router session hook wired on both templates (2026-11-12).** `templates/settings.json.template` and `templates/settings.harness.json.template` register `router-session-hook.sh` on `SessionStart` (first entry, ahead of `session-start-hook.sh`) and on a new `SessionEnd` block with an empty matcher. The same script serves both events — the event name in the hook input picks `up` or `down` — so the model router runs only while a wired session is open. See Model Router below.
+>
 > **Templates are validated on the way out.** `install.sh` runs `scripts/setup/check-settings-json.sh templates/settings.json.template` before copying and refuses to create `.claude/settings.json` if the template is not strict JSON; `update.sh` runs the same check against the regenerated harness `settings.json` and the per-project template. Until 2026-08-12 the per-project template carried a trailing `//` comment block documenting the optional ktx MCP server, which made every settings file installed from it unparseable — that block now lives in `templates/settings.notes.md.template`, copied to `.claude/settings.notes.md` on install and update. `scripts/setup/repair-settings-json.py <project>` backfills projects installed before the fix (idempotent; `--dry-run` to preview). `/kiro:harness-validate` runs the checker as a blocking step.
 
 ---
@@ -2254,5 +2264,5 @@ disown 2>/dev/null || true
 
 The Stop hook should only contain **passive checks** (e.g., nudging housekeeping when observations exceed a threshold). See `.claude/hooks/stop-hook.sh` for the reference implementation.
 
-_Last synced: 2026-11-12_
+_Last synced: 2026-11-15_
 
