@@ -65,6 +65,21 @@ check "existing entry not duplicated" "$(grep -cxF '.claude/' "$proj3/.gitignore
 check "AGENTS.md added to a legacy install" "$(grep -cxF 'AGENTS.md' "$proj3/.gitignore")" "1"
 check "ERRORS.md added to a legacy install" "$(grep -cxF 'ERRORS.md' "$proj3/.gitignore")" "1"
 
+# --- Case 4: commented-out entry is a deliberate opt-out — never re-added ----
+# A project that tracks .claude/ or specs/ on purpose comments the entry out;
+# re-appending it on every sync silently hides new harness files from git.
+proj4="$TMP/opt-out"
+mkdir -p "$proj4"
+printf '# .claude/\n#specs/\n' > "$proj4/.gitignore"
+ensure_gitignore "$proj4" > /dev/null
+ensure_gitignore "$proj4" > /dev/null
+
+check "opted-out '# .claude/' not re-added" "$(grep -cxF '.claude/' "$proj4/.gitignore")" "0"
+check "opted-out '#specs/' not re-added" "$(grep -cxF 'specs/' "$proj4/.gitignore")" "0"
+check "opt-out comment preserved" "$(grep -cxF '# .claude/' "$proj4/.gitignore")" "1"
+check "non-opted-out entry still added" "$(grep -cxF 'CLAUDE.md' "$proj4/.gitignore")" "1"
+check "header written once" "$(grep -cxF '# SDD harness — local-only, never committed' "$proj4/.gitignore")" "1"
+
 echo ""
 if [ $FAIL -eq 0 ]; then
   echo "PASS — $PASS check(s)"

@@ -20,6 +20,9 @@
 SDD_GITIGNORE_ENTRIES=(".claude/" "specs/" "CLAUDE.md" "AGENTS.md" "ERRORS.md")
 
 # Append any missing entries to <project_dir>/.gitignore, idempotently.
+# An entry the project has commented out (`# .claude/` or `#.claude/`) is a
+# deliberate opt-out — that project tracks it on purpose — and is never
+# re-appended; doing so would silently hide every new harness file from git.
 # Always returns 0 — callers run under `set -e`, and "nothing to add" is the
 # normal case on every re-run, not a failure.
 ensure_gitignore() {
@@ -28,6 +31,9 @@ ensure_gitignore() {
   local entry added=false
   touch "$gitignore"
   for entry in "${SDD_GITIGNORE_ENTRIES[@]}"; do
+    if grep -qxF -e "# $entry" -e "#$entry" "$gitignore" 2>/dev/null; then
+      continue
+    fi
     # Match the exact line to avoid false positives (e.g. ".claude/" vs ".claudeignore").
     if ! grep -qxF "$entry" "$gitignore" 2>/dev/null; then
       if [ "$added" = false ]; then
