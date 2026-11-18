@@ -59,6 +59,29 @@ class UsageResult:
     input_tokens: int | None
     output_tokens: int | None
     cost_state: str
+    # Prompt-cache usage. Anthropic reports these alongside input_tokens and
+    # sends 0/null when nothing was cached, so absent means 0, not unknown.
+    # `cache_creation_1h_tokens` is the part of `cache_creation_tokens` written
+    # with the 1-hour TTL, which is billed at a different rate than 5-minute.
+    cache_read_tokens: int = 0
+    cache_creation_tokens: int = 0
+    cache_creation_1h_tokens: int = 0
+
+
+def cache_fields(usage: dict) -> dict[str, int]:
+    """The three cache counts from one Anthropic `usage` object, keyed by
+    `UsageResult` field name. Only keys actually present are returned, so a
+    `message_delta` that omits them cannot zero what `message_start` reported.
+    """
+    out: dict[str, int] = {}
+    if usage.get("cache_read_input_tokens") is not None:
+        out["cache_read_tokens"] = int(usage["cache_read_input_tokens"])
+    if usage.get("cache_creation_input_tokens") is not None:
+        out["cache_creation_tokens"] = int(usage["cache_creation_input_tokens"])
+    breakdown = usage.get("cache_creation")
+    if isinstance(breakdown, dict) and breakdown.get("ephemeral_1h_input_tokens") is not None:
+        out["cache_creation_1h_tokens"] = int(breakdown["ephemeral_1h_input_tokens"])
+    return out
 
 
 class StreamTee:
@@ -77,6 +100,7 @@ class StreamTee:
         self._buffer = b""
         self._input_tokens: int | None = None
         self._output_tokens: int | None = None
+        self._cache: dict[str, int] = {}
 
     def feed(self, chunk: bytes) -> None:
         """Write `chunk` downstream immediately, then parse complete lines.
@@ -126,6 +150,7 @@ class StreamTee:
         input_tokens = usage.get("input_tokens")
         if input_tokens is not None:
             self._input_tokens = input_tokens
+        self._cache.update(cache_fields(usage))
 
     def _harvest_output_tokens(self, obj: dict) -> None:
         usage = obj.get("usage")
@@ -135,6 +160,7 @@ class StreamTee:
         if output_tokens is not None:
             # Cumulative per Anthropic's MessageDeltaUsage — last one wins.
             self._output_tokens = output_tokens
+        self._cache.update(cache_fields(usage))
 
     def usage(self) -> UsageResult:
         """Return usage harvested so far. Safe to call mid-stream or after."""
@@ -143,9 +169,11 @@ class StreamTee:
                 input_tokens=self._input_tokens,
                 output_tokens=self._output_tokens,
                 cost_state=_COST_UNKNOWN,
+                **self._cache,
             )
         return UsageResult(
             input_tokens=self._input_tokens,
             output_tokens=self._output_tokens,
             cost_state=_COST_KNOWN,
+            **self._cache,
         )

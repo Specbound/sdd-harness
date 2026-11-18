@@ -38,7 +38,7 @@ If today's `[keep-rate]:` line already exists, skip silently.
 
 ## Step D — Trust Score
 
-Run `python3 .claude/scripts/trust_score.py auto-score` from the repo root.
+Run `python3 .claude/scripts/session/trust_score.py auto-score` from the repo root.
 
 **Must run AFTER Steps B and C** so today's `[session-quality]` and `[keep-rate]` observations are visible.
 Reads `observations.md` directly and scores mechanically from tagged signals

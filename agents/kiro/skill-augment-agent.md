@@ -73,10 +73,10 @@ The judge and seed-targets are machine signals. A **user correction** is ground 
 today=$(date +%Y-%m-%d)
 # Per-project auto-memory dir (cwd munged: / and . both become -)
 mem_dir="$HOME/.claude/projects/$(pwd | sed 's#[/.]#-#g')/memory"
-# Today's feedback-type memories from both the project store and repo-local memory
-{ grep -rl "type: feedback" "$mem_dir" 2>/dev/null; \
-  grep -rl "type: feedback" .claude/memory 2>/dev/null; } \
-  | xargs -r -I{} sh -c 'find "{}" -newermt "$today 00:00" 2>/dev/null'
+# Today's feedback-type memories from both the project store and repo-local memory.
+# No `sh -c` / `find -exec`: lean-ctx blocks both; `xargs grep` is allowed.
+find "$mem_dir" .claude/memory -name '*.md' -newermt "$today 00:00" -print 2>/dev/null \
+  | xargs grep -l "type: feedback" 2>/dev/null
 ```
 
 For each feedback memory found today:

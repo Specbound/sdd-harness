@@ -361,5 +361,41 @@ class LedgerOutcomeValidationTests(_TempLedgerTestCase):
         self.assertFalse(self.stats_path.exists())
 
 
+class LedgerCacheCounterfactualTests(_TempLedgerTestCase):
+    def _last_row(self) -> dict:
+        return json.loads(self.ledger_path.read_text(encoding="utf-8").splitlines()[-1])
+
+    def test_routed_call_counts_its_cache_writes_as_baseline_reads(self) -> None:
+        # The routed model paid to write a prefix the baseline already had
+        # cached; the baseline must not be billed that write.
+        self.ledger.append(_record(
+            cache_read_tokens=1_000, cache_creation_tokens=80_000, cache_creation_1h_tokens=80_000,
+        ))
+
+        row = self._last_row()
+        self.assertEqual(row["cache_creation_tokens"], 80_000)
+        self.assertEqual(row["baseline_cache_read_tokens"], 81_000)
+        self.assertEqual(row["baseline_cache_creation_tokens"], 0)
+        self.assertEqual(row["baseline_cache_creation_1h_tokens"], 0)
+
+        lifetime = json.loads(self.stats_path.read_text(encoding="utf-8"))["lifetime"]
+        self.assertEqual(lifetime["cache_creation_tokens_by_model"], {"m0": 80_000})
+        self.assertEqual(lifetime["baseline_cache_read_tokens_by_model"], {"m2": 81_000})
+        self.assertEqual(lifetime["baseline_cache_creation_tokens_by_model"], {"m2": 0})
+
+    def test_unrouted_call_baseline_cache_equals_actual(self) -> None:
+        self.ledger.append(_record(
+            selected_model="m2", outcome="passthrough", reason="tool_loop",
+            cache_read_tokens=5_000, cache_creation_tokens=700, cache_creation_1h_tokens=200,
+        ))
+
+        row = self._last_row()
+        self.assertEqual(
+            (row["baseline_cache_read_tokens"], row["baseline_cache_creation_tokens"],
+             row["baseline_cache_creation_1h_tokens"]),
+            (5_000, 700, 200),
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

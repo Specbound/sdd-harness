@@ -187,6 +187,9 @@ Concurrent read-then-write guards (e.g., "skip if tag exists") can race if multi
 ### ❌ 'command not found' blamed on the tool
 Check the scheduled runner's PATH first; missing node/npx is a config fault, not tool breakage. (source: 2026-11-09 kaizen)
 
+### ❌ Debugging the producer before the serving process
+Compare the server's start time with the data's first write; a cached render can explain "X never shows". (source: sdd-harness 2026-11-18 [debug])
+
 ## Quick Reference
 
 | Phase | Key Activities | Success Criteria |

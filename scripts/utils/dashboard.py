@@ -34,9 +34,11 @@ import json
 import math
 import os
 import secrets
+import shlex
 import subprocess
 import sys
 import threading
+import time
 from datetime import date, datetime, timezone, timedelta
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
@@ -498,7 +500,175 @@ def list_hooks(repo):
     hooks_dir = repo / ".claude" / "hooks"
     if not hooks_dir.exists():
         return []
-    return sorted(f.name for f in hooks_dir.glob("*.sh"))
+    # "_"-prefixed scripts are internal helpers (e.g. the _run-hook.sh wrapper), not hooks.
+    return sorted(f.name for f in hooks_dir.glob("*.sh") if not f.name.startswith("_"))
+
+HOOK_RUN_WINDOW_DAYS = 7
+# Transcript attachment types written when a hook runs and prints something.
+# A hook that exits 0 with no output leaves no trace at all, so "no runs" means
+# "never spoke", not "never ran".
+_HOOK_OK_TYPES = ("hook_success", "hook_additional_context")
+_HOOK_ERR_TYPES = ("hook_non_blocking_error", "hook_cancelled")
+_HOOK_BLOCK_TYPES = ("hook_blocking_error",)
+
+def hook_registrations(repo):
+    """{script: [(event, matcher)]} from the repo's settings files — the real
+    wiring, so a hook's event is never guessed from its filename."""
+    regs = {}
+    for name in ("settings.json", "settings.local.json"):
+        f = repo / ".claude" / name
+        if not f.exists():
+            continue
+        try:
+            cfg = json.loads(f.read_text())
+        except json.JSONDecodeError as e:
+            raise ValueError(f"{f} is not valid JSON: {e}") from e
+        for event, groups in (cfg.get("hooks") or {}).items():
+            for group in groups:
+                matcher = group.get("matcher") or ""
+                for hk in group.get("hooks") or []:
+                    script = _hook_script_name(hk.get("command") or "")
+                    if script and (event, matcher) not in regs.get(script, []):
+                        regs.setdefault(script, []).append((event, matcher))
+    return regs
+
+def _hook_script_name(command):
+    """Basename of the script a hook command runs, or "" for inline commands."""
+    try:
+        tokens = shlex.split(command)
+    except ValueError:
+        tokens = command.split()
+    scripts = [t for t in tokens if t.endswith((".sh", ".py", ".js", ".cjs", ".mjs"))]
+    return Path(scripts[-1]).name if scripts else ""
+
+def _transcript_dir(repo):
+    slug = "".join(c if c.isalnum() or c == "-" else "-" for c in str(repo))
+    return CLAUDE_PROJECTS / slug
+
+def hook_transcript_runs(repo):
+    """Per-script hook activity from this repo's session transcripts.
+
+    Counts are of runs that *produced output* (stdout, injected context, or an
+    error) within HOOK_RUN_WINDOW_DAYS — the only runs a transcript records.
+    """
+    tdir = _transcript_dir(repo)
+    if not tdir.is_dir():
+        return {}
+    cutoff = NOW - timedelta(days=HOOK_RUN_WINDOW_DAYS)
+    runs = {}
+    # rglob, not glob: subagent sessions live in nested <session>/subagents/ files,
+    # and hooks that fire inside a subagent (SubagentStart, its tool calls) are
+    # recorded only there.
+    for jsonl in tdir.rglob("*.jsonl"):
+        if datetime.fromtimestamp(jsonl.stat().st_mtime, timezone.utc) < cutoff:
+            continue
+        with jsonl.open() as fh:
+            for line in fh:
+                if '"attachment"' not in line or '"hook' not in line:
+                    continue
+                try:
+                    obj = json.loads(line)
+                except json.JSONDecodeError:
+                    continue  # a session still being written ends mid-line
+                att = obj.get("attachment")
+                if not isinstance(att, dict):
+                    continue
+                kind = att.get("type") or ""
+                script = _hook_script_name(att.get("command") or "")
+                if not script or not kind.startswith("hook"):
+                    continue
+                ts = obj.get("timestamp") or ""
+                try:
+                    when = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+                except ValueError:
+                    continue
+                if when < cutoff:
+                    continue
+                r = runs.setdefault(script, {"spoke": 0, "errors": 0, "blocked": 0,
+                                             "last": None, "samples": []})
+                if kind in _HOOK_BLOCK_TYPES:
+                    r["blocked"] += 1
+                elif kind in _HOOK_ERR_TYPES:
+                    r["errors"] += 1
+                elif kind in _HOOK_OK_TYPES:
+                    r["spoke"] += 1
+                else:
+                    continue
+                if r["last"] is None or when > r["last"]:
+                    r["last"] = when
+                text = att.get("stderr") if kind not in _HOOK_OK_TYPES else None
+                text = text or att.get("content") or att.get("stdout") or ""
+                if not isinstance(text, str):
+                    text = json.dumps(text)
+                r["samples"].append((when, att.get("hookName") or att.get("hookEvent") or "",
+                                     kind, text.strip()))
+    for r in runs.values():
+        r["samples"].sort(key=lambda s: s[0], reverse=True)
+        del r["samples"][3:]
+    return runs
+
+def _names_hook(text, stem):
+    """True when a header segment is just the hook's own name ("Agent-trace hook")."""
+    slug = text.lower().replace(" ", "-")
+    return slug in stem or stem in slug
+
+def hook_logged_runs(repo):
+    """Per-hook runs from .claude/logs/hook-runs.jsonl, written by _run-hook.sh.
+
+    Unlike transcripts this records every run, silent ones included. Returns
+    {"since": first logged time or None, "hooks": {script: {...}}}; "since" is
+    None when the project has no log yet, so callers fall back to transcripts.
+    """
+    f = repo / ".claude" / "logs" / "hook-runs.jsonl"
+    if not f.exists():
+        return {"since": None, "hooks": {}}
+    cutoff = NOW - timedelta(days=HOOK_RUN_WINDOW_DAYS)
+    since, hooks = None, {}
+    with f.open(encoding="utf-8") as fh:
+        for line in fh:
+            try:
+                rec = json.loads(line)
+                when = datetime.fromisoformat(rec["ts"].replace("Z", "+00:00"))
+            except (json.JSONDecodeError, KeyError, ValueError):
+                continue  # the background logger can be mid-append while we read
+            since = when if since is None else min(since, when)
+            if when < cutoff:
+                continue
+            r = hooks.setdefault(rec.get("hook") or "?", {
+                "runs": 0, "blocked": 0, "errors": 0, "last": None, "tools": {}})
+            r["runs"] += 1
+            code = rec.get("exit")
+            if code == 2:
+                r["blocked"] += 1
+            elif code not in (0, None):
+                r["errors"] += 1
+            if r["last"] is None or when > r["last"]:
+                r["last"] = when
+            tool = rec.get("tool")
+            if tool:
+                r["tools"][tool] = r["tools"].get(tool, 0) + 1
+    return {"since": since, "hooks": hooks}
+
+def hook_purpose(repo, script):
+    """First header-comment line of the hook script that says what it does.
+
+    Headers often open with "name.sh — PostToolUse(Bash)"; the event and matcher
+    are already shown from settings.json, so those segments are dropped.
+    """
+    f = repo / ".claude" / "hooks" / script
+    if not f.exists():
+        return ""
+    stem = script.removesuffix(".sh")
+    for line in f.read_text(errors="replace").splitlines()[1:12]:
+        if not line.strip().startswith("#"):
+            continue
+        parts = [p.strip() for p in line.strip().lstrip("#").split(" — ")]
+        kept = [p for p in parts if p and not p.endswith(".sh")
+                and not _names_hook(p, stem)
+                and not any(ev in p for ev in _HOOK_EVENT_ORDER)]
+        if kept:
+            return " — ".join(kept)
+    return ""
 
 def read_last_routine_run(repo):
     f = repo / ".claude" / "memory" / ".last-routine-run"
@@ -1708,117 +1878,192 @@ def render_workshop(rd, companion=False):
   {runs_panel}
 </div>"""
 
+_HOOK_EVENT_ORDER = ("SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse",
+                     "PostToolUseFailure", "SubagentStart", "PreCompact", "Stop",
+                     "SessionEnd")
+_HOOK_EVENT_COLOR = {
+    "SessionStart": "#a6e3a1", "Stop": "#f38ba8", "SessionEnd": "#f38ba8",
+    "PreToolUse": "#89b4fa", "PostToolUse": "#94e2d5", "PostToolUseFailure": "#eba0ac",
+    "PreCompact": "#cba6f7", "UserPromptSubmit": "#fab387", "SubagentStart": "#f9e2af",
+}
+_HOOK_KIND_LABEL = {
+    "hook_success": "output", "hook_additional_context": "context",
+    "hook_non_blocking_error": "error", "hook_cancelled": "cancelled",
+    "hook_blocking_error": "blocked",
+}
+
+def _hook_log_cell(logged, since):
+    """Activity from the run log: every run counted, silent ones included."""
+    muted = "color:var(--overlay0);font-size:11px"
+    if not logged:
+        start = max(since, NOW - timedelta(days=HOOK_RUN_WINDOW_DAYS))
+        return f'<span style="{muted};font-style:italic">no runs since {h(start.strftime("%Y-%m-%d"))}</span>'
+    parts = [f'<span style="color:var(--text)">{logged["runs"]}× ran</span>']
+    if logged["blocked"]:
+        parts.append(f'<span style="color:var(--red)">{logged["blocked"]}× blocked</span>')
+    if logged["errors"]:
+        parts.append(f'<span style="color:var(--peach)">{logged["errors"]}× error</span>')
+    last = rel_time(logged["last"].isoformat()) if logged["last"] else "?"
+    return (f'<span style="font-size:11px">{" · ".join(parts)}</span>'
+            f'<span style="{muted};margin-left:6px">last {h(last)}</span>')
+
+def _hook_activity_cell(registered, run):
+    muted = "color:var(--overlay0);font-size:11px"
+    if not registered:
+        return f'<span style="{muted}">not wired in settings.json</span>'
+    if not run:
+        return (f'<span style="{muted};font-style:italic" title="Ran without printing '
+                f'anything, or its matcher never fired. Transcripts only record hook '
+                f'runs that produce output.">silent {HOOK_RUN_WINDOW_DAYS}d</span>')
+    parts = []
+    if run["spoke"]:
+        parts.append(f'<span style="color:var(--text)">{run["spoke"]}× output</span>')
+    if run["blocked"]:
+        parts.append(f'<span style="color:var(--red)">{run["blocked"]}× blocked</span>')
+    if run["errors"]:
+        parts.append(f'<span style="color:var(--peach)">{run["errors"]}× error</span>')
+    last = rel_time(run["last"].isoformat()) if run["last"] else "?"
+    return (f'<span style="font-size:11px">{" · ".join(parts)}</span>'
+            f'<span style="{muted};margin-left:6px">last {h(last)}</span>')
+
+def _hook_detail(run, written, logged=None):
+    blocks = []
+    label = ("font-size:9px;text-transform:uppercase;letter-spacing:1px;"
+             "color:var(--overlay0);margin:4px 0 6px")
+    row = ("padding:4px 0;border-bottom:1px solid rgba(49,50,68,0.4);"
+           "font-size:11px;color:var(--subtext0)")
+    if logged and logged["tools"]:
+        tools = " · ".join(f"{h(t)} {n}" for t, n in
+                           sorted(logged["tools"].items(), key=lambda tn: tn[1], reverse=True))
+        blocks.append(f'<div style="{label}">Triggered by (last {HOOK_RUN_WINDOW_DAYS}d)</div>'
+                      f'<div style="{row}">{tools}</div>')
+    if run and run["samples"]:
+        items = "".join(
+            f'<div style="{row}">'
+            f'<span style="color:var(--overlay0);margin-right:8px">{h(rel_time(when.isoformat()))}</span>'
+            f'<span style="color:var(--mauve);margin-right:6px;font-size:9px">'
+            f'{h(_HOOK_KIND_LABEL.get(kind, kind))} · {h(name)}</span>'
+            f'{h(text[:240])}{"…" if len(text) > 240 else ""}</div>'
+            for when, name, kind, text in run["samples"])
+        blocks.append(f'<div style="{label}">Last runs that printed something</div>{items}')
+    if written:
+        items = "".join(
+            f'<div style="{row}">'
+            f'<span style="color:var(--mauve);margin-right:6px;font-size:9px">[{h(tag)}]</span>'
+            f'<span style="color:var(--overlay0);margin-right:8px">{len(entries)} rows · latest {h(entries[-1][0])}</span>'
+            f'{h(entries[-1][1][:200])}{"…" if len(entries[-1][1]) > 200 else ""}</div>'
+            for tag, entries in written)
+        blocks.append(f'<div style="{label};margin-top:10px">Observation rows this hook writes</div>{items}')
+    if not blocks:
+        return ""
+    return (f'<div style="padding:10px 12px;background:rgba(0,0,0,0.15);'
+            f'border-top:1px solid var(--surface0)">{"".join(blocks)}</div>')
+
 def render_hooks_history(rd):
     hooks = rd["hooks"]
-    obs   = rd["observations"]
     if not hooks:
         return empty_state("No hooks found in .claude/hooks/")
+    repo  = Path(rd["path"])
+    obs   = rd["observations"]
+    regs  = rd["hook_registrations"]
+    runs  = rd["hook_runs"]
+    log   = rd["hook_log"]
+    since = log["since"]
 
-    all_obs = sorted(
-        [(d, tag, t) for tag, entries in obs.items() for d, t in entries],
-        key=lambda x: x[0], reverse=True
-    )
+    groups = {}
+    for hook_file in hooks:
+        triggers = regs.get(hook_file, [])
+        event = triggers[0][0] if triggers else "Not registered"
+        groups.setdefault(event, []).append(hook_file)
 
-    event_map = {
-        "session-start":        "SessionStart",
-        "stop":                 "Stop",
-        "memory-discipline":    "PreToolUse",
-        "impeccable-detect":    "PostToolUse",
-        "revert-detect":        "PostToolUse",
-        "hook-added-notify":    "PostToolUse",
-        "gbrain-agent-spawn":   "PreToolUse",
-        "gbrain-memory-write":  "PreToolUse",
-        "gbrain-external":      "PreToolUse",
-        "compaction-discipline":   "PreCompact",
-        "scan-pii":                "PostToolUse",
-        "pre-tool-use-gitnexus":   "PreToolUse",
-        "doc-parse-nudge":         "UserPromptSubmit",
-        "frontend-security-nudge": "UserPromptSubmit",
-    }
+    n_wired  = sum(1 for f in hooks if f in regs)
+    if since:
+        active   = log["hooks"]
+        n_active = sum(1 for f in hooks if f in regs and f in active)
+        n_errors = sum(1 for f in hooks if active.get(f, {}).get("errors"))
+        active_label, idle_label = f"ran in {HOOK_RUN_WINDOW_DAYS}d", "did not run"
+    else:
+        n_active = sum(1 for f in hooks if f in regs and f in runs)
+        n_errors = sum(1 for f in hooks if runs.get(f, {}).get("errors"))
+        active_label, idle_label = f"printed output in {HOOK_RUN_WINDOW_DAYS}d", "silent"
+    summary = (
+        f'<div style="display:flex;gap:18px;font-size:12px;color:var(--subtext0);margin:4px 0 14px">'
+        f'<span><strong style="color:var(--text)">{n_wired}</strong> wired</span>'
+        f'<span><strong style="color:var(--text)">{n_active}</strong> {active_label}</span>'
+        f'<span><strong style="color:var(--text)">{n_wired - n_active}</strong> {idle_label}</span>'
+        f'<span><strong style="color:var(--peach)">{n_errors}</strong> with errors</span>'
+        f'<span><strong style="color:var(--overlay0)">{len(hooks) - n_wired}</strong> not wired</span>'
+        f'</div>')
 
     desc = section_desc(
-        "Hooks are shell scripts that Claude Code calls automatically at lifecycle events. "
-        "They run outside Claude's permission system. "
-        "<strong style='color:var(--text)'>Click any hook</strong> to see its recorded activity in observations. "
-        "Hooks without observations either haven't fired yet or don't write to observations.md."
+        "Hooks are shell scripts Claude Code runs at lifecycle events, grouped here by the event "
+        "they are wired to in <code>.claude/settings.json</code>. The <em>trigger</em> column is the "
+        "tool matcher (<em>always</em> = every time the event fires). "
+        + (f"Activity comes from <code>.claude/logs/hook-runs.jsonl</code> (logging since "
+           f"{h(since.strftime('%Y-%m-%d'))}), where <code>_run-hook.sh</code> records every run — "
+           "quiet ones included — with its exit code: 2 = blocked, other non-zero = error. "
+           if since else
+           f"No run log yet, so activity comes from session transcripts over the last "
+           f"{HOOK_RUN_WINDOW_DAYS} days, which record a hook run only when it prints something — "
+           "<strong style='color:var(--text)'>silent</strong> means it ran quietly or never matched. "
+           "Run <code>update.sh</code> to install the run logger. ")
+        + "Expand a hook to see what triggered it, its last outputs, and the observation tags "
+        "its source writes."
     )
 
-    cards = ""
-    for hook_file in hooks:
-        stem  = hook_file.replace(".sh", "")
-        event = next((v for k, v in event_map.items() if k in stem), "Unknown")
-        descr = next((v for k, v in HOOK_DESCRIPTIONS.items() if k in stem), "")
+    sections = ""
+    for event in (*_HOOK_EVENT_ORDER, *sorted(set(groups) - set(_HOOK_EVENT_ORDER))):
+        files = groups.get(event)
+        if not files:
+            continue
+        color = _HOOK_EVENT_COLOR.get(event, "#a6adc8")
+        rows = ""
+        for hook_file in files:
+            triggers = regs.get(hook_file, [])
+            run = runs.get(hook_file)
+            descr = next((v for k, v in HOOK_DESCRIPTIONS.items()
+                          if hook_file.replace(".sh", "") in (k, f"{k}-hook")), "")
+            descr = descr or hook_purpose(repo, hook_file)
+            trig = " · ".join(
+                (f"{ev}: " if ev != event else "") + (m or "always")
+                for ev, m in triggers) or "—"
 
-        # Collect all observations that plausibly mention this hook
-        key_parts = [p for p in stem.replace("-hook", "").split("-") if len(p) > 3]
-        matching = [
-            (d, tag, t) for d, tag, t in all_obs
-            if any(p in t.lower() or p in tag.lower() for p in key_parts)
-        ]
-        last_activity = matching[0] if matching else None
+            src = repo / ".claude" / "hooks" / hook_file
+            source = src.read_text(errors="replace") if src.exists() else ""
+            written = sorted(((tag, entries) for tag, entries in obs.items()
+                              if f"[{tag}]" in source),
+                             key=lambda te: te[1][-1][0], reverse=True)
 
-        # Last activity chip
-        if last_activity:
-            la_date, la_tag, la_text = last_activity
-            la_html = (f'<span style="color:var(--subtext1);font-size:11px">'
-                       f'{h(la_date)}</span>'
-                       f'<span style="color:var(--overlay0);font-size:11px;margin-left:6px">'
-                       f'{h(la_text[:80])}{"…" if len(la_text)>80 else ""}</span>')
-        else:
-            la_html = '<span style="color:var(--overlay0);font-size:11px;font-style:italic">no recorded activity</span>'
-
-        # Activity detail: list all matching observations
-        if matching:
-            detail_items = "".join(
-                f'<div style="padding:4px 0;border-bottom:1px solid rgba(49,50,68,0.4);'
-                f'font-size:11px;color:var(--subtext0)">'
-                f'<span style="color:var(--overlay0);margin-right:8px">{h(d)}</span>'
-                f'<span style="color:var(--mauve);margin-right:6px;font-size:9px">[{h(tag)}]</span>'
-                f'{h(t)}</div>'
-                for d, tag, t in matching[:10]
+            logged = log["hooks"].get(hook_file)
+            detail = _hook_detail(run, written, logged)
+            container, head = ("details", "summary") if detail else ("div", "div")
+            cursor = "cursor:pointer;" if detail else ""
+            rows += (
+                f'<{container} style="border:1px solid var(--surface0);border-radius:7px;'
+                f'overflow:hidden;margin-bottom:6px">'
+                f'<{head} style="display:grid;grid-template-columns:200px 1fr 230px auto;'
+                f'gap:12px;align-items:center;padding:8px 12px;background:var(--base);{cursor}">'
+                f'<code style="color:var(--mauve);font-size:10px;overflow:hidden;'
+                f'text-overflow:ellipsis;white-space:nowrap">{h(hook_file)}</code>'
+                f'<span style="font-size:11px;color:var(--subtext0);min-width:0">'
+                f'<span style="color:{color};font-size:10px;font-weight:600;margin-right:8px">'
+                f'{h(trig)}</span>{h(descr)}</span>'
+                f'<span>{_hook_log_cell(logged, since) if since and triggers else _hook_activity_cell(bool(triggers), run)}</span>'
+                f'{badge("Wired", "active") if triggers else badge("Not wired", "inactive")}'
+                f'</{head}>{detail}</{container}>'
             )
-            detail_html = (
-                f'<div style="padding:10px 12px;background:rgba(0,0,0,0.15);'
-                f'border-top:1px solid var(--surface0)">'
-                f'<div style="font-size:9px;text-transform:uppercase;letter-spacing:1px;'
-                f'color:var(--overlay0);margin-bottom:6px">Recorded activity (newest first)</div>'
-                f'{detail_items}</div>'
-            )
-            container = "details"
-            header_tag = "summary"
-            header_extra = "cursor:pointer;"
-        else:
-            detail_html = ""
-            container = "div"
-            header_tag = "div"
-            header_extra = ""
-
-        event_color = {
-            "SessionStart": "#a6e3a1", "Stop": "#f38ba8",
-            "PreToolUse": "#89b4fa", "PostToolUse": "#94e2d5", "PreCompact": "#cba6f7",
-            "UserPromptSubmit": "#fab387",
-        }.get(event, "#a6adc8")
-
-        cards += (
-            f'<{container} style="border:1px solid var(--surface0);border-radius:7px;'
-            f'overflow:hidden;margin-bottom:6px">'
-            f'<{header_tag} style="display:grid;grid-template-columns:180px 100px 1fr auto;'
-            f'gap:12px;align-items:center;padding:8px 12px;background:var(--base);{header_extra}">'
-            f'<code style="color:var(--mauve);font-size:10px;overflow:hidden;'
-            f'text-overflow:ellipsis;white-space:nowrap">{h(hook_file)}</code>'
-            f'<span style="color:{event_color};font-size:10px;font-weight:600">{h(event)}</span>'
-            f'<span style="font-size:11px;color:var(--subtext0)">'
-            f'{h(descr) if descr else la_html}</span>'
-            f'{badge("Active","active")}'
-            f'</{header_tag}>'
-            f'{detail_html}'
-            f'</{container}>'
+        sections += (
+            f'<div style="margin:16px 0 6px;font-size:11px;font-weight:700;letter-spacing:0.8px;'
+            f'text-transform:uppercase;color:{color}">{h(event)} '
+            f'<span style="color:var(--overlay0);font-weight:400">({len(files)})</span></div>'
+            f'{rows}'
         )
 
     return f"""<div class="section-inner">
   <h2 class="section-title">Hooks History</h2>
   {desc}
-  {cards}
+  {summary}
+  {sections}
 </div>"""
 
 # ── Model Cost: data collection ───────────────────────────────────────────────
@@ -4140,10 +4385,31 @@ CAVEMAN_CONFIG   = _platform_config_dir("caveman") / "config.json"
 # Matches scripts/router/ledger.py's DEFAULT_STATS_PATH exactly — this module
 # reads the router's rollup, it does not own the path.
 ROUTER_STATS     = Path.home() / ".sdd-router" / "stats.json"
-# Sonnet 4.6 input price per million tokens (used to estimate RTK $ savings)
-_SONNET_INPUT_PER_M = 3.0
-# Sonnet 4.6 output price per million tokens (used to estimate caveman $ savings) — approximate.
-_SONNET_OUTPUT_PER_M = 15.0
+ROUTER_LEDGER    = Path.home() / ".sdd-router" / "ledger.jsonl"
+# RTK and caveman savings are priced at the newest Sonnet in the pricing
+# snapshot (models.dev), not a hardcoded model — a pinned "Sonnet 4.6" rate
+# went stale the day a newer Sonnet shipped at a different price.
+_SONNET_PRICE_PREFIX = "anthropic/claude-sonnet-"
+
+
+def _latest_sonnet(pricing: dict):
+    """Return `(display_name, price)` for the highest-versioned Sonnet in a
+    `get_pricing_at()` snapshot, or None when the snapshot has none.
+
+    Only plain version ids count (`claude-sonnet-5-5`): dated aliases
+    (`-20250929`) and suffixed variants repeat a version already listed.
+    """
+    best = None
+    for key, price in pricing.items():
+        if not key.startswith(_SONNET_PRICE_PREFIX):
+            continue
+        parts = key[len(_SONNET_PRICE_PREFIX):].split("-")
+        if not all(p.isdigit() and len(p) <= 2 for p in parts):
+            continue
+        version = tuple(int(p) for p in parts)
+        if best is None or version > best[0]:
+            best = (version, "Sonnet " + ".".join(parts), price)
+    return None if best is None else (best[1], best[2])
 
 
 def _repo_to_lean_ctx_hash(repo_path: str) -> str:
@@ -4308,6 +4574,242 @@ def _read_router_stats() -> dict:
         return {}
 
 
+_ROUTER_TOKEN_FIELDS = (
+    "input_tokens", "output_tokens",
+    "cache_read_tokens", "cache_creation_tokens", "cache_creation_1h_tokens",
+)
+_ROUTER_CACHE_FIELDS = _ROUTER_TOKEN_FIELDS[2:]
+# Date the router began recording cache tokens. Ledger rows from before it
+# carry only uncached input + output, a sliver of the real bill, so they are
+# excluded from costs rather than mixed in as if their cache usage were 0.
+_ROUTER_CACHE_TRACKING_SINCE = "2026-11-17"
+
+
+def _read_router_routes() -> tuple[list[dict], int, int]:
+    """Per-route rollup of ~/.sdd-router/ledger.jsonl, one entry per
+    (baseline_model, selected_model) pair. stats.json buckets tokens by model
+    only, so it cannot say what was routed to what; the ledger can.
+
+    Each route carries `actual` (what was billed) and `baseline` (what the
+    requested model would have billed — ledger.py's counterfactual, stored per
+    row so this reader never re-derives it) token dicts.
+
+    Returns `(routes, untracked_calls, unreadable_lines)`. Rows from before
+    cache tracking are counted, not costed; a line that fails to parse (a torn
+    append) is counted, not hidden.
+    """
+    if not ROUTER_LEDGER.exists():
+        return [], 0, 0
+    routes: dict = {}
+    untracked = 0
+    unreadable = 0
+    for line in ROUTER_LEDGER.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        try:
+            rec = json.loads(line)
+        except json.JSONDecodeError:
+            unreadable += 1
+            continue
+        if "cache_read_tokens" not in rec:
+            untracked += 1
+            continue
+        key = (rec.get("baseline_model") or "?", rec.get("selected_model") or "?")
+        route = routes.setdefault(key, {
+            "from": key[0], "to": key[1], "calls": 0, "errored": 0,
+            "actual": dict.fromkeys(_ROUTER_TOKEN_FIELDS, 0),
+            "baseline": dict.fromkeys(_ROUTER_TOKEN_FIELDS, 0),
+        })
+        route["calls"] += 1
+        if rec.get("cost_state") == "unknown":
+            route["errored"] += 1
+        for field in _ROUTER_TOKEN_FIELDS:
+            n = rec.get(field) or 0
+            route["actual"][field] += n
+            if field in _ROUTER_CACHE_FIELDS:
+                n = rec.get("baseline_" + field) or 0
+            route["baseline"][field] += n
+    return list(routes.values()), untracked, unreadable
+
+
+def _route_cost(model: str, tokens: dict, pricing: dict):
+    """Full billed cost of `tokens` at `model`'s rates, or None if unpriced:
+    uncached input, output, cache reads, 5-minute cache writes, and 1-hour
+    cache writes. models.dev publishes only the 5-minute write rate; Anthropic
+    bills 1-hour writes at 2x the input rate, so those go through `input`.
+    """
+    cc_1h = tokens["cache_creation_1h_tokens"]
+    parts = (
+        ("input", tokens["input_tokens"] + 2 * cc_1h),
+        ("output", tokens["output_tokens"]),
+        ("cache_read", tokens["cache_read_tokens"]),
+        ("cache_write", tokens["cache_creation_tokens"] - cc_1h),
+    )
+    total = 0.0
+    for field, n in parts:
+        cost, unpriced = _price_model_tokens({model: n}, field, pricing)
+        if unpriced:
+            return None
+        total += cost
+    return total
+
+
+def _money(v) -> str:
+    if v is None:
+        return "–"
+    return f"-${-v:,.2f}" if v < 0 else f"${v:,.2f}"
+
+
+def _route_tokens(tokens: dict) -> int:
+    return (tokens["input_tokens"] + tokens["output_tokens"]
+            + tokens["cache_read_tokens"] + tokens["cache_creation_tokens"])
+
+
+_ROUTER_TD = "padding:5px 10px;font-size:12px;color:var(--subtext1);font-family:monospace;text-align:"
+
+
+def _router_row_cells(label: str, calls: str, actual: dict, base_cost, actual_cost, saved) -> str:
+    saved_color = (
+        "var(--subtext1)" if not saved else "var(--green)" if saved > 0 else "var(--red)"
+    )
+    td = _ROUTER_TD
+    return (
+        f'<td style="{td}left;font-family:inherit">{label}</td>'
+        f'<td style="{td}right">{calls}</td>'
+        f'<td style="{td}right">{actual["input_tokens"]:,}</td>'
+        f'<td style="{td}right">{actual["output_tokens"]:,}</td>'
+        f'<td style="{td}right">{actual["cache_read_tokens"]:,}</td>'
+        f'<td style="{td}right">{actual["cache_creation_tokens"]:,}</td>'
+        f'<td style="{td}right">{_money(base_cost)}</td>'
+        f'<td style="{td}right">{_money(actual_cost)}</td>'
+        f'<td style="{td}right;color:{saved_color};font-weight:700">{_money(saved)}</td>'
+    )
+
+
+def _router_route_row(route: dict, pricing: dict) -> tuple[tuple, str, dict]:
+    """One table row for a (requested -> used) route, its sort key, and its
+    priced figures for the totals row."""
+    moved = route["from"] != route["to"]
+    base_cost = _route_cost(route["from"], route["baseline"], pricing)
+    actual_cost = _route_cost(route["to"], route["actual"], pricing)
+    saved = base_cost - actual_cost if base_cost is not None and actual_cost is not None else None
+
+    arrow = '<span style="color:var(--overlay0)">→</span>'
+    label = (
+        f'{h(route["from"])} {arrow} {h(route["to"])}' if moved else
+        f'{h(route["from"])} <span style="color:var(--overlay0)">· not rerouted</span>'
+    )
+    errored = (
+        f' <span style="color:var(--overlay0)" title="the response carried no usage, so its '
+        f'cost is not counted here. Before 2026-11-17 15:20 these were headroom discarding a '
+        f'billed reply (CCR buffered path, fixed by HEADROOM_LOSSLESS=1) — likely billed '
+        f'but unmeasurable">({route["errored"]:,} errored)</span>'
+        if route["errored"] else ""
+    )
+    row = (
+        '<tr style="border-top:1px solid var(--surface1)">'
+        + _router_row_cells(label, f'{route["calls"]:,}{errored}', route["actual"],
+                            base_cost, actual_cost, saved)
+        + '</tr>'
+    )
+    priced = {
+        "base_cost": base_cost, "actual_cost": actual_cost, "saved": saved,
+        "name": f'{route["from"]} → {route["to"]}',
+    }
+    return (not moved, -(saved or 0.0), -route["calls"]), row, priced
+
+
+def _render_router_routes(pricing: dict) -> dict:
+    """Route table plus the card's figures, all from the ledger so the card
+    and the table can never disagree.
+
+    Returns `tokens_all`, `tokens_moved` (routing changes which model bills a
+    request, not its size, so the honest token metric is how many moved —
+    never "tokens saved"), `saved` (net $, None if nothing could be priced),
+    `untracked` (pre-cache-tracking calls excluded) and `html`.
+    """
+    routes, untracked, bad_lines = _read_router_routes()
+    tokens_all = sum(_route_tokens(r["actual"]) for r in routes)
+    tokens_moved = sum(_route_tokens(r["actual"]) for r in routes if r["from"] != r["to"])
+    built = sorted((_router_route_row(r, pricing) for r in routes), key=lambda b: b[0])
+
+    totals = {"base_cost": 0.0, "actual_cost": 0.0, "saved": 0.0}
+    unpriced_routes = []
+    for _, _, priced in built:
+        if priced["saved"] is None:
+            unpriced_routes.append(priced["name"])
+            continue
+        for k in totals:
+            totals[k] += priced[k]
+    any_priced = any(priced["saved"] is not None for _, _, priced in built)
+    saved_total = totals["saved"] if any_priced else None
+
+    result = {
+        "tokens_all": tokens_all, "tokens_moved": tokens_moved,
+        "saved": saved_total, "untracked": untracked, "html": "",
+    }
+    if not built:
+        return result
+
+    actual_sum = dict.fromkeys(_ROUTER_TOKEN_FIELDS, 0)
+    for r in routes:
+        for field in _ROUTER_TOKEN_FIELDS:
+            actual_sum[field] += r["actual"][field]
+    total_row = (
+        '<tr style="border-top:2px solid var(--surface2);font-weight:700">'
+        + _router_row_cells(
+            "<b>Total</b>", f'{sum(r["calls"] for r in routes):,}', actual_sum,
+            totals["base_cost"] if any_priced else None,
+            totals["actual_cost"] if any_priced else None, saved_total,
+        )
+        + '</tr>'
+    )
+
+    footnotes = [(
+        "Costs are the full bill: uncached input, output, cache reads and cache writes "
+        "(1-hour writes at 2× input). For rerouted calls the requested model is assumed to "
+        "already hold the prompt in its cache, so the routed model's cache writes are priced "
+        "as the requested model's cache reads — the saving shown is a lower bound."
+    )]
+    if untracked:
+        footnotes.append(
+            f"{untracked:,} calls logged before cache tracking began "
+            f"({_ROUTER_CACHE_TRACKING_SINCE}) are excluded — they recorded no cache tokens."
+        )
+    if unpriced_routes:
+        footnotes.append(
+            "Not priced (model missing from pricing catalogue): " + ", ".join(unpriced_routes) + "."
+        )
+    if bad_lines:
+        footnotes.append(f"{bad_lines:,} unreadable ledger line(s) skipped.")
+
+    th = "padding:5px 10px;font-size:10px;color:var(--overlay0);font-weight:500;text-align:"
+    headers = "".join(
+        f'<th style="{th}{align}">{name}</th>'
+        for name, align in (
+            ("ROUTE (REQUESTED → USED)", "left"), ("CALLS", "right"),
+            ("INPUT", "right"), ("OUTPUT", "right"), ("CACHE READ", "right"),
+            ("CACHE WRITE", "right"), ("COST AS REQUESTED", "right"),
+            ("COST AS ROUTED", "right"), ("SAVED", "right"),
+        )
+    )
+    notes = "".join(
+        f'<div style="font-size:10px;color:var(--overlay0);margin-top:4px">{h(n)}</div>'
+        for n in footnotes
+    )
+    result["html"] = (
+        '<div style="margin-top:8px">'
+        '<div style="font-size:11px;font-weight:600;color:var(--subtext0);text-transform:uppercase;'
+        f'letter-spacing:.8px;margin-bottom:8px">Router Routes (since {_ROUTER_CACHE_TRACKING_SINCE})</div>'
+        '<div style="background:var(--surface0);border-radius:8px;overflow-x:auto">'
+        '<table style="width:100%;border-collapse:collapse">'
+        f'<thead><tr style="background:var(--base)">{headers}</tr></thead>'
+        f'<tbody>{"".join(row for _, row, _ in built)}{total_row}</tbody></table></div>'
+        f'{notes}</div>'
+    )
+    return result
+
+
 def _price_model_tokens(tokens_by_model: dict, field: str, pricing: dict):
     """Price one `{model_id: tokens}` bucket at `field` ("input" or "output")
     using a `get_pricing_at()` snapshot. No second price table (R7.2) — this
@@ -4363,7 +4865,17 @@ def render_headroom(repo_path: "str | None" = None, pricing_snapshots=None) -> s
     rtk_saved    = rtk["saved"]
     rtk_baseline = rtk["baseline"]
     rtk_pct      = (rtk_saved / rtk_baseline * 100) if rtk_baseline else 0.0
-    rtk_cost_est = rtk_saved * _SONNET_INPUT_PER_M / 1_000_000
+    today_pricing = (
+        get_pricing_at(pricing_snapshots, NOW.strftime("%Y-%m-%d")) if pricing_snapshots else {}
+    )
+    sonnet = _latest_sonnet(today_pricing)
+    rtk_cost_est = rtk_saved * sonnet[1]["input"] / 1_000_000 if sonnet else 0.0
+    est_note = (
+        f"RTK cost estimate uses the newest Sonnet's input rate ({sonnet[0]}, "
+        f"${sonnet[1]['input']:g}/M); caveman uses its output rate (${sonnet[1]['output']:g}/M, approx)."
+        if sonnet else
+        "No Sonnet price in the models.dev pricing snapshot — RTK and caveman $ are not estimated."
+    )
 
     # ── Headroom data ─────────────────────────────────────────────────────────
     hr_data, hr_lifetime, hr_sess, hr_history = {}, {}, {}, []
@@ -4406,7 +4918,7 @@ def render_headroom(repo_path: "str | None" = None, pricing_snapshots=None) -> s
         )
 
     def _layer(icon, name, baseline_lbl, baseline_val, saved_tok, pct, cost_str,
-               after_lbl, after_val, note="", dimmed=False):
+               after_lbl, after_val, note="", dimmed=False, saved_lbl="tokens saved"):
         dim = "opacity:.45;" if dimmed else ""
         return f"""<div style="background:var(--surface0);border-radius:8px;padding:14px 16px;{dim}">
   <div style="display:flex;justify-content:space-between;align-items:flex-start">
@@ -4422,7 +4934,7 @@ def render_headroom(repo_path: "str | None" = None, pricing_snapshots=None) -> s
           <div style="font-size:13px;color:var(--subtext1);font-family:monospace">{baseline_val}</div>
         </div>
         <div>
-          <div class="label">tokens saved</div>
+          <div class="label">{saved_lbl}</div>
           <div style="font-size:13px;color:var(--green);font-weight:700">{saved_tok:,}
             <span style="font-size:11px;color:var(--subtext0)">({pct:.1f}%)</span></div>
           {_bar(pct)}
@@ -4435,7 +4947,7 @@ def render_headroom(repo_path: "str | None" = None, pricing_snapshots=None) -> s
     </div>
     <div style="text-align:right;margin-left:16px;flex-shrink:0">
       <div class="label">cost saved</div>
-      <div style="font-size:18px;font-weight:800;color:var(--green)">{cost_str}</div>
+      <div style="font-size:18px;font-weight:800;color:{'var(--red)' if cost_str.startswith('-') else 'var(--green)'}">{cost_str}</div>
     </div>
   </div>
 </div>"""
@@ -4466,7 +4978,7 @@ def render_headroom(repo_path: "str | None" = None, pricing_snapshots=None) -> s
         "⚡", "RTK — Shell Output",
         "raw shell output", f"{rtk_baseline:,}",
         rtk_saved, rtk_pct,
-        f"~${rtk_cost_est:.2f}",
+        f"~${rtk_cost_est:.2f}" if sonnet else "–",
         "into context", f"{rtk['after']:,}",
         note=rtk_note,
     )
@@ -4509,12 +5021,12 @@ def render_headroom(repo_path: "str | None" = None, pricing_snapshots=None) -> s
     cav_active = cav_cfg.get("active", False)
     cav_data = _read_caveman_savings(repo_path=repo_path)
     if cav_active and cav_data["samples"] > 0:
-        cav_cost_est = cav_data["saved_tokens"] * _SONNET_OUTPUT_PER_M / 1_000_000
+        cav_cost_est = cav_data["saved_tokens"] * sonnet[1]["output"] / 1_000_000 if sonnet else 0.0
         caveman_layer = _layer(
             "🦴", "Caveman — Response Style",
             "baseline (est.)", f"{cav_data['baseline_tokens']:,}",
             cav_data["saved_tokens"], cav_data["avg_pct"],
-            f"~${cav_cost_est:.3f}",
+            f"~${cav_cost_est:.3f}" if sonnet else "–",
             "actual (est.)", f"{cav_data['actual_tokens']:,}",
             note=(f"mode: {cav_mode} · {cav_data['samples']} sampled day{'s' if cav_data['samples'] != 1 else ''} "
                   f"· word-count estimate, not exact tokens"),
@@ -4536,56 +5048,15 @@ def render_headroom(repo_path: "str | None" = None, pricing_snapshots=None) -> s
     # ── Router data (model-router savings; stats.json absent ⇒ dimmed) ─────────
     router_stats    = _read_router_stats()
     router_lifetime = router_stats.get("lifetime", {}) if router_stats else {}
-    router_by_lane  = router_stats.get("by_lane", {}) if router_stats else {}
-    router_pricing  = (
-        get_pricing_at(pricing_snapshots, NOW.strftime("%Y-%m-%d")) if pricing_snapshots else {}
-    )
-
-    router_actual_in,  router_actual_in_unpriced  = _price_model_tokens(
-        router_lifetime.get("input_tokens_by_model", {}), "input", router_pricing)
-    router_actual_out, router_actual_out_unpriced = _price_model_tokens(
-        router_lifetime.get("output_tokens_by_model", {}), "output", router_pricing)
-    router_base_in,  router_base_in_unpriced  = _price_model_tokens(
-        router_lifetime.get("baseline_input_tokens_by_model", {}), "input", router_pricing)
-    router_base_out, router_base_out_unpriced = _price_model_tokens(
-        router_lifetime.get("baseline_output_tokens_by_model", {}), "output", router_pricing)
-
-    router_actual_cost   = router_actual_in + router_actual_out
-    router_baseline_cost = router_base_in + router_base_out
-    # R7.5b: reported net, not gross. Each call's own (baseline − actual) is
-    # already negative for an escalation, so this sum nets automatically —
-    # no separate subtraction step exists or is needed on top of it.
-    router_net_saving      = router_baseline_cost - router_actual_cost
-    router_unpriced_tokens = (
-        router_actual_in_unpriced + router_actual_out_unpriced
-        + router_base_in_unpriced + router_base_out_unpriced
-    )
-
-    router_actual_tokens = (
-        sum(router_lifetime.get("input_tokens_by_model", {}).values())
-        + sum(router_lifetime.get("output_tokens_by_model", {}).values())
-    )
-    router_baseline_tokens = (
-        sum(router_lifetime.get("baseline_input_tokens_by_model", {}).values())
-        + sum(router_lifetime.get("baseline_output_tokens_by_model", {}).values())
-    )
-    router_saved_tokens = router_baseline_tokens - router_actual_tokens
-    router_pct = (router_saved_tokens / router_baseline_tokens * 100) if router_baseline_tokens else 0.0
-
     router_routed   = router_lifetime.get("routed", 0)
     router_fallback = router_lifetime.get("failed_open", 0)
-    # R8.7: calls the router itself marked cost_state="unknown" (no usage
-    # data) are recorded with zero tokens at the source (server.py), so
-    # they're already excluded from the dollar figures above — this is only
-    # the visible count, never folded back into the saving.
-    router_unknown_cost = router_lifetime.get("unknown_cost_calls", 0)
 
     # Suspected-bad-route signal (grill Q2-A): the ledger carries this call's
     # token cost (not a raw per-call counter), bucketed by the model it
     # escalated to — so the closest honest "count" available here is how
     # many distinct models show a flagged escalation, not how many calls.
-    # That cost is already included in router_actual_cost above; this count
-    # is informational only and is never subtracted again.
+    # That cost is already in the route table's figures; this count is
+    # informational only and is never subtracted again.
     router_suspect_models = (
         {m for m, t in router_lifetime.get("delta_input_tokens_by_model", {}).items() if t}
         | {m for m, t in router_lifetime.get("delta_output_tokens_by_model", {}).items() if t}
@@ -4594,45 +5065,28 @@ def render_headroom(repo_path: "str | None" = None, pricing_snapshots=None) -> s
 
     router_note = (
         f"{router_routed:,} routed · {router_fallback:,} fallback · "
-        f"{router_suspect_count} suspected bad-route model(s) (not subtracted) · "
-        f"{router_unknown_cost:,} unknown-cost excluded"
+        f"{router_suspect_count} suspected bad-route model(s) (not subtracted)"
     )
 
     if router_stats:
+        # Dollars and tokens come from the ledger, not stats.json: only the
+        # ledger rows carry cache usage and the per-call counterfactual, and
+        # cache reads/writes are most of the bill. Routing never shrinks a
+        # request, so the card counts tokens moved, not tokens saved, and the
+        # pipeline's "total tokens saved" gets nothing from this layer.
+        rv = _render_router_routes(today_pricing)
+        router_detail_html = rv["html"]
+        moved_pct = (rv["tokens_moved"] / rv["tokens_all"] * 100) if rv["tokens_all"] else 0.0
         router_layer = _layer(
             "🧭", "Router — Model Selection",
-            "baseline tokens (counterfactual)", f"{router_baseline_tokens:,}",
-            router_saved_tokens, router_pct,
-            f"${router_net_saving:.2f}",
-            "actual tokens", f"{router_actual_tokens:,}",
-            note=router_note,
+            "tokens on routed calls", f"{rv['tokens_all']:,}",
+            rv["tokens_moved"], moved_pct,
+            _money(rv["saved"]),
+            "kept on requested model", f"{rv['tokens_all'] - rv['tokens_moved']:,}",
+            note=router_note + f" · $ since {_ROUTER_CACHE_TRACKING_SINCE} (full bill incl. cache)",
+            saved_lbl="tokens rerouted",
         )
-
-        lane_rows = []
-        for lane, bucket in sorted(router_by_lane.items()):
-            model_tok: dict = {}
-            for m, t in bucket.get("input_tokens_by_model", {}).items():
-                model_tok[m] = model_tok.get(m, 0) + t
-            for m, t in bucket.get("output_tokens_by_model", {}).items():
-                model_tok[m] = model_tok.get(m, 0) + t
-            models_str = ", ".join(
-                f"{h(m)} {t:,} tok" for m, t in sorted(model_tok.items(), key=lambda kv: -kv[1])
-            ) or "–"
-            lane_rows.append(
-                f'<div style="font-size:11px;color:var(--subtext1);margin-top:2px">'
-                f'<b>{h(lane)}</b>: {bucket.get("routed", 0):,} routed — {models_str}</div>'
-            )
-        router_unpriced_note = (
-            f'<div style="font-size:10px;color:var(--overlay0);margin-top:4px">'
-            f'{router_unpriced_tokens:,} tokens excluded — model missing from pricing catalogue</div>'
-            if router_unpriced_tokens else ""
-        )
-        router_detail_html = (
-            '<div style="padding:4px 16px 2px">' + "".join(lane_rows) + router_unpriced_note + '</div>'
-            if lane_rows or router_unpriced_note else ""
-        )
-        total_saved    += router_saved_tokens
-        total_cost_est += router_net_saving
+        total_cost_est += rv["saved"] or 0.0
     else:
         router_layer = _layer(
             "🧭", "Router — Model Selection",
@@ -4680,7 +5134,7 @@ def render_headroom(repo_path: "str | None" = None, pricing_snapshots=None) -> s
     </div>
   </div>
   <div style="font-size:10px;color:var(--overlay0);margin-top:8px">
-    RTK cost estimate uses Sonnet 4.6 input rate ($3/M); caveman uses the output rate ($15/M, approx).
+    {h(est_note)}
     Caveman figures are word-count estimates, not exact tokens, and only appear once sampled.
     Layers are additive (different pipeline stages, no double-counting).
   </div>
@@ -6728,8 +7182,28 @@ class _DashboardHandler(BaseHTTPRequestHandler):
             self.close_connection = True
 
 
-def serve_companion(html_content: str, port: int, open_browser_fn):
+# How often the served page is rebuilt. The page used to be rendered once at
+# startup and served forever, so every card froze at whatever the data looked
+# like when the server started (the router card stayed "not installed" for
+# days after the router began writing stats.json).
+DASHBOARD_REFRESH_S = 60
+
+
+def _refresh_loop(render_fn) -> None:
+    """Rebuild the page every DASHBOARD_REFRESH_S in the background, so a
+    request never waits on a multi-second render. A failed rebuild is logged
+    and the previous page keeps being served."""
+    while True:
+        time.sleep(DASHBOARD_REFRESH_S)
+        try:
+            _DashboardHandler._html = render_fn().encode("utf-8")
+        except Exception as exc:  # noqa: BLE001 — any render bug must not kill the refresher
+            print(f"   dashboard refresh failed, serving previous page: {exc!r}", file=sys.stderr)
+
+
+def serve_companion(html_content: str, render_fn, port: int, open_browser_fn):
     _DashboardHandler._html = html_content.encode("utf-8")
+    threading.Thread(target=_refresh_loop, args=(render_fn,), daemon=True).start()
     httpd = HTTPServer(("127.0.0.1", port), _DashboardHandler)
     url = f"http://localhost:{port}"
     print(f"   Dashboard: {url}  (Ctrl+C to stop)")
@@ -6801,8 +7275,34 @@ def main():
                 initial_idx = i
                 break
 
-    print("   Collecting data...", end="", flush=True)
+    companion = not args.static
+    print("   Collecting data and rendering...", end="", flush=True)
+    html_content = _render_dashboard(repos, initial_idx, companion)
+    print(" done.")
 
+    if args.static:
+        DASHBOARD_DIR.mkdir(exist_ok=True)
+        OUTPUT_FILE.write_text(html_content, encoding="utf-8")
+        size_kb = OUTPUT_FILE.stat().st_size // 1024
+        print(f"   Output:  {OUTPUT_FILE} ({size_kb} KB)")
+        if not args.no_open:
+            open_browser(OUTPUT_FILE.as_uri())
+    else:
+        serve_companion(
+            html_content,
+            lambda: _render_dashboard(repos, initial_idx, companion),
+            COMPANION_PORT,
+            open_browser_fn=(lambda url: None) if args.no_open else open_browser,
+        )
+        print("   Opening in browser...")
+
+
+def _render_dashboard(repos, initial_idx: int, companion: bool) -> str:
+    """Collect every repo's data and build the page. Called once at startup
+    and again by serve_companion's refresh thread."""
+    # Every "N ago" on the page is measured from NOW; a refresh must move it.
+    global NOW
+    NOW = datetime.now(timezone.utc)
     repos_data = []
     for repo in repos:
         repos_data.append({
@@ -6811,6 +7311,9 @@ def main():
             "observations":     parse_observations(repo),
             "metrics":          parse_metrics(repo),
             "hooks":            list_hooks(repo),
+            "hook_registrations": hook_registrations(repo),
+            "hook_runs":        hook_transcript_runs(repo),
+            "hook_log":         hook_logged_runs(repo),
             "last_routine_run": read_last_routine_run(repo),
             "gitnexus":         gitnexus_stats(repo),
             "workshop":         workshop_stats(repo),
@@ -6833,30 +7336,10 @@ def main():
     pricing_snapshots = load_or_refresh_pricing_history()
     usage_sessions    = gather_usage_data()
 
-    print(" done.")
-    print("   Rendering...", end="", flush=True)
-
-    companion = not args.static
-    html_content = build_html(
+    return build_html(
         repos_data, harness_data, usage_sessions, pricing_snapshots,
         initial_idx, companion=companion,
     )
-    print(" done.")
-
-    if args.static:
-        DASHBOARD_DIR.mkdir(exist_ok=True)
-        OUTPUT_FILE.write_text(html_content, encoding="utf-8")
-        size_kb = OUTPUT_FILE.stat().st_size // 1024
-        print(f"   Output:  {OUTPUT_FILE} ({size_kb} KB)")
-        if not args.no_open:
-            open_browser(OUTPUT_FILE.as_uri())
-    else:
-        serve_companion(
-            html_content,
-            COMPANION_PORT,
-            open_browser_fn=(lambda url: None) if args.no_open else open_browser,
-        )
-        print("   Opening in browser...")
 
 if __name__ == "__main__":
     main()

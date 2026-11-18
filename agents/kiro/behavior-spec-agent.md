@@ -53,9 +53,9 @@ grep -E "^\- [0-9]{4}-[0-9]{2}-[0-9]{2} \[(drain|revert)\]" .claude/memory/obser
 ```bash
 today=$(date +%Y-%m-%d)
 mem_dir="$HOME/.claude/projects/$(pwd | sed 's#[/.]#-#g')/memory"
-{ grep -rl "type: feedback" "$mem_dir" 2>/dev/null; \
-  grep -rl "type: feedback" .claude/memory 2>/dev/null; } \
-  | xargs -r -I{} sh -c 'find "{}" -newermt "$today 00:00" 2>/dev/null'
+# No `sh -c` / `find -exec`: lean-ctx blocks both; `xargs grep` is allowed.
+find "$mem_dir" .claude/memory -name '*.md' -newermt "$today 00:00" -print 2>/dev/null \
+  | xargs grep -l "type: feedback" 2>/dev/null
 ```
 
 A `type: feedback` memory written today is ground truth about conduct — it needs no second occurrence.

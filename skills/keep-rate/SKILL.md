@@ -209,3 +209,6 @@ record_metric.py replaces same (date,metric) rows, so re-runs can't duplicate. W
 
 ### ✓ Passing --idle on frozen readings prevents self-paying loop
 When cohort is frozen (HEAD unchanged), pass --idle to exclude from average so trust credit skips that run. (source: aiq-zora-agent-skill-foundation 2026-10-26 [keep-rate])
+
+### ❌ Treating a frozen reading as HEAD-only
+Calc reads index (`git ls-files`), blames HEAD: `git rm --cached`/`git add` move it; .gitignore alone does not. (2026-11-18 calc check)

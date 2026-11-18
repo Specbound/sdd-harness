@@ -86,7 +86,7 @@ from classify import (
 from config import Catalog, load_catalog
 from ledger import CallRecord, Ledger
 from policy import Escalation, select
-from stream import StreamTee, UsageResult
+from stream import StreamTee, UsageResult, cache_fields
 
 logger = logging.getLogger("router")
 
@@ -274,9 +274,10 @@ def _usage_from_json_body(raw: bytes) -> UsageResult:
         return UsageResult(input_tokens=None, output_tokens=None, cost_state="unknown")
     input_tokens = usage.get("input_tokens")
     output_tokens = usage.get("output_tokens")
+    cache = cache_fields(usage)
     if input_tokens is None or output_tokens is None:
-        return UsageResult(input_tokens=input_tokens, output_tokens=output_tokens, cost_state="unknown")
-    return UsageResult(input_tokens=input_tokens, output_tokens=output_tokens, cost_state="known")
+        return UsageResult(input_tokens=input_tokens, output_tokens=output_tokens, cost_state="unknown", **cache)
+    return UsageResult(input_tokens=input_tokens, output_tokens=output_tokens, cost_state="known", **cache)
 
 
 def _probe_reachable(base_url: str) -> bool:
@@ -460,6 +461,9 @@ class RouterHandler(BaseHTTPRequestHandler):
                 input_tokens=usage.input_tokens or 0,
                 output_tokens=usage.output_tokens or 0,
                 cost_state=usage.cost_state,
+                cache_read_tokens=usage.cache_read_tokens,
+                cache_creation_tokens=usage.cache_creation_tokens,
+                cache_creation_1h_tokens=usage.cache_creation_1h_tokens,
             ),
             rung_of=catalog.rung_of,
             escalation_window_s=_escalation_window_s(catalog),

@@ -138,7 +138,7 @@ Do not touch the Trust Score line in hot-memory.md.
 Pass **every** `score_delta` from Step 1 — one `--delta` per judge run:
 
 ```bash
-python3 .claude/scripts/trust_score.py apply \
+python3 .claude/scripts/session/trust_score.py apply \
   --delta "<score_delta run 1>" \
   --delta "<score_delta run 2>" \
   --delta "<score_delta run 3>" \

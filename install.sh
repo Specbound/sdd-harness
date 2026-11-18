@@ -639,6 +639,23 @@ install_project() {
     python3 "$HARNESS_DIR/scripts/setup/repair-settings-json.py" "$PROJECT_DIR" | grep -v '^OK ' || true
   fi
 
+  # --- Register template hooks the project is missing ---
+  # settings.json is written once at install, so hooks added to the template later
+  # were copied into .claude/hooks/ but never registered. Adds them (template
+  # command verbatim), keeps hooks the project removed removed, creates
+  # settings.json if absent. Before the wrap step so new entries get wrapped too.
+  if command -v python3 >/dev/null 2>&1; then
+    python3 "$HARNESS_DIR/scripts/setup/sync-hook-registrations.py" "$PROJECT_DIR" | grep -v '^OK ' || true
+  fi
+
+  # --- Route hook commands through the run logger (.claude/hooks/_run-hook.sh) ---
+  # Transcripts only record hook runs that print something, so quiet hooks were
+  # invisible. Wraps whatever this project's settings register — no hook list —
+  # and must run after the hook copy and settings.json creation above, so the wrapper exists first.
+  if command -v python3 >/dev/null 2>&1; then
+    python3 "$HARNESS_DIR/scripts/setup/wrap-hook-commands.py" "$PROJECT_DIR" | grep -v '^OK ' || true
+  fi
+
   # --- Generate project stack summary ---
   bash "$HARNESS_DIR/scripts/setup/generate-project-stack.sh" "$PROJECT_DIR" || \
     echo "  WARNING: scripts/setup/generate-project-stack.sh returned non-zero — stack file may be missing."
@@ -921,6 +938,9 @@ install_globals() {
   cp "$HARNESS_DIR/templates/settings.harness.json.template" \
     "$HARNESS_DIR/.claude/settings.json"
   echo "  Harness settings.json generated (project-relative hook paths)."
+  # Same run-logger wrapping every project gets; a no-op (reported SKIP) until
+  # .claude/hooks/_run-hook.sh has been copied in.
+  python3 "$HARNESS_DIR/scripts/setup/wrap-hook-commands.py" "$HARNESS_DIR" | grep -v '^OK ' || true
 
   # --- Make the tool-bin directory reachable in future shells ---
   # `uv tool install` puts its shims in a directory that is frequently off PATH in

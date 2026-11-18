@@ -52,6 +52,9 @@ Sentinel written at routine-start is idempotent-by-design, not a defect. Read th
 ### ❌ Accepting repeated mislabeling from a tool's classification logic
 When a tool repeatedly mislabels outputs (3+ verified instances over weeks) despite anti-pattern being documented, classification logic requires structural fix, not re-documentation. Escalate for repair before trusting subsequent output. (source: 2026-10-06 [judge] drain)
 
+### ❌ Swallowing a failed best-effort side call
+A non-blocking enrichment call (Sentry note, tag) that fails silently leaves records half-tagged. Log the failure and check the live endpoint once. (source: 2026-11-17 [impl, debug] observation)
+
 ## Resources
 
 - `resources/implementation-playbook.md` for detailed patterns and examples.

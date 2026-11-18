@@ -183,6 +183,12 @@ n=2 read "fixed cost", n=3 read "growing"; the full series killed both (two sub-
 ### ❌ Skipping verification because the verifier itself failed
 If a mandatory verification gate stalls or errors before completion, do not treat silence as approval. Gate absence ≠ gate success. Report gate failure and re-run before shipping. (source: 2026-10-24 observation)
 
+### ❌ Declaring a served page fixed from its data file
+Stats file existing doesn't prove the served page shows it; load the rendered page. (source: sdd-harness 2026-11-18 [friction])
+
+### ❌ Checking only the refs you named when stating branch state
+Run `git branch -r` before stating branch state; unnamed remote refs can be ahead of local dev. (source: caresync-vercel 2026-11-18 [debug, insight])
+
 ## When to Use
 This skill is applicable to execute the workflow or actions described in the overview.
 _Last synced: 2026-10-06
@@ -192,3 +198,9 @@ Derived copies revert on sync if source lacks edit—verify canonical source bef
 
 ### ❌ Tests derived from code re-encode its bug
 Check timeout/fallback tests against the spec, not the code; code-derived tests re-encode bugs. (source: sdd-harness 2026-11-13 [insight])
+
+### ❌ Local pass is not CI pass
+A skipped test, or one needing a dep the CI job never installs, proves nothing. Fail it, do not skip. (source: caresync-vercel 2026-11-16 [impl])
+
+### ❌ Committing with an unchecked staged index
+Run `git diff --cached --name-only` before every commit; a post-commit hook can stage and push unrelated files. (source: 2026-11-17 user feedback)

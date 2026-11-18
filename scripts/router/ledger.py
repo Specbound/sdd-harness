@@ -148,6 +148,33 @@ class CallRecord:
     output_tokens: int
     cost_state: str
     suspect_escalation: bool = False
+    cache_read_tokens: int = 0
+    cache_creation_tokens: int = 0
+    cache_creation_1h_tokens: int = 0
+
+
+def counterfactual_cache_tokens(
+    baseline_model: str,
+    selected_model: str,
+    cache_read: int,
+    cache_creation: int,
+    cache_creation_1h: int,
+) -> tuple[int, int, int]:
+    """Cache tokens `(read, creation, creation_1h)` the baseline model would
+    have billed for this call — the one place this rule lives.
+
+    Unrouted: identical to what was billed. Routed: the selected model's cache
+    was cold for a prefix the baseline model's cache already held, so every
+    token it had to write counts as a baseline *read*, and the baseline writes
+    nothing. Pricing those writes at the baseline's write rate instead (R7.3's
+    plain "same token counts") would credit the router with savings out of the
+    very cache miss it caused. This bound understates the baseline (a cold
+    baseline cache, or the new turn's tail, would have cost a write), so the
+    saving it yields is a lower bound.
+    """
+    if baseline_model == selected_model:
+        return cache_read, cache_creation, cache_creation_1h
+    return cache_read + cache_creation, 0, 0
 
 
 def _validate(record: CallRecord) -> None:
@@ -187,6 +214,12 @@ def _empty_bucket() -> dict:
         "output_tokens_by_model": {},
         "baseline_input_tokens_by_model": {},
         "baseline_output_tokens_by_model": {},
+        "cache_read_tokens_by_model": {},
+        "cache_creation_tokens_by_model": {},
+        "cache_creation_1h_tokens_by_model": {},
+        "baseline_cache_read_tokens_by_model": {},
+        "baseline_cache_creation_tokens_by_model": {},
+        "baseline_cache_creation_1h_tokens_by_model": {},
         # R7.5a/7.5b: an escalation call's own token cost, bucketed by its
         # `selected_model` and kept separate from the plain buckets above so
         # a later net-savings rollup (task 10) can subtract it from down-route
@@ -224,6 +257,9 @@ def _add_contribution(
     input_tokens: int,
     output_tokens: int,
     suspect_escalation: bool = False,
+    cache_read_tokens: int = 0,
+    cache_creation_tokens: int = 0,
+    cache_creation_1h_tokens: int = 0,
 ) -> None:
     """Fold one call's fields into `bucket` (lifetime, window_30d, or a
     by_lane entry — same shape, same rule). `selected_model` gets its real
@@ -242,6 +278,15 @@ def _add_contribution(
     _bump(bucket["output_tokens_by_model"], selected_model, output_tokens)
     _bump(bucket["baseline_input_tokens_by_model"], baseline_model, input_tokens)
     _bump(bucket["baseline_output_tokens_by_model"], baseline_model, output_tokens)
+    _bump(bucket["cache_read_tokens_by_model"], selected_model, cache_read_tokens)
+    _bump(bucket["cache_creation_tokens_by_model"], selected_model, cache_creation_tokens)
+    _bump(bucket["cache_creation_1h_tokens_by_model"], selected_model, cache_creation_1h_tokens)
+    base_read, base_creation, base_creation_1h = counterfactual_cache_tokens(
+        baseline_model, selected_model, cache_read_tokens, cache_creation_tokens, cache_creation_1h_tokens
+    )
+    _bump(bucket["baseline_cache_read_tokens_by_model"], baseline_model, base_read)
+    _bump(bucket["baseline_cache_creation_tokens_by_model"], baseline_model, base_creation)
+    _bump(bucket["baseline_cache_creation_1h_tokens_by_model"], baseline_model, base_creation_1h)
     if suspect_escalation:
         _bump(bucket["delta_input_tokens_by_model"], selected_model, input_tokens)
         _bump(bucket["delta_output_tokens_by_model"], selected_model, output_tokens)
@@ -259,6 +304,9 @@ def _add_record(bucket: dict, record: CallRecord) -> None:
         input_tokens=record.input_tokens,
         output_tokens=record.output_tokens,
         suspect_escalation=record.suspect_escalation,
+        cache_read_tokens=record.cache_read_tokens,
+        cache_creation_tokens=record.cache_creation_tokens,
+        cache_creation_1h_tokens=record.cache_creation_1h_tokens,
     )
 
 
@@ -316,6 +364,9 @@ def _rebuild_window_from_tail(ledger_path: Path, cutoff: _dt.datetime) -> tuple[
                 input_tokens=int(obj.get("input_tokens", 0)),
                 output_tokens=int(obj.get("output_tokens", 0)),
                 suspect_escalation=bool(obj.get("suspect_escalation", False)),
+                cache_read_tokens=int(obj.get("cache_read_tokens", 0)),
+                cache_creation_tokens=int(obj.get("cache_creation_tokens", 0)),
+                cache_creation_1h_tokens=int(obj.get("cache_creation_1h_tokens", 0)),
             )
         except (TypeError, ValueError):
             continue  # a malformed field on one line doesn't abort the rebuild
@@ -508,6 +559,13 @@ class Ledger:
         return None
 
     def _append_jsonl_line(self, record: CallRecord, ts: str) -> None:
+        base_read, base_creation, base_creation_1h = counterfactual_cache_tokens(
+            record.baseline_model,
+            record.selected_model,
+            record.cache_read_tokens,
+            record.cache_creation_tokens,
+            record.cache_creation_1h_tokens,
+        )
         line = {
             "schema_version": SCHEMA_VERSION,
             "ts": ts,
@@ -524,6 +582,14 @@ class Ledger:
             "output_tokens": record.output_tokens,
             "cost_state": record.cost_state,
             "suspect_escalation": record.suspect_escalation,
+            # Rows without these keys predate cache tracking (2026-11-17) and
+            # carry no cache cost at all — readers must not treat them as 0.
+            "cache_read_tokens": record.cache_read_tokens,
+            "cache_creation_tokens": record.cache_creation_tokens,
+            "cache_creation_1h_tokens": record.cache_creation_1h_tokens,
+            "baseline_cache_read_tokens": base_read,
+            "baseline_cache_creation_tokens": base_creation,
+            "baseline_cache_creation_1h_tokens": base_creation_1h,
         }
         self.ledger_path.parent.mkdir(parents=True, exist_ok=True)
         with open(self.ledger_path, "a", encoding="utf-8") as f:

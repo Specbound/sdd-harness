@@ -100,6 +100,16 @@ if [ -d ".claude/memory" ]; then
   fi
 fi
 
+# --- Hook run log size cap ---
+# _run-hook.sh appends one line per hook run, so the log grows with every tool
+# call. Keep the newest lines only. A line appended while this trims can be lost;
+# the log is for "did it run", not an audit trail.
+HOOK_RUN_LOG=".claude/logs/hook-runs.jsonl"
+HOOK_RUN_LOG_MAX="${SDD_HOOK_LOG_MAX_LINES:-20000}"
+if [ -f "$HOOK_RUN_LOG" ] && [ "$(wc -l < "$HOOK_RUN_LOG" | tr -d ' ')" -gt "$HOOK_RUN_LOG_MAX" ]; then
+  tail -n "$HOOK_RUN_LOG_MAX" "$HOOK_RUN_LOG" > "${HOOK_RUN_LOG}.tmp" && mv "${HOOK_RUN_LOG}.tmp" "$HOOK_RUN_LOG"
+fi
+
 # --- Agent failure pattern detection (self-tightening loop) ---
 TRACE_LOG=".claude/memory/trace.log"
 if [ -f "$TRACE_LOG" ]; then
@@ -127,7 +137,13 @@ fi
 # --- Loop-debt detection (cognitive surrender proxy) ---
 # Emit [loop-debt] if skill updates ran ≥3 days ago with no session-charge since.
 # Signal: loop shipped improvements the human never engaged with.
-if [ -f "$OBS_FILE" ]; then
+#
+# Interactive sessions only. A headless routine (SDD_HEADLESS=1) has no human in
+# it, so "the human never engaged" is true by construction there — on an idle day
+# the nightly routine's own Stop emitted this, and trust_score charged -1 for a
+# window session-quality had already scored idle. An interactive Stop the same day
+# still emits it, since the per-day guard below has not fired yet.
+if [ "${SDD_HEADLESS:-0}" != "1" ] && [ -f "$OBS_FILE" ]; then
   today=$(date +%Y-%m-%d)
   if ! grep -q "^- $today \[loop-debt\]:" "$OBS_FILE" 2>/dev/null; then
     python3 - "$OBS_FILE" "$today" <<'PYEOF' >> "$OBS_FILE" 2>/dev/null || true

@@ -147,6 +147,20 @@ do_update() {
   [ -f "$proj/.claude/scripts/utils/ollama_model_test.py" ] && chmod +x "$proj/.claude/scripts/utils/ollama_model_test.py"
   [ -f "$proj/.claude/scripts/integrations/blackhole/blackhole-cursor.py" ] && chmod +x "$proj/.claude/scripts/integrations/blackhole/blackhole-cursor.py"
   [ "$(uname)" = "Darwin" ] && xattr -cr "$proj/.claude/hooks/" 2>/dev/null || true
+  # --- Register template hooks the project is missing ---
+  # settings.json is written once at install, so hooks added to the template later
+  # were copied into .claude/hooks/ but never registered. Adds them (template
+  # command verbatim), keeps hooks the project removed removed, creates
+  # settings.json if absent. Before the wrap step so new entries get wrapped too.
+  if command -v python3 >/dev/null 2>&1; then
+    python3 "$HARNESS_DIR/scripts/setup/sync-hook-registrations.py" "$proj" | grep -v '^OK ' || true
+  fi
+
+  # --- Route hook commands through the run logger (.claude/hooks/_run-hook.sh) ---
+  # Transcripts only record hook runs that print something, so quiet hooks were
+  # invisible. Wraps whatever this project's settings register — no hook list —
+  # and must run after the hook copy above, so the wrapper exists first.
+  python3 "$HARNESS_DIR/scripts/setup/wrap-hook-commands.py" "$proj" | grep -v '^OK ' || true
   if [ -d "$proj/.git" ]; then
     cp "$HARNESS_DIR/hooks/git/post-commit" "$proj/.git/hooks/"
     chmod +x "$proj/.git/hooks/post-commit"
@@ -279,6 +293,9 @@ python3 "$HARNESS_DIR/scripts/setup/reconcile-settings-templates.py" --sync || \
 cp "$HARNESS_DIR/templates/settings.harness.json.template" \
   "$HARNESS_DIR/.claude/settings.json"
 echo "  Harness settings.json regenerated (portable hook paths)."
+# The template stays unwrapped; the run-logger wrapping is applied to the generated
+# file, the same step every installed project gets (see do_update).
+python3 "$HARNESS_DIR/scripts/setup/wrap-hook-commands.py" "$HARNESS_DIR" | grep -v '^OK ' || true
 bash "$HARNESS_DIR/scripts/setup/check-settings-json.sh" "$HARNESS_DIR/.claude/settings.json" \
   "$HARNESS_DIR/templates/settings.json.template" || \
   echo "  WARNING: settings JSON validation failed — see above."

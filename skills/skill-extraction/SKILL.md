@@ -25,6 +25,17 @@ Analyze an external resource and intelligently integrate its capabilities into t
 
 ## Workflow
 
+### Multi-link input: fan out one subagent per 3 links
+
+If the input holds **two or more** links, do not process them inline one after another. Fan out instead:
+
+1. **Batch.** Split the links into groups of 3 in input order. The last group may hold 1 or 2. Flag any truncated or malformed URL in its batch rather than guessing what it meant to be.
+2. **Spawn.** Send one `general-purpose` subagent per batch, all in a single message so they run in parallel. Each subagent runs Phases 0–4 for its links and follows this file's retrieval ladder and critic gate. It is **analysis only**: it writes no files, does not touch `docs/sources/`, and returns a compact per-link report: title, category, fetch status plus the rungs it tried, core claim, harness gap, verdict, and for any proposal the integration type and automation verdict, followed by its Rejected Candidates.
+3. **Merge into one final report.** Once every batch is back, produce a single report the user approves once. It has a per-link table, a short section on themes that recur across links, one combined Proposed Integrations list (if two batches propose the same capability, merge them into one candidate and cite both sources), and one combined Rejected Candidates list. List failed fetches with their rungs so a later session knows whether to retry.
+4. **Implement in the parent.** Phases 5–7 run in the parent session after approval, never inside a batch subagent. Write one `docs/sources/` entry for each link that produced an integration.
+
+A single link needs no fan-out, so run the phases below directly.
+
 ### Phase 0: Classify the Input Source
 
 Inspect the input passed to the skill and classify it into exactly one source category. The category determines which `docs/sources/<category>/README.md` will be updated in Phase 7.

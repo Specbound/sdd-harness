@@ -249,5 +249,39 @@ class StreamTeeMalformedJsonDoesNotRaiseTests(unittest.TestCase):
         self.assertEqual(recorder.chunks, [chunk])
 
 
+class StreamTeeCacheUsageTests(unittest.TestCase):
+    def test_cache_read_and_creation_are_harvested_from_message_start(self) -> None:
+        start = json.dumps({
+            "type": "message_start",
+            "message": {"usage": {
+                "input_tokens": 3, "output_tokens": 0,
+                "cache_read_input_tokens": 90_000, "cache_creation_input_tokens": 4_000,
+                "cache_creation": {"ephemeral_5m_input_tokens": 1_000, "ephemeral_1h_input_tokens": 3_000},
+            }},
+        })
+        tee = StreamTee(write=_Recorder())
+        tee.feed(f"data: {start}\n\n".encode())
+        # A delta that omits the cache keys must not zero them.
+        tee.feed(_message_delta_frame(50))
+
+        usage = tee.usage()
+
+        self.assertEqual(usage.cost_state, "known")
+        self.assertEqual(usage.cache_read_tokens, 90_000)
+        self.assertEqual(usage.cache_creation_tokens, 4_000)
+        self.assertEqual(usage.cache_creation_1h_tokens, 3_000)
+
+    def test_no_cache_keys_means_zero_cache_tokens(self) -> None:
+        tee = StreamTee(write=_Recorder())
+        tee.feed(_message_start_frame(10) + _message_delta_frame(5))
+
+        usage = tee.usage()
+
+        self.assertEqual(
+            (usage.cache_read_tokens, usage.cache_creation_tokens, usage.cache_creation_1h_tokens),
+            (0, 0, 0),
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

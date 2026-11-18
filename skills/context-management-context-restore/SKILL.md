@@ -61,6 +61,9 @@ A snapshot is only useful if the reader can tell how stale it is before trusting
 - **One giant file for all sessions** — named per-session files (or an overwritten single "latest" for the automatic case) beat one growing log; a growing log needs its own retrieval problem solved before it's useful.
 - **Vague next-step** — "continue working on the feature" gives the resuming agent nothing to execute; a next step must name a command or action and its expected result.
 
+### ❌ Acting on a recorded hazard without reading its note
+Restore means reading saved findings first; a hazard already logged (named test files) was missed and broke CI. (source: 2026-11-17 session-quality)
+
 ## Integration
 
 Pairs with `agent-memory-systems` for longer-lived, cross-session knowledge (preferences, durable facts) — session handoff is deliberately short-lived and single-purpose by contrast. Pairs with `dispatching-parallel-agents` for the subagent-spawn trigger case: a spawning agent's context is about to fork, so a handoff snapshot lets the parent resume cleanly after the subagent returns.
