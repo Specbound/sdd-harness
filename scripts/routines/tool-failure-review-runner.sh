@@ -25,19 +25,23 @@ TIMESTAMP="$(date -Iseconds)"
 TODAY="$(date +%Y-%m-%d)"
 
 log() { echo "[$TIMESTAMP] $REPO_NAME tool-failure-review: $*" >&2; }
+# Record why a guard no-opped so the dashboard can tell "idle" from "never fired".
+SKIP_FILE="$MEMORY_DIR/.skip-reason-tool-failure-review"
+skip() {
+  printf '%s|%s\n' "$TIMESTAMP" "${1%, skipping}" > "$SKIP_FILE" 2>/dev/null
+  log "$1"
+  exit 0
+}
 
 # --- Guards ---
 if [ ! -d "$MEMORY_DIR" ]; then
-  log "memory-not-bootstrapped, skipping"
-  exit 0
+  skip "memory-not-bootstrapped, skipping"
 fi
 if [ ! -f "$LEDGER" ]; then
-  log "no ledger yet, skipping"
-  exit 0
+  skip "no ledger yet, skipping"
 fi
 if [ ! -f "$COMMAND_FILE" ]; then
-  log "command file missing ($COMMAND_FILE), skipping"
-  exit 0
+  skip "command file missing ($COMMAND_FILE), skipping"
 fi
 
 # --- Is there anything promotable? (count >= MIN_COUNT, open, not promoted) ---
@@ -59,8 +63,7 @@ print(n)
 PY
 )"
 if [ "${PROMOTABLE:-0}" = "0" ]; then
-  log "no promotable failures (>= ${MIN_COUNT} fails), skipping"
-  exit 0
+  skip "no promotable failures (>= ${MIN_COUNT} fails), skipping"
 fi
 
 # --- Race protection (mkdir is atomic on macOS and Linux) ---
@@ -73,8 +76,7 @@ if [ -d "$LOCK_DIR" ]; then
   fi
 fi
 if ! mkdir "$LOCK_DIR" 2>/dev/null; then
-  log "another review active, skipping"
-  exit 0
+  skip "another review active, skipping"
 fi
 trap 'rm -rf "$LOCK_DIR"' EXIT
 
@@ -88,8 +90,7 @@ if [ "${TOOL_FAILURE_FORCE:-0}" != "1" ] && [ -s "$STATE_FILE" ]; then
   if [ "$LAST_EPOCH" -gt 0 ]; then
     GAP_DAYS=$(( ($(date +%s) - LAST_EPOCH) / 86400 ))
     if [ "$GAP_DAYS" -lt "$MIN_GAP_DAYS" ]; then
-      log "last review ${GAP_DAYS}d ago (< ${MIN_GAP_DAYS}d), skipping"
-      exit 0
+      skip "last review ${GAP_DAYS}d ago (< ${MIN_GAP_DAYS}d), skipping"
     fi
   fi
 fi
@@ -102,6 +103,7 @@ fi
 
 # --- Mark started (only after pre-flight passes) ---
 echo "$TIMESTAMP" > "$STATE_FILE"
+rm -f "$SKIP_FILE"
 log "starting review ($PROMOTABLE promotable)"
 
 PROMPT="Read and follow the instructions in $COMMAND_FILE to review the accumulated tool-call failure ledger and promote recurring, understood failures into memory. Use min-count $MIN_COUNT. Today is $TODAY."

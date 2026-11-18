@@ -897,8 +897,8 @@ def _scheduled_task_registry(repo_dir=None):
             "name":              "Bi-Weekly Harness Health",
             "runner_log_token":  "harness-health",
             "state_file":        HARNESS_DIR / ".claude" / "memory" / ".last-harness-health-run",
-            "artifact_glob":     str(HARNESS_DIR / "docs" / "claudemd-review-report.md"),
-            "artifact_label":    "docs/claudemd-review-report.md",
+            "artifact_glob":     str(HARNESS_DIR / "reports" / "claudemd-review-report.md"),
+            "artifact_label":    "reports/claudemd-review-report.md",
             "schedule_human":    "Bi-weekly (MIN_GAP_DAYS=13)",
             "interval_seconds":  13 * 86400,
             "scope":             "harness",
@@ -909,8 +909,8 @@ def _scheduled_task_registry(repo_dir=None):
             "name":              "Wednesday Drift Review",
             "runner_log_token":  "drift-review",
             "state_file":        HARNESS_DIR / ".last-drift-review",
-            "artifact_glob":     str(HARNESS_DIR / "docs" / "drift-review-report.md"),
-            "artifact_label":    "docs/drift-review-report.md",
+            "artifact_glob":     str(HARNESS_DIR / "reports" / "drift-review-report.md"),
+            "artifact_label":    "reports/drift-review-report.md",
             "schedule_human":    "Every Wednesday",
             "interval_seconds":  7 * 86400,
             "scope":             "harness",
@@ -962,7 +962,7 @@ def _scheduled_task_registry(repo_dir=None):
             "schedule_human":    "Weekly (MIN_GAP_DAYS=7)",
             "interval_seconds":  7 * 86400,
             "scope":             "per-repo",
-            "what_it_does":      "Compares pr-babysit reviews against real human review activity on merged PRs; promotes low-risk findings",
+            "what_it_does":      "Learns from reviewer activity on recently merged PRs (babysit log optional); promotes low-risk findings, queues methodology changes for approval",
         },
         {
             "key":               "daily-briefing",
@@ -1005,6 +1005,27 @@ def _read_state_ts(path):
             return datetime.fromtimestamp(Path(path).stat().st_mtime, tz=timezone.utc)
         except Exception:
             return None
+
+
+def _read_skip_reason(path):
+    """Read `.skip-reason-<key>`: `<iso-ts>|<reason>`, written by a runner on a no-op exit.
+
+    Returns (reason, datetime) or ("", None). Lets the dashboard tell "ran its guard
+    and had nothing to do" apart from "never fired" — both leave the last-run stamp
+    untouched.
+    """
+    try:
+        raw = Path(path).read_text().strip()
+    except OSError:
+        return "", None
+    stamp, sep, reason = raw.partition("|")
+    if not sep:
+        return "", None
+    try:
+        dt = datetime.fromisoformat(stamp.strip())
+    except ValueError:
+        return "", None
+    return reason.strip(), (dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc))
 
 
 def _newest_artifact(glob_pattern):
@@ -1215,11 +1236,12 @@ def _detect_os_scheduler():
         nxt = nxt + timedelta(days=1)
     result["next_fire_iso"] = nxt.isoformat()
 
-    # Surface most recent stdout activity from the launchd-managed log
-    stdout_log = HARNESS_DIR / "logs" / "orchestrator.stdout.log"
-    if stdout_log.exists():
+    # Most recent orchestrator activity. The orchestrator appends a line per step to
+    # orchestrator.log; launchd's own stdout capture stays empty (the script writes
+    # nothing to stdout), so its mtime froze at install day and read as "97d ago".
+    if ORCH_LOG.exists():
         try:
-            dt = datetime.fromtimestamp(stdout_log.stat().st_mtime, tz=timezone.utc)
+            dt = datetime.fromtimestamp(ORCH_LOG.stat().st_mtime, tz=timezone.utc)
             result["last_stdout_ts"] = dt.isoformat()
         except Exception:
             pass
@@ -1273,6 +1295,14 @@ def parse_scheduled_tasks(repo_dir=None):
             # Never run AND no log entries → warn (but skip warn if very recently installed)
             miss_status = "warn"
 
+        # A runner that fired within the last two ticks and no-opped on a guard is
+        # idle, not missed: the stale last-run stamp only records real runs.
+        skip_reason, skip_ts = _read_skip_reason(
+            Path(scope_repo) / ".claude" / "memory" / f".skip-reason-{spec['key']}")
+        if skip_ts and miss_status in ("missed", "warn") \
+                and (NOW - skip_ts).total_seconds() < 2 * 86400:
+            miss_status = "idle"
+
         artifact_path = _newest_artifact(spec["artifact_glob"])
         artifact_info = None
         diff_added = diff_removed = 0
@@ -1322,6 +1352,8 @@ def parse_scheduled_tasks(repo_dir=None):
             "last_exit":       last_run_record["exit"] if last_run_record else None,
             "last_duration":   last_run_record["duration"] if last_run_record else None,
             "miss_status":     miss_status,
+            "skip_reason":     skip_reason,
+            "skip_rel":        rel_time(skip_ts.isoformat()) if skip_ts else "",
             "overdue_secs":    overdue_secs,
             "artifact":        artifact_info,
             "artifact_label":  spec["artifact_label"],
@@ -1332,7 +1364,7 @@ def parse_scheduled_tasks(repo_dir=None):
         })
 
     # Order: missed/warn first, then by health then alphabetical
-    severity = {"missed": 0, "warn": 1, "ok": 2}
+    severity = {"missed": 0, "warn": 1, "idle": 2, "ok": 2}
     out.sort(key=lambda r: (severity.get(r["miss_status"], 3), r["name"]))
     return out
 
@@ -2535,6 +2567,36 @@ def _scheduler_banner(title, detail, footer):
     )
 
 
+ARTIFACT_VIEW_MAX_BYTES = 200 * 1024
+
+
+def _artifact_viewer(path):
+    """Collapsible inline view of a routine's artifact.
+
+    file:// links do not open from the served dashboard, so the content is embedded.
+    Oversized files show their tail (newest entries last, as in the jsonl ledgers).
+    """
+    try:
+        size = os.path.getsize(path)
+        with open(path, "rb") as fh:
+            if size > ARTIFACT_VIEW_MAX_BYTES:
+                fh.seek(size - ARTIFACT_VIEW_MAX_BYTES)
+            body = fh.read().decode("utf-8", errors="replace")
+    except OSError as exc:
+        return (f'<div style="color:var(--red);font-size:10px;margin-top:4px">'
+                f'cannot read artifact: {h(exc)}</div>')
+    note = (f'<div style="color:var(--overlay0);font-size:10px;margin-bottom:6px">'
+            f'showing last {ARTIFACT_VIEW_MAX_BYTES // 1024} KB of {size // 1024} KB — '
+            f'full file: {h(path)}</div>') if size > ARTIFACT_VIEW_MAX_BYTES else ""
+    return (
+        f'<details style="margin-top:6px"><summary style="cursor:pointer;color:var(--blue);'
+        f'font-size:11px">View</summary>{note}'
+        f'<pre style="background:var(--crust);border-radius:6px;padding:10px;margin-top:6px;'
+        f'font-size:10px;color:var(--subtext0);max-height:420px;overflow:auto;'
+        f'white-space:pre-wrap">{h(body)}</pre></details>'
+    )
+
+
 def render_scheduled_tasks(hd, repos_data=None, routines=None):
     # routines: pass the repo-scoped list from parse_scheduled_tasks(repo_path)
     # so per-repo routines (macro-eval, security-report, ...) show that repo's
@@ -2731,22 +2793,21 @@ def render_scheduled_tasks(hd, repos_data=None, routines=None):
         bg     = ("rgba(243,139,168,0.06)" if ms == "missed" else
                   "rgba(249,226,175,0.04)" if ms == "warn"   else "transparent")
         sbadge = (badge("MISSED",  "missed") if ms == "missed" else
-                  badge("PENDING", "warn")   if ms == "warn"   else badge("OK", "ok"))
+                  badge("PENDING", "warn")   if ms == "warn"   else
+                  badge("IDLE",    "info")   if ms == "idle"   else badge("OK", "ok"))
 
         # Artifact / changes
         art = r["artifact"]
         if art:
-            uri      = Path(art["path"]).as_uri()
             rel_path = str(Path(art["path"]).relative_to(HARNESS_DIR)) \
                        if str(art["path"]).startswith(str(HARNESS_DIR)) else art["path"]
             size_b   = art["size_kb"] * 1024
             size_str = f"{int(size_b)} B" if size_b < 1024 else f"{art['size_kb']:.1f} KB"
             artifact_html = (
-                f'<a href="{h(uri)}" target="_blank" '
-                f'style="color:var(--mauve);font-size:11px;text-decoration:none">'
-                f'{h(rel_path)} ↗</a> '
+                f'<span style="color:var(--mauve);font-size:11px">{h(rel_path)}</span> '
                 f'<span style="color:var(--overlay0);font-size:10px;margin-left:6px">'
                 f'{size_str} · {h(rel_time(art["mtime"]))}</span>'
+                f'{_artifact_viewer(art["path"])}'
             )
         else:
             artifact_html = (
@@ -2820,6 +2881,12 @@ def render_scheduled_tasks(hd, repos_data=None, routines=None):
             scope_html = ('<span style="color:var(--overlay0);font-size:10px;margin-left:6px">'
                           'harness</span>')
 
+        skip_html = ""
+        if r["skip_reason"]:
+            skip_html = (f'<div style="margin-top:10px;font-size:11px;color:var(--subtext1)">'
+                         f'<span class="label">Last check</span> '
+                         f'{h(r["skip_rel"])} — skipped: {h(r["skip_reason"])}</div>')
+
         cards += f"""<div style="border:1px solid {border};border-radius:10px;
                         overflow:hidden;margin-bottom:14px;background:{bg}">
       <div style="background:rgba(0,0,0,0.2);padding:10px 14px;
@@ -2845,6 +2912,7 @@ def render_scheduled_tasks(hd, repos_data=None, routines=None):
                <div style="margin-top:3px">{artifact_html}</div>
                <div style="margin-top:3px">{diff_badge}</div></div>
         </div>
+        {skip_html}
         {reasoning_html}
         {hist_html}
       </div>

@@ -34,6 +34,5 @@ hooks/claude/stop-hook.sh
 hooks/claude/tool-failure-capture.sh
 hooks/claude/tool-failure-recall.sh
 install.sh
-scripts/routines/code-review-learning-runner.sh
 skills/loki-mode/autonomy/run.sh
 skills/loki-mode/benchmarks/run-benchmarks.sh
