@@ -145,21 +145,6 @@ PROVIDER_DISPLAY = {
 
 NOW = datetime.now(timezone.utc)
 
-HOOK_DESCRIPTIONS = {
-    "impeccable-detect":      "Scores in-session behavior (0–5) after each tool use; writes session-quality observations",
-    "revert-detect":          "Detects git reverts; logs them as trust-drain events in observations",
-    "session-start":          "Runs on session start: checks for missed maintenance, loads context",
-    "stop":                   "Post-session wrap-up: keep-rate check, memory housekeeping",
-    "pre-tool-use-gitnexus":  "Ensures GitNexus graph is indexed before code-analysis tool calls",
-    "memory-discipline":      "Gates memory writes: enforces quality/length rules before saving",
-    "hook-added-notify":      "Notifies when a new hook file is added to the repo",
-    "gbrain-agent-spawn":     "Intercepts agent spawns to inject memory-first lookup pattern",
-    "gbrain-memory-write":    "Validates memory writes against GBrain quality patterns",
-    "gbrain-external":        "Routes external fetches through GBrain compiled-truth check",
-    "compaction-discipline":  "Injects boundary-timing principles before context compaction",
-    "scan-pii":               "Scans outgoing data for PII before tool calls",
-}
-
 # ── Utilities ─────────────────────────────────────────────────────────────────
 
 def rel_time(ts_str):
@@ -504,16 +489,32 @@ def list_hooks(repo):
     return sorted(f.name for f in hooks_dir.glob("*.sh") if not f.name.startswith("_"))
 
 HOOK_RUN_WINDOW_DAYS = 7
+HOOK_RECENT_RUNS = 6
 # Transcript attachment types written when a hook runs and prints something.
-# A hook that exits 0 with no output leaves no trace at all, so "no runs" means
-# "never spoke", not "never ran".
+# A hook that exits 0 with no output leaves no trace in a transcript; the run
+# log (.claude/logs/hook-runs.jsonl, written by _run-hook.sh) is what covers those.
 _HOOK_OK_TYPES = ("hook_success", "hook_additional_context")
 _HOOK_ERR_TYPES = ("hook_non_blocking_error", "hook_cancelled")
 _HOOK_BLOCK_TYPES = ("hook_blocking_error",)
+# Claude Code stores large hook output in a side file and leaves this marker plus
+# a preview in the transcript; the preview is all the model ever sees.
+_PERSISTED_MARK = "<persisted-output>"
+
+def _hook_script_name(command):
+    """Basename of the last script a hook command runs, or "" for inline commands.
+
+    "Last" so a command wrapped by _run-hook.sh resolves to the hook it runs.
+    """
+    try:
+        tokens = shlex.split(command)
+    except ValueError:
+        tokens = command.split()
+    scripts = [t for t in tokens if t.endswith((".sh", ".py", ".js", ".cjs", ".mjs"))]
+    return Path(scripts[-1]).name if scripts else ""
 
 def hook_registrations(repo):
-    """{script: [(event, matcher)]} from the repo's settings files — the real
-    wiring, so a hook's event is never guessed from its filename."""
+    """{script: [(event, matcher, command)]} from the repo's settings files — the
+    real wiring, so a hook's event is never guessed from its filename."""
     regs = {}
     for name in ("settings.json", "settings.local.json"):
         f = repo / ".claude" / name
@@ -527,29 +528,37 @@ def hook_registrations(repo):
             for group in groups:
                 matcher = group.get("matcher") or ""
                 for hk in group.get("hooks") or []:
-                    script = _hook_script_name(hk.get("command") or "")
-                    if script and (event, matcher) not in regs.get(script, []):
-                        regs.setdefault(script, []).append((event, matcher))
+                    command = hk.get("command") or ""
+                    script = _hook_script_name(command)
+                    entry = (event, matcher, command)
+                    if script and entry not in regs.get(script, []):
+                        regs.setdefault(script, []).append(entry)
     return regs
-
-def _hook_script_name(command):
-    """Basename of the script a hook command runs, or "" for inline commands."""
-    try:
-        tokens = shlex.split(command)
-    except ValueError:
-        tokens = command.split()
-    scripts = [t for t in tokens if t.endswith((".sh", ".py", ".js", ".cjs", ".mjs"))]
-    return Path(scripts[-1]).name if scripts else ""
 
 def _transcript_dir(repo):
     slug = "".join(c if c.isalnum() or c == "-" else "-" for c in str(repo))
     return CLAUDE_PROJECTS / slug
 
+def _resolve_persisted(text):
+    """(text, note) — for a persisted-output marker, the real output and its size."""
+    if not text.startswith(_PERSISTED_MARK):
+        return text, ""
+    size = text.partition("Output too large (")[2].partition(")")[0]
+    path = text.partition("saved to: ")[2].partition("\n")[0].strip()
+    note = (f"{size or 'large'} output — stored in a side file; Claude saw only "
+            "the first 2KB as a preview")
+    try:
+        return Path(path).read_text(errors="replace"), note
+    except OSError:
+        preview = text.partition("Preview (first 2KB):")[2].strip()
+        return preview or text, note + " (side file no longer exists; showing the preview)"
+
 def hook_transcript_runs(repo):
-    """Per-script hook activity from this repo's session transcripts.
+    """Per-script hook output from this repo's session transcripts.
 
     Counts are of runs that *produced output* (stdout, injected context, or an
     error) within HOOK_RUN_WINDOW_DAYS — the only runs a transcript records.
+    Samples are (when, hook name, kind, text, note), newest first.
     """
     tdir = _transcript_dir(repo)
     if not tdir.is_dir():
@@ -577,9 +586,8 @@ def hook_transcript_runs(repo):
                 script = _hook_script_name(att.get("command") or "")
                 if not script or not kind.startswith("hook"):
                     continue
-                ts = obj.get("timestamp") or ""
                 try:
-                    when = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+                    when = datetime.fromisoformat((obj.get("timestamp") or "").replace("Z", "+00:00"))
                 except ValueError:
                     continue
                 if when < cutoff:
@@ -604,13 +612,9 @@ def hook_transcript_runs(repo):
                                      kind, text.strip()))
     for r in runs.values():
         r["samples"].sort(key=lambda s: s[0], reverse=True)
-        del r["samples"][3:]
+        # Resolve side files only for the samples that are shown.
+        r["samples"] = [(w, n, k, *_resolve_persisted(t)) for w, n, k, t in r["samples"][:3]]
     return runs
-
-def _names_hook(text, stem):
-    """True when a header segment is just the hook's own name ("Agent-trace hook")."""
-    slug = text.lower().replace(" ", "-")
-    return slug in stem or stem in slug
 
 def hook_logged_runs(repo):
     """Per-hook runs from .claude/logs/hook-runs.jsonl, written by _run-hook.sh.
@@ -635,7 +639,7 @@ def hook_logged_runs(repo):
             if when < cutoff:
                 continue
             r = hooks.setdefault(rec.get("hook") or "?", {
-                "runs": 0, "blocked": 0, "errors": 0, "last": None, "tools": {}})
+                "runs": 0, "blocked": 0, "errors": 0, "last": None, "tools": {}, "recent": []})
             r["runs"] += 1
             code = rec.get("exit")
             if code == 2:
@@ -647,27 +651,24 @@ def hook_logged_runs(repo):
             tool = rec.get("tool")
             if tool:
                 r["tools"][tool] = r["tools"].get(tool, 0) + 1
+            r["recent"].append((when, rec.get("event"), tool, rec.get("target"), code))
+    for r in hooks.values():
+        r["recent"].sort(key=lambda x: x[0], reverse=True)
+        del r["recent"][HOOK_RECENT_RUNS:]
     return {"since": since, "hooks": hooks}
 
 def hook_purpose(repo, script):
-    """First header-comment line of the hook script that says what it does.
+    """The hook's `# purpose:` header line, verbatim — "" when it has none.
 
-    Headers often open with "name.sh — PostToolUse(Bash)"; the event and matcher
-    are already shown from settings.json, so those segments are dropped.
+    Each hook states its own one-line purpose at the source, so nothing here
+    guesses at free-text headers. A missing line shows on the dashboard.
     """
     f = repo / ".claude" / "hooks" / script
     if not f.exists():
         return ""
-    stem = script.removesuffix(".sh")
-    for line in f.read_text(errors="replace").splitlines()[1:12]:
-        if not line.strip().startswith("#"):
-            continue
-        parts = [p.strip() for p in line.strip().lstrip("#").split(" — ")]
-        kept = [p for p in parts if p and not p.endswith(".sh")
-                and not _names_hook(p, stem)
-                and not any(ev in p for ev in _HOOK_EVENT_ORDER)]
-        if kept:
-            return " — ".join(kept)
+    for line in f.read_text(errors="replace").splitlines()[:5]:
+        if line.startswith("# purpose:"):
+            return line.removeprefix("# purpose:").strip()
     return ""
 
 def read_last_routine_run(repo):
@@ -1887,77 +1888,141 @@ _HOOK_EVENT_COLOR = {
     "PreCompact": "#cba6f7", "UserPromptSubmit": "#fab387", "SubagentStart": "#f9e2af",
 }
 _HOOK_KIND_LABEL = {
-    "hook_success": "output", "hook_additional_context": "context",
+    "hook_success": "output", "hook_additional_context": "injected context",
     "hook_non_blocking_error": "error", "hook_cancelled": "cancelled",
     "hook_blocking_error": "blocked",
 }
+# When each event fires — shown for a hook with no runs, so "no runs" reads as
+# "its trigger did not happen", not as "broken".
+_HOOK_EVENT_WHEN = {
+    "SessionStart": "when a session starts or resumes",
+    "SessionEnd": "when a session ends",
+    "UserPromptSubmit": "on every prompt you send",
+    "PreToolUse": "before Claude calls a tool matching the matcher",
+    "PostToolUse": "after a tool call matching the matcher succeeds",
+    "PostToolUseFailure": "after a tool call matching the matcher fails",
+    "SubagentStart": "when a subagent is spawned",
+    "PreCompact": "before the context is compacted",
+    "Stop": "when Claude finishes a reply",
+}
+_HOOK_LABEL_CSS = ("font-size:9px;text-transform:uppercase;letter-spacing:1px;"
+                   "color:var(--overlay0);margin:12px 0 6px")
+_HOOK_ROW_CSS = ("padding:4px 0;border-bottom:1px solid rgba(49,50,68,0.4);"
+                 "font-size:11px;color:var(--subtext0)")
+_HOOK_MUTED = "color:var(--overlay0);font-size:11px"
 
-def _hook_log_cell(logged, since):
-    """Activity from the run log: every run counted, silent ones included."""
-    muted = "color:var(--overlay0);font-size:11px"
-    if not logged:
-        start = max(since, NOW - timedelta(days=HOOK_RUN_WINDOW_DAYS))
-        return f'<span style="{muted};font-style:italic">no runs since {h(start.strftime("%Y-%m-%d"))}</span>'
-    parts = [f'<span style="color:var(--text)">{logged["runs"]}× ran</span>']
-    if logged["blocked"]:
-        parts.append(f'<span style="color:var(--red)">{logged["blocked"]}× blocked</span>')
-    if logged["errors"]:
-        parts.append(f'<span style="color:var(--peach)">{logged["errors"]}× error</span>')
-    last = rel_time(logged["last"].isoformat()) if logged["last"] else "?"
-    return (f'<span style="font-size:11px">{" · ".join(parts)}</span>'
-            f'<span style="{muted};margin-left:6px">last {h(last)}</span>')
+def _hook_exit_label(code):
+    if code == 0:
+        return '<span style="color:var(--green)">ok</span>'
+    if code == 2:
+        return '<span style="color:var(--red)">blocked</span>'
+    if code is None:
+        return '<span style="color:var(--overlay0)">?</span>'
+    return f'<span style="color:var(--peach)">error {h(code)}</span>'
 
-def _hook_activity_cell(registered, run):
-    muted = "color:var(--overlay0);font-size:11px"
+def _hook_status_cell(registered, logged, since, run):
+    """The one-line activity summary in a hook's header row."""
     if not registered:
-        return f'<span style="{muted}">not wired in settings.json</span>'
-    if not run:
-        return (f'<span style="{muted};font-style:italic" title="Ran without printing '
-                f'anything, or its matcher never fired. Transcripts only record hook '
-                f'runs that produce output.">silent {HOOK_RUN_WINDOW_DAYS}d</span>')
-    parts = []
-    if run["spoke"]:
-        parts.append(f'<span style="color:var(--text)">{run["spoke"]}× output</span>')
-    if run["blocked"]:
-        parts.append(f'<span style="color:var(--red)">{run["blocked"]}× blocked</span>')
-    if run["errors"]:
-        parts.append(f'<span style="color:var(--peach)">{run["errors"]}× error</span>')
-    last = rel_time(run["last"].isoformat()) if run["last"] else "?"
-    return (f'<span style="font-size:11px">{" · ".join(parts)}</span>'
-            f'<span style="{muted};margin-left:6px">last {h(last)}</span>')
+        return f'<span style="{_HOOK_MUTED}">not wired in settings.json</span>'
+    if since:
+        if not logged:
+            start = max(since, NOW - timedelta(days=HOOK_RUN_WINDOW_DAYS))
+            return (f'<span style="{_HOOK_MUTED};font-style:italic">'
+                    f'no runs since {h(start.strftime("%Y-%m-%d"))}</span>')
+        counts = [f'<span style="color:var(--text)">{logged["runs"]}× ran</span>']
+        if logged["blocked"]:
+            counts.append(f'<span style="color:var(--red)">{logged["blocked"]}× blocked</span>')
+        if logged["errors"]:
+            counts.append(f'<span style="color:var(--peach)">{logged["errors"]}× error</span>')
+        last = logged["last"]
+    else:
+        if not run:
+            return (f'<span style="{_HOOK_MUTED};font-style:italic">no output in '
+                    f'{HOOK_RUN_WINDOW_DAYS}d (no run log yet)</span>')
+        counts = [f'<span style="color:var(--text)">{run["spoke"]}× printed</span>']
+        if run["blocked"]:
+            counts.append(f'<span style="color:var(--red)">{run["blocked"]}× blocked</span>')
+        if run["errors"]:
+            counts.append(f'<span style="color:var(--peach)">{run["errors"]}× error</span>')
+        last = run["last"]
+    when = rel_time(last.isoformat()) if last else "?"
+    return (f'<span style="font-size:11px">{" · ".join(counts)}</span>'
+            f'<span style="{_HOOK_MUTED};margin-left:6px">last {h(when)}</span>')
 
-def _hook_detail(run, written, logged=None):
-    blocks = []
-    label = ("font-size:9px;text-transform:uppercase;letter-spacing:1px;"
-             "color:var(--overlay0);margin:4px 0 6px")
-    row = ("padding:4px 0;border-bottom:1px solid rgba(49,50,68,0.4);"
-           "font-size:11px;color:var(--subtext0)")
-    if logged and logged["tools"]:
-        tools = " · ".join(f"{h(t)} {n}" for t, n in
-                           sorted(logged["tools"].items(), key=lambda tn: tn[1], reverse=True))
-        blocks.append(f'<div style="{label}">Triggered by (last {HOOK_RUN_WINDOW_DAYS}d)</div>'
-                      f'<div style="{row}">{tools}</div>')
+def _hook_detail(hook_file, purpose, triggers, logged, since, run, written):
+    """Expanded view: what it does, how it is wired, its runs, its output."""
+    parts = []
+
+    parts.append(f'<div style="{_HOOK_LABEL_CSS};margin-top:0">What it does</div>')
+    parts.append(
+        f'<div style="{_HOOK_ROW_CSS}">{h(purpose)}</div>' if purpose else
+        f'<div style="{_HOOK_ROW_CSS};font-style:italic">No <code># purpose:</code> line in '
+        f'<code>.claude/hooks/{h(hook_file)}</code> — add one under the shebang.</div>')
+
+    parts.append(f'<div style="{_HOOK_LABEL_CSS}">Wiring</div>')
+    if triggers:
+        for event, matcher, command in triggers:
+            logged_badge = ('<span style="color:var(--green)">run-logged</span>'
+                            if "_run-hook.sh" in command else
+                            '<span style="color:var(--peach)">not run-logged</span>')
+            parts.append(
+                f'<div style="{_HOOK_ROW_CSS}">'
+                f'<span style="color:{_HOOK_EVENT_COLOR.get(event, "#a6adc8")};font-weight:600">{h(event)}</span>'
+                f' · matcher <code>{h(matcher or "(all)")}</code> · {logged_badge}'
+                f' — fires {h(_HOOK_EVENT_WHEN.get(event, "on " + event))}'
+                f'<div style="{_HOOK_MUTED};margin-top:2px;word-break:break-all"><code>{h(command)}</code></div></div>')
+    else:
+        parts.append(f'<div style="{_HOOK_ROW_CSS}">Not registered in <code>.claude/settings.json</code>'
+                     ' — the file is installed but Claude Code never runs it.</div>')
+
+    if since and triggers:
+        parts.append(f'<div style="{_HOOK_LABEL_CSS}">Recent runs (last {HOOK_RUN_WINDOW_DAYS}d, newest first)</div>')
+        if logged:
+            for when, event, tool, target, code in logged["recent"]:
+                what = " · ".join(h(x) for x in (event, tool) if x)
+                parts.append(
+                    f'<div style="{_HOOK_ROW_CSS}">'
+                    f'<span style="{_HOOK_MUTED};margin-right:8px">{h(rel_time(when.isoformat()))}</span>'
+                    f'{_hook_exit_label(code)} <span style="margin:0 6px">{what}</span>'
+                    + (f'<code>{h(target)}</code>' if target else "") + '</div>')
+            if logged["runs"] > len(logged["recent"]):
+                parts.append(f'<div style="{_HOOK_MUTED};padding-top:4px">'
+                             f'…and {logged["runs"] - len(logged["recent"])} earlier runs</div>')
+            if not (run and run["samples"]):
+                parts.append(f'<div style="{_HOOK_MUTED};padding-top:4px">These runs printed nothing — '
+                             'the hook acts silently or found nothing to report.</div>')
+        else:
+            event = triggers[0][0]
+            parts.append(f'<div style="{_HOOK_ROW_CSS};font-style:italic">No runs since logging began '
+                         f'({h(since.strftime("%Y-%m-%d"))}). It fires '
+                         f'{h(_HOOK_EVENT_WHEN.get(event, "on " + event))}, and that has not happened '
+                         'in this repo since then.</div>')
+
     if run and run["samples"]:
-        items = "".join(
-            f'<div style="{row}">'
-            f'<span style="color:var(--overlay0);margin-right:8px">{h(rel_time(when.isoformat()))}</span>'
-            f'<span style="color:var(--mauve);margin-right:6px;font-size:9px">'
-            f'{h(_HOOK_KIND_LABEL.get(kind, kind))} · {h(name)}</span>'
-            f'{h(text[:240])}{"…" if len(text) > 240 else ""}</div>'
-            for when, name, kind, text in run["samples"])
-        blocks.append(f'<div style="{label}">Last runs that printed something</div>{items}')
+        parts.append(f'<div style="{_HOOK_LABEL_CSS}">What Claude received (last runs that printed)</div>')
+        for when, name, kind, text, note in run["samples"]:
+            shown = text if len(text) <= 4000 else text[:4000] + "\n…"
+            parts.append(
+                f'<div style="{_HOOK_ROW_CSS}">'
+                f'<span style="{_HOOK_MUTED};margin-right:8px">{h(rel_time(when.isoformat()))}</span>'
+                f'<span style="color:var(--mauve);font-size:9px">{h(_HOOK_KIND_LABEL.get(kind, kind))} · {h(name)}</span>'
+                + (f'<div style="color:var(--peach);font-size:10px;margin-top:3px">{h(note)}</div>' if note else "")
+                + f'<pre style="white-space:pre-wrap;max-height:220px;overflow:auto;margin:4px 0 0;'
+                  f'padding:6px 8px;background:var(--mantle);border-radius:4px;font-size:10px;'
+                  f'color:var(--subtext1)">{h(shown)}</pre></div>')
+
     if written:
-        items = "".join(
-            f'<div style="{row}">'
-            f'<span style="color:var(--mauve);margin-right:6px;font-size:9px">[{h(tag)}]</span>'
-            f'<span style="color:var(--overlay0);margin-right:8px">{len(entries)} rows · latest {h(entries[-1][0])}</span>'
-            f'{h(entries[-1][1][:200])}{"…" if len(entries[-1][1]) > 200 else ""}</div>'
-            for tag, entries in written)
-        blocks.append(f'<div style="{label};margin-top:10px">Observation rows this hook writes</div>{items}')
-    if not blocks:
-        return ""
+        parts.append(f'<div style="{_HOOK_LABEL_CSS}">Observation rows this hook writes</div>')
+        for tag, entries in written:
+            last_date, last_text = entries[-1]
+            parts.append(
+                f'<div style="{_HOOK_ROW_CSS}">'
+                f'<span style="color:var(--mauve);margin-right:6px;font-size:9px">[{h(tag)}]</span>'
+                f'<span style="{_HOOK_MUTED};margin-right:8px">{len(entries)} rows · latest {h(last_date)}</span>'
+                f'{h(last_text[:200])}{"…" if len(last_text) > 200 else ""}</div>')
+
     return (f'<div style="padding:10px 12px;background:rgba(0,0,0,0.15);'
-            f'border-top:1px solid var(--surface0)">{"".join(blocks)}</div>')
+            f'border-top:1px solid var(--surface0)">{"".join(parts)}</div>')
 
 def render_hooks_history(rd):
     hooks = rd["hooks"]
@@ -1973,42 +2038,35 @@ def render_hooks_history(rd):
     groups = {}
     for hook_file in hooks:
         triggers = regs.get(hook_file, [])
-        event = triggers[0][0] if triggers else "Not registered"
-        groups.setdefault(event, []).append(hook_file)
+        groups.setdefault(triggers[0][0] if triggers else "Not registered", []).append(hook_file)
 
-    n_wired  = sum(1 for f in hooks if f in regs)
-    if since:
-        active   = log["hooks"]
-        n_active = sum(1 for f in hooks if f in regs and f in active)
-        n_errors = sum(1 for f in hooks if active.get(f, {}).get("errors"))
-        active_label, idle_label = f"ran in {HOOK_RUN_WINDOW_DAYS}d", "did not run"
-    else:
-        n_active = sum(1 for f in hooks if f in regs and f in runs)
-        n_errors = sum(1 for f in hooks if runs.get(f, {}).get("errors"))
-        active_label, idle_label = f"printed output in {HOOK_RUN_WINDOW_DAYS}d", "silent"
+    wired = [f for f in hooks if f in regs]
+    source = log["hooks"] if since else runs
+    n_active = sum(1 for f in wired if f in source)
+    n_errors = sum(1 for f in wired if source.get(f, {}).get("errors"))
+    active_label = f"ran in {HOOK_RUN_WINDOW_DAYS}d" if since else f"printed output in {HOOK_RUN_WINDOW_DAYS}d"
+    idle_label = "did not run" if since else "silent"
     summary = (
-        f'<div style="display:flex;gap:18px;font-size:12px;color:var(--subtext0);margin:4px 0 14px">'
-        f'<span><strong style="color:var(--text)">{n_wired}</strong> wired</span>'
+        f'<div style="display:flex;flex-wrap:wrap;gap:18px;font-size:12px;color:var(--subtext0);margin:4px 0 14px">'
+        f'<span><strong style="color:var(--text)">{len(wired)}</strong> wired</span>'
         f'<span><strong style="color:var(--text)">{n_active}</strong> {active_label}</span>'
-        f'<span><strong style="color:var(--text)">{n_wired - n_active}</strong> {idle_label}</span>'
+        f'<span><strong style="color:var(--text)">{len(wired) - n_active}</strong> {idle_label}</span>'
         f'<span><strong style="color:var(--peach)">{n_errors}</strong> with errors</span>'
-        f'<span><strong style="color:var(--overlay0)">{len(hooks) - n_wired}</strong> not wired</span>'
+        f'<span><strong style="color:var(--overlay0)">{len(hooks) - len(wired)}</strong> not wired</span>'
         f'</div>')
 
     desc = section_desc(
-        "Hooks are shell scripts Claude Code runs at lifecycle events, grouped here by the event "
-        "they are wired to in <code>.claude/settings.json</code>. The <em>trigger</em> column is the "
-        "tool matcher (<em>always</em> = every time the event fires). "
-        + (f"Activity comes from <code>.claude/logs/hook-runs.jsonl</code> (logging since "
-           f"{h(since.strftime('%Y-%m-%d'))}), where <code>_run-hook.sh</code> records every run — "
-           "quiet ones included — with its exit code: 2 = blocked, other non-zero = error. "
+        "Hooks are scripts Claude Code runs at lifecycle events, grouped by the event they are "
+        "wired to in <code>.claude/settings.json</code>; the colored label is the tool matcher "
+        "(<em>always</em> = every time the event fires). "
+        + (f"Run counts come from <code>.claude/logs/hook-runs.jsonl</code> (logging since "
+           f"{h(since.strftime('%Y-%m-%d'))}), which records every run — quiet ones included — "
+           "with what triggered it and its exit code (2 = blocked). "
            if since else
-           f"No run log yet, so activity comes from session transcripts over the last "
-           f"{HOOK_RUN_WINDOW_DAYS} days, which record a hook run only when it prints something — "
-           "<strong style='color:var(--text)'>silent</strong> means it ran quietly or never matched. "
-           "Run <code>update.sh</code> to install the run logger. ")
-        + "Expand a hook to see what triggered it, its last outputs, and the observation tags "
-        "its source writes."
+           "No run log yet, so activity comes from session transcripts, which record a hook "
+           "only when it prints something. Run <code>update.sh</code> to install the run logger. ")
+        + "Click any hook for what it does, how it is wired, its recent runs, and the output "
+        "Claude received from it."
     )
 
     sections = ""
@@ -2021,41 +2079,37 @@ def render_hooks_history(rd):
         for hook_file in files:
             triggers = regs.get(hook_file, [])
             run = runs.get(hook_file)
-            descr = next((v for k, v in HOOK_DESCRIPTIONS.items()
-                          if hook_file.replace(".sh", "") in (k, f"{k}-hook")), "")
-            descr = descr or hook_purpose(repo, hook_file)
+            logged = log["hooks"].get(hook_file)
+            purpose = hook_purpose(repo, hook_file)
             trig = " · ".join(
                 (f"{ev}: " if ev != event else "") + (m or "always")
-                for ev, m in triggers) or "—"
-
+                for ev, m, _ in triggers) or "—"
             src = repo / ".claude" / "hooks" / hook_file
-            source = src.read_text(errors="replace") if src.exists() else ""
+            source_text = src.read_text(errors="replace") if src.exists() else ""
             written = sorted(((tag, entries) for tag, entries in obs.items()
-                              if f"[{tag}]" in source),
+                              if f"[{tag}]" in source_text),
                              key=lambda te: te[1][-1][0], reverse=True)
-
-            logged = log["hooks"].get(hook_file)
-            detail = _hook_detail(run, written, logged)
-            container, head = ("details", "summary") if detail else ("div", "div")
-            cursor = "cursor:pointer;" if detail else ""
+            detail = _hook_detail(hook_file, purpose, triggers, logged, since, run, written)
             rows += (
-                f'<{container} style="border:1px solid var(--surface0);border-radius:7px;'
+                f'<details style="border:1px solid var(--surface0);border-radius:7px;'
                 f'overflow:hidden;margin-bottom:6px">'
-                f'<{head} style="display:grid;grid-template-columns:200px 1fr 230px auto;'
-                f'gap:12px;align-items:center;padding:8px 12px;background:var(--base);{cursor}">'
+                f'<summary style="display:grid;grid-template-columns:200px 1fr 230px auto;'
+                f'gap:12px;align-items:center;padding:8px 12px;background:var(--base);cursor:pointer">'
                 f'<code style="color:var(--mauve);font-size:10px;overflow:hidden;'
                 f'text-overflow:ellipsis;white-space:nowrap">{h(hook_file)}</code>'
                 f'<span style="font-size:11px;color:var(--subtext0);min-width:0">'
                 f'<span style="color:{color};font-size:10px;font-weight:600;margin-right:8px">'
-                f'{h(trig)}</span>{h(descr)}</span>'
-                f'<span>{_hook_log_cell(logged, since) if since and triggers else _hook_activity_cell(bool(triggers), run)}</span>'
+                f'{h(trig)}</span>'
+                + (h(purpose) if purpose else f'<em style="{_HOOK_MUTED}">no purpose line</em>')
+                + f'</span><span>{_hook_status_cell(bool(triggers), logged, since, run)}</span>'
                 f'{badge("Wired", "active") if triggers else badge("Not wired", "inactive")}'
-                f'</{head}>{detail}</{container}>'
+                f'</summary>{detail}</details>'
             )
         sections += (
             f'<div style="margin:16px 0 6px;font-size:11px;font-weight:700;letter-spacing:0.8px;'
             f'text-transform:uppercase;color:{color}">{h(event)} '
-            f'<span style="color:var(--overlay0);font-weight:400">({len(files)})</span></div>'
+            f'<span style="color:var(--overlay0);font-weight:400">({len(files)}) — fires '
+            f'{h(_HOOK_EVENT_WHEN.get(event, "never: not registered"))}</span></div>'
             f'{rows}'
         )
 

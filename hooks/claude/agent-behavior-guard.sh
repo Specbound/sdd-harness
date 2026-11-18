@@ -1,4 +1,5 @@
 #!/bin/bash
+# purpose: Blocks risky agent actions: credential reads, data sent to unknown hosts, and shell-startup persistence.
 # Agent-behavior guard — PreToolUse (matcher: Read|Bash|WebFetch|WebSearch|mcp__.*).
 #
 # Ported from perplexityai/numbat's rule-engine design (network indicators,

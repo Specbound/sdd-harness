@@ -1,4 +1,5 @@
 #!/bin/bash
+# purpose: At session start, flags pending daily maintenance and any saved session handoff.
 # SDD Harness session-start hook
 # Checks if daily maintenance is pending and injects auto-trigger into session context.
 # Hook output appears as system context — Claude reads it before the first user message.

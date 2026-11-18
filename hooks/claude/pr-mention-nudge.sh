@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# purpose: When a prompt mentions a PR and the branch has none, starts the create-or-confirm PR flow.
 # pr-mention-nudge.sh — UserPromptSubmit hook
 #
 # Detects when the user mentions a PR in conversation and no PR exists yet for

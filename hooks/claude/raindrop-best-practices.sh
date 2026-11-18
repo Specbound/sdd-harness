@@ -1,4 +1,5 @@
 #!/bin/bash
+# purpose: When a Raindrop Workshop tool is called, injects observability best practices.
 # Fires PreToolUse (mcp__raindrop__) — injects active observability best practices
 # when any Raindrop Workshop tool is called.
 

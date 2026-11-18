@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# purpose: Blocks the end of a turn that claims success without verification, sending Claude back to check.
 # verification-retry-hook.sh — Stop hook: catches claimed-but-unverified success.
 #
 # Spotify Backstage AiKA decomposes "agent mode" into composable pre/post

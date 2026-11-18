@@ -1,4 +1,5 @@
 #!/bin/bash
+# purpose: After notable Bash actions, reminds Claude to save what was learned to memory (never blocks).
 # PostToolUse — soft gate that prompts memory capture after high-signal Bash actions.
 # Pattern: "memory from what agents DO, not just what they say" (Memori design principle).
 # Does NOT block — outputs a reminder; Claude decides whether to save.

@@ -20,6 +20,12 @@ Same ratchet as check-no-regex.py: existing offenders live in
   * a blocking hook with no test that is NOT on the ledger
   * a ledger entry that now has a test or no longer blocks (stale — remove it)
 
+It also requires every hook in hooks/claude/ to carry a `# purpose: <one sentence>`
+line in its first five lines. The dashboard's Hooks tab shows that line verbatim
+as the hook's description; guessing one from free-text header comments produced
+fragments and blanks. All hooks had the line when this check was added
+(2026-11-18), so it has no debt ledger: a hook without one fails the run.
+
 No regex. Detection is literal-token membership on comment-stripped lines.
 
 Usage:
@@ -48,6 +54,15 @@ BLOCK_TOKENS = (
     '"decision": "block"',
     '"decision":"block"',
 )
+
+
+PURPOSE_DIR = "hooks/claude"
+PURPOSE_PREFIX = "# purpose:"
+
+
+def has_purpose(path: Path) -> bool:
+    head = path.read_text(encoding="utf-8", errors="replace").splitlines()[:5]
+    return any(line.startswith(PURPOSE_PREFIX) and line[len(PURPOSE_PREFIX):].strip() for line in head)
 
 
 def is_hook(path: Path) -> bool:
@@ -122,6 +137,19 @@ def main(argv: list[str]) -> int:
             status = "untested" if str(h.relative_to(root)) in untested else "tested"
             print(f"{status:9} {h.relative_to(root)}  [{', '.join(sig)}]")
         return 0
+
+    no_purpose = sorted(str(h.relative_to(root)) for h in hooks
+                        if str(h.relative_to(root)).startswith(PURPOSE_DIR + "/") and not has_purpose(h))
+    if no_purpose:
+        print("=" * 74)
+        print("  HOOK GUARD — every hook in hooks/claude/ needs a purpose line")
+        print("=" * 74)
+        print()
+        for rel in no_purpose:
+            print(f"  {rel}")
+        print(f"\n  Add `{PURPOSE_PREFIX} <what it does, one sentence>` under the shebang.")
+        print("  The dashboard shows it as the hook's description.\n")
+        return 1
 
     ledger = load_ledger()
     new = sorted(untested - ledger)

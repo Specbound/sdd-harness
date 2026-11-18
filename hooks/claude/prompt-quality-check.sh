@@ -1,4 +1,5 @@
 #!/bin/bash
+# purpose: Scores every subagent prompt on 6 quality dimensions and shows the score to Claude.
 # Prompt Quality Gate — PreToolUse hook on Agent tool
 # Scores every agent prompt against 6 PQ dimensions (heuristic, no LLM required).
 # Outputs scored feedback to Claude's context (stdout) + appends to ~/.code-insights/pq-log.jsonl.

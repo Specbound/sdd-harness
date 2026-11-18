@@ -1,4 +1,5 @@
 #!/bin/bash
+# purpose: After a git push with an open PR, labels the PR green/yellow/red from risk-zones.md.
 # PR risk-tier hook — PostToolUse(Bash).
 # Fires after every Bash call; only acts on a plain (non-force) `git push`
 # with an open PR for the current branch — mirrors pr-auto-create-hook.sh's

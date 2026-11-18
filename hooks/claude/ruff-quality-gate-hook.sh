@@ -1,4 +1,5 @@
 #!/bin/bash
+# purpose: After a .py file is written, runs ruff on it and reports findings (never blocks).
 # ruff-quality-gate-hook — PostToolUse soft gate (Write/Edit/MultiEdit) on .py files.
 # CLAUDE.md's Quality Gates section claims "ruff check: on every .py file write" as
 # automated — until this hook, nothing actually ran it; a `Bash(ruff check *)`

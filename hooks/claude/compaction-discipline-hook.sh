@@ -1,4 +1,5 @@
 #!/bin/bash
+# purpose: Before compaction, injects rules for what the summary must preserve.
 # Fires PreCompact — injects boundary-timing and state-preservation principles
 # before every compaction so Claude applies them during summarization.
 

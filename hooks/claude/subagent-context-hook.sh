@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# purpose: Injects the harness's core conventions into each subagent at spawn.
 # subagent-context-hook.sh — SubagentStart
 #
 # Injects the harness's load-bearing conventions DIRECTLY into each spawned

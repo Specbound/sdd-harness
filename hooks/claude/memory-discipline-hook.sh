@@ -1,4 +1,5 @@
 #!/bin/bash
+# purpose: Before a memory file write, shows the memory quality rules so Claude can revise the entry.
 # Fires PreToolUse on Write|Edit — gates memory file writes with discipline rules.
 # Claude sees these rules before the write executes and can revise the content.
 set -euo pipefail

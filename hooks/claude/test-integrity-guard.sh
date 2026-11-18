@@ -1,4 +1,5 @@
 #!/bin/bash
+# purpose: Warns when a test file or CI/coverage config is weakened instead of the code being fixed.
 # test-integrity-guard — PostToolUse soft gate (Write/Edit/MultiEdit).
 # Pattern from Addy Osmani, "Agentic Code Review": agents take the cheapest path
 # to green — weakening tests or CI instead of fixing the code ("gradient descent

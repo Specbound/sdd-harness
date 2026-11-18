@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# purpose: Warns when more than one todo is marked in progress at once.
 # todo-focus-hook.sh — PostToolUse, matcher TodoWrite
 #
 # Enforces one in-progress todo at a time.

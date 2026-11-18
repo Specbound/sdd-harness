@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# purpose: Suggests delegating to a cheap model when one Bash command reads many files at once.
 # cheap-model-delegation-hook.sh — PreToolUse(Bash) advisory nudge.
 #
 # Fires when a single Bash command reads more than a handful of files at once

@@ -1,4 +1,5 @@
 #!/bin/bash
+# purpose: When the Skill tool is called for a library-tier skill, points Claude to its SKILL.md file.
 # PreToolUse(Skill) — resolve Library-tier skills the Skill tool cannot see.
 #
 # scripts/setup/sync-skills.sh installs every skill named in

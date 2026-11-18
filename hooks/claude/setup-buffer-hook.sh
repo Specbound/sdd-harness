@@ -1,4 +1,5 @@
 #!/bin/bash
+# purpose: Records install/setup-style Bash commands so the stop hook can save them to setup-knowledge.md.
 # setup-buffer-hook.sh — PostToolUse(Bash)
 # Accumulates setup-like commands to a per-session buffer.
 # The stop-hook reads this buffer and writes to .claude/memory/setup-knowledge.md.

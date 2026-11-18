@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# purpose: Warns that an edit to CLAUDE.md or AGENTS.md only takes effect in the next session.
 # claudemd-edit-notice.sh — PostToolUse (Write|Edit|MultiEdit)
 #
 # Warns that a just-written CLAUDE.md / AGENTS.md edit is NOT active in the

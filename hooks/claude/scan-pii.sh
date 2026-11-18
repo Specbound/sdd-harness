@@ -1,4 +1,5 @@
 #!/bin/bash
+# purpose: Scans files or staged changes for PII and secrets (a tool other scripts call, not wired as a hook).
 # PII scanner using OpenAI Privacy Filter (OPF)
 # Usage:
 #   scan-pii.sh --staged          # scan git-staged files

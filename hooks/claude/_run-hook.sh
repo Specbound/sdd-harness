@@ -1,4 +1,5 @@
 #!/bin/bash
+# purpose: Runs a hook command unchanged and logs each run to .claude/logs/hook-runs.jsonl.
 # _run-hook.sh — runs one hook command and logs that it ran.
 #
 # Claude Code writes a hook run into the session transcript only when the hook
@@ -14,7 +15,11 @@
 # and the wrapper appends one JSON line per run to
 # <project>/.claude/logs/hook-runs.jsonl:
 #
-#   {"ts", "hook", "event", "tool", "session", "exit", "ms"}
+#   {"ts", "hook", "event", "tool", "target", "session", "exit", "ms"}
+#
+# `target` is what the tool call acted on (skill name, subagent type, file path,
+# or the first 80 characters of a Bash command), so a run can be read without
+# opening the transcript. Prompt text is never logged.
 #
 # Contract: the wrapped command gets the same stdin, cwd and environment, and its
 # stdout, stderr and exit code reach Claude Code unchanged. The wrapper prints
@@ -61,6 +66,11 @@ else:
     # A binary with subcommands (`tool hook observe`): keep them, or every hook
     # that tool registers is logged under one name.
     hook = " ".join([cmd[0].rsplit("/", 1)[-1], *cmd[1:]])[:80]
+ti = p.get("tool_input") if isinstance(p.get("tool_input"), dict) else {}
+target = next((str(ti[k]) for k in ("skill", "subagent_type", "file_path", "notebook_path",
+                                    "path", "command", "url", "pattern") if ti.get(k)), None)
+if target:
+    target = " ".join(target.split())[:80]
 try:
     ms = round((float(end) - float(start)) * 1000)
 except ValueError:
@@ -70,6 +80,7 @@ rec = {
     "hook": hook,
     "event": p.get("hook_event_name"),
     "tool": p.get("tool_name"),
+    "target": target,
     "session": p.get("session_id"),
     "exit": int(rc),
     "ms": ms,

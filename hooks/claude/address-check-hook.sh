@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# purpose: Logs when a reply does not address the user as "Husband" (passive, never blocks).
 # address-check-hook.sh — Stop hook: verifies every response addresses the user as "Husband"
 #
 # Fires after each assistant turn. Reads the latest session transcript, finds the

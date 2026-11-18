@@ -1,4 +1,5 @@
 #!/bin/bash
+# purpose: After each reply, runs end-of-turn checks: update notice, memory health, overdue items, loop-debt, cost.
 # SDD Harness stop hook
 # 1. Check if harness has updates since last install
 # 2. Nudge /kiro:housekeeping if observations.md > 50 entries

@@ -1,4 +1,5 @@
 #!/bin/bash
+# purpose: After a frontend file is edited, runs the impeccable anti-pattern detector on it.
 # Impeccable anti-pattern detector — PostToolUse hook
 # Runs after Write/Edit tool calls on frontend files.
 # Requires: npm install -g impeccable  (one-time setup)

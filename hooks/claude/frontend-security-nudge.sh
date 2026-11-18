@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# purpose: When a prompt mentions frontend or UI work, reminds Claude to use the secure-agent-design skill.
 # frontend-security-nudge.sh — UserPromptSubmit hook
 #
 # Detects when the user is about to work on frontend, UI, or design tasks and

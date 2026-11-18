@@ -1,4 +1,5 @@
 #!/bin/bash
+# purpose: After a JS/TS file is written, runs oxlint or eslint on it and reports findings (never blocks).
 # js-quality-gate-hook — PostToolUse soft gate (Write/Edit/MultiEdit) on JS/TS files.
 #
 # The sibling of ruff-quality-gate-hook.sh, for the other half of the languages this

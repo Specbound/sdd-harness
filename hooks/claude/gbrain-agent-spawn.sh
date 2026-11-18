@@ -1,4 +1,5 @@
 #!/bin/bash
+# purpose: Before a subagent spawn, injects guidance on which model tier and run mode to pick.
 # Fires PreToolUse (Agent) — injects model-tier and background-routing guidance
 # before every subagent spawn so the right model and run mode are chosen.
 

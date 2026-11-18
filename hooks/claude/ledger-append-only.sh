@@ -1,4 +1,5 @@
 #!/bin/bash
+# purpose: Blocks edits to the harness's own score ledgers so the agent cannot alter its own measurements.
 # Hard block on Write/Edit/MultiEdit against the harness's own measurement
 # ledgers — the files the agent both computes and stores its own scores in.
 #

@@ -1,4 +1,5 @@
 #!/bin/bash
+# purpose: Starts the model router at session start and stops it at session end.
 # router-session-hook.sh — SessionStart/SessionEnd hook that keeps the model
 # router (sentinel + worker + jeff) running only while a harness-active
 # session needs it. Registered for both events; the event name in the hook

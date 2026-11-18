@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# purpose: Before gh pr create, warns when the PR body lacks verification evidence.
 # pr-evidence-hook.sh — PreToolUse(Bash) soft gate on `gh pr create`.
 #
 # A PR body that describes the change is the agent's own account of its work.

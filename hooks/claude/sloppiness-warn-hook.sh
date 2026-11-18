@@ -1,4 +1,5 @@
 #!/bin/bash
+# purpose: After a file is written, warns if its verbosity/erosion score crosses the AI-agent baseline.
 # Sloppiness warn hook — PostToolUse(Write|Edit|MultiEdit), soft, never blocks.
 # Scores the single file just written against scripts/quality/sloppiness-score.sh's
 # Verbosity/Erosion metrics (non-LLM-judge, see earendil.com "Measuring code

@@ -1,4 +1,5 @@
 #!/bin/bash
+# purpose: Warns before a git commit whose message lacks a Co-Authored-By trailer, which keep-rate needs.
 # agent-commit-attribution-hook.sh — PreToolUse(Bash)
 # Advisory. Fires before a `git commit` that supplies a message inline and warns
 # when that message carries no Co-Authored-By trailer.

@@ -41,7 +41,7 @@ wrap() { bash "$HOOKS/_run-hook.sh" "$@"; }
 # The logger runs in the background, so lines from earlier cases can land late
 # and in any order. Each logging case therefore uses its own session id and
 # finds its line by that id, never by position.
-payload_for() { printf '{"hook_event_name":"PreToolUse","tool_name":"Bash","session_id":"%s"}' "$1"; }
+payload_for() { printf '{"hook_event_name":"PreToolUse","tool_name":"Bash","session_id":"%s","tool_input":{"command":"git   status --short"}}' "$1"; }
 
 # field <session> <key> — one key from the log line for that session ("" if absent)
 field() {
@@ -118,6 +118,7 @@ if wait_for log-block; then
   [ "$(field log-block event)" = "PreToolUse" ]   && ok "log records the event"     || fail "log event" "$(field log-block event)"
   [ "$(field log-block tool)" = "Bash" ]          && ok "log records the tool"      || fail "log tool" "$(field log-block tool)"
   [ "$(field log-block exit)" = "2" ]             && ok "log records exit 2"        || fail "log exit" "$(field log-block exit)"
+  [ "$(field log-block target)" = "git status --short" ] && ok "log records the target (whitespace collapsed)" || fail "log target" "$(field log-block target)"
 else
   fail "log line written" "no line for session log-block in $LOG"
 fi

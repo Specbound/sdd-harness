@@ -1,4 +1,5 @@
 #!/bin/bash
+# purpose: Blocks destructive git/gh commands (force push, hard reset, branch deletion and similar).
 # Hard block on destructive git/gh operations, independent of settings.json's
 # declarative allow/deny list — that list has been observed to NOT reliably block
 # `git push --force` in some sessions even with an explicit deny entry present.

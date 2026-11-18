@@ -1,4 +1,5 @@
 #!/bin/bash
+# purpose: Blocks AI-sounding buzzwords in prose files, comments, commit messages and PR bodies.
 # AI-writing guard — PreToolUse (matcher: Write|Edit|MultiEdit|Bash), HARD DENY.
 #
 # Blocks AI-sounding buzzwords/cliches before they land in a file write/edit or

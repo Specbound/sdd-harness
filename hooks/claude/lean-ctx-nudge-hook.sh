@@ -1,4 +1,5 @@
 #!/bin/bash
+# purpose: Blocks native Read on large files (use ctx_read) and suggests lean-ctx after large edits.
 # lean-ctx nudge hook — dual-mode: PreToolUse(Read) hard gate + PostToolUse(Write|Edit) soft nudge.
 #
 # PreToolUse(Read): blocks a native Read on a large file before it spends

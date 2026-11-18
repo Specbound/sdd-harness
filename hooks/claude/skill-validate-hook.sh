@@ -1,4 +1,5 @@
 #!/bin/bash
+# purpose: Blocks writing a SKILL.md with a missing or mismatched name or description.
 # Skill quality gate: validates frontmatter before writing skill files.
 # Hard-blocks (exit 2) on missing/mismatched name or description.
 # Warns (exit 0) on vague description phrasing.

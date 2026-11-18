@@ -1,4 +1,5 @@
 #!/bin/bash
+# purpose: When a new hook file is written, reminds Claude to document and register it.
 # Fires PostToolUse (Write|Edit) — detects new hook files added to .claude/hooks/
 # and injects a documentation reminder into Claude's context.
 

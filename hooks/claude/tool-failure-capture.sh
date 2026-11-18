@@ -1,4 +1,5 @@
 #!/bin/bash
+# purpose: Records each failing Bash or MCP call in the per-repo tool-failure ledger.
 # Tool-failure capture hook — PostToolUseFailure (matcher: Bash|mcp__.*)
 #
 # Records every FAILING Bash or MCP tool call into a per-repo ledger keyed by a

@@ -1,4 +1,5 @@
 #!/bin/bash
+# purpose: In unattended routine runs only, injects stricter rules (one task, no pushes, escalate after two failures).
 # headless-envelope-hook — SessionStart. Injects a stricter operating envelope,
 # but ONLY when the session is an unattended `claude --print` routine run.
 #

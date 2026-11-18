@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# purpose: When a prompt mentions parsing documents or RAG, reminds Claude to use the document-parsing skill.
 # doc-parse-nudge.sh — UserPromptSubmit hook
 #
 # Detects when the user is about to parse documents or build RAG pipelines

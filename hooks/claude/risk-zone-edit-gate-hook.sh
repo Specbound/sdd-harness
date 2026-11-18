@@ -1,4 +1,5 @@
 #!/bin/bash
+# purpose: Warns before an edit lands in a red or yellow risk-zone file (never blocks).
 # Risk-zone edit gate — PreToolUse(Write|Edit|MultiEdit), soft gate.
 #
 # Reads .claude/steering/risk-zones.md (seeded weekly by

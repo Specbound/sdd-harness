@@ -1,4 +1,5 @@
 #!/bin/bash
+# purpose: After a SKILL.md is written, reminds Claude to review the skill's tool permissions.
 # PostToolUse — soft gate that fires when any SKILL.md is written or edited.
 # Skills are mini-agents: they direct Claude to take actions with tools.
 # This hook ensures every new skill is reviewed through agent-permissions-design
