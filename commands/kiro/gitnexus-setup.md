@@ -10,7 +10,7 @@ One-command setup for GitNexus code intelligence integration. Installs GitNexus,
 
 ## Parse Arguments
 
-- `--skip-embeddings`: Skip vector embeddings during indexing (faster, still useful)
+- `--skip-embeddings`: No-op, kept for back-compat — embeddings are off by default since gitnexus 1.6, which rejects this flag. Never pass it to `gitnexus analyze`
 - `--force`: Force re-index even if `.gitnexus/` already exists
 
 ## Step 1: Check / Install GitNexus
@@ -38,7 +38,7 @@ Check if `.gitnexus/` exists and `--force` was not passed:
 - If missing or `--force`: run indexing
 
 ```bash
-npx gitnexus analyze [--skip-embeddings if flag passed]
+npx gitnexus analyze
 ```
 
 Report indexing progress to the user. If indexing fails, show the error output and stop.

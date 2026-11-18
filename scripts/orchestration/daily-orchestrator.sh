@@ -339,6 +339,23 @@ run_one() {
     rm -f "$ms_errbuf"
   fi
 
+  # GitNexus catch-up reindex — post-commit only reindexes in autopilot worktrees
+  # with gitnexus on PATH (never under launchd), so indexes drift behind HEAD.
+  # Deterministic (no LLM call). Self-paces to weekly (MIN_GAP_DAYS=7); repos
+  # without .gitnexus/ exit 0 and repos already indexed at HEAD skip the analyze.
+  # Opt out with SDD_SKIP_GITNEXUS_REINDEX=1.
+  if [ "${SDD_SKIP_GITNEXUS_REINDEX:-0}" != "1" ] && [ -f "$repo/.claude/scripts/routines/gitnexus-reindex-runner.sh" ]; then
+    local gx_start=$(date +%s)
+    local gx_errbuf; gx_errbuf=$(mktemp)
+    (cd "$repo" && run_bounded bash .claude/scripts/routines/gitnexus-reindex-runner.sh) > /dev/null 2>"$gx_errbuf" < /dev/null
+    local gx_exit=$?
+    echo "$ts $repo gitnexus-reindex exit=$gx_exit duration=$(($(date +%s) - gx_start))s" >> "$LOG_FILE"
+    if [ "$gx_exit" -ne 0 ] && [ -s "$gx_errbuf" ]; then
+      { echo "--- $ts $repo gitnexus-reindex (exit=$gx_exit) ---"; cat "$gx_errbuf"; } >> "$ERR_LOG"
+    fi
+    rm -f "$gx_errbuf"
+  fi
+
   # Daily briefing — synthesizes a prioritized status digest from
   # .claude/memory/manager/{projects,people}.md plus connected live sources. Self-paces
   # to daily (MIN_GAP_DAYS=1); the runner's own deterministic guard no-ops for free

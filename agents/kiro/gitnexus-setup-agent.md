@@ -39,7 +39,7 @@ test -d .gitnexus/ && echo "exists" || echo "missing"
 ```
 
 - If exists and no `--force`: skip, report "Already indexed"
-- Otherwise: run `npx gitnexus analyze` (add `--skip-embeddings` if flagged)
+- Otherwise: run `npx gitnexus analyze` (never add `--skip-embeddings` — gitnexus 1.6+ rejects it; embeddings are off by default)
 
 Capture output. On failure, report first 20 lines of error and stop.
 
@@ -98,6 +98,6 @@ Trace: gitnexus-setup-agent | haiku | pass | setup
 
 ## Important Constraints
 - **Never overwrite settings.json** — always merge with existing content
-- **Respect --skip-embeddings** — faster indexing when user doesn't need semantic search
+- **`--skip-embeddings` is a no-op** — accepted for back-compat only; embeddings are already off by default
 - **Fail loudly** — if npm/node is missing, say so clearly and stop
 - **No cleanup** — if indexing fails midway, leave `.gitnexus/` for debugging

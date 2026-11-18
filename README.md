@@ -242,6 +242,7 @@ sdd-harness/
 │   │   ├── security-report-runner.sh
 │   │   ├── hook-config-audit-runner.sh # Weekly self-audit of the harness's own hooks/settings.json/.mcp.json (secrets, network-exfil, over-broad permissions)
 │   │   ├── model-staleness-runner.sh # Weekly (harness only): model mentions vs the live Claude lineup → .claude/reports/model-staleness.json
+│   │   ├── gitnexus-reindex-runner.sh # Weekly catch-up `gitnexus analyze` for indexed repos whose .gitnexus/ is behind HEAD
 │   │   ├── skill-write.sh        #     Single source of truth for writing any file inside a skill's directory (source + installed together)
 │   │   └── skill-delete.sh       #     Pairs with skill-write.sh — deletes both source and installed copies of a skill
 │   ├── session/                  #   Session signal processing
@@ -929,7 +930,7 @@ $SDD_HARNESS/install.sh --all
 | `install.sh --all` | Install into every project in `projects.txt`; skip already-installed ones |
 | `install.sh --all --force` | Re-sync **every** project, including installed ones — use this to roll out harness updates everywhere |
 | `install.sh --all --with-gitnexus` | Batch install and configure GitNexus on each project |
-| `install.sh --all --with-gitnexus --skip-embeddings` | Batch install with GitNexus indexing but skip the (slow) embeddings step |
+| `install.sh --all --with-gitnexus --skip-embeddings` | Same as above; `--skip-embeddings` is a back-compat no-op (embeddings are off by default since gitnexus 1.6) |
 
 Missing directories and non-git paths are reported and skipped; one failing project never aborts the batch. A final tally prints `installed / skipped / failed`. Machine-global setup (skills, global commands, Raindrop, the OS daily orchestrator) runs **once**, not per project.
 

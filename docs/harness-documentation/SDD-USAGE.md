@@ -583,7 +583,6 @@ See `docs/skills/skill-extraction/README.md` for full details on scoring, workfl
 
 ```
 /kiro:gitnexus-setup                    # install, index, configure MCP
-/kiro:gitnexus-setup --skip-embeddings  # faster indexing (no vectors)
 /kiro:gitnexus-setup --force            # force re-index
 ```
 

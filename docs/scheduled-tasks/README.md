@@ -174,6 +174,23 @@ Guards:
 
 ---
 
+### Weekly GitNexus Reindex
+**Runner:** `.claude/scripts/routines/gitnexus-reindex-runner.sh`
+**Cadence:** Weekly (`GITNEXUS_REINDEX_GAP_DAYS`, default 7; deterministic — no LLM call)
+**Scope:** Every registered repo that already has `.gitnexus/meta.json` (others exit 0; the runner never creates an index — that is `/kiro:gitnexus-setup`)
+
+**What it does:**
+- Catch-up for the post-commit reindex, which misses in three ways: it runs only in worktrees with `hooks.autopilot.enabled`, it needs `gitnexus`/`npx` on PATH (absent under launchd — node comes from mise shims, which only interactive shells activate), and until 2026-11-18 it passed `--skip-embeddings`, which gitnexus 1.6+ rejects. On 2026-11-18 three of five indexed repos were behind HEAD.
+- Compares `.gitnexus/meta.json` `lastCommit` with `git rev-parse HEAD`; equal → stamps and skips the analyze
+- Otherwise runs `gitnexus analyze --index-only` — a plain analyze rewrites the gitnexus block in `CLAUDE.md`/`AGENTS.md` (undoing `gitnexus-reconcile.sh`'s compact block) and would dirty every repo weekly (no embedding flag — off by default since 1.6, existing embeddings preserved). Resolves the binary via `GITNEXUS_BIN`, then `find_tool gitnexus`, then `$(mise_shims_dir)/gitnexus` from `scripts/lib/tool-paths.sh`; a mise shim runs from a bare PATH
+- Stamps `.claude/memory/.last-gitnexus-reindex` only on success, so a failed analyze retries the next daily tick; the analyze's stderr tail lands in `logs/orchestrator-errors.log`
+- Wired into `orchestration/daily-orchestrator.sh` `run_one()`
+- Tests: `scripts/routines/gitnexus-reindex-runner.test.sh` (fake `gitnexus` via `GITNEXUS_BIN`, throwaway repo)
+
+**Opt-out:** `SDD_SKIP_GITNEXUS_REINDEX=1` env var. Run now: `bash scripts/routines/gitnexus-reindex-runner.sh --force`.
+
+---
+
 ### Macro-Eval Sweep
 **Runner:** `.claude/scripts/routines/macro-eval-runner.sh`
 **Prompt:** `.claude/scripts/routines/macro-eval-prompt.md`

@@ -37,7 +37,11 @@ esac
 # Incremental reindex is fast (<5s for most repos), so it runs on every commit.
 if [ -d "$REPO_ROOT/.gitnexus" ]; then
   if command -v gitnexus >/dev/null 2>&1 || npx gitnexus --version >/dev/null 2>&1; then
-    (cd "$REPO_ROOT" && npx gitnexus analyze --skip-embeddings >/dev/null 2>&1 </dev/null) &
+    # No embedding flag: gitnexus 1.6+ rejects --skip-embeddings (embeddings are
+    # off by default now), and the failure was invisible behind 2>&1.
+    # --index-only: a plain analyze rewrites the gitnexus block in CLAUDE.md, so
+    # every commit would leave CLAUDE.md dirty.
+    (cd "$REPO_ROOT" && npx gitnexus analyze --index-only >/dev/null 2>&1 </dev/null) &
     echo "  post-commit: GitNexus reindex running in background..."
   fi
 fi

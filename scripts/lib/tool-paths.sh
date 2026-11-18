@@ -110,6 +110,17 @@ cargo_bin_dir() {
   echo "${CARGO_HOME:-$HOME/.cargo}/bin"
 }
 
+# mise_shims_dir — where mise keeps its shims (node, npm, gitnexus, ...). mise is
+# usually activated by an interactive shell rc only, so under launchd and hooks
+# neither mise nor its shims are on PATH; MISE_DATA_DIR is mise's documented
+# override, XDG default otherwise. A shim is a symlink to the mise binary and sets
+# up the tool's own PATH, so it runs from a bare environment. Deliberately NOT in
+# tool_bin_dirs: the shims include python3, and prepending them would change
+# which interpreter every hook gets.
+mise_shims_dir() {
+  echo "${MISE_DATA_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/mise}/shims"
+}
+
 # brew_bin_dir — ASK brew for its prefix. Hardcoding /opt/homebrew works only on
 # Apple Silicon and hardcoding /usr/local only on Intel; `brew --prefix` is right
 # on both, plus any custom prefix. Empty when brew is absent.

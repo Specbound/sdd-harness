@@ -34,8 +34,11 @@ The integration adds six automatic capabilities and one manual command:
 │    → all agents see blast radius automatically                          │
 │                                                                         │
 │  post-commit hook (every git commit)                                    │
-│    → runs gitnexus analyze --skip-embeddings in background              │
+│    → runs gitnexus analyze in background                                │
 │    → knowledge graph stays fresh without manual reindex                  │
+│                                                                         │
+│  gitnexus-reindex-runner.sh (weekly, daily orchestrator)               │
+│    → catch-up analyze when .gitnexus/ lastCommit is behind HEAD         │
 │                                                                         │
 │  verify-agent (Stage 0 — automatic)                                     │
 │    → detect_changes on git diff before build/test/lint                  │
@@ -119,7 +122,8 @@ All enhancements activate automatically when `.gitnexus/` exists. No commands ne
 
 | Component | Enhancement | Trigger |
 |---|---|---|
-| `post-commit` hook | Re-indexes repo (`gitnexus analyze --skip-embeddings`) in the background, fully detached (stdin `/dev/null`, stdout/stderr discarded) so it never prints into or blocks the terminal | Every `git commit`, except the hook's own `docs: auto-sync` commits (self-commit guard exits first) |
+| `post-commit` hook | Re-indexes repo (`gitnexus analyze --index-only`, so `CLAUDE.md`/`AGENTS.md` are not rewritten) in the background, fully detached (stdin `/dev/null`, stdout/stderr discarded) so it never prints into or blocks the terminal. Until 2026-11-18 it passed `--skip-embeddings`, which gitnexus 1.6+ rejects — and the discarded stderr hid every failure. Embeddings are off by default now, so no flag is needed | Every `git commit` in a worktree with `hooks.autopilot.enabled` and `gitnexus`/`npx` on PATH, except the hook's own `docs: auto-sync` commits (self-commit guard exits first) |
+| `scripts/routines/gitnexus-reindex-runner.sh` | Catch-up for everything the post-commit hook misses (non-autopilot worktrees, launchd PATH without node). Skips when `.gitnexus/meta.json` `lastCommit` equals HEAD; finds `gitnexus` via `find_tool` or the mise shims dir. See [scheduled tasks](../../scheduled-tasks/README.md#weekly-gitnexus-reindex) | Weekly, from the daily orchestrator, in every registered repo with `.gitnexus/` |
 | `PreToolUse` hook | Queries GitNexus for file context, injects into agent conversation | Every file read/edit |
 
 ## Use Cases
@@ -313,12 +317,13 @@ gitnexus clean --all --force  # delete all indexes
 |---|---|---|
 | `gitnexus: command not found` | Not installed globally | `npm install -g gitnexus` |
 | MCP tools not appearing in Claude | MCP server not configured | Run `/kiro:gitnexus-setup` or add `mcpServers` config manually |
-| Stale index (changes not reflected) | Index not updated after code changes | `gitnexus analyze` or enable post-commit hook |
+| Stale index (changes not reflected) | Index not updated after code changes | `gitnexus analyze`; the weekly `gitnexus-reindex-runner.sh` catches up on its own (`--force` to run now) |
+| `error: unknown option '--skip-embeddings'` | gitnexus 1.6+ removed the flag | Drop it — embeddings are off by default; `--drop-embeddings` removes existing ones |
 | Web UI won't load | Port 4567 in use | Kill other process or use `gitnexus serve --port 4568` |
 | Dashboard GitNexus tab says "GitNexus not running" or "GitNexus API returned HTTP 404" | `gitnexus serve` is down, or is up on a port other than 4747 | Start `gitnexus serve` (the tab's ▶ button does this) and confirm `curl http://localhost:4747/api/repos` answers — the tab probes that endpoint, not `/` |
 | `detect_changes` returns empty | No uncommitted changes | Make changes first, or use `gitnexus impact --from HEAD~1` |
 | Stage 0 skipped in verify | GitNexus MCP not available | Expected behavior — Stage 0 is opt-in |
-| Slow initial index | Large repo with embeddings | Use `gitnexus analyze --skip-embeddings` for faster indexing |
+| Slow initial index | Large repo with embeddings | Leave off `--embeddings` (default since gitnexus 1.6) |
 
 ---
 
