@@ -291,6 +291,73 @@ def build_ladder(models: dict, tier_families: list) -> Ladder:
     return Ladder(groups=groups, canonical=canonical, rung_of=rung_of)
 
 
+@dataclass(frozen=True)
+class FamilyList:
+    """The newest-per-family list (R5.11, Key Decision 5): one slot per family.
+
+    `slots[i]` is the canonical id of family `families[i]`'s highest enabled
+    generation, weakest family (0) first. Policy targets index this list,
+    never the full rung ladder, so an older generation is never a target.
+    """
+
+    slots: list = field(default_factory=list)  # list[str], canonical id per slot
+    families: list = field(default_factory=list)  # list[str], family per slot
+
+    def __len__(self) -> int:
+        return len(self.slots)
+
+    def slot_of(self, model_id: str) -> int | None:
+        """Slot of `model_id`'s *family* — any generation, dated or not, discovered or not."""
+        family, _ = _parse_family_generation(model_id)
+        try:
+            return self.families.index(family)
+        except ValueError:
+            return None
+
+    def model_at(self, slot: int) -> str | None:
+        """Canonical id at `slot`. Non-negative only: policy clamps, it never wraps."""
+        if 0 <= slot < len(self.slots):
+            return self.slots[slot]
+        return None
+
+
+def build_family_list(ladder: Ladder, tier_families: list, is_enabled) -> FamilyList:
+    """Pick each family's newest enabled generation and order the families.
+
+    Groups the ladder's entries by `(family, generation)` itself rather than by
+    rung, because the ladder pools every undeclared family onto one shared rung.
+    Each group's canonical id follows the ladder's rule (undated first, then
+    cheapest, then id). A generation counts as enabled when its canonical id
+    is — `is_enabled(model_id) -> bool`. Declared families keep
+    `[tier_families]` order; undeclared ones follow, ordered by the input price
+    of their chosen id (R5.3), family name breaking an exact price tie.
+    """
+    by_generation: dict = {}
+    for group in ladder.groups:
+        for entry in group:
+            by_generation.setdefault((entry.family, entry.generation), []).append(entry)
+
+    newest: dict = {}  # family -> (generation, canonical id, input price)
+    for (family, generation), entries in by_generation.items():
+        undated = [e for e in entries if not _has_date_suffix(e.model_id)]
+        pool = undated or entries
+        chosen = min(pool, key=lambda e: (float(e.prices.get("input", 0.0)), e.model_id))
+        if not is_enabled(chosen.model_id):
+            continue
+        if family not in newest or generation > newest[family][0]:
+            newest[family] = (generation, chosen.model_id, float(chosen.prices.get("input", 0.0)))
+
+    # dict.fromkeys dedupes a repeated `[tier_families]` name, keeping its
+    # first position — a duplicate must never give one family two slots.
+    declared = [name for name in dict.fromkeys(tier_families) if name in newest]
+    undeclared = sorted(
+        (name for name in newest if name not in declared),
+        key=lambda name: (newest[name][2], name),
+    )
+    ordered = declared + undeclared
+    return FamilyList(slots=[newest[name][1] for name in ordered], families=ordered)
+
+
 def _validate_override(entry) -> str | None:
     """Rejection reason for one `[overrides.<id>]` table, or None when well-formed."""
     if not isinstance(entry, dict):
@@ -298,6 +365,94 @@ def _validate_override(entry) -> str | None:
     if "enabled" in entry and not isinstance(entry["enabled"], bool):
         return "enabled must be true or false"
     return None
+
+
+def _dedupe_tier_families(order: list) -> tuple:
+    """Split `[tier_families].order` into `(kept, rejected)` (R5.8).
+
+    A family named twice is an invalid entry: the first occurrence is kept and
+    each repeat is rejected with a stated cause. Doing this once at load means
+    `build_ladder` and `build_family_list` always see the same order, instead
+    of each resolving the repeat its own way (last vs first position).
+    """
+    kept, rejected = [], {}
+    for name in order:
+        if name in kept:
+            rejected[name] = (
+                f"duplicate family in [tier_families].order; first position "
+                f"({kept.index(name)}) kept"
+            )
+        else:
+            kept.append(name)
+    return kept, rejected
+
+
+# Keys a pre-step `router.toml` carried (design.md Key Decision 5). Present ->
+# recorded as deprecated with a cause and otherwise ignored; never an error.
+_DEPRECATED_POLICY_KEYS = {
+    "safe_default": "replaced by safe_default_step (a step, never a model id); key ignored",
+    "long_context_model": (
+        "replaced by the long-context walk gated by long_context_tokens; key ignored"
+    ),
+}
+
+
+def _is_int(value) -> bool:
+    # bool is an int subclass; `max = true` is a typo, not a score bound.
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
+def _lane_shape_fault(lane_tbl) -> str | None:
+    """Why one `[policy.lanes.<name>]` entry is structurally unusable, or None.
+
+    Catches the shapes that used to crash load (`code = 5` → `.get` on an int)
+    or silently misparse (a string `score_buckets` iterated per character).
+    `rung`-vs-`step` is judged separately by the caller.
+    """
+    if not isinstance(lane_tbl, dict):
+        return f"lane must be a table, got {type(lane_tbl).__name__}"
+    buckets = lane_tbl.get("score_buckets")
+    if buckets is None:
+        return None
+    if not isinstance(buckets, list):
+        return f"score_buckets must be an array, got {type(buckets).__name__}"
+    for index, bucket in enumerate(buckets):
+        if not isinstance(bucket, dict):
+            return f"score_buckets[{index}] must be a table, got {type(bucket).__name__}"
+        for key in ("max", "step"):
+            if key in bucket and not _is_int(bucket[key]):
+                return f"score_buckets[{index}].{key} must be an integer"
+    return None
+
+
+def _split_lanes(lanes_tbl: dict) -> tuple:
+    """Split `[policy.lanes.*]` into `(lanes, rejected_lanes)` (R5.8, R5.12).
+
+    A bucket with `rung` but no `step` is the pre-step shape: an absolute
+    ladder index that would be misread as a relative step. Its whole lane is
+    dropped with a stated cause — a lane with a hole in its score bands is
+    not a lane — and every other lane is kept.
+    """
+    lanes, rejected = {}, {}
+    for lane_name, lane_tbl in lanes_tbl.items():
+        shape_fault = _lane_shape_fault(lane_tbl)
+        if shape_fault is not None:
+            rejected[lane_name] = f"{shape_fault}; lane dropped"
+            continue
+        buckets = list(lane_tbl.get("score_buckets") or [])
+        legacy = [
+            index
+            for index, bucket in enumerate(buckets)
+            if isinstance(bucket, dict) and "rung" in bucket and "step" not in bucket
+        ]
+        if legacy:
+            rejected[lane_name] = (
+                f"score_buckets {legacy} have `rung` but no `step` (pre-step shape); "
+                "lane dropped — rewrite each bucket as `step = <int <= 0>`"
+            )
+        else:
+            lanes[lane_name] = buckets
+    return lanes, rejected
 
 
 @dataclass(frozen=True)
@@ -318,6 +473,9 @@ class RouterConfig:
     overrides: dict
     rejected_overrides: dict
     local: dict
+    rejected_tier_families: dict = field(default_factory=dict)
+    rejected_lanes: dict = field(default_factory=dict)
+    deprecated_keys: dict = field(default_factory=dict)
 
     def context_window(self, model_id: str) -> int:
         return self.context_window_overrides.get(model_id, self.context_window_default)
@@ -346,9 +504,10 @@ def load_policy(path: Path) -> tuple:
     context_windows = dict(raw.get("context_windows") or {})
     context_default = context_windows.pop("default", 0)
 
-    lanes = {}
-    for lane_name, lane_tbl in (policy_tbl.get("lanes") or {}).items():
-        lanes[lane_name] = list((lane_tbl or {}).get("score_buckets") or [])
+    lanes, rejected_lanes = _split_lanes(policy_tbl.get("lanes") or {})
+    deprecated_keys = {
+        key: cause for key, cause in _DEPRECATED_POLICY_KEYS.items() if key in policy_tbl
+    }
 
     overrides, rejected_overrides = {}, {}
     for model_id, entry in (raw.get("overrides") or {}).items():
@@ -359,12 +518,15 @@ def load_policy(path: Path) -> tuple:
             overrides[model_id] = entry
 
     thresholds = {
-        "safe_default": policy_tbl.get("safe_default"),
+        "safe_default_step": policy_tbl.get("safe_default_step"),
         "confidence_floor": policy_tbl.get("confidence_floor"),
         "privacy_threshold": policy_tbl.get("privacy_threshold"),
         "long_context_tokens": policy_tbl.get("long_context_tokens"),
-        "long_context_model": policy_tbl.get("long_context_model"),
     }
+
+    tier_families, rejected_tier_families = _dedupe_tier_families(
+        list((raw.get("tier_families") or {}).get("order") or [])
+    )
 
     policy = RouterConfig(
         schema_version=raw.get("schema_version", 0),
@@ -374,13 +536,16 @@ def load_policy(path: Path) -> tuple:
         thresholds=thresholds,
         escalation_window_s=policy_tbl.get("escalation_window_s", 0),
         max_tiers_above_baseline=policy_tbl.get("max_tiers_above_baseline", 0),
-        tier_families=list((raw.get("tier_families") or {}).get("order") or []),
+        tier_families=tier_families,
         lanes=lanes,
         context_window_default=context_default,
         context_window_overrides=context_windows,
         overrides=overrides,
         rejected_overrides=rejected_overrides,
         local=dict(raw.get("local") or {}),
+        rejected_tier_families=rejected_tier_families,
+        rejected_lanes=rejected_lanes,
+        deprecated_keys=deprecated_keys,
     )
     return policy, None
 
@@ -394,11 +559,22 @@ class Catalog:
     ladder: Ladder | None
     policy: RouterConfig | None
     rejected_models: dict = field(default_factory=dict)
+    families: FamilyList | None = None
 
     def rung_of(self, model_id: str) -> int | None:
         if self.ladder is None:
             return None
         return self.ladder.rung_of.get(model_id)
+
+    def slot_of(self, model_id: str) -> int | None:
+        if self.families is None:
+            return None
+        return self.families.slot_of(model_id)
+
+    def model_at_slot(self, slot: int) -> str | None:
+        if self.families is None:
+            return None
+        return self.families.model_at(slot)
 
     def model_at_rung(self, rung: int) -> str | None:
         if self.ladder is None:
@@ -447,4 +623,5 @@ def load_catalog(router_toml_path: Path, catalogue_path: Path | None = None) -> 
         ladder=ladder,
         policy=policy,
         rejected_models=rejected_models,
+        families=build_family_list(ladder, policy.tier_families, policy.is_enabled),
     )

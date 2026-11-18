@@ -386,6 +386,41 @@ check "I: worker is NOT registered (its own load call is what failed)" "1" "$( [
 check_not_contains "I: settings.json was never wired — cmd_install died before preflight/write" "$settings_i" "127.0.0.1:8799"
 check_contains "I: failure message names the launchctl load failure" "$out_i" "launchctl load failed"
 
+# ── Scenario J: a pre-step router.toml is preserved and flagged, never
+# clobbered (task 14.4). The notice is printed by ensure_router_toml, before
+# preflight, so it is asserted from output regardless of how install ends.
+new_home "J"
+mkdir -p "$H/.sdd-router"
+cat > "$H/.sdd-router/router.toml" <<'TOML'
+[router]
+port = 8799
+upstream = "https://example.invalid"
+
+[policy]
+safe_default = "<catalog key>"
+long_context_model = "<catalog key>"
+
+[policy.lanes.code]
+score_buckets = [ { max = 10, rung = 0 } ]
+TOML
+before_j="$(router_toml)"
+run install >"$ROOT/out-J.log" 2>&1
+out_j="$(cat "$ROOT/out-J.log")"
+check "J: legacy router.toml is left byte-for-byte as it was" "$before_j" "$(router_toml)"
+check_contains "J: setup prints a migrate notice" "$out_j" "migrate"
+check_contains "J: notice names the rung buckets" "$out_j" "[policy.lanes.code] rung buckets"
+# Exact "[policy].<key>" forms: the notice's own fixed text already says
+# "safe_default_step", so a bare "safe_default" needle would pass vacuously.
+check_contains "J: notice names safe_default" "$out_j" "[policy].safe_default,"
+check_contains "J: notice names long_context_model" "$out_j" "[policy].long_context_model"
+check "J: notice is one line" "1" "$(grep -c "migrate" "$ROOT/out-J.log")"
+
+# ── Scenario K: a fresh install from the shipped template needs no migration
+new_home "K"
+run install >"$ROOT/out-K.log" 2>&1
+check_not_contains "K: fresh template install prints no migrate notice" "$(cat "$ROOT/out-K.log")" "migrate"
+check_contains "K: fresh template uses safe_default_step" "$(router_toml)" "safe_default_step"
+
 echo ""
 echo "$PASS passed, $FAIL failed"
 rm -rf "$ROOT"

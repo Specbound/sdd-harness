@@ -360,6 +360,24 @@ class LedgerOutcomeValidationTests(_TempLedgerTestCase):
         self.assertFalse(self.ledger_path.exists())
         self.assertFalse(self.stats_path.exists())
 
+    # Verifies: specs/model-router/requirements.md#6.4
+    def test_every_policy_selection_reason_is_recordable(self) -> None:
+        # server.py records `Selection.reason` verbatim (task 14.3), so every
+        # reason policy.py can emit must pass the ledger's validation.
+        from policy import REASONS
+
+        for reason in sorted(REASONS):
+            with self.subTest(reason=reason):
+                self.ledger.append(_record(reason=reason), rung_of=_rung_of)
+
+    # Verifies: specs/model-router/requirements.md#6.4
+    def test_unknown_reason_still_raises_before_touching_any_file(self) -> None:
+        with self.assertRaises(LedgerError):
+            self.ledger.append(_record(reason="bogus"))
+
+        self.assertFalse(self.ledger_path.exists())
+        self.assertFalse(self.stats_path.exists())
+
 
 class LedgerCacheCounterfactualTests(_TempLedgerTestCase):
     def _last_row(self) -> dict:

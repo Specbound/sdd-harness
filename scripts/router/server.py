@@ -21,13 +21,11 @@ section describes, matching its worked `handle()` pseudocode almost exactly:
 Named decisions this module makes that no shipped module already covers
 (flagged here rather than silently, per the task that produced this file):
 
-- **Reason derivation** (`_derive_reason`). `policy.select()` returns only a
-  model id, with no breadcrumb for *which* precedence branch fired, and its
-  branch-check helpers are private (`_privacy_pick` etc.) and must not be
-  imported. This independently re-checks the same three threshold fields
-  `select()` itself reads off `catalog.policy.thresholds`, in the same
-  priority order — a deliberate, documented duplication of three comparisons
-  (not of `select()`'s actual branching logic).
+- **Reason and outcome** (task 14.3). The ledger `reason` is
+  `Selection.reason` verbatim — the stage that decided, never re-derived
+  here. `outcome` is model equality: a selection equal to the inbound id is
+  `passthrough` and the original bytes go out unrewritten (R5.13), whatever
+  its reason.
 - **Streaming vs. non-streaming usage extraction** (`_usage_from_json_body`).
   `stream.py`'s `StreamTee` parses SSE `data:` lines and does not recognize a
   plain JSON body. A non-streaming Anthropic response is one deliverable
@@ -131,6 +129,9 @@ _DEFAULT_ESCALATION_WINDOW_S = 120
 # per-request timeout; `classify.py`'s own `timeout_ms` governs those.
 _STARTUP_PROBE_TIMEOUT_S = 0.5
 
+# R5.14: the classifier must have at least two lanes to choose between.
+_MIN_LANES = 2
+
 
 def _forward_headers(headers) -> dict[str, str]:
     """Copy a client header set, dropping hop-by-hop headers (RFC 7230 6.1)
@@ -227,38 +228,6 @@ def _escalation_window_s(catalog: Catalog) -> int:
     return catalog.policy.escalation_window_s if catalog.policy is not None else _DEFAULT_ESCALATION_WINDOW_S
 
 
-def _derive_reason(catalog: Catalog, decision: Decision, token_estimate: int) -> str:
-    """Re-derive *why* a successful `select()` call picked what it picked.
-
-    See module docstring's "Reason derivation" note — a deliberate,
-    documented duplication of three threshold comparisons, in the same
-    priority order `select()` itself uses, not of its branching logic.
-    """
-    thresholds = catalog.policy.thresholds if catalog.policy is not None else {}
-    # `.get(key, default)` only applies `default` when the key is *absent* —
-    # config.py's real `_parse_router_config` always populates all 5 keys,
-    # leaving the value `None` when unset in router.toml, so an explicit
-    # None-coalesce is required here (not just a `.get` default) to avoid
-    # `decision.gate_p > None` / `decision.confidence < None` raising.
-    privacy_threshold = thresholds.get("privacy_threshold")
-    if privacy_threshold is None:
-        privacy_threshold = float("inf")
-    confidence_floor = thresholds.get("confidence_floor")
-    if confidence_floor is None:
-        confidence_floor = 0.0
-    long_context_tokens = thresholds.get("long_context_tokens")
-    if long_context_tokens is None:
-        long_context_tokens = float("inf")
-
-    if decision.gate_p is not None and decision.gate_p > privacy_threshold:
-        return "privacy_gate"
-    if decision.confidence is not None and decision.confidence < confidence_floor:
-        return "low_confidence"
-    if token_estimate > long_context_tokens:
-        return "long_context"
-    return "policy"
-
-
 def _usage_from_json_body(raw: bytes) -> UsageResult:
     """Usage for a non-streaming Anthropic response (module docstring's
     "Streaming vs. non-streaming usage extraction" note) — reads the single
@@ -295,17 +264,49 @@ def _probe_reachable(base_url: str) -> bool:
     return True
 
 
+def _report_config_rejections(catalog: Catalog) -> None:
+    """One WARNING line per rejected or deprecated config entry (R5.8).
+
+    `config.py` rejects entries, not the file, and records each cause on the
+    catalog; this is where those causes become visible in the startup log.
+    """
+    for model_id, cause in catalog.rejected_models.items():
+        logger.warning("startup: config: discovered model %s rejected — %s", model_id, cause)
+    policy = catalog.policy
+    if policy is None:
+        return
+    for lane, cause in policy.rejected_lanes.items():
+        logger.warning("startup: config: [policy.lanes.%s] rejected — %s", lane, cause)
+    for key, cause in policy.deprecated_keys.items():
+        logger.warning("startup: config: [policy].%s is deprecated — %s", key, cause)
+    for model_id, cause in policy.rejected_overrides.items():
+        logger.warning("startup: config: [overrides.%s] rejected — %s", model_id, cause)
+    for family, cause in policy.rejected_tier_families.items():
+        logger.warning("startup: config: [tier_families] %s rejected — %s", family, cause)
+
+
 def _build_classifier(catalog: Catalog) -> Classifier:
     """Construct the configured classifier, falling back to `NullClassifier`
-    (R2.5) rather than crashing the process: missing policy, an explicitly
-    disabled backend, or a malformed `base_url` degrade to pass-through
-    instead. An unreachable backend is logged only: requests pass through via
-    the classifier's own fail-open and circuit breaker until it comes up.
+    (R2.5) rather than crashing the process: missing policy, fewer than two
+    configured lanes (R5.14), an explicitly disabled backend, or a malformed
+    `base_url` degrade to pass-through instead. An unreachable backend is
+    logged only: requests pass through via the classifier's own fail-open and
+    circuit breaker until it comes up.
     """
     policy = catalog.policy
     if policy is None:
         logger.warning(
             "startup: no router policy loaded (%s) — pass-through mode, no classifier", catalog.cause
+        )
+        return NullClassifier()
+
+    lanes = tuple(policy.lanes.keys())
+    if len(lanes) < _MIN_LANES:
+        # R5.14: one lane leaves the classifier nothing to choose between.
+        logger.warning(
+            "startup: configuration fault — fewer than two [policy.lanes.*] configured (%s) "
+            "— pass-through mode, no classifier",
+            ", ".join(lanes) or "none",
         )
         return NullClassifier()
 
@@ -323,7 +324,7 @@ def _build_classifier(catalog: Catalog) -> Classifier:
             timeout_ms=classifier_cfg.get("timeout_ms", 400),
             circuit_open_s=classifier_cfg.get("circuit_open_s", 60),
             scale_max=classifier_cfg.get("scale_max", 10),
-            lanes=tuple(policy.lanes.keys()),
+            lanes=lanes,
         )
     except ValueError as exc:
         logger.warning(
@@ -410,9 +411,13 @@ class RouterHandler(BaseHTTPRequestHandler):
                 )
                 escalation = Escalation(active=pending.active, previous_model=pending.previous_model)
                 decision = classifier.classify(last_text)
-                target = select(decision, catalog, baseline, token_estimate, escalation)
+                selection = select(decision, catalog, baseline, token_estimate, escalation)
+                # The reason names the stage that decided (Key Decision 5).
+                # Outcome is model equality, not reason: a selection that
+                # lands on the inbound id (same_slot, no_slot, gate-to-
+                # baseline, no step) is a passthrough with no rewrite (R5.13).
+                target, reason = selection.model, selection.reason
                 outcome = "applied" if target != baseline else "passthrough"
-                reason = _derive_reason(catalog, decision, token_estimate)
             except ClassifierUnavailable as exc:
                 logger.warning("fail-open: %s", exc)
                 decision, target, outcome, reason = None, baseline, "failed_open", "no_classifier"
@@ -647,6 +652,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     catalog = load_catalog(args.router_toml, args.catalogue_path)
+    _report_config_rejections(catalog)
     if catalog.policy is None or not catalog.policy.upstream:
         # Startup-fatal, not a per-request fail-open path — a worker with no
         # discoverable upstream cannot satisfy R4.* no matter what it does

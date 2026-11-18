@@ -25,7 +25,9 @@
 #      install 3.12` — never a bare `python3` (R10.8: this machine's system
 #      python3 lacks `tomllib`).
 #   2. Writes ~/.sdd-router/router.toml from the template when absent; never
-#      overwrites an existing one.
+#      overwrites an existing one. An existing file still in the pre-step
+#      shape (`rung =` lane buckets, `safe_default` / `long_context_model`
+#      keys) is left as-is with a one-line notice to migrate it by hand.
 #   3. First run only (empty [router].upstream): discovers the current
 #      upstream — global ~/.claude/settings.json env.ANTHROPIC_BASE_URL, else
 #      this shell's ANTHROPIC_BASE_URL (e.g. headroom exported from a shell
@@ -93,11 +95,48 @@ ensure_router_toml() {
   mkdir -p "$ROUTER_DIR"
   if [ -f "$ROUTER_TOML" ]; then
     note "router.toml already present at $ROUTER_TOML — left as-is."
+    warn_legacy_router_toml
   else
     [ -f "$TEMPLATE_PATH" ] || die "template not found: $TEMPLATE_PATH"
     cp "$TEMPLATE_PATH" "$ROUTER_TOML"
     note "Wrote router.toml from template to $ROUTER_TOML."
   fi
+}
+
+# warn_legacy_router_toml — one-line notice when an existing router.toml is
+# still in the pre-step shape (design.md Key Decision 5). Read-only tomllib,
+# structured keys only — never a text match. The file is never rewritten
+# here: it is the user's, and the worker already rejects a `rung` lane with a
+# stated cause rather than misreading it. An unparseable file prints nothing;
+# read_router_fields reports that failure itself.
+warn_legacy_router_toml() {
+  local legacy
+  legacy="$(ROUTER_TOML_PATH="$ROUTER_TOML" "$PYBIN" - <<'PY' 2>/dev/null
+import os
+import tomllib
+
+with open(os.environ["ROUTER_TOML_PATH"], "rb") as f:
+    data = tomllib.load(f)
+policy = data.get("policy")
+if not isinstance(policy, dict):
+    policy = {}
+found = []
+lanes = policy.get("lanes")
+if isinstance(lanes, dict):
+    for name, lane in lanes.items():
+        buckets = lane.get("score_buckets") if isinstance(lane, dict) else None
+        if not isinstance(buckets, list):
+            continue
+        if any(isinstance(b, dict) and "rung" in b and "step" not in b for b in buckets):
+            found.append(f"[policy.lanes.{name}] rung buckets")
+for key in ("safe_default", "long_context_model"):
+    if key in policy:
+        found.append(f"[policy].{key}")
+print(", ".join(found), end="")
+PY
+)" || legacy=""
+  [ -n "$legacy" ] || return 0
+  note "NOTICE: $ROUTER_TOML uses the pre-step shape ($legacy) — migrate it to step buckets + safe_default_step per $TEMPLATE_PATH; those entries are ignored until then."
 }
 
 # read_router_fields — prints port and upstream joined by a single 0x1f

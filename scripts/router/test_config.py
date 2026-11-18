@@ -10,6 +10,7 @@ real model name: nothing here ever appears in `config.py` itself.
 from __future__ import annotations
 
 import datetime as dt
+import itertools
 import json
 import sys
 import tempfile
@@ -265,6 +266,7 @@ upstream = "https://example.invalid"
 
 [policy]
 safe_default = 0
+safe_default_step = -2
 confidence_floor = 0.5
 privacy_threshold = 0.9
 long_context_tokens = 100000
@@ -273,7 +275,7 @@ escalation_window_s = 60
 max_tiers_above_baseline = 2
 
 [policy.lanes.default]
-score_buckets = [0.1, 0.9]
+score_buckets = [ { max = 10, step = -1 } ]
 
 [tier_families]
 order = ["haiku", "opus"]
@@ -311,9 +313,11 @@ foo = "bar"
             {"claude-bad-1-0": "enabled must be true or false"},
         )
         self.assertEqual(policy.thresholds["confidence_floor"], 0.5)
+        self.assertEqual(policy.thresholds["safe_default_step"], -2)
+        self.assertEqual(policy.rejected_tier_families, {})
         self.assertEqual(policy.escalation_window_s, 60)
         self.assertEqual(policy.max_tiers_above_baseline, 2)
-        self.assertEqual(policy.lanes, {"default": [0.1, 0.9]})
+        self.assertEqual(policy.lanes, {"default": [{"max": 10, "step": -1}]})
 
 
 class ContextWindowDefaultTests(unittest.TestCase):
@@ -423,6 +427,403 @@ class LoadCatalogTests(unittest.TestCase):
         self.assertEqual(catalog.rung_of("claude-sound-1-0"), 0)
         self.assertEqual(catalog.model_at_rung(0), "claude-sound-1-0")
         self.assertTrue(catalog.is_enabled("claude-sound-1-0"))
+
+    # Verifies: specs/model-router/requirements.md#5.11
+    def test_catalog_exposes_newest_per_family_slots_honouring_overrides(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            catalogue = self._write_catalogue(
+                tmp_path,
+                {
+                    "anthropic/claude-haiku-4-5": {"input": 1.0, "output": 1.0},
+                    "anthropic/claude-haiku-5-5": {"input": 1.0, "output": 1.0},
+                    "anthropic/claude-sonnet-5-5": {"input": 3.0, "output": 3.0},
+                },
+            )
+            router_toml = tmp_path / "router.toml"
+            router_toml.write_text(
+                '[router]\nupstream = "https://example.invalid"\n'
+                '[tier_families]\norder = ["haiku", "sonnet"]\n'
+                '[overrides."claude-haiku-5-5"]\nenabled = false\n',
+                encoding="utf-8",
+            )
+            catalog = config.load_catalog(router_toml, catalogue_path=catalogue)
+
+        self.assertIsNotNone(catalog.families)
+        self.assertEqual(catalog.model_at_slot(0), "claude-haiku-4-5")
+        self.assertEqual(catalog.model_at_slot(1), "claude-sonnet-5-5")
+        self.assertEqual(catalog.slot_of("claude-sonnet-4-5-20250929"), 1)
+
+    # Verifies: specs/model-router/requirements.md#5.11
+    def test_pass_through_catalog_has_no_slots(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            catalog = config.load_catalog(
+                tmp_path / "router.toml", catalogue_path=tmp_path / "missing.json"
+            )
+        self.assertIsNone(catalog.families)
+        self.assertIsNone(catalog.slot_of("claude-haiku-5-5"))
+        self.assertIsNone(catalog.model_at_slot(0))
+
+    # Verifies: specs/model-router/requirements.md#5.8
+    def test_duplicate_tier_family_rejected_at_load_and_both_orders_agree(self):
+        """A family named twice in `[tier_families].order` is rejected at load
+        (R5.8: the duplicate entry alone, first occurrence kept, cause stated),
+        so the rung ladder and the newest-per-family list rank it identically.
+        Before the fix, `build_ladder` kept the last position and
+        `build_family_list` the first, so they disagreed on the same config.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            catalogue = self._write_catalogue(
+                tmp_path,
+                {
+                    "anthropic/claude-haiku-5-5": {"input": 1.0, "output": 1.0},
+                    "anthropic/claude-sonnet-5-5": {"input": 3.0, "output": 3.0},
+                },
+            )
+            router_toml = tmp_path / "router.toml"
+            router_toml.write_text(
+                '[router]\nupstream = "https://example.invalid"\n'
+                '[tier_families]\norder = ["haiku", "sonnet", "haiku"]\n',
+                encoding="utf-8",
+            )
+            catalog = config.load_catalog(router_toml, catalogue_path=catalogue)
+
+        assert catalog.policy is not None
+        self.assertEqual(catalog.policy.tier_families, ["haiku", "sonnet"])
+        self.assertIn("haiku", catalog.policy.rejected_tier_families)
+        self.assertIn("duplicate", catalog.policy.rejected_tier_families["haiku"])
+        haiku_rung = catalog.rung_of("claude-haiku-5-5")
+        sonnet_rung = catalog.rung_of("claude-sonnet-5-5")
+        assert haiku_rung is not None and sonnet_rung is not None
+        self.assertLess(haiku_rung, sonnet_rung)
+        self.assertEqual(catalog.slot_of("claude-haiku-5-5"), 0)
+        self.assertEqual(catalog.slot_of("claude-sonnet-5-5"), 1)
+
+
+def _load_policy_text(toml_text: str):
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / "router.toml"
+        path.write_text(toml_text, encoding="utf-8")
+        return config.load_policy(path)
+
+
+class LegacyConfigMigrationTests(unittest.TestCase):
+    """Task 14.4 — pre-step `router.toml` shapes are reported, never misread."""
+
+    # Verifies: specs/model-router/requirements.md#5.8
+    # Verifies: specs/model-router/requirements.md#5.12
+    def test_rung_only_bucket_drops_its_lane_with_a_cause_and_keeps_the_rest(self):
+        policy, cause = _load_policy_text(
+            """
+[policy.lanes.code]
+score_buckets = [ { max = 3, rung = 0 }, { max = 10, rung = -1 } ]
+
+[policy.lanes.chitchat]
+score_buckets = [ { max = 10, step = -2 } ]
+
+[policy.lanes.simple]
+score_buckets = [ { max = 10, step = -1 } ]
+"""
+        )
+        self.assertIsNone(cause)
+        self.assertNotIn("code", policy.lanes)
+        self.assertEqual(set(policy.lanes), {"chitchat", "simple"})
+        self.assertIn("code", policy.rejected_lanes)
+        self.assertIn("rung", policy.rejected_lanes["code"])
+        self.assertIn("step", policy.rejected_lanes["code"])
+
+    # Verifies: specs/model-router/requirements.md#5.8
+    def test_malformed_lane_shapes_drop_only_that_lane_with_a_cause(self):
+        # A lane that isn't a table, a non-list score_buckets (a string would
+        # otherwise iterate per character), a bucket that isn't a table, and a
+        # non-integer max/step each reject their own lane; the good lane stays.
+        policy, cause = _load_policy_text(
+            """
+[policy.lanes]
+scalar = 5
+
+[policy.lanes.stringy]
+score_buckets = "max=3"
+
+[policy.lanes.notable]
+score_buckets = [ 3, { max = 10, step = -1 } ]
+
+[policy.lanes.badstep]
+score_buckets = [ { max = 10, step = "down" } ]
+
+[policy.lanes.boolmax]
+score_buckets = [ { max = true, step = -1 } ]
+
+[policy.lanes.good]
+score_buckets = [ { max = 10, step = -1 } ]
+"""
+        )
+        self.assertIsNone(cause)
+        self.assertEqual(set(policy.lanes), {"good"})
+        self.assertEqual(
+            set(policy.rejected_lanes), {"scalar", "stringy", "notable", "badstep", "boolmax"}
+        )
+        for name, reason in policy.rejected_lanes.items():
+            self.assertTrue(reason, f"{name} rejected without a stated cause")
+
+    # Verifies: specs/model-router/requirements.md#5.12
+    def test_one_rung_only_bucket_among_step_buckets_still_drops_the_lane(self):
+        policy, _ = _load_policy_text(
+            """
+[policy.lanes.code]
+score_buckets = [ { max = 3, step = -2 }, { max = 10, rung = -1 } ]
+"""
+        )
+        self.assertEqual(policy.lanes, {})
+        self.assertIn("code", policy.rejected_lanes)
+
+    # Verifies: specs/model-router/requirements.md#5.12
+    def test_bucket_with_both_rung_and_step_is_kept(self):
+        policy, _ = _load_policy_text(
+            """
+[policy.lanes.code]
+score_buckets = [ { max = 10, step = -1, rung = 0 } ]
+"""
+        )
+        self.assertEqual(policy.lanes, {"code": [{"max": 10, "step": -1, "rung": 0}]})
+        self.assertEqual(policy.rejected_lanes, {})
+
+    # Verifies: specs/model-router/requirements.md#5.12
+    def test_safe_default_and_long_context_model_are_deprecated_not_errors(self):
+        policy, cause = _load_policy_text(
+            """
+[policy]
+safe_default = "<catalog key>"
+long_context_model = "<catalog key>"
+long_context_tokens = 60000
+safe_default_step = -1
+"""
+        )
+        self.assertIsNone(cause)
+        self.assertEqual(set(policy.deprecated_keys), {"safe_default", "long_context_model"})
+        self.assertIn("safe_default_step", policy.deprecated_keys["safe_default"])
+        self.assertIn("long_context_tokens", policy.deprecated_keys["long_context_model"])
+        self.assertNotIn("safe_default", policy.thresholds)
+        self.assertNotIn("long_context_model", policy.thresholds)
+        self.assertEqual(policy.thresholds["long_context_tokens"], 60000)
+        self.assertEqual(policy.thresholds["safe_default_step"], -1)
+
+    # Verifies: specs/model-router/requirements.md#5.12
+    def test_current_shape_reports_no_rejected_lanes_or_deprecated_keys(self):
+        policy, _ = _load_policy_text(
+            """
+[policy]
+safe_default_step = -1
+
+[policy.lanes.code]
+score_buckets = [ { max = 10, step = 0 } ]
+"""
+        )
+        self.assertEqual(policy.rejected_lanes, {})
+        self.assertEqual(policy.deprecated_keys, {})
+
+
+_TEMPLATE = Path(__file__).resolve().parents[2] / "templates" / "router.toml.template"
+
+
+class ShippedTemplateTests(unittest.TestCase):
+    """The template `router-setup.sh` copies is already in the step shape."""
+
+    def setUp(self):
+        policy, cause = config.load_policy(_TEMPLATE)
+        self.assertIsNone(cause)
+        self.policy = policy
+
+    # Verifies: specs/model-router/requirements.md#5.14
+    def test_template_declares_the_five_lanes(self):
+        self.assertEqual(
+            list(self.policy.lanes),
+            ["chitchat", "simple", "rewrite", "code", "reasoning"],
+        )
+
+    # Verifies: specs/model-router/requirements.md#5.12
+    def test_template_buckets_are_all_steps_and_nothing_is_rejected(self):
+        for lane, buckets in self.policy.lanes.items():
+            for bucket in buckets:
+                self.assertIn("step", bucket, lane)
+                self.assertNotIn("rung", bucket, lane)
+                self.assertLessEqual(bucket["step"], 0, lane)
+        self.assertEqual(self.policy.rejected_lanes, {})
+        self.assertEqual(self.policy.deprecated_keys, {})
+
+    # Verifies: specs/model-router/requirements.md#5.12
+    def test_template_safe_default_is_a_step_and_long_context_tokens_stays(self):
+        self.assertEqual(self.policy.thresholds["safe_default_step"], -1)
+        self.assertEqual(self.policy.thresholds["long_context_tokens"], 60000)
+
+    # Verifies: specs/model-router/requirements.md#5.1
+    def test_template_names_no_model_id_or_placeholder(self):
+        text = _TEMPLATE.read_text(encoding="utf-8")
+        self.assertNotIn("claude-", text)
+        self.assertNotIn("<catalog key>", text)
+        self.assertNotIn("rung =", text)
+
+
+def _family_list(models: dict, tier_families: list, disabled: frozenset = frozenset()):
+    ladder = config.build_ladder(models, tier_families)
+    return config.build_family_list(ladder, tier_families, lambda mid: mid not in disabled)
+
+
+def _price(value: float) -> dict:
+    return {"input": value, "output": value}
+
+
+class NewestPerFamilyListTests(unittest.TestCase):
+    """R5.11 — targets come only from each family's newest enabled generation."""
+
+    # Verifies: specs/model-router/requirements.md#5.11
+    def test_older_generation_never_on_list_when_newer_exists(self):
+        families = _family_list(
+            {
+                "claude-haiku-4-5": _price(1.0),
+                "claude-haiku-5-5": _price(1.0),
+                "claude-sonnet-5-5": _price(3.0),
+            },
+            ["haiku", "sonnet"],
+        )
+        self.assertEqual(families.slots, ["claude-haiku-5-5", "claude-sonnet-5-5"])
+        self.assertNotIn("claude-haiku-4-5", families.slots)
+
+    # Verifies: specs/model-router/requirements.md#5.11
+    def test_adding_new_generation_replaces_previous_with_no_config_edit(self):
+        tiers = ["haiku", "sonnet"]
+        models = {"claude-haiku-5-5": _price(1.0), "claude-sonnet-5-5": _price(3.0)}
+        before = _family_list(models, tiers)
+        after = _family_list({**models, "claude-sonnet-6": _price(3.0)}, tiers)
+        self.assertEqual(before.slots, ["claude-haiku-5-5", "claude-sonnet-5-5"])
+        self.assertEqual(after.slots, ["claude-haiku-5-5", "claude-sonnet-6"])
+
+    # Verifies: specs/model-router/requirements.md#5.11
+    def test_disabled_newest_generation_falls_back_to_next_newest_enabled(self):
+        families = _family_list(
+            {
+                "claude-haiku-3-5": _price(1.0),
+                "claude-haiku-4-5": _price(1.0),
+                "claude-haiku-5-5": _price(1.0),
+            },
+            ["haiku"],
+            disabled=frozenset({"claude-haiku-5-5"}),
+        )
+        self.assertEqual(families.slots, ["claude-haiku-4-5"])
+
+    # Verifies: specs/model-router/requirements.md#5.11
+    def test_family_with_every_generation_disabled_has_no_slot(self):
+        families = _family_list(
+            {"claude-haiku-5-5": _price(1.0), "claude-sonnet-5-5": _price(3.0)},
+            ["haiku", "sonnet"],
+            disabled=frozenset({"claude-haiku-5-5"}),
+        )
+        self.assertEqual(families.slots, ["claude-sonnet-5-5"])
+        self.assertIsNone(families.slot_of("claude-haiku-5-5"))
+        self.assertEqual(families.slot_of("claude-sonnet-5-5"), 0)
+
+    # Verifies: specs/model-router/requirements.md#5.11
+    def test_slot_holds_canonical_undated_id(self):
+        families = _family_list(
+            {
+                "claude-haiku-4-5": _price(5.0),
+                "claude-haiku-4-5-20251001": _price(1.0),
+            },
+            ["haiku"],
+        )
+        self.assertEqual(families.slots, ["claude-haiku-4-5"])
+
+    # Verifies: specs/model-router/requirements.md#5.11
+    def test_listed_families_follow_declared_order_not_price(self):
+        families = _family_list(
+            {"claude-weak-1-0": _price(9.0), "claude-strong-1-0": _price(1.0)},
+            ["weak", "strong"],
+        )
+        self.assertEqual(families.slots, ["claude-weak-1-0", "claude-strong-1-0"])
+
+    # Verifies: specs/model-router/requirements.md#5.11
+    def test_unlisted_families_append_after_listed_ordered_by_price(self):
+        families = _family_list(
+            {
+                "claude-known-1-0": _price(50.0),
+                "claude-zed-1-0": _price(2.0),
+                "claude-zed-2-0": _price(4.0),
+                "claude-yak-9-9": _price(3.0),
+            },
+            ["known"],
+        )
+        # zed's slot holds its newest generation (zed-2-0 at 4.0), so yak
+        # (3.0) sorts before it; both trail the listed family regardless of price.
+        self.assertEqual(
+            families.slots, ["claude-known-1-0", "claude-yak-9-9", "claude-zed-2-0"]
+        )
+
+    # Verifies: specs/model-router/requirements.md#5.11
+    def test_duplicate_declared_family_gets_one_slot(self):
+        families = _family_list(
+            {"claude-haiku-5-5": _price(1.0), "claude-sonnet-5-5": _price(3.0)},
+            ["haiku", "haiku", "sonnet"],
+        )
+        self.assertEqual(families.slots, ["claude-haiku-5-5", "claude-sonnet-5-5"])
+        self.assertEqual(families.slot_of("claude-sonnet-5-5"), 1)
+
+    # Verifies: specs/model-router/requirements.md#5.11
+    def test_slot_of_resolves_any_generation_by_family(self):
+        families = _family_list(
+            {
+                "claude-haiku-5-5": _price(1.0),
+                "claude-sonnet-5-5": _price(3.0),
+                "claude-opus-5-5": _price(4.0),
+            },
+            ["haiku", "sonnet", "opus"],
+        )
+        # opus-4-6 is not even in the catalogue — its family still has a slot.
+        self.assertEqual(families.slot_of("claude-opus-4-6"), 2)
+        self.assertEqual(families.slot_of("claude-opus-5-5"), 2)
+        self.assertEqual(families.slot_of("claude-haiku-4-5-20251001"), 0)
+        self.assertIsNone(families.slot_of("claude-nosuch-1-0"))
+        self.assertIsNone(families.slot_of(""))
+
+    # Verifies: specs/model-router/requirements.md#5.11
+    def test_model_at_rejects_out_of_range_and_negative_slots(self):
+        families = _family_list({"claude-haiku-5-5": _price(1.0)}, ["haiku"])
+        self.assertEqual(families.model_at(0), "claude-haiku-5-5")
+        self.assertIsNone(families.model_at(1))
+        self.assertIsNone(families.model_at(-1))
+        self.assertEqual(len(families), 1)
+
+    # Verifies: specs/model-router/requirements.md#5.11 (property)
+    def test_list_is_order_independent_and_matches_newest_enabled_oracle(self):
+        """Property: for every input order and every disabled subset, each
+        family appears at most once, and its slot holds the max enabled
+        generation (oracle: brute force over the parsed ids)."""
+        tiers = ["haiku", "sonnet"]
+        items = [
+            ("claude-haiku-4-5", _price(1.0)),
+            ("claude-haiku-5-5", _price(1.0)),
+            ("claude-sonnet-4-5", _price(3.0)),
+            ("claude-sonnet-6", _price(3.0)),
+            ("claude-zed-1-0", _price(2.0)),
+        ]
+        ids = [mid for mid, _ in items]
+        for mask in range(1 << len(ids)):
+            disabled = frozenset(ids[i] for i in range(len(ids)) if mask & (1 << i))
+            expected = {}
+            for mid in ids:
+                if mid in disabled:
+                    continue
+                fam, gen = config._parse_family_generation(mid)
+                if fam not in expected or gen > expected[fam][0]:
+                    expected[fam] = (gen, mid)
+            for order in itertools.permutations(items):
+                families = _family_list(dict(order), tiers, disabled)
+                self.assertEqual(
+                    sorted(families.slots), sorted(mid for _, mid in expected.values())
+                )
+                fams = [config._parse_family_generation(m)[0] for m in families.slots]
+                self.assertEqual(len(fams), len(set(fams)))
 
 
 if __name__ == "__main__":

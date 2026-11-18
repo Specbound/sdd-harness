@@ -84,13 +84,19 @@ _OUTCOMES = frozenset({"applied", "failed_open", "passthrough"})
 
 # design.md "Ledger / ledger.py": a field lookup, not an inference (R6.4) —
 # "privacy_gate" must be distinct from "policy" so gate-driven routes are
-# never confused with cost-driven ones.
+# never confused with cost-driven ones. The first seven are policy.py's
+# `Selection.reason` set, recorded verbatim (Key Decision 5); the last three
+# are server.py's own non-selection paths (no classification, fail-open).
+# Duplicated, not imported — this module does not import policy.py.
 _REASONS = frozenset(
     {
         "policy",
         "privacy_gate",
         "low_confidence",
         "long_context",
+        "escalation",
+        "same_slot",
+        "no_slot",
         "tool_loop",
         "no_classifier",
         "error",

@@ -8,10 +8,10 @@ never a mocked `urllib`. The router server under test is constructed via
 `build_server(...)` (task 7.1's seam), pointed at a per-test temp-dir ledger,
 same isolation `test_ledger.py`/`test_sentinel.py` already use.
 
-Fixture catalog (`_build_catalog`): a two-rung ladder, `_CHEAP` (rung 0) and
-`_BASELINE` (rung 1), with one `"code"` lane bucket whose `max` always admits
-the stub classifier's fixed `score=5` and whose `rung=0` always picks
-`_CHEAP`. This is deliberately the one and only downroute shape this module
+Fixture catalog (`_build_catalog`): a two-slot newest-per-family list,
+`_CHEAP` (slot 0) and `_BASELINE` (slot 1), each its own family, with one
+`"code"` lane bucket whose `max` always admits the stub classifier's fixed
+`score=5` and whose `step=-1` always picks `_CHEAP`. This is deliberately the one and only downroute shape this module
 needs — every test either takes that downroute (`_text_request`, non-empty
 user text) or avoids classification entirely (`{"model": ...}` with no
 `messages` field at all, so `_last_user_text` is `""` and `should_classify`
@@ -56,6 +56,7 @@ across generated inputs.
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import socket
 import sys
@@ -70,10 +71,10 @@ from urllib.request import Request, urlopen
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from classify import ClassifierUnavailable, Decision
-from config import Catalog, Ladder, ModelEntry, RouterConfig
+from classify import ClassifierUnavailable, Decision, JeffClassifier, NullClassifier
+from config import Catalog, FamilyList, Ladder, ModelEntry, RouterConfig
 from ledger import Ledger
-from server import _last_user_text, build_server
+from server import _build_classifier, _last_user_text, _report_config_rejections, build_server
 
 #
 # FIXED (was: filed-not-fixed in task 7.2's own report) — `_forward_headers`
@@ -87,8 +88,10 @@ from server import _last_user_text, build_server
 # genuinely different lengths. `_CHEAP`/`_BASELINE` stay equal-length so the
 # retry test below continues to exercise R5.10's retry logic specifically,
 # not this now-fixed, separate bug.
-_BASELINE = "router-pricy"
-_CHEAP = "router-cheap"
+# Distinct leading tokens: policy resolves slots by family (the id's first
+# "-" token), so the two fixture ids must sit in different families.
+_BASELINE = "pricy-router"
+_CHEAP = "cheap-router"
 
 _DEFAULT_UPSTREAM_BODY = b'{"usage": {"input_tokens": 3, "output_tokens": 4}}'
 
@@ -105,6 +108,8 @@ def _build_catalog(
     cheap_model: str = _CHEAP,
     baseline_model: str = _BASELINE,
     thresholds: dict | None = None,
+    lanes: dict | None = None,
+    classifier: dict | None = None,
 ) -> Catalog:
     """`cheap_model`/`baseline_model` default to the equal-length module
     constants; pass distinct-length ids to exercise the rewrite path's
@@ -112,20 +117,33 @@ def _build_catalog(
 
     `thresholds` defaults to `{}` (absent keys); pass a dict with explicit
     `None` values — the real shape `config.py`'s `_parse_router_config`
-    always produces for an unset `router.toml` key — to exercise
-    `_derive_reason`'s former present-but-None crash
+    always produces for an unset `router.toml` key
     (`ThresholdNoneCoalesceTests`).
+
+    `lanes` defaults to the one always-downrouting `"code"` lane; pass a
+    `step = 0` bucket to exercise the same-slot passthrough (R5.13).
+    `classifier` defaults to `{}` (the `[classifier]` table).
     """
+    cheap_family = cheap_model.split("-")[0]
+    baseline_family = baseline_model.split("-")[0]
     ladder = Ladder(
         groups=[
             [
                 ModelEntry(
-                    model_id=cheap_model, prices={}, family="x", generation=(), family_known=False
+                    model_id=cheap_model,
+                    prices={},
+                    family=cheap_family,
+                    generation=(),
+                    family_known=True,
                 )
             ],
             [
                 ModelEntry(
-                    model_id=baseline_model, prices={}, family="x", generation=(), family_known=False
+                    model_id=baseline_model,
+                    prices={},
+                    family=baseline_family,
+                    generation=(),
+                    family_known=True,
                 )
             ],
         ],
@@ -136,25 +154,37 @@ def _build_catalog(
         schema_version=1,
         port=None,
         upstream=upstream_url,
-        classifier={},
+        classifier=classifier if classifier is not None else {},
         thresholds=thresholds if thresholds is not None else {},
         escalation_window_s=120,
         max_tiers_above_baseline=3,
-        tier_families=[],
-        lanes={"code": [{"max": 10, "rung": 0}]},
+        tier_families=[cheap_family, baseline_family],
+        lanes=lanes if lanes is not None else {"code": [{"max": 10, "step": -1}]},
         context_window_default=200_000,
         context_window_overrides={},
         overrides={},
         rejected_overrides={},
         local={},
     )
-    return Catalog(pass_through=False, cause=None, ladder=ladder, policy=policy, rejected_models={})
+    families = FamilyList(
+        slots=[cheap_model, baseline_model], families=[cheap_family, baseline_family]
+    )
+    return Catalog(
+        pass_through=False,
+        cause=None,
+        ladder=ladder,
+        policy=policy,
+        rejected_models={},
+        families=families,
+    )
 
 
 class _RaisingRungCatalog:
-    """Delegates every attribute to a real `Catalog` except `rung_of`, which
-    always raises — used to make `policy.select()` itself raise (case 1c)
-    without hand-rolling a second, duplicate Catalog implementation.
+    """Delegates every attribute to a real `Catalog` except `rung_of` and
+    `slot_of`, which always raise — used to make `policy.select()` itself
+    raise (case 1c) without hand-rolling a second, duplicate Catalog
+    implementation. `select()`'s first line is `catalog.slot_of(baseline)`
+    since task 14.2; `rung_of` still raises so `ledger` can't mask a miss.
 
     `ledger.pending_escalation()`'s own short-circuit on an empty ledger
     (never calls the `rung_of` it was handed when there's no prior record)
@@ -169,6 +199,9 @@ class _RaisingRungCatalog:
     def rung_of(self, model_id: str) -> int | None:
         raise RuntimeError("stub catalog: rung_of failure")
 
+    def slot_of(self, model_id: str) -> int | None:
+        raise RuntimeError("stub catalog: slot_of failure")
+
     def __getattr__(self, name: str) -> object:
         return getattr(self._real, name)
 
@@ -181,12 +214,12 @@ class _RaisingRungCatalog:
 
 
 class _StubClassifier:
-    def __init__(self, mode: str = "ok") -> None:
+    def __init__(self, mode: str = "ok", *, gate_p: float = 0.1) -> None:
         self.mode = mode
         self.calls = 0
         # lane "code", score 5 -> always lands in the one declared bucket
-        # (max=10, rung=0) in _build_catalog's fixture lanes.
-        self._decision = Decision(lane="code", score=5, gate_p=0.1, confidence=0.9, latency_ms=1)
+        # (max=10, step=-1) in _build_catalog's fixture lanes.
+        self._decision = Decision(lane="code", score=5, gate_p=gate_p, confidence=0.9, latency_ms=1)
 
     def classify(self, text: str) -> Decision:
         self.calls += 1
@@ -213,10 +246,12 @@ class _UpstreamBehavior:
         self.status_by_model: dict[str, int] = {}
         self.body_by_model: dict[str, bytes] = {}
         self.requests: list[str | None] = []
+        self.raw_requests: list[bytes] = []
 
-    def record(self, model: str | None) -> None:
+    def record(self, model: str | None, raw: bytes = b"") -> None:
         with self._lock:
             self.requests.append(model)
+            self.raw_requests.append(raw)
 
     def response_for(self, model: str | None) -> tuple[int, bytes]:
         with self._lock:
@@ -243,7 +278,7 @@ class _UpstreamHandler(BaseHTTPRequestHandler):
             if isinstance(candidate, str):
                 model = candidate
 
-        behavior.record(model)
+        behavior.record(model, raw)
         status, body = behavior.response_for(model)
         try:
             self.send_response(status)
@@ -575,10 +610,10 @@ class ContentLengthRewriteTests(_RouterServerTestCase):
 
 
 # ---------------------------------------------------------------------------
-# Regression: `_derive_reason`'s threshold defaults never applying when a
-# key is present-but-`None` (the real shape config.py produces for an unset
-# router.toml key) — previously crashed into a fail-open "error" instead of
-# the real routing decision.
+# Regression: thresholds present-but-`None` (the real shape config.py
+# produces for an unset router.toml key) once crashed server.py's own reason
+# re-derivation into a fail-open "error". That re-derivation is gone (task
+# 14.3); this still guards that None thresholds route rather than fail open.
 # ---------------------------------------------------------------------------
 class ThresholdNoneCoalesceTests(_RouterServerTestCase):
     # Verifies: specs/model-router/requirements.md#4.1
@@ -611,6 +646,231 @@ class ThresholdNoneCoalesceTests(_RouterServerTestCase):
         self.assertEqual(record["outcome"], "applied")
         self.assertEqual(record["selected_model"], _CHEAP)
         self.assertEqual(record["reason"], "policy")
+
+
+# ---------------------------------------------------------------------------
+# Task 14.3: the ledger reason is `Selection.reason`, and a Selection whose
+# model is the inbound id is a passthrough — no rewrite, raw bytes forwarded.
+# ---------------------------------------------------------------------------
+
+# Non-canonical JSON (extra whitespace, `model` not first): any re-serialization
+# by `_rewrite_model` would change these bytes, so byte equality at the stub
+# upstream proves the original body went out untouched.
+def _odd_spacing_request(model: str, text: str) -> bytes:
+    content, model_json = json.dumps(text), json.dumps(model)
+    return (
+        f'{{ "messages" : [ {{"role": "user", "content": {content}}} ] ,  "model" : {model_json} }}'
+    ).encode()
+
+
+class SelectionReasonWiringTests(_RouterServerTestCase):
+    def _single_record(self) -> dict:
+        lines = _wait_for_ledger_lines(self.ledger_path, 1)
+        self.assertEqual(len(lines), 1)
+        return json.loads(lines[0])
+
+    # Verifies: specs/model-router/requirements.md#1.5
+    # Verifies: specs/model-router/requirements.md#6.4
+    def test_long_request_the_walk_did_not_move_is_recorded_policy_not_long_context(self) -> None:
+        # Over the long-context gate, but the cheap slot's window (200k
+        # default) holds it, so the walk never moves: the reason is `policy`.
+        # The old re-derivation labelled this `long_context` (26 live calls).
+        catalog = _build_catalog(self.upstream_url, thresholds={"long_context_tokens": 1})
+        server = self._build_router(_StubClassifier(), catalog=catalog)
+
+        status, _body = _post(server.server_port, _text_request(_BASELINE, "a long enough request"))
+
+        self.assertEqual(status, 200)
+        record = self._single_record()
+        self.assertEqual(record["selected_model"], _CHEAP)
+        self.assertEqual(record["outcome"], "applied")
+        self.assertEqual(record["reason"], "policy")
+
+    # Verifies: specs/model-router/requirements.md#5.13
+    def test_same_slot_selection_is_passthrough_with_original_bytes(self) -> None:
+        catalog = _build_catalog(self.upstream_url, lanes={"code": [{"max": 10, "step": 0}]})
+        server = self._build_router(_StubClassifier(), catalog=catalog)
+        request = _odd_spacing_request(_BASELINE, "keep my model")
+
+        status, _body = _post(server.server_port, request)
+
+        self.assertEqual(status, 200)
+        self.assertEqual(self.upstream_behavior.raw_requests, [request])
+        record = self._single_record()
+        self.assertEqual(record["selected_model"], _BASELINE)
+        self.assertEqual(record["outcome"], "passthrough")
+        self.assertEqual(record["reason"], "same_slot")
+
+    # Verifies: specs/model-router/requirements.md#5.13
+    # Verifies: specs/model-router/requirements.md#3.6
+    def test_inbound_family_with_no_slot_is_passthrough_with_reason_no_slot(self) -> None:
+        unknown = "mystery-model-9"
+        server = self._build_router(_StubClassifier())
+        request = _odd_spacing_request(unknown, "who am I")
+
+        status, _body = _post(server.server_port, request)
+
+        self.assertEqual(status, 200)
+        self.assertEqual(self.upstream_behavior.raw_requests, [request])
+        record = self._single_record()
+        self.assertEqual(record["baseline_model"], unknown)
+        self.assertEqual(record["selected_model"], unknown)
+        self.assertEqual(record["outcome"], "passthrough")
+        self.assertEqual(record["reason"], "no_slot")
+
+    # Verifies: specs/model-router/requirements.md#6.2
+    # Verifies: specs/model-router/requirements.md#6.4
+    def test_privacy_gate_to_inbound_is_passthrough_recorded_as_privacy_gate(self) -> None:
+        catalog = _build_catalog(self.upstream_url, thresholds={"privacy_threshold": 0.5})
+        server = self._build_router(_StubClassifier(gate_p=0.9), catalog=catalog)
+        request = _odd_spacing_request(_BASELINE, "my secret")
+
+        status, _body = _post(server.server_port, request)
+
+        self.assertEqual(status, 200)
+        self.assertEqual(self.upstream_behavior.raw_requests, [request])
+        record = self._single_record()
+        self.assertEqual(record["selected_model"], _BASELINE)
+        self.assertEqual(record["outcome"], "passthrough")
+        self.assertEqual(record["reason"], "privacy_gate")
+
+    # Verifies: specs/model-router/requirements.md#5.13
+    def test_lane_without_step_bucket_is_passthrough_recorded_as_policy(self) -> None:
+        # A legacy `rung =` bucket has no step: policy forwards the inbound id.
+        catalog = _build_catalog(self.upstream_url, lanes={"code": [{"max": 10, "rung": 0}]})
+        server = self._build_router(_StubClassifier(), catalog=catalog)
+        request = _odd_spacing_request(_BASELINE, "legacy bucket")
+
+        status, _body = _post(server.server_port, request)
+
+        self.assertEqual(status, 200)
+        self.assertEqual(self.upstream_behavior.raw_requests, [request])
+        record = self._single_record()
+        self.assertEqual(record["outcome"], "passthrough")
+        self.assertEqual(record["reason"], "policy")
+
+
+# ---------------------------------------------------------------------------
+# Task 14.3 / R5.14: fewer than two configured lanes is a startup fault —
+# logged at WARNING with its cause, process runs pass-through (NullClassifier).
+# ---------------------------------------------------------------------------
+
+
+class LaneCountStartupFaultTests(unittest.TestCase):
+    def _catalog(self, lanes: dict) -> Catalog:
+        # Unroutable loopback port: the startup reachability probe fails fast,
+        # which only logs (it never swaps the classifier) — see _build_classifier.
+        classifier_cfg = {"backend": "jeff", "base_url": "http://127.0.0.1:9"}
+        return _build_catalog("http://127.0.0.1:1", lanes=lanes, classifier=classifier_cfg)
+
+    # Verifies: specs/model-router/requirements.md#5.14
+    # Verifies: specs/model-router/requirements.md#4.6
+    def test_one_lane_logs_fault_and_runs_pass_through(self) -> None:
+        catalog = self._catalog({"code": [{"max": 10, "step": -1}]})
+
+        with self.assertLogs("router", level="WARNING") as logs:
+            classifier = _build_classifier(catalog)
+
+        self.assertIsInstance(classifier, NullClassifier)
+        fault = "\n".join(logs.output)
+        self.assertIn("fewer than two", fault)
+        self.assertIn("code", fault)
+
+    # Verifies: specs/model-router/requirements.md#5.14
+    def test_zero_lanes_logs_fault_and_runs_pass_through(self) -> None:
+        catalog = self._catalog({})
+
+        with self.assertLogs("router", level="WARNING") as logs:
+            classifier = _build_classifier(catalog)
+
+        self.assertIsInstance(classifier, NullClassifier)
+        self.assertIn("fewer than two", "\n".join(logs.output))
+
+    # Verifies: specs/model-router/requirements.md#5.14
+    def test_two_lanes_build_the_real_classifier_offered_both_lanes(self) -> None:
+        catalog = self._catalog(
+            {"code": [{"max": 10, "step": -1}], "chat": [{"max": 10, "step": -2}]}
+        )
+
+        classifier = _build_classifier(catalog)
+
+        self.assertIsInstance(classifier, JeffClassifier)
+        assert isinstance(classifier, JeffClassifier)
+        self.assertEqual(classifier._lanes, ("code", "chat"))
+
+
+class ConfigRejectionStartupLogTests(unittest.TestCase):
+    """Task 14.4 — every config rejection or deprecation is one WARNING line."""
+
+    def _catalog_with(self, **policy_fields) -> Catalog:
+        catalog = _build_catalog("http://127.0.0.1:1")
+        assert catalog.policy is not None
+        return dataclasses.replace(
+            catalog, policy=dataclasses.replace(catalog.policy, **policy_fields)
+        )
+
+    # Verifies: specs/model-router/requirements.md#5.8
+    # Verifies: specs/model-router/requirements.md#5.12
+    def test_each_rejected_lane_and_deprecated_key_logs_one_warning(self) -> None:
+        catalog = self._catalog_with(
+            rejected_lanes={"code": "bucket has `rung` but no `step`"},
+            deprecated_keys={
+                "safe_default": "replaced by safe_default_step",
+                "long_context_model": "replaced by the long-context walk",
+            },
+        )
+
+        with self.assertLogs("router", level="WARNING") as logs:
+            _report_config_rejections(catalog)
+
+        self.assertEqual(len(logs.records), 3)
+        self.assertTrue(all(r.levelname == "WARNING" for r in logs.records))
+        text = "\n".join(logs.output)
+        self.assertIn("[policy.lanes.code]", text)
+        self.assertIn("no `step`", text)
+        # Full "[policy].<key> is deprecated" form: the cause text above already
+        # says "safe_default_step", so a bare key needle would pass vacuously.
+        self.assertIn("[policy].safe_default is deprecated", text)
+        self.assertIn("[policy].long_context_model is deprecated", text)
+
+    # Verifies: specs/model-router/requirements.md#5.8
+    def test_existing_rejections_are_logged_too(self) -> None:
+        catalog = dataclasses.replace(
+            self._catalog_with(
+                rejected_overrides={"claude-bad-1-0": "enabled must be true or false"},
+                rejected_tier_families={"haiku": "duplicate family"},
+            ),
+            rejected_models={"claude-broken-1-0": "missing price"},
+        )
+
+        with self.assertLogs("router", level="WARNING") as logs:
+            _report_config_rejections(catalog)
+
+        self.assertEqual(len(logs.records), 3)
+        text = "\n".join(logs.output)
+        self.assertIn("claude-bad-1-0", text)
+        self.assertIn("haiku", text)
+        self.assertIn("claude-broken-1-0", text)
+
+    # Verifies: specs/model-router/requirements.md#5.8
+    def test_clean_config_logs_nothing(self) -> None:
+        with self.assertNoLogs("router", level="WARNING"):
+            _report_config_rejections(_build_catalog("http://127.0.0.1:1"))
+
+    # Verifies: specs/model-router/requirements.md#5.5
+    def test_pass_through_catalog_without_policy_logs_only_model_rejections(self) -> None:
+        catalog = Catalog(
+            pass_through=True,
+            cause="router.toml not found",
+            ladder=None,
+            policy=None,
+            rejected_models={"claude-broken-1-0": "missing price"},
+        )
+
+        with self.assertLogs("router", level="WARNING") as logs:
+            _report_config_rejections(catalog)
+
+        self.assertEqual(len(logs.records), 1)
 
 
 # ---------------------------------------------------------------------------
