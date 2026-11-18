@@ -175,7 +175,7 @@ write_ledger(
 )
 region3 = render()
 results["errored_net_saving"] = "$1.00" in card(region3)
-results["errored_count_shown"] = "(3 errored)" in region3
+results["errored_count_shown"] = "(3 usage unknown)" in region3 and "errored" not in region3
 results["untracked_footnote"] = "2 calls logged before cache tracking began" in region3
 
 # ── 4: suspected-bad-route models shown, never subtracted twice ──────────────
@@ -254,7 +254,7 @@ check "note shows 2 routed, 0 suspect" "True" "$(field normal_note)"
 
 echo "-- scenario: errored and pre-tracking rows (excluded, not subtracted) --"
 check "Net Saving = \$1.00, unaffected by errored and pre-tracking rows" "True" "$(field errored_net_saving)"
-check "errored count (3) is shown on its route" "True" "$(field errored_count_shown)"
+check "usage-unknown count (3) is shown on its route, never labelled 'errored'" "True" "$(field errored_count_shown)"
 check "pre-tracking rows (2) are named in a footnote" "True" "$(field untracked_footnote)"
 
 echo "-- scenario: suspected-bad-route models (shown, not double-subtracted) --"

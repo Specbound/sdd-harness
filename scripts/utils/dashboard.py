@@ -4703,7 +4703,7 @@ def _router_route_row(route: dict, pricing: dict) -> tuple[tuple, str, dict]:
         f' <span style="color:var(--overlay0)" title="the response carried no usage, so its '
         f'cost is not counted here. Before 2026-11-17 15:20 these were headroom discarding a '
         f'billed reply (CCR buffered path, fixed by HEADROOM_LOSSLESS=1) — likely billed '
-        f'but unmeasurable">({route["errored"]:,} errored)</span>'
+        f'but unmeasurable">({route["errored"]:,} usage unknown)</span>'
         if route["errored"] else ""
     )
     row = (
