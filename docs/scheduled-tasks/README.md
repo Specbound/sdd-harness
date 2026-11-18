@@ -202,6 +202,7 @@ Guards:
 - Promotes recurring, understood failures (count ≥ `TOOL_FAILURE_MIN_COUNT`, default 3, open, not yet promoted) into durable memory + `ERRORS.md`, diagnosing *why* the command shape keeps failing
 - Marks promoted entries resolved so the `tool-failure-recall.sh` PreToolUse hook stops warning about them
 - Self-paces via MIN_GAP_DAYS and a `mkdir` lock; pre-flights that the `claude` CLI is on PATH before running; a lock older than 2h (left by a killed run) is auto-removed on the next run
+- Records why a guard no-opped in `.claude/memory/.skip-reason-tool-failure-review` (`<iso-ts>|<reason>`, cleared when a run starts), so the dashboard card can show "idle" rather than "missed"
 
 This is the **review** stage of the tool-failure-memory loop (capture → recall → review). See the `tool-failure-memory` skill.
 
@@ -315,7 +316,7 @@ The preflight also runs on the **"already registered / already loaded"** path, n
 
 TCC grants are per-machine and never travel with a clone, so a fleet can be silently dead on a brand-new machine behind a green install. That is the case this exists to catch.
 
-The dashboard's **Scheduled Tasks** tab shows live status for each task, scoped to whichever repo's dashboard is open: schedule, last run + exit code, artifact path, diff vs. previous run, and the reasoning excerpt from the artifact. Harness-only routines (skill-curator, harness-health) always show the harness's own state regardless of which repo is open; per-repo routines show that repo's state file and log entries. It also surfaces the OS scheduler's last-launch exit status — and when that scheduler cannot run, it renders as a **full-width red banner above the routine cards**, naming TCC explicitly on exit 126. That status used to be small yellow text inside the scheduler card, beside a page of routines each showing a calm `PENDING` badge; a scheduler that cannot run is the one fact that invalidates everything under it.
+The dashboard's **Scheduled Tasks** tab shows live status for each task, scoped to whichever repo's dashboard is open: schedule, last run + exit code, artifact path, diff vs. previous run, and the reasoning excerpt from the artifact. Harness-only routines (skill-curator, harness-health) always show the harness's own state regardless of which repo is open; per-repo routines show that repo's state file and log entries. It also surfaces the OS scheduler's last-launch exit status — and when that scheduler cannot run, it renders as a **full-width red banner above the routine cards**, naming TCC explicitly on exit 126. A routine whose runner no-opped on a guard within the last two days (see its `.skip-reason-<key>` file) shows an **IDLE** badge and a "Last check … skipped: <reason>" line instead of `PENDING`/missed. Each artifact is embedded as a collapsible **View** (last 200 KB for oversized files) since `file://` links do not open from the served dashboard. That status used to be small yellow text inside the scheduler card, beside a page of routines each showing a calm `PENDING` badge; a scheduler that cannot run is the one fact that invalidates everything under it.
 
 ---
 
@@ -331,5 +332,5 @@ The dashboard's **Scheduled Tasks** tab shows live status for each task, scoped 
 
 ---
 
-_Last synced: 2026-11-11_
+_Last synced: 2026-11-18_
 
