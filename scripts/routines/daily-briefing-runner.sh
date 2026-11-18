@@ -72,8 +72,10 @@ trap 'rm -rf "$LOCK_DIR"' EXIT
 # --- Cadence guard ---
 if [ "${DAILY_BRIEFING_FORCE:-0}" != "1" ] && [ -s "$STATE_FILE" ]; then
   LAST_RAW="$(cat "$STATE_FILE")"
-  LAST_EPOCH="$(date -j -f "%Y-%m-%dT%H:%M:%S%z" "$LAST_RAW" +%s 2>/dev/null \
-              || date -d "$LAST_RAW" +%s 2>/dev/null || echo 0)"
+  # fromisoformat reads the `date -Iseconds` stamp ("+02:00") on any OS. The old
+  # `date -j -f ...%z` only accepts "+0200", so on macOS every parse failed, read as
+  # epoch 0, and the gap guard never skipped (weekly runners ran daily; 2026-11-18).
+  LAST_EPOCH="$(python3 -c 'import sys, datetime; print(int(datetime.datetime.fromisoformat(sys.argv[1]).timestamp()))' "$LAST_RAW" 2>/dev/null || echo 0)"
   if [ "$LAST_EPOCH" -gt 0 ]; then
     GAP_DAYS=$(( ($(date +%s) - LAST_EPOCH) / 86400 ))
     if [ "$GAP_DAYS" -lt "$MIN_GAP_DAYS" ]; then
