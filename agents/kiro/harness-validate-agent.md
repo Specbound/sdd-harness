@@ -189,6 +189,7 @@ These are traceability-link checks (mechanical ID/anchor cross-referencing), not
 | File | Count | Cap | Status |
 |------|-------|-----|--------|
 | hot-memory.md | N lines | 50 | OK/OVER |
+| hot-memory.md | N bytes | 8,000 | OK/OVER |
 | ...           | ...     | .. | ...     |
 
 ### L0 Coverage

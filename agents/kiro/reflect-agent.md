@@ -166,7 +166,7 @@ Chat summary only (files updated directly):
 ## Safety & Fallback
 
 - **Append-only**: Never edit past observations
-- **Caps**: Respect 50-line hot-memory and 70-line patterns caps
+- **Caps**: Respect hot-memory's 50-line and 8,000-byte caps and the 70-line patterns cap
 - **SSOT**: Don't duplicate facts across files — reference via paths
 - **Uncertainty**: If unsure whether something is noteworthy, skip it — quality over quantity
 

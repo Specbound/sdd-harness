@@ -55,6 +55,7 @@ Measure and report:
 | Metric | Target | Method |
 |--------|--------|--------|
 | hot-memory.md lines | <50 | `wc -l` |
+| hot-memory.md bytes | <8,000 | `wc -c` |
 | meta/patterns.md lines | <70 | `wc -l` |
 | observations.md entries | <50 | count `^- [0-9]` lines |
 | action-items open | track | count `^- \[ \]` lines |
@@ -295,6 +296,7 @@ Chat summary only (self-observations updated directly):
 | Metric | Value | Status |
 |--------|-------|--------|
 | hot-memory lines | N/50 | ✅/⚠️ |
+| hot-memory bytes | N/8,000 | ✅/⚠️ |
 | patterns lines | N/70 | ✅/⚠️ |
 | observations | N/50 | ✅/⚠️ |
 | open action items | N | ℹ️ |

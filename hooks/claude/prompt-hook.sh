@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# purpose: Injects hot-memory (current priorities) on the first prompt of a session and every Nth prompt after.
 # Context Priming Hook — injects hot-memory on UserPromptSubmit
 #
 # Not every prompt: hot-memory is ~2k tokens and each injection stays in the
@@ -11,6 +12,16 @@
 # read the event or the counter injects — a missed injection is invisible, an
 # extra one costs 2k tokens.
 # Must be fast (<1s) since it fires on every prompt
+#
+# Size budget: Claude Code keeps hook output inline only up to ~10KB. Above that
+# it stores the output in a side file and the model sees a 2KB preview — measured
+# 2026-11-18 across 123 persisted outputs (largest inline 9,825 bytes, smallest
+# persisted 10.2KB). hot-memory's cap was counted in lines, so it reached 11KB in
+# 43 long lines and every injection was cut to its first 2KB: three of nine
+# priorities, and none of Active Specs, Key Decisions or System Notes. So the
+# output is capped at SDD_HOT_MEMORY_MAX_BYTES (default 9000, bytes because
+# multi-byte text makes bytes >= characters), cut at a line boundary, and ends
+# with a line saying what was left out and where to read it.
 
 HOT_MEMORY=".claude/memory/hot-memory.md"
 STATE_DIR=".claude/memory/.prompt-hook"
@@ -90,6 +101,42 @@ PY
 
 [ "$DECISION" = "skip" ] && exit 0
 
-echo "--- Active Context (hot-memory) ---"
-cat "$HOT_MEMORY"
-echo "--- End Active Context ---"
+HOT_MEMORY="$HOT_MEMORY" python3 - <<'PY'
+import os, sys
+
+path = os.environ["HOT_MEMORY"]
+try:
+    budget = int(os.environ.get("SDD_HOT_MEMORY_MAX_BYTES", "9000"))
+except ValueError:
+    budget = 9000
+head = "--- Active Context (hot-memory) ---\n"
+foot = "--- End Active Context ---\n"
+with open(path, "rb") as f:
+    body = f.read()
+if body and not body.endswith(b"\n"):
+    body += b"\n"
+
+room = budget - len(head.encode()) - len(foot.encode())
+if len(body) <= room:
+    shown, note = body, ""
+else:
+    note_room = 260  # reserved for the truncation line
+    kept, used = [], 0
+    for line in body.splitlines(keepends=True):
+        if used + len(line) > room - note_room:
+            break
+        kept.append(line)
+        used += len(line)
+    shown = b"".join(kept)
+    note = (f"[hot-memory truncated: showing {len(shown)} of {len(body)} bytes to stay under "
+            f"the {budget}-byte inline limit. Read {path} for the rest, and run "
+            f"/kiro:housekeeping to bring it under its size cap.]\n")
+    print(f"[prompt-hook] hot-memory is {len(body)} bytes, over the {budget}-byte budget — truncated",
+          file=sys.stderr)
+
+out = sys.stdout.buffer
+out.write(head.encode())
+out.write(shown)
+out.write(note.encode())
+out.write(foot.encode())
+PY
