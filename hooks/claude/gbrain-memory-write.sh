@@ -1,4 +1,5 @@
 #!/bin/bash
+# purpose: Before a claude-mem save, injects the two-zone structure memory entries should follow.
 # Fires PreToolUse (save_observation) — injects compiled-truth structure guidance
 # before every memory write so observations follow the two-zone pattern.
 

@@ -31,27 +31,31 @@ echo "  Installing headroom-ai globally..."
 INSTALLED_GLOBALLY=0
 
 if command -v uv >/dev/null 2>&1; then
-    EXTRAS_FILE="$__here/headroom-extras.txt"
     # headroom-ai is a Rust extension (maturin). No pre-built wheel for Python 3.14+,
     # so try 3.12 first where binary wheels exist, then fall back to default.
-    if uv tool install "$HEADROOM_PKG" --python 3.12 \
-          --with-requirements "$EXTRAS_FILE" -q 2>/dev/null \
-       || uv tool install "$HEADROOM_PKG" \
-          --with-requirements "$EXTRAS_FILE" -q 2>/dev/null; then
+    # Install with headroom-ai's own `[proxy]` extra rather than the hand-maintained
+    # headroom-extras.txt requirements list this used to pass via --with-requirements:
+    # that list drifted behind the actual proxy dependency tree (missing `mcp`, then
+    # `magika`), each gap producing a silent launchd crash-loop — exit 1, zero
+    # stdout/stderr — that took hours to trace to "No module named 'X'" buried in
+    # the deployment's own runner.log. `[proxy]` is declared by the package itself,
+    # so it tracks whatever the proxy actually needs release over release.
+    if uv tool install "$HEADROOM_PKG[proxy]" --python 3.12 -q 2>/dev/null \
+       || uv tool install "$HEADROOM_PKG[proxy]" -q 2>/dev/null; then
         echo "    Installed via uv tool."
         INSTALLED_GLOBALLY=1
     fi
 fi
 
 if [ "$INSTALLED_GLOBALLY" -eq 0 ] && command -v pipx >/dev/null 2>&1; then
-    if pipx install "$HEADROOM_PKG" -q 2>/dev/null || pipx upgrade "$HEADROOM_PKG" -q 2>/dev/null; then
+    if pipx install "$HEADROOM_PKG[proxy]" -q 2>/dev/null || pipx upgrade "$HEADROOM_PKG[proxy]" -q 2>/dev/null; then
         echo "    Installed via pipx."
         INSTALLED_GLOBALLY=1
     fi
 fi
 
 if [ "$INSTALLED_GLOBALLY" -eq 0 ]; then
-    if pip install --user "$HEADROOM_PKG" -q 2>/dev/null; then
+    if pip install --user "$HEADROOM_PKG[proxy]" -q 2>/dev/null; then
         echo "    Installed via pip --user."
         INSTALLED_GLOBALLY=1
     fi
@@ -122,11 +126,35 @@ done
 # ── 4. Install headroom as a persistent service ─────────────────────────────
 # Keeps the proxy warm between sessions — eliminates cold-start delay (~10s → ~1s).
 # Only runs when headroom is installed and a service supervisor is available.
-# Idempotent: skips if service already installed and healthy.
+# Idempotent: skips if service already installed, healthy, and carrying
+# HEADROOM_REQUIRED_ENV; an older install without it is re-applied once.
+#
+# HEADROOM_LOSSLESS=1: in headroom 0.35.0, once a session has had CCR
+# compression, every request gets the `headroom_retrieve` tool and is sent
+# upstream as buffered stream:false. That path can't handle the reply, so
+# headroom throws away a billed 200 and sends Claude Code a generic api_error
+# (handlers/anthropic.py `_BufferedCCRResponse`); Claude Code then retries the
+# whole turn. Measured 2026-11-17: 138 of 282 requests, every turn generated
+# twice, 2-30s lost each time, and the discarded attempt's cache writes never
+# reached any usage record. Lossless mode keeps compression but never injects
+# the retrieve tool, so the buffered path never runs and nothing is
+# lossily dropped.
+HEADROOM_REQUIRED_ENV="HEADROOM_LOSSLESS=1"
+HEADROOM_MANIFEST="$HOME/.headroom/deploy/default/manifest.json"
+headroom_apply() {
+    "$HEADROOM_BIN" install apply --preset persistent-service --memory --env "$HEADROOM_REQUIRED_ENV"
+}
+# Literal match on the manifest's own JSON spelling of the key (no regex).
+headroom_has_required_env() {
+    grep -qF '"HEADROOM_LOSSLESS": "1"' "$HEADROOM_MANIFEST" 2>/dev/null
+}
 if [ -n "$HEADROOM_BIN" ]; then
-    if "$HEADROOM_BIN" install status >/dev/null 2>&1; then
+    if "$HEADROOM_BIN" install status >/dev/null 2>&1 && headroom_has_required_env; then
         echo "  Headroom persistent service already installed."
     else
+        if "$HEADROOM_BIN" install status >/dev/null 2>&1; then
+            echo "  Headroom service lacks $HEADROOM_REQUIRED_ENV — re-applying (one-time restart)."
+        fi
         # `headroom install apply` auto-detects the supervisor:
         #   macOS -> launchd LaunchAgent, Linux -> systemd user service.
         # The first start loads the compression model and can miss the readiness
@@ -134,8 +162,8 @@ if [ -n "$HEADROOM_BIN" ]; then
         case "$(uname -s)" in
             Darwin|Linux)
                 echo "  Installing headroom persistent service ($(uname -s))..."
-                if "$HEADROOM_BIN" install apply --preset persistent-service --memory \
-                   || { echo "  First start missed readiness (model warm-up) — retrying..."; sleep 3; "$HEADROOM_BIN" install apply --preset persistent-service --memory; }; then
+                if headroom_apply \
+                   || { echo "  First start missed readiness (model warm-up) — retrying..."; sleep 3; headroom_apply; }; then
                     echo "  Headroom persistent service installed and started (auto-starts on login)."
                     # Route Claude Code through the proxy ONLY after it is confirmed
                     # healthy, so ANTHROPIC_BASE_URL never points at a dead proxy.
@@ -155,7 +183,7 @@ if [ -n "$HEADROOM_BIN" ]; then
                     fi
                 else
                     echo "  WARNING: persistent service install failed after retry — routing NOT wired, cold starts ~10s."
-                    echo "    Fix manually: headroom install apply --preset persistent-service --memory"
+                    echo "    Fix manually: headroom install apply --preset persistent-service --memory --env $HEADROOM_REQUIRED_ENV"
                 fi ;;
             *)
                 echo "  Skipping persistent service (unsupported OS: $(uname -s))." ;;

@@ -1,4 +1,5 @@
 #!/bin/bash
+# purpose: After a .py file is written, runs ruff on it and reports findings (never blocks).
 # ruff-quality-gate-hook — PostToolUse soft gate (Write/Edit/MultiEdit) on .py files.
 # CLAUDE.md's Quality Gates section claims "ruff check: on every .py file write" as
 # automated — until this hook, nothing actually ran it; a `Bash(ruff check *)`
@@ -23,6 +24,9 @@ except Exception:
 [[ -z "$FILE_PATH" ]] && exit 0
 [[ "$FILE_PATH" != *.py ]] && exit 0
 [[ ! -f "$FILE_PATH" ]] && exit 0
+
+# CLAUDE.md's Serena rule (diagnostics after every .py edit) had no enforcement — nudge it here.
+echo "serena: run mcp__serena__get_diagnostics_for_file(\"$FILE_PATH\") — ruff alone misses type errors."
 
 command -v ruff >/dev/null 2>&1 || exit 0
 

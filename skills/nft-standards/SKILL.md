@@ -1,397 +1,243 @@
 ---
 name: nft-standards
-description: "Implement NFT standards (ERC-721, ERC-1155) with proper metadata handling, minting strategies, and marketplace integration. Use when creating NFT contracts, building NFT marketplaces, or implementi..."
+description: "Implement ERC-721 and ERC-1155 against OpenZeppelin Contracts v5 — metadata, ERC-2981 royalties, soulbound and dynamic tokens, gas-efficient minting. Use when writing or reviewing NFT contracts, or porting v4 code off removed APIs (Counters.sol, _beforeTokenTransfer, no-arg Ownable)."
 risk: unknown
 source: community
 ---
 
 # NFT Standards
 
-Master ERC-721 and ERC-1155 NFT standards, metadata best practices, and advanced NFT features.
-
-## Do not use this skill when
-
-- The task is unrelated to nft standards
-- You need a different domain or tool outside this scope
-
-## Instructions
-
-- Clarify goals, constraints, and required inputs.
-- Apply relevant best practices and validate outcomes.
-- Provide actionable steps and verification.
-- If detailed examples are required, open `resources/implementation-playbook.md`.
+OpenZeppelin Contracts v5 removed several things every pre-2024 NFT tutorial uses. Code
+copied from those tutorials does not compile against v5 — it fails at the constructor,
+the hook override, and the `Counters` import. Fix the version question before anything
+else.
 
 ## Use this skill when
 
-- Creating NFT collections (art, gaming, collectibles)
-- Implementing marketplace functionality
-- Building on-chain or off-chain metadata
-- Creating soulbound tokens (non-transferable)
-- Implementing royalties and revenue sharing
-- Developing dynamic/evolving NFTs
+- Writing or reviewing an ERC-721 / ERC-1155 contract
+- Porting an NFT contract from OpenZeppelin v4 to v5
+- Adding royalties, soulbound behavior, or on-chain metadata
+- Reducing mint gas cost
 
-## ERC-721 (Non-Fungible Token Standard)
+## v4 → v5 migration
+
+| v4 (removed in v5) | v5 |
+|---|---|
+| `import ".../utils/Counters.sol"` + `Counters.Counter` | plain `uint256 private _nextTokenId;` |
+| `_beforeTokenTransfer` / `_afterTokenTransfer` | single `_update(to, tokenId, auth)` hook |
+| `constructor() Ownable()` | `constructor() Ownable(msg.sender)` — owner is now an explicit arg |
+| `_exists(tokenId)` | `_ownerOf(tokenId) != address(0)` |
+| `ERC721._burn` override pairs | handled by `_update` |
+
+`_update` fires on mint, burn, and transfer — `from == address(0)` is a mint,
+`to == address(0)` is a burn. Collapsing three v4 hooks into one is the change that
+breaks the most copied code.
+
+## ERC-721
 
 ```solidity
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.0;
+pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/token/ERC721/extensions/ERC721URIStorage.sol";
 import "@openzeppelin/contracts/token/ERC721/extensions/ERC721Enumerable.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
-import "@openzeppelin/contracts/utils/Counters.sol";
 
 contract MyNFT is ERC721URIStorage, ERC721Enumerable, Ownable {
-    using Counters for Counters.Counter;
-    Counters.Counter private _tokenIds;
-
-    uint256 public constant MAX_SUPPLY = 10000;
+    uint256 public constant MAX_SUPPLY = 10_000;
     uint256 public constant MINT_PRICE = 0.08 ether;
     uint256 public constant MAX_PER_MINT = 20;
 
-    constructor() ERC721("MyNFT", "MNFT") {}
+    uint256 private _nextTokenId = 1;
+    string private _baseTokenURI;
+
+    error InvalidQuantity();
+    error ExceedsMaxSupply();
+    error InsufficientPayment();
+
+    constructor(string memory baseURI) ERC721("MyNFT", "MNFT") Ownable(msg.sender) {
+        _baseTokenURI = baseURI;
+    }
 
     function mint(uint256 quantity) external payable {
-        require(quantity > 0 && quantity <= MAX_PER_MINT, "Invalid quantity");
-        require(_tokenIds.current() + quantity <= MAX_SUPPLY, "Exceeds max supply");
-        require(msg.value >= MINT_PRICE * quantity, "Insufficient payment");
+        if (quantity == 0 || quantity > MAX_PER_MINT) revert InvalidQuantity();
+        if (_nextTokenId - 1 + quantity > MAX_SUPPLY) revert ExceedsMaxSupply();
+        if (msg.value < MINT_PRICE * quantity) revert InsufficientPayment();
 
         for (uint256 i = 0; i < quantity; i++) {
-            _tokenIds.increment();
-            uint256 newTokenId = _tokenIds.current();
-            _safeMint(msg.sender, newTokenId);
-            _setTokenURI(newTokenId, generateTokenURI(newTokenId));
+            _safeMint(msg.sender, _nextTokenId++);
         }
     }
 
-    function generateTokenURI(uint256 tokenId) internal pure returns (string memory) {
-        // Return IPFS URI or on-chain metadata
-        return string(abi.encodePacked("ipfs://QmHash/", Strings.toString(tokenId), ".json"));
+    function withdraw() external onlyOwner {
+        (bool ok, ) = payable(owner()).call{value: address(this).balance}("");
+        require(ok, "withdraw failed");
     }
 
-    // Required overrides
-    function _beforeTokenTransfer(
-        address from,
-        address to,
-        uint256 tokenId,
-        uint256 batchSize
-    ) internal override(ERC721, ERC721Enumerable) {
-        super._beforeTokenTransfer(from, to, tokenId, batchSize);
+    function _baseURI() internal view override returns (string memory) {
+        return _baseTokenURI;
     }
 
-    function _burn(uint256 tokenId) internal override(ERC721, ERC721URIStorage) {
-        super._burn(tokenId);
+    // --- required multiple-inheritance overrides (v5) ---
+
+    function _update(address to, uint256 tokenId, address auth)
+        internal
+        override(ERC721, ERC721Enumerable)
+        returns (address)
+    {
+        return super._update(to, tokenId, auth);
     }
 
-    function tokenURI(uint256 tokenId) public view override(ERC721, ERC721URIStorage) returns (string memory) {
+    function _increaseBalance(address account, uint128 value)
+        internal
+        override(ERC721, ERC721Enumerable)
+    {
+        super._increaseBalance(account, value);
+    }
+
+    function tokenURI(uint256 tokenId)
+        public view override(ERC721, ERC721URIStorage) returns (string memory)
+    {
         return super.tokenURI(tokenId);
     }
 
     function supportsInterface(bytes4 interfaceId)
-        public
-        view
-        override(ERC721, ERC721Enumerable)
-        returns (bool)
+        public view override(ERC721, ERC721URIStorage, ERC721Enumerable) returns (bool)
     {
         return super.supportsInterface(interfaceId);
     }
-
-    function withdraw() external onlyOwner {
-        payable(owner()).transfer(address(this).balance);
-    }
 }
 ```
 
-## ERC-1155 (Multi-Token Standard)
+Combining `ERC721URIStorage` and `ERC721Enumerable` is what forces the four overrides.
+If you only need sequential IDs under one base URI, drop both extensions and
+`_baseURI()` alone covers it — `ERC721Enumerable` adds meaningful gas to every transfer
+to maintain its indexes, and off-chain indexers already provide enumeration.
+
+Use `_safeMint` for EOAs and contracts that signal ERC-721 receipt; note it hands
+control to the receiver, so keep state updates before the call (the loop above
+increments before minting) and add a reentrancy guard if you add anything after it.
+
+## ERC-1155
+
+Use when tokens are semi-fungible (many copies of an edition) or when one contract
+holds several token types. Batch transfers are the main win.
 
 ```solidity
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.0;
+pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/token/ERC1155/ERC1155.sol";
+import "@openzeppelin/contracts/token/ERC1155/extensions/ERC1155Supply.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 
-contract GameItems is ERC1155, Ownable {
+contract GameItems is ERC1155, ERC1155Supply, Ownable {
     uint256 public constant SWORD = 1;
     uint256 public constant SHIELD = 2;
-    uint256 public constant POTION = 3;
 
-    mapping(uint256 => uint256) public tokenSupply;
-    mapping(uint256 => uint256) public maxSupply;
+    constructor(string memory uri_) ERC1155(uri_) Ownable(msg.sender) {}
 
-    constructor() ERC1155("ipfs://QmBaseHash/{id}.json") {
-        maxSupply[SWORD] = 1000;
-        maxSupply[SHIELD] = 500;
-        maxSupply[POTION] = 10000;
-    }
-
-    function mint(
-        address to,
-        uint256 id,
-        uint256 amount
-    ) external onlyOwner {
-        require(tokenSupply[id] + amount <= maxSupply[id], "Exceeds max supply");
-
+    function mint(address to, uint256 id, uint256 amount) external onlyOwner {
         _mint(to, id, amount, "");
-        tokenSupply[id] += amount;
     }
 
-    function mintBatch(
-        address to,
-        uint256[] memory ids,
-        uint256[] memory amounts
-    ) external onlyOwner {
-        for (uint256 i = 0; i < ids.length; i++) {
-            require(tokenSupply[ids[i]] + amounts[i] <= maxSupply[ids[i]], "Exceeds max supply");
-            tokenSupply[ids[i]] += amounts[i];
-        }
-
+    function mintBatch(address to, uint256[] memory ids, uint256[] memory amounts)
+        external onlyOwner
+    {
         _mintBatch(to, ids, amounts, "");
     }
 
-    function burn(
-        address from,
-        uint256 id,
-        uint256 amount
-    ) external {
-        require(from == msg.sender || isApprovedForAll(from, msg.sender), "Not authorized");
-        _burn(from, id, amount);
-        tokenSupply[id] -= amount;
+    function _update(address from, address to, uint256[] memory ids, uint256[] memory values)
+        internal
+        override(ERC1155, ERC1155Supply)
+    {
+        super._update(from, to, ids, values);
     }
 }
 ```
 
-## Metadata Standards
+The ERC-1155 URI convention is a single template containing `{id}` — clients substitute
+a 64-character zero-padded lowercase hex ID. It is not interpolated on-chain.
 
-### Off-Chain Metadata (IPFS)
+## Metadata
+
+Off-chain JSON is the norm; the marketplace-recognized shape is:
 
 ```json
 {
-  "name": "NFT #1",
-  "description": "Description of the NFT",
-  "image": "ipfs://QmImageHash",
+  "name": "Item #1",
+  "description": "...",
+  "image": "ipfs://<CID>/1.png",
   "attributes": [
-    {
-      "trait_type": "Background",
-      "value": "Blue"
-    },
-    {
-      "trait_type": "Rarity",
-      "value": "Legendary"
-    },
-    {
-      "trait_type": "Power",
-      "value": 95,
-      "display_type": "number",
-      "max_value": 100
-    }
+    {"trait_type": "Rarity", "value": "Legendary"},
+    {"trait_type": "Level", "value": 42, "display_type": "number"}
   ]
 }
 ```
 
-### On-Chain Metadata
+- Pin to IPFS and reference `ipfs://<CID>/`, not an HTTP gateway URL — gateways go away
+  and the token's art goes with them. Pin through a service that will keep it alive.
+- Upload metadata **before** minting; a CID that 404s at mint is permanent if the base
+  URI is immutable.
+- Fully on-chain metadata (SVG + base64 `data:` URI from `tokenURI`) removes that
+  dependency entirely, at a large gas cost. Worth it only for small generative art.
+
+## Royalties (ERC-2981)
 
 ```solidity
-contract OnChainNFT is ERC721 {
-    struct Traits {
-        uint8 background;
-        uint8 body;
-        uint8 head;
-        uint8 rarity;
+import "@openzeppelin/contracts/token/common/ERC2981.sol";
+
+contract MyNFT is ERC721, ERC2981, Ownable {
+    constructor() ERC721("MyNFT", "MNFT") Ownable(msg.sender) {
+        _setDefaultRoyalty(msg.sender, 500);   // 500 = 5%, basis points
     }
 
-    mapping(uint256 => Traits) public tokenTraits;
-
-    function tokenURI(uint256 tokenId) public view override returns (string memory) {
-        Traits memory traits = tokenTraits[tokenId];
-
-        string memory json = Base64.encode(
-            bytes(
-                string(
-                    abi.encodePacked(
-                        '{"name": "NFT #', Strings.toString(tokenId), '",',
-                        '"description": "On-chain NFT",',
-                        '"image": "data:image/svg+xml;base64,', generateSVG(traits), '",',
-                        '"attributes": [',
-                        '{"trait_type": "Background", "value": "', Strings.toString(traits.background), '"},',
-                        '{"trait_type": "Rarity", "value": "', getRarityName(traits.rarity), '"}',
-                        ']}'
-                    )
-                )
-            )
-        );
-
-        return string(abi.encodePacked("data:application/json;base64,", json));
-    }
-
-    function generateSVG(Traits memory traits) internal pure returns (string memory) {
-        // Generate SVG based on traits
-        return "...";
-    }
-}
-```
-
-## Royalties (EIP-2981)
-
-```solidity
-import "@openzeppelin/contracts/interfaces/IERC2981.sol";
-
-contract NFTWithRoyalties is ERC721, IERC2981 {
-    address public royaltyRecipient;
-    uint96 public royaltyFee = 500; // 5%
-
-    constructor() ERC721("Royalty NFT", "RNFT") {
-        royaltyRecipient = msg.sender;
-    }
-
-    function royaltyInfo(uint256 tokenId, uint256 salePrice)
-        external
-        view
-        override
-        returns (address receiver, uint256 royaltyAmount)
+    function supportsInterface(bytes4 id)
+        public view override(ERC721, ERC2981) returns (bool)
     {
-        return (royaltyRecipient, (salePrice * royaltyFee) / 10000);
-    }
-
-    function setRoyalty(address recipient, uint96 fee) external onlyOwner {
-        require(fee <= 1000, "Royalty fee too high"); // Max 10%
-        royaltyRecipient = recipient;
-        royaltyFee = fee;
-    }
-
-    function supportsInterface(bytes4 interfaceId)
-        public
-        view
-        override(ERC721, IERC165)
-        returns (bool)
-    {
-        return interfaceId == type(IERC2981).interfaceId ||
-               super.supportsInterface(interfaceId);
+        return super.supportsInterface(id);
     }
 }
 ```
 
-## Soulbound Tokens (Non-Transferable)
+ERC-2981 only *advertises* a royalty — it does not enforce payment. Marketplaces choose
+whether to honor it. Do not describe royalty income as guaranteed.
+
+## Soulbound (non-transferable)
+
+Override `_update` and reject anything that is not a mint or burn:
 
 ```solidity
-contract SoulboundToken is ERC721 {
-    constructor() ERC721("Soulbound", "SBT") {}
+error Soulbound();
 
-    function _beforeTokenTransfer(
-        address from,
-        address to,
-        uint256 tokenId,
-        uint256 batchSize
-    ) internal virtual override {
-        require(from == address(0) || to == address(0), "Token is soulbound");
-        super._beforeTokenTransfer(from, to, tokenId, batchSize);
-    }
-
-    function mint(address to) external {
-        uint256 tokenId = totalSupply() + 1;
-        _safeMint(to, tokenId);
-    }
-
-    // Burn is allowed (user can destroy their SBT)
-    function burn(uint256 tokenId) external {
-        require(ownerOf(tokenId) == msg.sender, "Not token owner");
-        _burn(tokenId);
-    }
+function _update(address to, uint256 tokenId, address auth)
+    internal override returns (address)
+{
+    address from = _ownerOf(tokenId);
+    if (from != address(0) && to != address(0)) revert Soulbound();
+    return super._update(to, tokenId, auth);
 }
 ```
 
-## Dynamic NFTs
+## Gas-efficient minting
 
-```solidity
-contract DynamicNFT is ERC721 {
-    struct TokenState {
-        uint256 level;
-        uint256 experience;
-        uint256 lastUpdated;
-    }
+- **ERC721A** (chiru-labs) makes batch mints near-constant cost by writing ownership
+  once per batch instead of per token; the trade is more expensive transfers later. Worth
+  it for large batch drops, not for 1-of-1s. It is a separate dependency and still
+  follows v4-style conventions — do not mix its base with OZ v5's `_update` hook.
+- **Merkle allowlists** beat an on-chain address mapping: store one root, verify a proof
+  at mint.
+- **Custom errors over `require` strings** (used above) — cheaper deploy and revert.
+- `_nextTokenId++` on a `uint256` is already cheaper than the removed `Counters`
+  wrapper, which only ever added a struct around the same increment.
 
-    mapping(uint256 => TokenState) public tokenStates;
+## Pre-deploy checklist
 
-    function gainExperience(uint256 tokenId, uint256 exp) external {
-        require(ownerOf(tokenId) == msg.sender, "Not token owner");
-
-        TokenState storage state = tokenStates[tokenId];
-        state.experience += exp;
-
-        // Level up logic
-        if (state.experience >= state.level * 100) {
-            state.level++;
-        }
-
-        state.lastUpdated = block.timestamp;
-    }
-
-    function tokenURI(uint256 tokenId) public view override returns (string memory) {
-        TokenState memory state = tokenStates[tokenId];
-
-        // Generate metadata based on current state
-        return generateMetadata(tokenId, state);
-    }
-
-    function generateMetadata(uint256 tokenId, TokenState memory state)
-        internal
-        pure
-        returns (string memory)
-    {
-        // Dynamic metadata generation
-        return "";
-    }
-}
-```
-
-## Gas-Optimized Minting (ERC721A)
-
-```solidity
-import "erc721a/contracts/ERC721A.sol";
-
-contract OptimizedNFT is ERC721A {
-    uint256 public constant MAX_SUPPLY = 10000;
-    uint256 public constant MINT_PRICE = 0.05 ether;
-
-    constructor() ERC721A("Optimized NFT", "ONFT") {}
-
-    function mint(uint256 quantity) external payable {
-        require(_totalMinted() + quantity <= MAX_SUPPLY, "Exceeds max supply");
-        require(msg.value >= MINT_PRICE * quantity, "Insufficient payment");
-
-        _mint(msg.sender, quantity);
-    }
-
-    function _baseURI() internal pure override returns (string memory) {
-        return "ipfs://QmBaseHash/";
-    }
-}
-```
-
-## Resources
-
-- **references/erc721.md**: ERC-721 specification details
-- **references/erc1155.md**: ERC-1155 multi-token standard
-- **references/metadata-standards.md**: Metadata best practices
-- **references/enumeration.md**: Token enumeration patterns
-- **assets/erc721-contract.sol**: Production ERC-721 template
-- **assets/erc1155-contract.sol**: Production ERC-1155 template
-- **assets/metadata-schema.json**: Standard metadata format
-- **assets/metadata-uploader.py**: IPFS upload utility
-
-## Best Practices
-
-1. **Use OpenZeppelin**: Battle-tested implementations
-2. **Pin Metadata**: Use IPFS with pinning service
-3. **Implement Royalties**: EIP-2981 for marketplace compatibility
-4. **Gas Optimization**: Use ERC721A for batch minting
-5. **Reveal Mechanism**: Placeholder → reveal pattern
-6. **Enumeration**: Support walletOfOwner for marketplaces
-7. **Whitelist**: Merkle trees for efficient whitelisting
-
-## Marketplace Integration
-
-- OpenSea: ERC-721/1155, metadata standards
-- LooksRare: Royalty enforcement
-- Rarible: Protocol fees, lazy minting
-- Blur: Gas-optimized trading
+- Mint supply cap enforced on the path that mints, including any owner-only mint
+- Withdraw function present and tested — funds are otherwise locked forever
+- `supportsInterface` overridden across every inherited base, or marketplaces misread
+  the contract
+- Metadata pinned and resolving before the first mint
+- Reentrancy guard on anything with state changes after `_safeMint`
+- Test against the OZ major version you actually pin — v4 and v5 contracts of the same
+  shape differ in constructor and hooks

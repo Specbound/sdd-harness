@@ -354,6 +354,35 @@ secret-scan:
   allow_failure: false
 ```
 
+## Third-Party Inference / MCP Provider Vetting
+
+A cheap or unvetted inference provider (LLM API reseller, proxy, or MCP server) is a
+credential-and-trace exfiltration risk, not just a cost/quality tradeoff — the same
+secrets-hygiene discipline above applies to anything holding an API key or seeing a
+prompt trace. Source: X/thdxr.
+
+Before routing traffic through a third-party inference or MCP provider, check:
+
+1. **Who sees the key?** Does the provider proxy your own upstream API key, or issue
+   its own? A proxied key means the provider can use it outside your requests — treat
+   it like handing out a scoped-but-unaudited credential.
+2. **Who sees the trace?** Prompts, tool-call arguments, and responses often carry
+   secrets (tokens pasted into context, file contents, internal URLs). A provider with
+   no stated retention/logging policy is a silent exfiltration path — vet retention
+   terms before sending real traffic, not after an incident.
+3. **Can it fake a tool call?** For MCP/agentic providers specifically: a compromised
+   or malicious intermediary can inject or alter tool-call results the model then
+   acts on. Prefer providers where tool execution stays on your side of the trust
+   boundary (you run the MCP server, not the reseller).
+4. **Is pricing the only signal you checked?** A price far below the upstream vendor's
+   own rate implies the provider is subsidizing somehow — reselling capacity they
+   don't have a legitimate contract for, or monetizing the traffic itself. Cheap alone
+   isn't disqualifying, but it's a reason to check 1–3 harder, not skip them.
+
+Treat an unvetted provider the same as an unvetted secrets backend elsewhere in this
+skill: least-privilege scoped keys, no long-lived credentials handed to it, and audit
+what it can see before it sees production traffic.
+
 ## Reference Files
 
 - `references/vault-setup.md` - HashiCorp Vault configuration

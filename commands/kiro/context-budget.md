@@ -71,7 +71,7 @@ Apply these thresholds:
 - observations.md > 40 entries → "Consider `/kiro:housekeeping` to archive old entries"
 - Any steering file > 2,000 tokens → "Consider trimming {file} — large steering files slow relevance filtering"
 - Total > 30,000 tokens → "Context budget is high. Consider archiving cold memory or trimming verbose steering files"
-- hot-memory.md > 800 tokens → "hot-memory.md exceeds recommended 50-line limit"
+- hot-memory.md > 8,000 bytes → "hot-memory.md exceeds its 8,000-byte cap — prompt-hook.sh truncates it at 9,000, so the excess never reaches Claude"
 - patterns.md > 1,000 tokens → "patterns.md approaching 70-line limit — prune low-value entries"
 - Total < 5,000 tokens → "Context is lean. No action needed."
 

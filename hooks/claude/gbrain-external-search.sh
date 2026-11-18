@@ -1,4 +1,5 @@
 #!/bin/bash
+# purpose: Before a web fetch or search, reminds Claude to check claude-mem first.
 # Fires PreToolUse (WebFetch|WebSearch) — reminds to check claude-mem first
 # before reaching for external APIs.
 

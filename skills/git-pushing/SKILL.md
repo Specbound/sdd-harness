@@ -33,3 +33,4 @@ See the `stacking-pull-requests` skill for the eligibility rule and manual overr
 
 - Repo conventions override this skill: respect project CLAUDE.md rules (e.g. atomic commits per task, files that must never be committed) before staging everything.
 - If the script fails (no remote, detached HEAD, hooks rejecting the commit), fall back to explicit `git add`/`commit`/`push` commands and show the error rather than retrying the script.
+- Never stage harness paths (.claude/, .cursor/, .serena/, .mcp.json, specs/): check git status first. (source: 2026-11-15 user feedback)

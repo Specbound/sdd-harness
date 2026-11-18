@@ -378,6 +378,8 @@ Don't pattern-match conflict markers — reconstruct why each side's change exis
 
 ## Common Pitfalls
 
+- **Already-tracked files and .gitignore**: `.gitignore` only prevents *future* tracking. Files already in the Git index continue appearing in `git status` until untracked with `git rm --cached`. Before editing `.gitignore`, run `git ls-files <path>` to check if already tracked — if yes, use `git rm --cached` first, then add to `.gitignore`. (source: 2026-10-07 observation)
+
 - **Rebasing Public Branches**: Causes history conflicts for collaborators
 - **Force Pushing Without Lease**: Can overwrite teammate's work
 - **Losing Work in Rebase**: Resolve conflicts carefully, test after rebase

@@ -105,7 +105,7 @@ maybe_auto_instrument() {
     fi
 
     local log_file="/tmp/raindrop-instrument-$(basename "$repo").log"
-    local prompt="Use the instrument-agent skill to instrument this repository for Raindrop Workshop.
+    local prompt="Read ~/.claude/skill-library/instrument-agent/SKILL.md and follow it to instrument this repository for Raindrop Workshop.
 Repository path: $repo
 Rules:
 - Use your best judgment to identify the main agent entry point (the function/route that triggers an LLM call)

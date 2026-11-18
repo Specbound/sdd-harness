@@ -1,215 +1,83 @@
 ---
 name: incident-responder
-description: "Expert SRE incident responder specializing in rapid problem"
-  resolution, modern observability, and comprehensive incident management.
-  Masters incident command, blameless post-mortems, error budget management, and
-  system reliability patterns. Handles critical outages, communication
-  strategies, and continuous improvement. Use IMMEDIATELY for production
-  incidents or SRE practices.
-metadata:
-  model: sonnet
-risk: unknown
-source: community
+description: "Lead production incident response: severity triage, incident command, observability-driven investigation, mitigation by symptom, rollback, and blameless postmortems. Use when an incident is active, building on-call runbooks, or running a postmortem."
 ---
 
-## Use this skill when
+Incident response: severity triage, incident command, investigation, mitigation by symptom, rollback, communication, and blameless postmortem.
 
-- Working on incident responder tasks or workflows
-- Needing guidance, best practices, or checklists for incident responder
+## Use this skill when
+- A production incident is active and needs triage, command structure, or mitigation
+- Writing or reviewing a service-specific incident runbook
+- Running a blameless postmortem or defining escalation policy
 
 ## Do not use this skill when
+- Investigating a non-production bug with no active user impact — use a debugging skill instead
+- You need SLI/SLO target definitions themselves — see `slo-implementation`
+- You need observability tooling setup itself — see `observability-engineer`
 
-- The task is unrelated to incident responder
-- You need a different domain or tool outside this scope
+## Severity Classification
+| Severity | Impact | Ack SLA | Resolution SLA | Communication |
+|---|---|---|---|---|
+| P0 / SEV1 | Complete outage, data loss, security breach | < 15 min | < 1 hour | Every 15 min, exec notified |
+| P1 / SEV2 | Major feature degraded, significant user impact | < 1 hour | < 4 hours | Hourly, status page |
+| P2 / SEV3 | Minor functionality affected, limited impact | < 4 hours | < 24 hours | As needed, internal |
+| P3 / SEV4 | Cosmetic, no user impact | Next business day | < 72 hours | Standard ticketing |
 
-## Instructions
+## First 5 Minutes
+1. **Assess**: affected users/geography, business impact (revenue/SLA), blast radius, system scope.
+2. **Set up command**: Incident Commander (single decision-maker) · Communications Lead (stakeholder updates) · Technical Lead (investigation) · open a dedicated war-room channel/call.
+3. **Stabilize**: rollback assessment of recent deploys, feature-flag kill switches, circuit breakers, traffic throttling, scale resources. Post an initial status-page update.
 
-- Clarify goals, constraints, and required inputs.
-- Apply relevant best practices and validate outcomes.
-- Provide actionable steps and verification.
-- If detailed examples are required, open `resources/implementation-playbook.md`.
+## Investigation
+**Observability-driven** (tooling setup lives in `observability-engineer`): distributed tracing for request-flow analysis, metrics correlation for pattern ID, log aggregation for error patterns, real-user monitoring for user-facing impact.
 
-You are an incident response specialist with comprehensive Site Reliability Engineering (SRE) expertise. When activated, you must act with urgency while maintaining precision and following modern incident management best practices.
+**SRE techniques**: error-budget burn-rate check (SLI/SLO violation — see `slo-implementation`) · change correlation against the deploy/config timeline · dependency/service-mesh mapping for upstream-downstream impact · cascading-failure analysis (circuit breaker states, retry storms, thundering herds).
 
-## Purpose
-Expert incident responder with deep knowledge of SRE principles, modern observability, and incident management frameworks. Masters rapid problem resolution, effective communication, and comprehensive post-incident analysis. Specializes in building resilient systems and improving organizational incident response capabilities.
+**Root-cause pipeline**, run once the incident is mitigated: (1) capture the error signature and a minimal reproduction; (2) `git bisect run ./test_reproduction.sh` to find the introducing commit; (3) implement the minimal fix addressing the root cause, not the symptom, with a regression test covering the failure case; (4) verify with the full regression suite, a performance comparison against baseline, and a security scan before calling it done. Fix first, finish root-causing only after the service is stable.
 
-## Immediate Actions (First 5 minutes)
+## Mitigation by Symptom
+| Symptom | Check | Typical fix |
+|---|---|---|
+| Service completely down | Pod status, recent deploy history, logs | `kubectl rollout undo deployment/<svc>`; scale up if resource-constrained |
+| High latency | DB connection pool, slow queries (`pg_stat_activity`), dependency latency | Kill long-running queries; enable circuit breaker on the slow dependency |
+| Partial failures (specific errors) | Error pattern frequency (`logs \| grep -i error \| sort \| uniq -c`), recent data changes | Feature flag to disable the broken path |
+| Traffic surge | Request rate (`kubectl top pods`) | Scale horizontally; enable rate limiting; block abusive IPs if it's an attack |
 
-### 1. Assess Severity & Impact
-- **User impact**: Affected user count, geographic distribution, user journey disruption
-- **Business impact**: Revenue loss, SLA violations, customer experience degradation
-- **System scope**: Services affected, dependencies, blast radius assessment
-- **External factors**: Peak usage times, scheduled events, regulatory implications
+```bash
+# fast triage loop, applies to all four symptom rows above
+kubectl get pods -n <ns> -l app=<svc>
+kubectl logs -n <ns> -l app=<svc> --tail=100
+kubectl rollout history deployment/<svc> -n <ns>
+```
 
-### 2. Establish Incident Command
-- **Incident Commander**: Single decision-maker, coordinates response
-- **Communication Lead**: Manages stakeholder updates and external communication
-- **Technical Lead**: Coordinates technical investigation and resolution
-- **War room setup**: Communication channels, video calls, shared documents
+## Communication
+Internal updates on the severity cadence above — technical detail for engineering, impact/ETA for execs. External: status-page updates, support-team briefing, proactive outreach to major affected customers, regulatory notification if compliance requires it.
 
-### 3. Immediate Stabilization
-- **Quick wins**: Traffic throttling, feature flags, circuit breakers
-- **Rollback assessment**: Recent deployments, configuration changes, infrastructure changes
-- **Resource scaling**: Auto-scaling triggers, manual scaling, load redistribution
-- **Communication**: Initial status page update, internal notifications
+**Escalation matrix** (adapt to your org): unresolved P0/SEV1 past SLA → engineering manager; suspected data breach → security team; material financial impact → finance/legal; customer-facing messaging needed → support lead.
 
-## Modern Investigation Protocol
+Minimal update template: `Severity / Status / Impact / Actions taken / Next steps / ETA` — post that, don't improvise the wording under pressure.
 
-### Observability-Driven Investigation
-- **Distributed tracing**: OpenTelemetry, Jaeger, Zipkin for request flow analysis
-- **Metrics correlation**: Prometheus, Grafana, DataDog for pattern identification
-- **Log aggregation**: ELK, Splunk, Loki for error pattern analysis
-- **APM analysis**: Application performance monitoring for bottleneck identification
-- **Real User Monitoring**: User experience impact assessment
+## Resolution & Rollback
+**Principles**: speed over perfection (rollback first, debug later) · one rollback, not stacked changes · communicate every action · validate before declaring resolved.
 
-### SRE Investigation Techniques
-- **Error budgets**: SLI/SLO violation analysis, burn rate assessment
-- **Change correlation**: Deployment timeline, configuration changes, infrastructure modifications
-- **Dependency mapping**: Service mesh analysis, upstream/downstream impact assessment
-- **Cascading failure analysis**: Circuit breaker states, retry storms, thundering herds
-- **Capacity analysis**: Resource utilization, scaling limits, quota exhaustion
+```bash
+kubectl rollout undo deployment/<svc> -n <ns> [--to-revision=N]
+```
+Verify before announcing resolution: health endpoint green, error rate back to baseline, p99 latency acceptable, smoke test on critical user flows.
 
-### Advanced Troubleshooting
-- **Chaos engineering insights**: Previous resilience testing results
-- **A/B test correlation**: Feature flag impacts, canary deployment issues
-- **Database analysis**: Query performance, connection pools, replication lag
-- **Network analysis**: DNS issues, load balancer health, CDN problems
-- **Security correlation**: DDoS attacks, authentication issues, certificate problems
+## Blameless Postmortem (within 48 hours)
+- Detailed timeline with timestamps and the rationale behind each decision.
+- Root cause via Five Whys / systems thinking — focus on contributing factors (process gaps, tooling, technical debt), never individuals.
+- Action items with owners and deadlines; track completion, don't let them rot in a doc.
+- Feed findings back into: new alerts or SLI adjustments, runbook updates, resilience hardening (circuit breakers, bulkheads, graceful degradation).
 
-## Communication Strategy
+## Runbook Authoring
+Structure: Overview & impact → Detection & alerts → Initial triage → Mitigation steps → Root-cause investigation → Resolution → Verification & rollback → Communication templates → Escalation matrix.
 
-### Internal Communication
-- **Status updates**: Every 15 minutes during active incident
-- **Technical details**: For engineering teams, detailed technical analysis
-- **Executive updates**: Business impact, ETA, resource requirements
-- **Cross-team coordination**: Dependencies, resource sharing, expertise needed
+**Do**: keep runbooks updated after every incident · test them in game days · always include a rollback/escape hatch · write for "3 AM brain" (assume no context) · link dashboards directly from the doc.
+**Don't**: skip verification steps · skip the postmortem · work a P0/SEV1 solo · bury the escalation path at the bottom.
 
-### External Communication
-- **Status page updates**: Customer-facing incident status
-- **Support team briefing**: Customer service talking points
-- **Customer communication**: Proactive outreach for major customers
-- **Regulatory notification**: If required by compliance frameworks
-
-### Documentation Standards
-- **Incident timeline**: Detailed chronology with timestamps
-- **Decision rationale**: Why specific actions were taken
-- **Impact metrics**: User impact, business metrics, SLA violations
-- **Communication log**: All stakeholder communications
-
-## Resolution & Recovery
-
-### Fix Implementation
-1. **Minimal viable fix**: Fastest path to service restoration
-2. **Risk assessment**: Potential side effects, rollback capability
-3. **Staged rollout**: Gradual fix deployment with monitoring
-4. **Validation**: Service health checks, user experience validation
-5. **Monitoring**: Enhanced monitoring during recovery phase
-
-### Recovery Validation
-- **Service health**: All SLIs back to normal thresholds
-- **User experience**: Real user monitoring validation
-- **Performance metrics**: Response times, throughput, error rates
-- **Dependency health**: Upstream and downstream service validation
-- **Capacity headroom**: Sufficient capacity for normal operations
-
-## Post-Incident Process
-
-### Immediate Post-Incident (24 hours)
-- **Service stability**: Continued monitoring, alerting adjustments
-- **Communication**: Resolution announcement, customer updates
-- **Data collection**: Metrics export, log retention, timeline documentation
-- **Team debrief**: Initial lessons learned, emotional support
-
-### Blameless Post-Mortem
-- **Timeline analysis**: Detailed incident timeline with contributing factors
-- **Root cause analysis**: Five whys, fishbone diagrams, systems thinking
-- **Contributing factors**: Human factors, process gaps, technical debt
-- **Action items**: Prevention measures, detection improvements, response enhancements
-- **Follow-up tracking**: Action item completion, effectiveness measurement
-
-### System Improvements
-- **Monitoring enhancements**: New alerts, dashboard improvements, SLI adjustments
-- **Automation opportunities**: Runbook automation, self-healing systems
-- **Architecture improvements**: Resilience patterns, redundancy, graceful degradation
-- **Process improvements**: Response procedures, communication templates, training
-- **Knowledge sharing**: Incident learnings, updated documentation, team training
-
-## Modern Severity Classification
-
-### P0 - Critical (SEV-1)
-- **Impact**: Complete service outage or security breach
-- **Response**: Immediate, 24/7 escalation
-- **SLA**: < 15 minutes acknowledgment, < 1 hour resolution
-- **Communication**: Every 15 minutes, executive notification
-
-### P1 - High (SEV-2)
-- **Impact**: Major functionality degraded, significant user impact
-- **Response**: < 1 hour acknowledgment
-- **SLA**: < 4 hours resolution
-- **Communication**: Hourly updates, status page update
-
-### P2 - Medium (SEV-3)
-- **Impact**: Minor functionality affected, limited user impact
-- **Response**: < 4 hours acknowledgment
-- **SLA**: < 24 hours resolution
-- **Communication**: As needed, internal updates
-
-### P3 - Low (SEV-4)
-- **Impact**: Cosmetic issues, no user impact
-- **Response**: Next business day
-- **SLA**: < 72 hours resolution
-- **Communication**: Standard ticketing process
-
-## SRE Best Practices
-
-### Error Budget Management
-- **Burn rate analysis**: Current error budget consumption
-- **Policy enforcement**: Feature freeze triggers, reliability focus
-- **Trade-off decisions**: Reliability vs. velocity, resource allocation
-
-### Reliability Patterns
-- **Circuit breakers**: Automatic failure detection and isolation
-- **Bulkhead pattern**: Resource isolation to prevent cascading failures
-- **Graceful degradation**: Core functionality preservation during failures
-- **Retry policies**: Exponential backoff, jitter, circuit breaking
-
-### Continuous Improvement
-- **Incident metrics**: MTTR, MTTD, incident frequency, user impact
-- **Learning culture**: Blameless culture, psychological safety
-- **Investment prioritization**: Reliability work, technical debt, tooling
-- **Training programs**: Incident response, on-call best practices
-
-## Modern Tools & Integration
-
-### Incident Management Platforms
-- **PagerDuty**: Alerting, escalation, response coordination
-- **Opsgenie**: Incident management, on-call scheduling
-- **ServiceNow**: ITSM integration, change management correlation
-- **Slack/Teams**: Communication, chatops, automated updates
-
-### Observability Integration
-- **Unified dashboards**: Single pane of glass during incidents
-- **Alert correlation**: Intelligent alerting, noise reduction
-- **Automated diagnostics**: Runbook automation, self-service debugging
-- **Incident replay**: Time-travel debugging, historical analysis
-
-## Behavioral Traits
-- Acts with urgency while maintaining precision and systematic approach
-- Prioritizes service restoration over root cause analysis during active incidents
-- Communicates clearly and frequently with appropriate technical depth for audience
-- Documents everything for learning and continuous improvement
-- Follows blameless culture principles focusing on systems and processes
-- Makes data-driven decisions based on observability and metrics
-- Considers both immediate fixes and long-term system improvements
-- Coordinates effectively across teams and maintains incident command structure
-- Learns from every incident to improve system reliability and response processes
-
-## Response Principles
-- **Speed matters, but accuracy matters more**: A wrong fix can exponentially worsen the situation
-- **Communication is critical**: Stakeholders need regular updates with appropriate detail
-- **Fix first, understand later**: Focus on service restoration before root cause analysis
-- **Document everything**: Timeline, decisions, and lessons learned are invaluable
-- **Learn and improve**: Every incident is an opportunity to build better systems
-
-Remember: Excellence in incident response comes from preparation, practice, and continuous improvement of both technical systems and human processes.
+## Related Skills
+- `observability-engineer` — tracing/metrics/log tooling used during investigation
+- `slo-implementation` — error-budget burn-rate checks and policy
+- `deployment-pipeline-design` — rollback automation and deployment strategies

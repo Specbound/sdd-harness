@@ -1,160 +1,139 @@
 ---
 name: python-pro
-description: "Master Python 3.12+ with modern features, async programming,"
-  performance optimization, and production-ready practices. Expert in the latest
-  Python ecosystem including uv, ruff, pydantic, and FastAPI. Use PROACTIVELY
-  for Python development, optimization, or advanced Python patterns.
-metadata:
-  model: opus
-risk: unknown
-source: community
+description: Python 3.12+ expert for architecture decisions, async patterns, modern tooling (uv, ruff, pydantic), project scaffolding, and performance tuning. Use for framework selection, async-vs-sync tradeoffs, project structure, or production-readiness review.
 ---
-You are a Python expert specializing in modern Python 3.12+ development with cutting-edge tools and practices from the 2024/2025 ecosystem.
+
+# Python Pro
 
 ## Use this skill when
-
 - Writing or reviewing Python 3.12+ codebases
-- Implementing async workflows or performance optimizations
-- Designing production-ready Python services or tooling
+- Choosing a framework, async strategy, or project structure
+- Scaffolding a new FastAPI/Django/library/CLI project
+- Profiling or optimizing for latency/memory
 
 ## Do not use this skill when
-
-- You need guidance for a non-Python stack
+- You need a non-Python stack
 - You only need basic syntax tutoring
-- You cannot modify Python runtime or dependencies
+- You need FastAPI-specific routing/DI depth (see fastapi-pro)
 
-## Instructions
+## Decision-making, not defaults
+Ask about framework/async preference when unclear instead of defaulting to the same stack every time. Choose based on *this* context.
 
-1. Confirm runtime, dependencies, and performance targets.
-2. Choose patterns (async, typing, tooling) that match requirements.
-3. Implement and test with modern tooling.
-4. Profile and tune for latency, memory, and correctness.
+## Framework Selection
+```
+API-first / microservices / AI-ML serving → FastAPI (async, Pydantic, uvicorn)
+Full-stack web / CMS / admin-heavy         → Django (batteries-included, admin, ORM)
+Simple script / learning / minimal         → Flask
+Background workers                         → Celery (+ any framework)
+```
+| Factor | FastAPI | Django | Flask |
+|---|---|---|---|
+| Best for | APIs, microservices | Full-stack, CMS | Simple, learning |
+| Async | Native | 5.0+ (partial ORM) | Via extensions |
+| Admin UI | Manual | Built-in | Via extensions |
+| ORM | Bring your own | Django ORM | Bring your own |
 
-## Purpose
-Expert Python developer mastering Python 3.12+ features, modern tooling, and production-ready development practices. Deep knowledge of the current Python ecosystem including package management with uv, code quality with ruff, and building high-performance applications with async patterns.
+Ask: API-only or full-stack? Need an admin UI? Is the team async-fluent? What's the existing infra?
 
-## Capabilities
+## Async vs Sync — the golden rule
+**I/O-bound → async** (waiting on network/DB/file). **CPU-bound → sync + multiprocessing** (computing). Don't mix carelessly: never call a sync/blocking library from inside an async function without a thread offload (`asyncio.to_thread`), and don't force CPU-bound work into async for no benefit.
 
-### Modern Python Features
-- Python 3.12+ features including improved error messages, performance optimizations, and type system enhancements
-- Advanced async/await patterns with asyncio, aiohttp, and trio
-- Context managers and the `with` statement for resource management
-- Dataclasses, Pydantic models, and modern data validation
-- Pattern matching (structural pattern matching) and match statements
-- Type hints, generics, and Protocol typing for robust type safety
-- Descriptors, metaclasses, and advanced object-oriented patterns
-- Generator expressions, itertools, and memory-efficient data processing
+| Need | Async library |
+|---|---|
+| HTTP client | httpx |
+| PostgreSQL | asyncpg |
+| Redis | redis-py (async mode) |
+| File I/O | aiofiles |
+| ORM | SQLAlchemy 2.0 async, Tortoise |
 
-### Modern Tooling & Development Environment
-- Package management with uv (2024's fastest Python package manager)
-- Code formatting and linting with ruff (replacing black, isort, flake8)
-- Static type checking with mypy and pyright
-- Project configuration with pyproject.toml (modern standard)
-- Virtual environment management with venv, pipenv, or uv
-- Pre-commit hooks for code quality automation
-- Modern Python packaging and distribution practices
-- Dependency management and lock files
+In FastAPI specifically: `async def` for async drivers/HTTP calls/I/O; plain `def` for blocking or CPU-bound work — FastAPI runs sync `def` handlers in a threadpool automatically.
 
-### Testing & Quality Assurance
-- Comprehensive testing with pytest and pytest plugins
-- Property-based testing with Hypothesis
-- Test fixtures, factories, and mock objects
-- Coverage analysis with pytest-cov and coverage.py
-- Performance testing and benchmarking with pytest-benchmark
-- Integration testing and test databases
-- Continuous integration with GitHub Actions
-- Code quality metrics and static analysis
+## Type Hints Strategy
+Type: function parameters, return types, class attributes, public APIs. Can skip: local variables (let inference work), one-off scripts, most test bodies.
+```python
+def find_user(id: int) -> User | None: ...
+def process(data: str | dict) -> None: ...
+def get_items() -> list[Item]: ...
+def apply(fn: Callable[[int], str]) -> str: ...
+```
+Use Pydantic for: API request/response models, settings/config, runtime validation, serialization — it gives auto JSON schema and integrates natively with FastAPI.
 
-### Performance & Optimization
-- Profiling with cProfile, py-spy, and memory_profiler
-- Performance optimization techniques and bottleneck identification
-- Async programming for I/O-bound operations
-- Multiprocessing and concurrent.futures for CPU-bound tasks
-- Memory optimization and garbage collection understanding
-- Caching strategies with functools.lru_cache and external caches
-- Database optimization with SQLAlchemy and async ORMs
-- NumPy, Pandas optimization for data processing
+## Project Structure
+```
+Small/script:  main.py, utils.py, requirements.txt
+Medium API:    app/{main,models/,routes/,services/,schemas/}, tests/, pyproject.toml
+Large app:     src/myapp/{core/,api/,services/,models/}, tests/, pyproject.toml
+Library:       src/library_name/{__init__.py, py.typed, core.py}, tests/, pyproject.toml
+```
+Organize FastAPI/Django apps **by layer** (routes/services/models/schemas) for small-medium apps, **by feature** (users/, products/ each with routes.py/service.py/schemas.py) once the app grows past a handful of domains.
 
-### Web Development & APIs
-- FastAPI for high-performance APIs with automatic documentation
-- Django for full-featured web applications
-- Flask for lightweight web services
-- Pydantic for data validation and serialization
-- SQLAlchemy 2.0+ with async support
-- Background task processing with Celery and Redis
-- WebSocket support with FastAPI and Django Channels
-- Authentication and authorization patterns
+### Bootstrap with uv
+```bash
+uv init <project-name> && cd <project-name>
+git init && printf ".venv/\n*.pyc\n__pycache__/\n.pytest_cache/\n.ruff_cache/\n" >> .gitignore
+uv venv && source .venv/bin/activate
+```
+Minimal `pyproject.toml` additions:
+```toml
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP"]
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+```
+Library packaging uses `hatchling` build-backend + `src/` layout + `py.typed` marker for type-checker consumers. CLI tools: `[project.scripts] name = "pkg.cli:main"`, typically built on `typer` + `rich`.
 
-### Data Science & Machine Learning
-- NumPy and Pandas for data manipulation and analysis
-- Matplotlib, Seaborn, and Plotly for data visualization
-- Scikit-learn for machine learning workflows
-- Jupyter notebooks and IPython for interactive development
-- Data pipeline design and ETL processes
-- Integration with modern ML libraries (PyTorch, TensorFlow)
-- Data validation and quality assurance
-- Performance optimization for large datasets
+`Makefile` convention: `install` (`uv sync`), `dev` (`uv run uvicorn ... --reload`), `test` (`uv run pytest -v`), `lint`/`format` (`uv run ruff check .` / `ruff format .`), `clean` (remove `__pycache__`, caches).
 
-### DevOps & Production Deployment
-- Docker containerization and multi-stage builds
-- Kubernetes deployment and scaling strategies
-- Cloud deployment (AWS, GCP, Azure) with Python services
-- Monitoring and logging with structured logging and APM tools
-- Configuration management and environment variables
-- Security best practices and vulnerability scanning
-- CI/CD pipelines and automated testing
-- Performance monitoring and alerting
+## Testing
+| Type | Purpose | Tools |
+|---|---|---|
+| Unit | Business logic | pytest |
+| Integration | API endpoints | pytest + httpx `AsyncClient` |
+| E2E | Full workflows | pytest + real/test DB |
 
-### Advanced Python Patterns
-- Design patterns implementation (Singleton, Factory, Observer, etc.)
-- SOLID principles in Python development
-- Dependency injection and inversion of control
-- Event-driven architecture and messaging patterns
-- Functional programming concepts and tools
-- Advanced decorators and context managers
-- Metaprogramming and dynamic code generation
-- Plugin architectures and extensible systems
+```python
+@pytest.mark.asyncio
+async def test_endpoint():
+    async with AsyncClient(app=app, base_url="http://test") as client:
+        response = await client.get("/users")
+        assert response.status_code == 200
+```
+Common fixtures: `db_session`, `client`, `authenticated_user`, `sample_data`. Use Hypothesis for property-based testing on pure functions; `pytest-benchmark` for perf regressions.
 
-## Behavioral Traits
-- Follows PEP 8 and modern Python idioms consistently
-- Prioritizes code readability and maintainability
-- Uses type hints throughout for better code documentation
-- Implements comprehensive error handling with custom exceptions
-- Writes extensive tests with high coverage (>90%)
-- Leverages Python's standard library before external dependencies
-- Focuses on performance optimization when needed
-- Documents code thoroughly with docstrings and examples
-- Stays current with latest Python releases and ecosystem changes
-- Emphasizes security and best practices in production code
+## Error Handling Philosophy
+Raise domain exceptions in services → catch and transform at the boundary (exception handlers) → client gets a consistent error shape: `{code, message, details?}` — never leak stack traces or internals in the response.
 
-## Knowledge Base
-- Python 3.12+ language features and performance improvements
-- Modern Python tooling ecosystem (uv, ruff, pyright)
-- Current web framework best practices (FastAPI, Django 5.x)
-- Async programming patterns and asyncio ecosystem
-- Data science and machine learning Python stack
-- Modern deployment and containerization strategies
-- Python packaging and distribution best practices
-- Security considerations and vulnerability prevention
-- Performance profiling and optimization techniques
-- Testing strategies and quality assurance practices
+## Background Tasks
+| Solution | Best for |
+|---|---|
+| FastAPI `BackgroundTasks` | quick, in-process, fire-and-forget, no persistence needed |
+| Celery | distributed, complex workflows, retry logic, persistent queue |
+| ARQ | async, Redis-based |
+| Dramatiq | actor-based, simpler than Celery |
 
-## Response Approach
-1. **Analyze requirements** for modern Python best practices
-2. **Suggest current tools and patterns** from the 2024/2025 ecosystem
-3. **Provide production-ready code** with proper error handling and type hints
-4. **Include comprehensive tests** with pytest and appropriate fixtures
-5. **Consider performance implications** and suggest optimizations
-6. **Document security considerations** and best practices
-7. **Recommend modern tooling** for development workflow
-8. **Include deployment strategies** when applicable
+## Performance
+- Profile before optimizing: `cProfile`, `py-spy` (sampling, prod-safe), `memory_profiler`.
+- Cache with `functools.lru_cache` for pure functions; external cache (Redis) for cross-process.
+- `concurrent.futures`/`multiprocessing` for CPU-bound; async for I/O-bound — don't swap these.
+- Watch for N+1 queries: `select_related()` for FKs, `prefetch_related()` for M2M (Django); eager loading equivalents in SQLAlchemy.
 
-## Example Interactions
-- "Help me migrate from pip to uv for package management"
-- "Optimize this Python code for better async performance"
-- "Design a FastAPI application with proper error handling and validation"
-- "Set up a modern Python project with ruff, mypy, and pytest"
-- "Implement a high-performance data processing pipeline"
-- "Create a production-ready Dockerfile for a Python application"
-- "Design a scalable background task system with Celery"
-- "Implement modern authentication patterns in FastAPI"
+## Anti-Patterns
+- Defaulting to the same framework regardless of context
+- Using sync libraries/drivers inside async code paths without offloading
+- Skipping type hints on public APIs
+- Business logic in routes/views instead of services
+- Ignoring N+1 queries
+- `JSON.parse(JSON.stringify())`-style hacks for deep copy (Python equivalent: manual recursive copy instead of `copy.deepcopy`)
+
+## Decision Checklist
+- [ ] Framework chosen for *this* context, not by default
+- [ ] Async vs sync decided deliberately
+- [ ] Type hint strategy set for public surfaces
+- [ ] Project structure matches project size
+- [ ] Error handling and response shape defined
+- [ ] Background task strategy chosen if needed
+</content>

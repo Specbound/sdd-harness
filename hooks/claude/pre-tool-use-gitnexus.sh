@@ -1,4 +1,5 @@
 #!/bin/bash
+# purpose: Before a file read or edit, injects GitNexus caller and dependency context for that file.
 # PreToolUse hook: Enrich file reads/edits with GitNexus 360-degree context
 # When Claude reads or edits a file, inject dependency/caller/process context
 # from the GitNexus knowledge graph so agents understand blast radius.

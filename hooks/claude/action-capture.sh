@@ -1,4 +1,5 @@
 #!/bin/bash
+# purpose: After notable Bash actions, reminds Claude to save what was learned to memory (never blocks).
 # PostToolUse — soft gate that prompts memory capture after high-signal Bash actions.
 # Pattern: "memory from what agents DO, not just what they say" (Memori design principle).
 # Does NOT block — outputs a reminder; Claude decides whether to save.
@@ -66,7 +67,7 @@ print(m.group(1) if m else '')
         if echo "$COMMAND" | grep -qiE "import |pip |npm |yarn |poetry |uv |pip3 "; then
             SKILL_DOMAIN="dependency-management"
         elif echo "$COMMAND" | grep -qiE "docker |kubectl |helm |k8s"; then
-            SKILL_DOMAIN="deployment-engineer"
+            SKILL_DOMAIN="deployment-pipeline-design"
         elif echo "$COMMAND" | grep -qiE "^git |git "; then
             SKILL_DOMAIN="git-advanced-workflows"
         elif echo "$COMMAND" | grep -qiE "curl |wget |http"; then
@@ -74,7 +75,7 @@ print(m.group(1) if m else '')
         elif echo "$COMMAND" | grep -qiE "python |python3 |\.py"; then
             SKILL_DOMAIN="python-pro"
         elif echo "$COMMAND" | grep -qiE "node |npm |tsx? |\.tsx?"; then
-            SKILL_DOMAIN="nodejs-best-practices"
+            SKILL_DOMAIN="nodejs-backend-patterns"
         fi
 
         # Auto-write [seed-target:] observation (idempotent within same command+day)

@@ -1,4 +1,5 @@
 #!/bin/bash
+# purpose: After a plain git push, opens a PR against the detected base branch if none exists.
 # PR auto-create hook — PostToolUse(Bash)
 # Fires after every Bash call; only acts on a plain `git push` (force-push stays
 # denied at the permission layer, never reaches here). Auto-detects the real

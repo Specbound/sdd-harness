@@ -130,6 +130,34 @@ test_set = [
 ]
 ```
 
+## Replay-Case Snapshot Invalidation
+
+Frozen request/response pairs ("replay cases" — record a real interaction once, replay
+it as a regression fixture forever after) are a cheap eval tier below full LLM-as-judge
+rubrics: no judge call, no ground-truth authoring, just "does the system still do what
+it did when this was captured." The failure mode is silent staleness — the code under
+test changes (a new tool, a reworded system prompt, a schema change), the replay case's
+frozen response no longer reflects intended behavior, and nothing flags it. The harness
+then either re-records the case automatically (masking a real regression as "still
+passing") or keeps asserting against behavior nobody meant to freeze.
+
+Guard against this the same way a snapshot-testing library does: invalidate on drift,
+never silently re-record.
+
+- **Fingerprint what the case depends on**, not just the request text — hash the system
+  prompt, the tool list/schemas, and any config the response depends on, alongside the
+  request. Store the fingerprint with the frozen response.
+- **On replay, compare fingerprints first.** Fingerprint match + response match → pass.
+  Fingerprint match + response mismatch → real regression, fail loudly. Fingerprint
+  mismatch → the case is stale, not failing — flag it for human re-approval, don't
+  auto-update and don't count it as a pass or fail.
+- **Re-recording is a reviewed action, not a side effect of running the eval.** Treat it
+  like approving a snapshot-test diff: a human looks at old vs. new response and
+  explicitly accepts, the same discipline `git diff`-review gets before a commit.
+- Sits below the Test Set Design tier above — use replay cases for cheap, high-volume
+  drift detection on stable interactions, and reserve rubric/judge grading for the
+  harder-to-pin-down quality dimensions.
+
 ## Context Engineering Evaluation
 
 Run agents with different context strategies on the same test set. Compare quality scores, token usage, and efficiency. Also run degradation tests at different context sizes to find performance cliffs and safe operating limits.

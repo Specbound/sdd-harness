@@ -1,4 +1,5 @@
 #!/bin/bash
+# purpose: Before compaction, injects rules for what the summary must preserve.
 # Fires PreCompact — injects boundary-timing and state-preservation principles
 # before every compaction so Claude applies them during summarization.
 
@@ -35,6 +36,13 @@ FIDELITY REQUIREMENTS — concrete, checkable additions to the rules above:
     Subagent runs are expensive to redo.
   ✓ A-vs-B comparisons: when the user weighed option A vs option B, preserve both sides
     and the decision criteria — and which side won, if decided.
+
+FORWARD BRIEF — write the summary as a brief for the next step, not a story of the past:
+  ✓ Original task, near-verbatim (the user's own words, not a paraphrase)
+  ✓ Completion criteria — what has to be true for the task to count as done
+  ✓ Current step, then next steps in order
+  Rationale: briefs beat narrative summaries — narratives weight every fact equally and
+  over-weight what repeated (arXiv 2611.05306, "You don't need long context").
 
 DOMAIN-AWARE STRATEGY — match compression style to content type:
 

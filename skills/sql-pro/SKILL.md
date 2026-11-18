@@ -1,175 +1,139 @@
 ---
 name: sql-pro
-description: "Master modern SQL with cloud-native databases, OLTP/OLAP"
-  optimization, and advanced query techniques. Expert in performance tuning,
-  data modeling, and hybrid analytical systems. Use PROACTIVELY for database
-  optimization or complex analysis.
+description: "Write and tune SQL: reading EXPLAIN plans, index selection, JOIN/subquery/window-function rewrites, pagination, batch operations, materialized views. Use when debugging a slow query, designing indexes, resolving N+1 queries, or writing advanced analytical SQL (CTEs, window functions)."
 metadata:
   model: inherit
 risk: unknown
 source: community
 ---
-You are an expert SQL specialist mastering modern database systems, performance optimization, and advanced analytical techniques across cloud-native and hybrid OLTP/OLAP environments.
+
+# SQL Pro
 
 ## Use this skill when
+- Writing or speeding up complex SQL (analytics, reporting, OLTP hot paths)
+- Tuning query performance via indexes or execution plans
+- Resolving N+1 queries, slow pagination, or correlated-subquery performance
+- Designing OLTP/OLAP query patterns (window functions, CTEs, materialized views)
 
-- Writing complex SQL queries or analytics
-- Tuning query performance with indexes or plans
-- Designing SQL patterns for OLTP/OLAP workloads
-
-## Do not use this skill when
-
-- You only need ORM-level guidance
-- The system is non-SQL or document-only
-- You cannot access query plans or schema details
+## Do not use skill when
+- You only need ORM-level guidance, not SQL itself
+- The system is non-SQL/document-only, or you cannot access query plans/schema
 
 ## Instructions
-
-1. Define query goals, constraints, and expected outputs.
-2. Inspect schema, statistics, and access paths.
-3. Optimize queries and validate with EXPLAIN.
-4. Verify correctness and performance under load.
+1. Define query goals, constraints, and expected output shape.
+2. Inspect schema, statistics, and access paths before guessing at fixes.
+3. Change one thing at a time and validate with `EXPLAIN ANALYZE` — never assume.
+4. Verify correctness (not just speed) and test under realistic data volume/load.
 
 ## Safety
+- Avoid heavy ad-hoc queries on production without `LIMIT`/safeguards; use read replicas for exploratory analysis.
 
-- Avoid heavy queries on production without safeguards.
-- Use read replicas or limits for exploratory analysis.
+## Reading EXPLAIN
+```sql
+EXPLAIN ANALYZE SELECT * FROM users WHERE email = 'user@example.com';
+EXPLAIN (ANALYZE, BUFFERS, VERBOSE) SELECT u.*, o.order_total
+FROM users u JOIN orders o ON u.id = o.user_id
+WHERE u.created_at > NOW() - INTERVAL '30 days';
+```
+Watch for: `Seq Scan` on a large table (missing index), `Index Only Scan` (best case), join method (`Nested Loop` fine for small sets, `Hash Join` for larger, `Merge Join` for pre-sorted), `Buffers: read >> hit` (cold cache), estimated `Rows` vs `Actual` diverging a lot (stale statistics — run `ANALYZE`).
 
-## Purpose
-Expert SQL professional focused on high-performance database systems, advanced query optimization, and modern data architecture. Masters cloud-native databases, hybrid transactional/analytical processing (HTAP), and cutting-edge SQL techniques to deliver scalable and efficient data solutions for enterprise applications.
+## Index selection
+- **B-Tree** (default): equality/range. **Hash**: equality only. **GIN**: full-text, arrays, JSONB. **GiST**: geometric/full-text. **BRIN**: huge, naturally-ordered tables (minimal storage).
+- Composite index column order matters — leftmost prefix must match the query's equality predicates; put the most selective/frequent filter first.
+- Partial (`WHERE status = 'active'`), expression (`(LOWER(email))`), and covering (`INCLUDE (name, created_at)`) indexes each solve a narrower problem than a plain index — use the narrowest that fits.
+- Extra indexes slow every write; drop indexes with `idx_scan = 0` in `pg_stat_user_indexes`.
 
-## Capabilities
+## Query rewrite patterns
+**Select only needed columns** — `SELECT *` fetches unused data and defeats covering/index-only scans.
 
-### Modern Database Systems and Platforms
-- Cloud-native databases: Amazon Aurora, Google Cloud SQL, Azure SQL Database
-- Data warehouses: Snowflake, Google BigQuery, Amazon Redshift, Databricks
-- Hybrid OLTP/OLAP systems: CockroachDB, TiDB, MemSQL, VoltDB
-- NoSQL integration: MongoDB, Cassandra, DynamoDB with SQL interfaces
-- Time-series databases: InfluxDB, TimescaleDB, Apache Druid
-- Graph databases: Neo4j, Amazon Neptune with Cypher/Gremlin
-- Modern PostgreSQL features and extensions
+**Don't wrap indexed columns in functions** unless you've built a matching expression/functional index:
+```sql
+-- Bad: LOWER() on every row scanned defeats a plain index on email
+SELECT * FROM users WHERE LOWER(email) = 'user@example.com';
+-- Fix: CREATE INDEX ON users (LOWER(email));
+```
 
-### Advanced Query Techniques and Optimization
-- Complex window functions and analytical queries
-- Recursive Common Table Expressions (CTEs) for hierarchical data
-- Advanced JOIN techniques and optimization strategies
-- Query plan analysis and execution optimization
-- Parallel query processing and partitioning strategies
-- Statistical functions and advanced aggregations
-- JSON/XML data processing and querying
+**Explicit JOIN, not comma-join + WHERE** — comma joins invite accidental cross products; filter the smaller side before joining when the planner doesn't push the predicate down itself.
 
-### Performance Tuning and Optimization
-- Comprehensive index strategy design and maintenance
-- Query execution plan analysis and optimization
-- Database statistics management and auto-updating
-- Partitioning strategies for large tables and time-series data
-- Connection pooling and resource management optimization
-- Memory configuration and buffer pool tuning
-- I/O optimization and storage considerations
+**Correlated subquery → JOIN/window function**:
+```sql
+-- Bad: subquery runs once per outer row
+SELECT u.name, (SELECT COUNT(*) FROM orders o WHERE o.user_id = u.id) order_count FROM users u;
+-- Better: aggregate join
+SELECT u.name, COUNT(o.id) order_count FROM users u LEFT JOIN orders o ON o.user_id = u.id GROUP BY u.id, u.name;
+-- Or a window function when you need the detail rows too
+SELECT u.name, COUNT(o.id) OVER (PARTITION BY u.id) order_count FROM users u LEFT JOIN orders o ON o.user_id = u.id;
+```
 
-### Cloud Database Architecture
-- Multi-region database deployment and replication strategies
-- Auto-scaling configuration and performance monitoring
-- Cloud-native backup and disaster recovery planning
-- Database migration strategies to cloud platforms
-- Serverless database configuration and optimization
-- Cross-cloud database integration and data synchronization
-- Cost optimization for cloud database resources
+**CTEs** for readability on multi-stage aggregation — name each intermediate result set as a step instead of nesting subqueries three deep. Recursive CTEs (`WITH RECURSIVE`) for hierarchical/graph-shaped data.
 
-### Data Modeling and Schema Design
-- Advanced normalization and denormalization strategies
-- Dimensional modeling for data warehouses and OLAP systems
-- Star schema and snowflake schema implementation
-- Slowly Changing Dimensions (SCD) implementation
-- Data vault modeling for enterprise data warehouses
-- Event sourcing and CQRS pattern implementation
-- Microservices database design patterns
+## N+1 elimination
+Batch-load with `IN`/`= ANY` or a single `JOIN` instead of one query per loop iteration:
+```sql
+SELECT u.id, u.name, o.id order_id, o.total
+FROM users u LEFT JOIN orders o ON u.id = o.user_id
+WHERE u.id IN (1,2,3,4,5);
+```
+In app code, group the batch-loaded rows by foreign key client-side rather than re-querying per parent.
 
-### Modern SQL Features and Syntax
-- ANSI SQL 2016+ features including row pattern recognition
-- Database-specific extensions and advanced features
-- JSON and array processing capabilities
-- Full-text search and spatial data handling
-- Temporal tables and time-travel queries
-- User-defined functions and stored procedures
-- Advanced constraints and data validation
+## Pagination
+`OFFSET` rescans every skipped row — slows sharply at depth. Use cursor/keyset pagination instead:
+```sql
+SELECT * FROM users WHERE (created_at, id) < ('2024-01-15 10:30:00', 12345)
+ORDER BY created_at DESC, id DESC LIMIT 20;
+-- supporting index:
+CREATE INDEX idx_users_cursor ON users (created_at DESC, id DESC);
+```
 
-### Analytics and Business Intelligence
-- OLAP cube design and MDX query optimization
-- Advanced statistical analysis and data mining queries
-- Time-series analysis and forecasting queries
-- Cohort analysis and customer segmentation
-- Revenue recognition and financial calculations
-- Real-time analytics and streaming data processing
-- Machine learning integration with SQL
+## Aggregation
+- Exact `COUNT(*)` on a huge table is slow — filter first, or use `pg_class.reltuples` for an estimate when exactness isn't required.
+- Filter (`WHERE`) before `GROUP BY`/`HAVING` where semantically equivalent — reduces rows the aggregate has to touch; back it with a composite index on `(group_col, filter_col)`.
 
-### Database Security and Compliance
-- Row-level security and column-level encryption
-- Data masking and anonymization techniques
-- Audit trail implementation and compliance reporting
-- Role-based access control and privilege management
-- SQL injection prevention and secure coding practices
-- GDPR and data privacy compliance implementation
-- Database vulnerability assessment and hardening
+## Batch operations
+```sql
+-- Multi-row INSERT beats one INSERT per row
+INSERT INTO users (name, email) VALUES ('Alice','a@x.com'), ('Bob','b@x.com');
+-- COPY for bulk loads (Postgres)
+COPY users (name, email) FROM '/path/users.csv' CSV HEADER;
+-- Batch UPDATE via temp table for large sets
+CREATE TEMP TABLE updates (id INT, new_status TEXT);
+INSERT INTO updates VALUES (1,'active'), (2,'active');
+UPDATE users u SET status = t.new_status FROM updates t WHERE u.id = t.id;
+```
 
-### DevOps and Database Management
-- Database CI/CD pipeline design and implementation
-- Schema migration strategies and version control
-- Database testing and validation frameworks
-- Monitoring and alerting for database performance
-- Automated backup and recovery procedures
-- Database deployment automation and configuration management
-- Performance benchmarking and load testing
+## Materialized views
+Pre-compute expensive aggregations; index the materialized result like a table; refresh on a schedule or trigger:
+```sql
+CREATE MATERIALIZED VIEW user_order_summary AS
+SELECT u.id, u.name, COUNT(o.id) total_orders, SUM(o.total) total_spent
+FROM users u LEFT JOIN orders o ON u.id = o.user_id GROUP BY u.id, u.name;
+CREATE INDEX ON user_order_summary (total_spent DESC);
+REFRESH MATERIALIZED VIEW CONCURRENTLY user_order_summary; -- avoids locking readers
+```
 
-### Integration and Data Movement
-- ETL/ELT process design and optimization
-- Real-time data streaming and CDC implementation
-- API integration and external data source connectivity
-- Cross-database queries and federation
-- Data lake and data warehouse integration
-- Microservices data synchronization patterns
-- Event-driven architecture with database triggers
+## Partitioning (large/time-series tables)
+`PARTITION BY RANGE (created_at)` with per-period child tables lets the planner prune partitions outside the query's date range, scanning only the relevant slice instead of the whole table. Use for tables where a single dimension (time, tenant, region) consistently appears in the `WHERE` clause.
 
-## Behavioral Traits
-- Focuses on performance and scalability from the start
-- Writes maintainable and well-documented SQL code
-- Considers both read and write performance implications
-- Applies appropriate indexing strategies based on usage patterns
-- Implements proper error handling and transaction management
-- Follows database security and compliance best practices
-- Optimizes for both current and future data volumes
-- Balances normalization with performance requirements
-- Uses modern SQL features when appropriate for readability
-- Tests queries thoroughly with realistic data volumes
+## Query hints
+```sql
+SET max_parallel_workers_per_gather = 4;     -- Postgres: encourage parallel scan
+SET enable_nestloop = OFF;                   -- Postgres: force a different join strategy for A/B comparison
+SELECT * FROM users USE INDEX (idx_users_email) WHERE email = '...';  -- MySQL index hint
+```
+Treat hints as a diagnostic tool (compare plans), not a permanent fix — a hint that's right today can be wrong after data grows or stats change.
 
-## Knowledge Base
-- Modern SQL standards and database-specific extensions
-- Cloud database platforms and their unique features
-- Query optimization techniques and execution plan analysis
-- Data modeling methodologies and design patterns
-- Database security and compliance frameworks
-- Performance monitoring and tuning strategies
-- Modern data architecture patterns and best practices
-- OLTP vs OLAP system design considerations
-- Database DevOps and automation tools
-- Industry-specific database requirements and solutions
+## Common pitfalls
+Too many indexes (slows every write) · unused indexes (wasted space + write cost) · implicit type conversion in `WHERE` (silently defeats an index) · `OR` across different columns (planner often can't use either index) · `LIKE '%abc'` leading-wildcard (sequential scan unless trigram/GIN-indexed) · function on an indexed column without a matching expression index.
 
-## Response Approach
-1. **Analyze requirements** and identify optimal database approach
-2. **Design efficient schema** with appropriate data types and constraints
-3. **Write optimized queries** using modern SQL techniques
-4. **Implement proper indexing** based on usage patterns
-5. **Test performance** with realistic data volumes
-6. **Document assumptions** and provide maintenance guidelines
-7. **Consider scalability** for future data growth
-8. **Validate security** and compliance requirements
+## Monitoring
+```sql
+-- Slowest queries by mean time (needs pg_stat_statements)
+SELECT query, calls, total_exec_time, mean_exec_time FROM pg_stat_statements ORDER BY mean_exec_time DESC LIMIT 10;
+-- Tables with heavy sequential scan (candidate for a new index)
+SELECT schemaname, relname, seq_scan, seq_tup_read FROM pg_stat_user_tables WHERE seq_scan > 0 ORDER BY seq_tup_read DESC LIMIT 10;
+-- Unused indexes (candidate for removal)
+SELECT schemaname, relname, indexrelname, idx_scan FROM pg_stat_user_indexes WHERE idx_scan = 0;
+```
 
-## Example Interactions
-- "Optimize this complex analytical query for a billion-row table in Snowflake"
-- "Design a database schema for a multi-tenant SaaS application with GDPR compliance"
-- "Create a real-time dashboard query that updates every second with minimal latency"
-- "Implement a data migration strategy from Oracle to cloud-native PostgreSQL"
-- "Build a cohort analysis query to track customer retention over time"
-- "Design an HTAP system that handles both transactions and analytics efficiently"
-- "Create a time-series analysis query for IoT sensor data in TimescaleDB"
-- "Optimize database performance for a high-traffic e-commerce platform"
+## Best practices
+Index selectively, not exhaustively · keep statistics fresh (`ANALYZE` after bulk changes) · prefer the smallest sufficient data type · balance normalization against proven read-performance needs · cache at the application layer for hot, expensive-to-compute results · pool connections rather than opening one per request · schedule routine `VACUUM`/`ANALYZE`/`REINDEX` maintenance.

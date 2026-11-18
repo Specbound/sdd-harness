@@ -1,10 +1,12 @@
 ---
 name: agentic-rl-tito
-description: "Correctness invariant for multi-turn RL training loops on tool-calling LLMs. Use ONLY when implementing or reviewing RL fine-tuning (PPO, GRPO, REINFORCE) for models that call tools across multiple turns. Covers the TITO invariant, prefix-preservation property test, model compat table, and edge cases. NOT for general ML, inference, or agent development."
+description: "TITO correctness invariant for multi-turn RL training loops on tool-calling LLMs, including harness-mediated RL where the trainer does not own the token buffer. Use when implementing or reviewing PPO/GRPO/REINFORCE fine-tuning. Not for general ML, inference, or agent development."
 metadata:
   type: skill
   source: https://qgallouedec-tito.hf.space
   added: 2026-06-02
+  also_sourced:
+    - https://arxiv.org/abs/2608.17528  # Agent Lightning v1.0 — harness-mediated RL section
   model: inherit
 risk: low
 ---
@@ -147,6 +149,57 @@ When an agent edits past conversation (compaction, `clear_thinking`, sub-agent s
 
 ### Truncation
 If the buffer exceeds the context limit mid-turn, zero out the loss for incomplete turns. TITO handles this naturally — boundaries are tracked in the buffer, so partial turns can be masked without per-model close-token synthesis.
+
+---
+
+## When TITO Is Unattainable: Harness-Mediated RL
+
+Everything above assumes **the trainer owns the token buffer**. That assumption breaks
+when training runs *through* a deployment harness (Claude Code, OpenHands, mini-SWE-agent)
+that owns the tools, context, and control loop. The trainer then sees no clean token
+trajectory at all — only a variable-length sequence of request/response pairs across a
+service boundary, with the harness re-rendering prompts between them.
+
+Do not assume the prefix survives. Measured on a real harness-mediated setup, only
+**36% of rollouts remain a single sample; the mean is 2.41 samples per rollout** — token
+prefix continuity breaks in roughly two-thirds of rollouts.
+
+**Three root causes of prefix breakage** (all invisible unless you check for them):
+- **Chat-template non-compositionality** — re-rendering the same history can drop an
+  earlier marker (e.g. Qwen's template dropping a prior `<think>` block).
+- **Decode–retokenize drift** — `h` + `aving` decodes to text that retokenizes as
+  `hav` + `ing`. Same string, different tokens.
+- **Output reserialization** — tool-call handlers reserialize the model's own output
+  before it re-enters the prompt.
+
+**Merging strategy — use best-effort merging.** Merge consecutive calls only on exact
+*token*-prefix match; on mismatch, close the sequence and start a new sample.
+
+> ⚠️ Do **not** use buffered token replacement (as in AReaL, verl Uni-Agent). Stitching
+> a recorded response onto a re-rendered prompt trains a response under a prompt
+> `p̃ ≠ p` that it was never sampled from — a silent off-policy discrepancy, not a
+> formatting detail.
+
+**The two loss-side fixes must ship as a pair.** Splitting one rollout into several
+samples breaks per-sample advantage baselines. Measured ablation (Qwen3.5-9B,
+mini-SWE-agent, SWE-smith, validation reward at step 128):
+
+| Configuration | Reward |
+|---|---|
+| sample-level advantage + token-mean loss (baseline) | 35.0% |
+| rollout-level advantage **alone** | 33.1% — *worse than baseline* |
+| rollout-level advantage + rollout-level token-mean normalization | **38.2%** |
+
+Adopting the advantage fix on its own regresses. Also keep every sample from one rollout
+inside a **single optimizer update**, or the rollout is scored partly under a policy that
+has already moved.
+
+**Scope:** this is knowledge for authoring a training loop against a harness you do not
+control. Nothing here is automatable from a Claude Code harness — there is no hook,
+routine, or check that can observe it.
+
+*Source: Agent Lightning v1.0, arXiv:2608.17528 (Microsoft et al., 2026). SWE-bench
+Verified 41.8% → 56.4% RL-only. Repo: github.com/microsoft/agent-lightning.*
 
 ---
 

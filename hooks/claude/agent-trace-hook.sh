@@ -1,4 +1,5 @@
 #!/bin/bash
+# purpose: Appends one line per subagent run (agent, model, outcome) to .claude/memory/trace.log.
 # Agent-trace hook — PostToolUse (matcher: Agent)
 #
 # trace.log had zero reliable producers: population was a manual prose

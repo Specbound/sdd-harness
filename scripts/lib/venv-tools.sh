@@ -93,3 +93,6 @@ venv_tools_ensure() {
   "$vpy" -m pip install -q --upgrade pip >/dev/null 2>&1 || true
   echo "$vpy"
 }
+
+# Installs into this venv go through pip_cooldown_install (release-age cooldown).
+. "$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd)/pip-cooldown.sh"

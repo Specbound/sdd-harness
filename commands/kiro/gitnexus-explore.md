@@ -33,7 +33,7 @@ Launch the GitNexus Web UI to browse code connections, call chains, and process 
    ```
    Then run:
    ```bash
-   npx gitnexus analyze --skip-embeddings
+   npx gitnexus analyze
    ```
 
 ## Parse Arguments

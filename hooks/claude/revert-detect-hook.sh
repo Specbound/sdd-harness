@@ -1,4 +1,5 @@
 #!/bin/bash
+# purpose: When Claude runs git revert/reset/restore, writes a [revert] row to observations.md.
 # Revert detection hook — PostToolUse(Bash)
 # Fires immediately when Claude runs a git revert/reset/restore command.
 # Writes a [revert] drain observation so the trust-battery Judge has concrete evidence

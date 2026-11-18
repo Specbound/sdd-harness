@@ -55,8 +55,10 @@ trap 'rm -rf "$LOCK_DIR"' EXIT
 # --- Cadence guard: skip if last run was < MIN_GAP_DAYS ago (unless forced) ---
 if [ "${HARNESS_HEALTH_FORCE:-0}" != "1" ] && [ -s "$STATE_FILE" ]; then
   LAST_RAW="$(cat "$STATE_FILE")"
-  LAST_EPOCH="$(date -j -f "%Y-%m-%dT%H:%M:%S%z" "$LAST_RAW" +%s 2>/dev/null \
-              || date -d "$LAST_RAW" +%s 2>/dev/null || echo 0)"
+  # fromisoformat reads the `date -Iseconds` stamp ("+02:00") on any OS. The old
+  # `date -j -f ...%z` only accepts "+0200", so on macOS every parse failed, read as
+  # epoch 0, and the gap guard never skipped (weekly runners ran daily; 2026-11-18).
+  LAST_EPOCH="$(python3 -c 'import sys, datetime; print(int(datetime.datetime.fromisoformat(sys.argv[1]).timestamp()))' "$LAST_RAW" 2>/dev/null || echo 0)"
   if [ "$LAST_EPOCH" -gt 0 ]; then
     GAP_DAYS=$(( ($(date +%s) - LAST_EPOCH) / 86400 ))
     if [ "$GAP_DAYS" -lt "$MIN_GAP_DAYS" ]; then
@@ -74,8 +76,29 @@ fi
 
 mkdir -p "docs"
 
-# --- Substitute today's date into prompt ---
+# --- Collect token forensics for Phase 3 ---
+# Run it here rather than letting the prompt shell out: a headless session that
+# has to invoke a script may skip it silently, and the phase would then report
+# on nothing while looking like it ran. Failures degrade to a visible marker,
+# never to fabricated numbers.
+FORENSICS_SCRIPT=".claude/scripts/utils/token-forensics.py"
+if [ -f "$FORENSICS_SCRIPT" ]; then
+  FORENSICS="$(python3 "$FORENSICS_SCRIPT" --days 14 --top 8 2>&1)" \
+    || FORENSICS="(token-forensics.py exited non-zero — Phase 3 has no data)
+$FORENSICS"
+else
+  FORENSICS="(token-forensics.py not installed — Phase 3 skipped)"
+fi
+
+# --- Substitute today's date and forensics into prompt ---
+# Date first, then the forensics block via an env-var read, so a stray
+# TODAY_PLACEHOLDER inside the captured output cannot be substituted, and the
+# report's own characters are never interpreted as sed replacement syntax.
 PROMPT="$(sed "s|TODAY_PLACEHOLDER|$TODAY|g" "$PROMPT_TEMPLATE")"
+PROMPT="$(FORENSICS="$FORENSICS" awk '
+  /^FORENSICS_PLACEHOLDER$/ { print ENVIRON["FORENSICS"]; next }
+  { print }
+' <<< "$PROMPT")"
 
 # --- Mark started ---
 echo "$TIMESTAMP" > "$STATE_FILE"

@@ -1,403 +1,151 @@
 ---
 name: rag-implementation
-description: Build Retrieval-Augmented Generation (RAG) systems for LLM applications with vector databases and semantic search. Use when implementing knowledge-grounded AI, building document Q&A systems, or integrating LLMs with external knowledge bases.
+description: "Build and debug Retrieval-Augmented Generation systems — chunking, hybrid retrieval, reranking, grounding prompts, and retrieval-vs-generation failure triage. Use when implementing document Q&A, semantic search over proprietary data, or diagnosing a RAG system that returns wrong or ungrounded answers."
 ---
 
 # RAG Implementation
 
-Master Retrieval-Augmented Generation (RAG) to build LLM applications that provide accurate, grounded responses using external knowledge sources.
+RAG quality is decided by **retrieval**, not by the LLM. Most "the model hallucinated"
+reports are retrieval failures wearing a disguise. This skill is organised around that.
 
-## When to Use This Skill
+## Framework versions move fast — pin, don't copy
 
-- Building Q&A systems over proprietary documents
-- Creating chatbots with current, factual information
-- Implementing semantic search with natural language queries
-- Reducing hallucinations with grounded responses
-- Enabling LLMs to access domain-specific knowledge
-- Building documentation assistants
-- Creating research tools with source citation
+Verified against PyPI on 2026-10-22:
 
-## Core Components
+| Package | Latest |
+|---|---|
+| `langchain` | **1.4.7** |
+| `langchain-text-splitters` | 1.1.3 |
+| `langchain-openai` | 1.7.2 |
+| `langchain-chroma` | 1.1.0 |
+| `langchain-community` | 0.4.2 |
+| `pinecone` | 10.1.0 (replaces the frozen `pinecone-client` 6.0.0) |
 
-### 1. Vector Databases
-**Purpose**: Store and retrieve document embeddings efficiently
+Two consequences, both of which break copied snippets:
 
-**Options:**
-- **Pinecone**: Managed, scalable, fast queries
-- **Weaviate**: Open-source, hybrid search
-- **Milvus**: High performance, on-premise
-- **Chroma**: Lightweight, easy to use
-- **Qdrant**: Fast, filtered search
-- **FAISS**: Meta's library, local deployment
+- LangChain split from one package into **many**. Monolithic `langchain.*` imports for
+  embeddings, vector stores, loaders and splitters are from the 0.0.x era and no longer
+  resolve; those live in provider packages (`langchain-openai`, `langchain-chroma`) or
+  `langchain-community`. Text splitters have their own package entirely.
+- Pinecone's client was renamed and re-majored. The old `pinecone.init(api_key=...,
+  environment=...)` module-level initialiser belongs to a client generation that is gone;
+  current clients instantiate a class.
 
-### 2. Embeddings
-**Purpose**: Convert text to numerical vectors for similarity search
+**Do not trust any import line in a RAG tutorial, including this one.** Check the exact
+symbol against the version actually installed (`pip show`, then the package's own docs)
+before writing code. The architecture below is what's durable; the import paths are not.
 
-**Models:**
-- **text-embedding-ada-002** (OpenAI): General purpose, 1536 dims
-- **all-MiniLM-L6-v2** (Sentence Transformers): Fast, lightweight
-- **e5-large-v2**: High quality, multilingual
-- **Instructor**: Task-specific instructions
-- **bge-large-en-v1.5**: SOTA performance
+## The pipeline, and where quality is won
 
-### 3. Retrieval Strategies
-**Approaches:**
-- **Dense Retrieval**: Semantic similarity via embeddings
-- **Sparse Retrieval**: Keyword matching (BM25, TF-IDF)
-- **Hybrid Search**: Combine dense + sparse
-- **Multi-Query**: Generate multiple query variations
-- **HyDE**: Generate hypothetical documents
-
-### 4. Reranking
-**Purpose**: Improve retrieval quality by reordering results
-
-**Methods:**
-- **Cross-Encoders**: BERT-based reranking
-- **Cohere Rerank**: API-based reranking
-- **Maximal Marginal Relevance (MMR)**: Diversity + relevance
-- **LLM-based**: Use LLM to score relevance
-
-## Quick Start
-
-```python
-from langchain.document_loaders import DirectoryLoader
-from langchain.text_splitters import RecursiveCharacterTextSplitter
-from langchain.embeddings import OpenAIEmbeddings
-from langchain.vectorstores import Chroma
-from langchain.chains import RetrievalQA
-from langchain.llms import OpenAI
-
-# 1. Load documents
-loader = DirectoryLoader('./docs', glob="**/*.txt")
-documents = loader.load()
-
-# 2. Split into chunks
-text_splitter = RecursiveCharacterTextSplitter(
-    chunk_size=1000,
-    chunk_overlap=200,
-    length_function=len
-)
-chunks = text_splitter.split_documents(documents)
-
-# 3. Create embeddings and vector store
-embeddings = OpenAIEmbeddings()
-vectorstore = Chroma.from_documents(chunks, embeddings)
-
-# 4. Create retrieval chain
-qa_chain = RetrievalQA.from_chain_type(
-    llm=OpenAI(),
-    chain_type="stuff",
-    retriever=vectorstore.as_retriever(search_kwargs={"k": 4}),
-    return_source_documents=True
-)
-
-# 5. Query
-result = qa_chain({"query": "What are the main features?"})
-print(result['result'])
-print(result['source_documents'])
+```
+documents → chunk → embed → index → retrieve(k wide) → rerank(→ small k) → prompt → answer+citations
+                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                                     this is where the wins are
 ```
 
-## Advanced RAG Patterns
-
-### Pattern 1: Hybrid Search
-```python
-from langchain.retrievers import BM25Retriever, EnsembleRetriever
-
-# Sparse retriever (BM25)
-bm25_retriever = BM25Retriever.from_documents(chunks)
-bm25_retriever.k = 5
-
-# Dense retriever (embeddings)
-embedding_retriever = vectorstore.as_retriever(search_kwargs={"k": 5})
-
-# Combine with weights
-ensemble_retriever = EnsembleRetriever(
-    retrievers=[bm25_retriever, embedding_retriever],
-    weights=[0.3, 0.7]
-)
-```
-
-### Pattern 2: Multi-Query Retrieval
-```python
-from langchain.retrievers.multi_query import MultiQueryRetriever
-
-# Generate multiple query perspectives
-retriever = MultiQueryRetriever.from_llm(
-    retriever=vectorstore.as_retriever(),
-    llm=OpenAI()
-)
-
-# Single query → multiple variations → combined results
-results = retriever.get_relevant_documents("What is the main topic?")
-```
-
-### Pattern 3: Contextual Compression
-```python
-from langchain.retrievers import ContextualCompressionRetriever
-from langchain.retrievers.document_compressors import LLMChainExtractor
-
-compressor = LLMChainExtractor.from_llm(llm)
-
-compression_retriever = ContextualCompressionRetriever(
-    base_compressor=compressor,
-    base_retriever=vectorstore.as_retriever()
-)
-
-# Returns only relevant parts of documents
-compressed_docs = compression_retriever.get_relevant_documents("query")
-```
-
-### Pattern 4: Parent Document Retriever
-```python
-from langchain.retrievers import ParentDocumentRetriever
-from langchain.storage import InMemoryStore
-
-# Store for parent documents
-store = InMemoryStore()
-
-# Small chunks for retrieval, large chunks for context
-child_splitter = RecursiveCharacterTextSplitter(chunk_size=400)
-parent_splitter = RecursiveCharacterTextSplitter(chunk_size=2000)
-
-retriever = ParentDocumentRetriever(
-    vectorstore=vectorstore,
-    docstore=store,
-    child_splitter=child_splitter,
-    parent_splitter=parent_splitter
-)
-```
-
-## Document Chunking Strategies
-
-### Recursive Character Text Splitter
-```python
-from langchain.text_splitters import RecursiveCharacterTextSplitter
-
-splitter = RecursiveCharacterTextSplitter(
-    chunk_size=1000,
-    chunk_overlap=200,
-    length_function=len,
-    separators=["\n\n", "\n", " ", ""]  # Try these in order
-)
-```
-
-### Token-Based Splitting
-```python
-from langchain.text_splitters import TokenTextSplitter
-
-splitter = TokenTextSplitter(
-    chunk_size=512,
-    chunk_overlap=50
-)
-```
-
-### Semantic Chunking
-```python
-from langchain.text_splitters import SemanticChunker
-
-splitter = SemanticChunker(
-    embeddings=OpenAIEmbeddings(),
-    breakpoint_threshold_type="percentile"
-)
-```
-
-### Markdown Header Splitter
-```python
-from langchain.text_splitters import MarkdownHeaderTextSplitter
-
-headers_to_split_on = [
-    ("#", "Header 1"),
-    ("##", "Header 2"),
-    ("###", "Header 3"),
-]
-
-splitter = MarkdownHeaderTextSplitter(headers_to_split_on=headers_to_split_on)
-```
-
-## Vector Store Configurations
-
-### Pinecone
-```python
-import pinecone
-from langchain.vectorstores import Pinecone
-
-pinecone.init(api_key="your-api-key", environment="us-west1-gcp")
-
-index = pinecone.Index("your-index-name")
-
-vectorstore = Pinecone(index, embeddings.embed_query, "text")
-```
-
-### Weaviate
-```python
-import weaviate
-from langchain.vectorstores import Weaviate
-
-client = weaviate.Client("http://localhost:8080")
-
-vectorstore = Weaviate(client, "Document", "content", embeddings)
-```
-
-### Chroma (Local)
-```python
-from langchain.vectorstores import Chroma
-
-vectorstore = Chroma(
-    collection_name="my_collection",
-    embedding_function=embeddings,
-    persist_directory="./chroma_db"
-)
-```
-
-## Retrieval Optimization
-
-### 1. Metadata Filtering
-```python
-# Add metadata during indexing
-chunks_with_metadata = []
-for i, chunk in enumerate(chunks):
-    chunk.metadata = {
-        "source": chunk.metadata.get("source"),
-        "page": i,
-        "category": determine_category(chunk.page_content)
-    }
-    chunks_with_metadata.append(chunk)
-
-# Filter during retrieval
-results = vectorstore.similarity_search(
-    "query",
-    filter={"category": "technical"},
-    k=5
-)
-```
-
-### 2. Maximal Marginal Relevance
-```python
-# Balance relevance with diversity
-results = vectorstore.max_marginal_relevance_search(
-    "query",
-    k=5,
-    fetch_k=20,  # Fetch 20, return top 5 diverse
-    lambda_mult=0.5  # 0=max diversity, 1=max relevance
-)
-```
-
-### 3. Reranking with Cross-Encoder
-```python
-from sentence_transformers import CrossEncoder
-
-reranker = CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2')
-
-# Get initial results
-candidates = vectorstore.similarity_search("query", k=20)
-
-# Rerank
-pairs = [[query, doc.page_content] for doc in candidates]
-scores = reranker.predict(pairs)
-
-# Sort by score and take top k
-reranked = sorted(zip(candidates, scores), key=lambda x: x[1], reverse=True)[:5]
-```
-
-## Prompt Engineering for RAG
-
-### Contextual Prompt
-```python
-prompt_template = """Use the following context to answer the question. If you cannot answer based on the context, say "I don't have enough information."
-
-Context:
-{context}
-
-Question: {question}
-
-Answer:"""
-```
-
-### With Citations
-```python
-prompt_template = """Answer the question based on the context below. Include citations using [1], [2], etc.
-
-Context:
-{context}
-
-Question: {question}
-
-Answer (with citations):"""
-```
-
-### With Confidence
-```python
-prompt_template = """Answer the question using the context. Provide a confidence score (0-100%) for your answer.
-
-Context:
-{context}
-
-Question: {question}
-
-Answer:
-Confidence:"""
-```
-
-## Evaluation Metrics
-
-```python
-def evaluate_rag_system(qa_chain, test_cases):
-    metrics = {
-        'accuracy': [],
-        'retrieval_quality': [],
-        'groundedness': []
-    }
-
-    for test in test_cases:
-        result = qa_chain({"query": test['question']})
-
-        # Check if answer matches expected
-        accuracy = calculate_accuracy(result['result'], test['expected'])
-        metrics['accuracy'].append(accuracy)
-
-        # Check if relevant docs were retrieved
-        retrieval_quality = evaluate_retrieved_docs(
-            result['source_documents'],
-            test['relevant_docs']
-        )
-        metrics['retrieval_quality'].append(retrieval_quality)
-
-        # Check if answer is grounded in context
-        groundedness = check_groundedness(
-            result['result'],
-            result['source_documents']
-        )
-        metrics['groundedness'].append(groundedness)
-
-    return {k: sum(v)/len(v) for k, v in metrics.items()}
-```
-
-## Resources
-
-- **references/vector-databases.md**: Detailed comparison of vector DBs
-- **references/embeddings.md**: Embedding model selection guide
-- **references/retrieval-strategies.md**: Advanced retrieval techniques
-- **references/reranking.md**: Reranking methods and when to use them
-- **references/context-window.md**: Managing context limits
-- **assets/vector-store-config.yaml**: Configuration templates
-- **assets/retriever-pipeline.py**: Complete RAG pipeline
-- **assets/embedding-models.md**: Model comparison and benchmarks
-
-## Best Practices
-
-1. **Chunk Size**: Balance between context and specificity (500-1000 tokens)
-2. **Overlap**: Use 10-20% overlap to preserve context at boundaries
-3. **Metadata**: Include source, page, timestamp for filtering and debugging
-4. **Hybrid Search**: Combine semantic and keyword search for best results
-5. **Reranking**: Improve top results with cross-encoder
-6. **Citations**: Always return source documents for transparency
-7. **Evaluation**: Continuously test retrieval quality and answer accuracy
-8. **Monitoring**: Track retrieval metrics in production
-
-## Common Issues
-
-- **Poor Retrieval**: Check embedding quality, chunk size, query formulation
-- **Irrelevant Results**: Add metadata filtering, use hybrid search, rerank
-- **Missing Information**: Ensure documents are properly indexed
-- **Slow Queries**: Optimize vector store, use caching, reduce k
-- **Hallucinations**: Improve grounding prompt, add verification step
+### Chunking
+
+- **Chunk size is a tradeoff, not a constant.** Large chunks retrieve reliably but dilute
+  the embedding and waste context; small chunks embed sharply but lose the surrounding
+  meaning. ~500–1000 tokens with 10–20% overlap is a reasonable starting point to *tune
+  away from*, not a recommendation to adopt permanently.
+- Never exceed the embedding model's max input length — silently truncated chunks index
+  only their opening text and retrieve badly for content near the end.
+- Split on **structure before characters**: markdown headers, document sections, function
+  boundaries. A recursive character splitter with a separator list
+  (`["\n\n", "\n", " ", ""]`) approximates this; semantic chunkers that split at embedding
+  discontinuities do better on flowing text and cost an extra embedding pass.
+- **Parent-document retrieval is the biggest single win in chunking**: embed and search
+  *small* chunks, but return the *large* parent to the LLM. You get precise retrieval and
+  full context without compromising on one chunk size.
+
+### Embeddings
+
+- **The index and the query must use the same embedding model.** Changing models means
+  re-embedding the entire corpus — there is no incremental migration. Budget for this
+  before picking a model, not after.
+- Store the model name and dimension in the index metadata. Without it, an accidental model
+  swap produces a silently degraded system that still returns plausible results.
+- `text-embedding-ada-002` appears in most older tutorials. OpenAI superseded it with the
+  `text-embedding-3-*` family, which supports dimension reduction — useful when storage
+  cost or index size is the constraint.
+
+### Retrieval: use both kinds
+
+Dense (embedding) retrieval understands meaning but reliably misses exact tokens — error
+codes, SKUs, surnames, version strings. Sparse retrieval (BM25) catches exactly those and
+understands nothing. **Hybrid is not an optimisation, it's a correctness fix** for any
+corpus containing identifiers.
+
+Other strategies, in rough order of value per unit of effort:
+- **Reranking** — retrieve wide (k=20–50), score with a cross-encoder, keep the top 3–5.
+  A cross-encoder reads query and document *together*, so it is far more accurate than
+  vector similarity, and too slow to run over the whole corpus. This is usually the single
+  biggest quality jump available.
+- **Metadata filtering** — index source, section, timestamp, permissions. Filtering before
+  search beats semantic cleverness and is how you implement access control. Do not rely on
+  the LLM to withhold documents it was given.
+- **MMR** — trade some relevance for diversity when top results are near-duplicates.
+- **Multi-query** — paraphrase the query N ways, union the results. Helps on short or
+  ambiguous queries; costs an LLM call per query.
+- **Contextual compression** — have an LLM strip irrelevant passages from retrieved chunks
+  before they reach the prompt. Buys context budget, adds latency and a failure mode.
+
+### Grounding prompt
+
+Three non-negotiable elements:
+
+1. An explicit refusal clause — *"If the context does not contain the answer, say you don't
+   have enough information."* Without it the model fills gaps from parametric memory, which
+   is precisely what RAG exists to prevent.
+2. Citation markers tied to retrieved chunk IDs, so claims are traceable.
+3. The context clearly delimited from the question.
+
+Asking the model for a self-reported confidence score is popular and near-worthless —
+LLM confidence is poorly calibrated. Use retrieval scores and a groundedness check instead.
+
+## Debugging: separate retrieval from generation first
+
+This is the method, and it is the main thing to take from this skill. Before touching the
+prompt, ask: **was the correct chunk in the retrieved set?**
+
+- **If no** → retrieval problem. Chunking, embedding model, k, or the query is at fault.
+  Prompt changes cannot fix it.
+- **If yes, and the answer is still wrong** → generation problem. Prompt, context ordering,
+  or context overflow.
+
+Skipping this split is why RAG debugging degenerates into prompt roulette.
+
+| Symptom | Likely cause |
+|---|---|
+| Right document, wrong passage | Chunks too large — the embedding is diluted |
+| Misses exact IDs, codes, names | Dense-only retrieval — add BM25 |
+| Correct chunk retrieved but ranked ~15th | No reranker |
+| Answer contradicts the provided context | Weak grounding prompt, or context lost mid-prompt |
+| Confident answer from no supporting chunk | Missing refusal clause |
+| Quality fell off a cliff with no code change | Embedding model changed without reindexing |
+| Good in demo, bad in production | Test queries were written by the index's author |
+
+## Evaluation
+
+Build a golden set of ~50 real questions with known supporting documents **before**
+tuning. Without it, every change is unfalsifiable.
+
+Measure retrieval and generation separately:
+- **Retrieval**: recall@k — was the supporting document in the top k? Tune chunking and
+  retrieval against this alone, with generation held fixed.
+- **Groundedness**: is each claim in the answer supported by a retrieved chunk? This is the
+  hallucination metric.
+- **Answer correctness**: compared against the expected answer.
+
+Log retrieved chunk IDs and scores for every production query. When someone reports a bad
+answer weeks later, that log is the only way to reconstruct whether retrieval or generation
+failed.
+
+## Honest limits of this file
+
+The package versions above were fetched from PyPI on 2026-10-22 and are accurate as of
+then. **No RAG pipeline was executed while writing this** — no vector store was started and
+no embedding call was made — so no code sample is included that would imply otherwise. The
+architectural claims rest on well-established RAG practice; the version table is the only
+part checked against a live source, and it is the part that will rot first.

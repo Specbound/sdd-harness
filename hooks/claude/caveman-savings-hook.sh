@@ -1,4 +1,5 @@
 #!/bin/bash
+# purpose: Estimates tokens saved by caveman mode by having a cheap model re-expand the last reply.
 # caveman-savings-hook.sh — Stop hook: empirically estimates caveman-mode
 # token savings by asking a cheap model to re-expand the last terse response
 # back into normal prose, then diffing text length between the two.

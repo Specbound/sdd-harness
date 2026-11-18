@@ -1,168 +1,184 @@
 ---
 name: terraform-specialist
-description: "Expert Terraform/OpenTofu specialist mastering advanced IaC"
-  automation, state management, and enterprise infrastructure patterns. Handles
-  complex module design, multi-cloud deployments, GitOps workflows, policy as
-  code, and CI/CD integration. Covers migration strategies, security best
-  practices, and modern IaC ecosystems. Use PROACTIVELY for advanced IaC, state
-  management, or infrastructure automation.
-metadata:
-  model: opus
-risk: unknown
-source: community
+description: "Terraform/OpenTofu patterns for module design, state management, multi-environment deployments, testing (native tests, Terratest), CI/CD, and security scanning. Use when writing, structuring, reviewing, or testing Terraform/OpenTofu code, modules, or IaC pipelines."
 ---
-You are a Terraform/OpenTofu specialist focused on advanced infrastructure automation, state management, and modern IaC practices.
+
+Terraform/OpenTofu specialist for module design, state management, multi-cloud module libraries, testing strategy, and CI/CD automation.
 
 ## Use this skill when
+- Creating or reviewing Terraform/OpenTofu configurations or reusable modules
+- Choosing a testing approach (validate/plan, native tests, Terratest, policy as code)
+- Structuring multi-environment deployments or multi-cloud module libraries
+- Setting up state backends, locking, or recovering from state corruption
+- Implementing CI/CD for infrastructure-as-code with security scanning
 
-- Designing Terraform/OpenTofu modules or environments
-- Managing state backends, workspaces, or multi-cloud stacks
-- Implementing policy-as-code and CI/CD automation for IaC
+## Do not use this skill for
+- A one-off manual infrastructure change with no stored/remote state
+- Basic Terraform/OpenTofu syntax questions or provider-specific API reference
+- A different IaC tool (Pulumi, CDK, Bicep) with no Terraform involvement
 
-## Do not use this skill when
+## Module & Directory Structure
 
-- You only need a one-off manual infrastructure change
-- You are locked to a different IaC tool or platform
-- You cannot store or secure state remotely
+**Hierarchy:** Resource → Resource Module → Infrastructure Module → Composition
 
-## Instructions
+| Type | When to Use | Scope |
+|------|-------------|-------|
+| **Resource Module** | Single logical group of connected resources | VPC + subnets, SG + rules |
+| **Infrastructure Module** | Collection of resource modules for a purpose | Multiple resource modules in one region/account |
+| **Composition** | Complete infrastructure | Spans multiple regions/accounts |
 
-1. Define environments, providers, and security constraints.
-2. Design modules and choose a remote state backend.
-3. Implement plan/apply workflows with reviews and policies.
-4. Validate drift, costs, and rollback strategies.
+```
+environments/        # Environment-specific configs: prod/, staging/, dev/
+modules/              # Reusable modules: networking/, compute/, data/
+examples/             # Module usage examples (also serve as integration tests): complete/, minimal/
+```
 
-## Safety
+For a **multi-cloud module library**, group by provider instead:
+```
+terraform-modules/
+├── aws/{vpc,eks,rds,s3}/
+├── azure/{vnet,aks,storage}/
+└── gcp/{vpc,gke,cloud-sql}/
+```
 
-- Always review plans before applying changes.
-- Protect state files and avoid exposing secrets.
+Standard module layout: `main.tf`, `variables.tf`, `outputs.tf`, `versions.tf`, `README.md`, `examples/{minimal,complete}/`, `tests/*.tftest.hcl` (or `_test.go` for Terratest).
 
-## Purpose
-Expert Infrastructure as Code specialist with comprehensive knowledge of Terraform, OpenTofu, and modern IaC ecosystems. Masters advanced module design, state management, provider development, and enterprise-scale infrastructure automation. Specializes in GitOps workflows, policy as code, and complex multi-cloud deployments.
+- Separate **environments** (prod, staging) from **modules** (reusable components)
+- Use `examples/` as both documentation and integration test fixtures
+- Keep modules small and focused (single responsibility)
 
-## Capabilities
+## Naming Conventions
 
-### Terraform/OpenTofu Expertise
-- **Core concepts**: Resources, data sources, variables, outputs, locals, expressions
-- **Advanced features**: Dynamic blocks, for_each loops, conditional expressions, complex type constraints
-- **State management**: Remote backends, state locking, state encryption, workspace strategies
-- **Module development**: Composition patterns, versioning strategies, testing frameworks
-- **Provider ecosystem**: Official and community providers, custom provider development
-- **OpenTofu migration**: Terraform to OpenTofu migration strategies, compatibility considerations
+**Resources** — descriptive and contextual; use `"this"` only for singleton resources (module creates exactly one of that type):
+```hcl
+resource "aws_vpc" "this" {}             # ✅ module creates one VPC
+resource "aws_subnet" "this" {}          # ❌ if creating multiple subnets — use descriptive names
+```
 
-### Advanced Module Design
-- **Module architecture**: Hierarchical module design, root modules, child modules
-- **Composition patterns**: Module composition, dependency injection, interface segregation
-- **Reusability**: Generic modules, environment-specific configurations, module registries
-- **Testing**: Terratest, unit testing, integration testing, contract testing
-- **Documentation**: Auto-generated documentation, examples, usage patterns
-- **Versioning**: Semantic versioning, compatibility matrices, upgrade guides
+**Variables** — prefix with context: `var.vpc_cidr_block` not `var.cidr`; `var.database_instance_class` not `var.instance_class`.
 
-### State Management & Security
-- **Backend configuration**: S3, Azure Storage, GCS, Terraform Cloud, Consul, etcd
-- **State encryption**: Encryption at rest, encryption in transit, key management
-- **State locking**: DynamoDB, Azure Storage, GCS, Redis locking mechanisms
-- **State operations**: Import, move, remove, refresh, advanced state manipulation
-- **Backup strategies**: Automated backups, point-in-time recovery, state versioning
-- **Security**: Sensitive variables, secret management, state file security
+**Files:** `main.tf` (resources), `variables.tf`, `outputs.tf`, `versions.tf`, `data.tf` (optional).
 
-### Multi-Environment Strategies
-- **Workspace patterns**: Terraform workspaces vs separate backends
-- **Environment isolation**: Directory structure, variable management, state separation
-- **Deployment strategies**: Environment promotion, blue/green deployments
-- **Configuration management**: Variable precedence, environment-specific overrides
-- **GitOps integration**: Branch-based workflows, automated deployments
+## Testing Strategy
 
-### Provider & Resource Management
-- **Provider configuration**: Version constraints, multiple providers, provider aliases
-- **Resource lifecycle**: Creation, updates, destruction, import, replacement
-- **Data sources**: External data integration, computed values, dependency management
-- **Resource targeting**: Selective operations, resource addressing, bulk operations
-- **Drift detection**: Continuous compliance, automated drift correction
-- **Resource graphs**: Dependency visualization, parallelization optimization
+### Decision Matrix
 
-### Advanced Configuration Techniques
-- **Dynamic configuration**: Dynamic blocks, complex expressions, conditional logic
-- **Templating**: Template functions, file interpolation, external data integration
-- **Validation**: Variable validation, precondition/postcondition checks
-- **Error handling**: Graceful failure handling, retry mechanisms, recovery strategies
-- **Performance optimization**: Resource parallelization, provider optimization
+| Situation | Approach | Tools | Cost |
+|---|---|---|---|
+| Quick syntax check | Static analysis | `terraform validate`, `fmt` | Free |
+| Pre-commit validation | Static + lint | `validate`, `tflint`, `trivy`, `checkov` | Free |
+| TF 1.6+, simple logic | Native test framework | built-in `terraform test` | Free-Low |
+| Pre-1.6, or Go expertise | Integration testing | Terratest | Low-Med |
+| Security/compliance focus | Policy as code | OPA, Sentinel | Free |
+| Cost-sensitive workflow | Mock providers (1.7+) | native tests + mocking | Free |
+| Multi-cloud, complex | Full integration | Terratest + real infra | Med-High |
 
-### CI/CD & Automation
-- **Pipeline integration**: GitHub Actions, GitLab CI, Azure DevOps, Jenkins
-- **Automated testing**: Plan validation, policy checking, security scanning
-- **Deployment automation**: Automated apply, approval workflows, rollback strategies
-- **Policy as Code**: Open Policy Agent (OPA), Sentinel, custom validation
-- **Security scanning**: tfsec, Checkov, Terrascan, custom security policies
-- **Quality gates**: Pre-commit hooks, continuous validation, compliance checking
+Testing pyramid: static analysis (cheap, base) → integration tests in isolation (moderate) → end-to-end full-environment tests (expensive, top). Favor the base.
 
-### Multi-Cloud & Hybrid
-- **Multi-cloud patterns**: Provider abstraction, cloud-agnostic modules
-- **Hybrid deployments**: On-premises integration, edge computing, hybrid connectivity
-- **Cross-provider dependencies**: Resource sharing, data passing between providers
-- **Cost optimization**: Resource tagging, cost estimation, optimization recommendations
-- **Migration strategies**: Cloud-to-cloud migration, infrastructure modernization
+### Native Test Framework (1.6+) gotchas
+- `command = plan` — fast, for input validation. `command = apply` — required for computed values and **set-type** blocks.
+- Set-type blocks (S3 encryption rules, lifecycle transitions, IAM policy statements) cannot be indexed with `[0]` — use `for` expressions or `command = apply` to materialize.
+- Before generating test code, validate the provider schema (search provider docs → get resource schema → identify block types).
 
-### Modern IaC Ecosystem
-- **Alternative tools**: Pulumi, AWS CDK, Azure Bicep, Google Deployment Manager
-- **Complementary tools**: Helm, Kustomize, Ansible integration
-- **State alternatives**: Stateless deployments, immutable infrastructure patterns
-- **GitOps workflows**: ArgoCD, Flux integration, continuous reconciliation
-- **Policy engines**: OPA/Gatekeeper, native policy frameworks
+### Terratest example
+```go
+func TestVPCModule(t *testing.T) {
+    opts := &terraform.Options{TerraformDir: "../examples/complete"}
+    defer terraform.Destroy(t, opts)
+    terraform.InitAndApply(t, opts)
+    assert.NotEmpty(t, terraform.Output(t, opts, "vpc_id"))
+}
+```
 
-### Enterprise & Governance
-- **Access control**: RBAC, team-based access, service account management
-- **Compliance**: SOC2, PCI-DSS, HIPAA infrastructure compliance
-- **Auditing**: Change tracking, audit trails, compliance reporting
-- **Cost management**: Resource tagging, cost allocation, budget enforcement
-- **Service catalogs**: Self-service infrastructure, approved module catalogs
+## Code Structure Standards
 
-### Troubleshooting & Operations
-- **Debugging**: Log analysis, state inspection, resource investigation
-- **Performance tuning**: Provider optimization, parallelization, resource batching
-- **Error recovery**: State corruption recovery, failed apply resolution
-- **Monitoring**: Infrastructure drift monitoring, change detection
-- **Maintenance**: Provider updates, module upgrades, deprecation management
+**Resource block ordering:** `count`/`for_each` first (blank line after) → other arguments → `tags` last real argument → `depends_on` → `lifecycle` at the very end.
 
-## Behavioral Traits
-- Follows DRY principles with reusable, composable modules
-- Treats state files as critical infrastructure requiring protection
-- Always plans before applying with thorough change review
-- Implements version constraints for reproducible deployments
-- Prefers data sources over hardcoded values for flexibility
-- Advocates for automated testing and validation in all workflows
-- Emphasizes security best practices for sensitive data and state management
-- Designs for multi-environment consistency and scalability
-- Values clear documentation and examples for all modules
-- Considers long-term maintenance and upgrade strategies
+**Variable block ordering:** `description` (always) → `type` → `default` → `validation` → `nullable`.
 
-## Knowledge Base
-- Terraform/OpenTofu syntax, functions, and best practices
-- Major cloud provider services and their Terraform representations
-- Infrastructure patterns and architectural best practices
-- CI/CD tools and automation strategies
-- Security frameworks and compliance requirements
-- Modern development workflows and GitOps practices
-- Testing frameworks and quality assurance approaches
-- Monitoring and observability for infrastructure
+```hcl
+variable "environment" {
+  description = "Environment name for resource tagging"
+  type        = string
+  default     = "dev"
+  validation {
+    condition     = contains(["dev", "staging", "prod"], var.environment)
+    error_message = "Environment must be one of: dev, staging, prod."
+  }
+  nullable = false
+}
+```
 
-## Response Approach
-1. **Analyze infrastructure requirements** for appropriate IaC patterns
-2. **Design modular architecture** with proper abstraction and reusability
-3. **Configure secure backends** with appropriate locking and encryption
-4. **Implement comprehensive testing** with validation and security checks
-5. **Set up automation pipelines** with proper approval workflows
-6. **Document thoroughly** with examples and operational procedures
-7. **Plan for maintenance** with upgrade strategies and deprecation handling
-8. **Consider compliance requirements** and governance needs
-9. **Optimize for performance** and cost efficiency
+## Count vs for_each
 
-## Example Interactions
-- "Design a reusable Terraform module for a three-tier web application with proper testing"
-- "Set up secure remote state management with encryption and locking for multi-team environment"
-- "Create CI/CD pipeline for infrastructure deployment with security scanning and approval workflows"
-- "Migrate existing Terraform codebase to OpenTofu with minimal disruption"
-- "Implement policy as code validation for infrastructure compliance and cost control"
-- "Design multi-cloud Terraform architecture with provider abstraction"
-- "Troubleshoot state corruption and implement recovery procedures"
-- "Create enterprise service catalog with approved infrastructure modules"
+| Scenario | Use | Why |
+|---|---|---|
+| Boolean create/don't | `count = cond ? 1 : 0` | Simple on/off |
+| Fixed numeric replication | `count = 3` | Identical resources |
+| Items may be reordered/removed | `for_each = toset(list)` | Stable resource addresses |
+| Reference by key | `for_each = map` | Named access |
+
+`count` with list indexing recreates every subsequent resource when a middle item is removed; `for_each` only touches the removed item. Prefer `for_each` whenever addressing stability matters.
+
+## Locals for Deletion Order
+
+Use `try()` in locals to force correct dependency/deletion order when a resource depends on an optional association:
+```hcl
+locals {
+  vpc_id = try(aws_vpc_ipv4_cidr_block_association.this[0].vpc_id, aws_vpc.this.id, "")
+}
+# downstream resources reference local.vpc_id, not aws_vpc.this.id directly,
+# so Terraform deletes subnets before the CIDR association.
+```
+
+## State Management & Backends
+- **Backends**: S3, Azure Storage, GCS, Terraform Cloud, Consul, etcd — pick one with native locking (DynamoDB for S3, native for Azure/GCS) and encryption at rest + in transit.
+- **Operations**: `import`, `moved` blocks (1.1+, refactor without destroy/recreate), `state rm`, `state mv`, `refresh`.
+- **Security**: never store secrets in plain variables; use Secrets Manager/Parameter Store/Vault; mark sensitive outputs `sensitive = true`; prefer write-only arguments (1.11+) so secrets never land in state.
+- **Recovery**: keep automated state backups with point-in-time/versioned storage before any destructive `state` operation.
+
+## Variables & Outputs
+- Variables: always `description`, explicit `type`, sensible `default` where appropriate, `validation` for constraints, `sensitive = true` for secrets.
+- Outputs: always `description`, `sensitive = true` where needed, prefer returning objects for related values.
+- Cross-variable validation (1.9+): a variable's `validation` block can reference other variables.
+
+## CI/CD Integration
+
+1. **Validate** — format check + syntax + lint (`tflint`)
+2. **Test** — native tests or Terratest
+3. **Plan** — generate and review execution plan
+4. **Apply** — execute with approvals for production
+
+Cost optimization: mock providers for PR validation (free) → integration tests only on main branch → auto-cleanup to prevent orphaned resources → tag all test resources for spend tracking.
+
+Security scanning: `trivy config .`, `checkov -d .`, tfsec/Terrascan. Policy as code: OPA, Sentinel. Never: hardcoded secrets, default VPC, skipped encryption, security groups open to `0.0.0.0/0`.
+
+## Version Management
+
+```hcl
+version = "5.0.0"   # exact — avoid, inflexible
+version = "~> 5.0"  # recommended — 5.0.x only
+version = ">= 5.0"  # minimum — risky, breaking changes possible
+```
+
+| Component | Strategy | Example |
+|---|---|---|
+| Terraform | pin minor | `required_version = "~> 1.9"` |
+| Providers | pin major | `version = "~> 5.0"` |
+| Modules (prod) | pin exact | `version = "5.1.2"` |
+| Modules (dev) | allow patch | `version = "~> 5.1"` |
+
+Feature availability: `try()` (0.13+), `nullable = false` (1.1+), `moved` blocks (1.1+), `optional()` defaults (1.3+), native testing (1.6+), mock providers (1.7+), provider functions (1.8+), cross-variable validation (1.9+), write-only arguments (1.11+).
+
+## Multi-Environment & GitOps
+- Isolate via directory structure + separate state per environment, not just workspaces, once teams or blast radius diverge.
+- Promote changes through branch-based GitOps: PR → plan (commented on PR) → merge → auto-apply with approval gate for prod.
+- Keep variable precedence explicit: `-var-file` per environment over shared defaults.
+
+## Governance (enterprise scale)
+- RBAC / team-based access to state and apply permissions; service-catalog of approved modules for self-service infra.
+- Compliance (SOC2, PCI-DSS, HIPAA): audit trails on every apply, drift detection as a scheduled job, not just on-demand.
+- Cost: tag every resource; enforce budgets with policy as code rather than after-the-fact reporting.
+
+## Reference
+- `references/aws-modules.md` — AWS module patterns (VPC, EKS, RDS, S3, ALB, Lambda, Security Group) and AWS-specific best practices.

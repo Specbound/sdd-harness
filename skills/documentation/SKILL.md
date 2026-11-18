@@ -1,261 +1,78 @@
 ---
 name: documentation
-description: "Documentation generation workflow covering API docs, architecture docs, README files, code comments, and technical writing."
-source: personal
-risk: safe
-domain: documentation
-category: workflow-bundle
-version: 1.0.0
+description: Write and generate documentation — READMEs, API references (OpenAPI/REST/GraphQL), long-form architecture manuals, code walkthroughs for onboarding, and step-by-step tutorials. Use when documenting a project, an API, a system's architecture, or explaining/teaching existing code.
 ---
 
-# Documentation Workflow Bundle
+## When to use
+Creating or updating a README, API docs, an architecture/system manual, onboarding walkthroughs that explain existing code, or hands-on tutorials. Pick the matching section below — each sub-area has its own structure and templates in `resources/templates.md`.
 
-## Overview
+**Don't use for:** ad-hoc one-off explanations with no artifact to produce, or wikis/knowledge-base sites specifically (use the wiki skill — it covers page structure, navigation, and publishing).
 
-Comprehensive documentation workflow for generating API documentation, architecture documentation, README files, code comments, and technical content from codebases.
+## Universal principles
+- **Docs-as-code**: keep documentation next to the code it describes, generate from source where possible (docstrings → API reference), and review docs on every change that touches the surface it describes — stale docs are worse than none.
+- **Examples first, scannable structure**: headers/tables/lists over paragraphs; show a working example before explaining theory; progressive detail (simple → complex).
+- **Real data, not `foo`/`bar`**: example payloads, env vars, and commands should be things a reader can actually run.
+- Never invent behavior the code doesn't have — if you're unsure what something does, say so or read the code again rather than guessing.
 
-## When to Use This Workflow
+## README
 
-Use this workflow when:
-- Creating project documentation
-- Generating API documentation
-- Writing architecture docs
-- Documenting code
-- Creating user guides
-- Maintaining wikis
+**Before writing, explore the codebase**: identify the language/framework (package.json, go.mod, requirements.txt, Gemfile...), entry points, config/env files (`.env.example`), database/migration setup, and deployment config. Only ask the user questions you can't answer from the repo (what the project is for, credentials, business context).
 
-## Workflow Phases
+Detect the deployment target from what's present: `Dockerfile`/`docker-compose.yml` → Docker, `fly.toml` → Fly.io, `render.yaml` → Render, `Procfile` → Heroku-like, `vercel.json`/`.vercel/` → Vercel, `netlify.toml` → Netlify, `k8s/`/`*.tf` → Kubernetes/Terraform. No config found → default to a Docker-based guide.
 
-### Phase 1: Documentation Planning
+**Section order:**
+1. Title + 2-3 sentence overview + key features
+2. Tech stack (language, framework, DB, deploy target)
+3. Prerequisites (what must already be installed)
+4. Getting started — every command from clone to running locally, nothing assumed
+5. Architecture overview — directory structure, request lifecycle, data flow, key components
+6. Environment variables — required vs. optional, in a table, with where to get each value
+7. Available scripts/commands (table)
+8. Testing — how to run, test structure, one example test
+9. Deployment — tailored to the detected platform, with rollback steps if the tool supports it
+10. Troubleshooting — common errors as "Error / Solution" pairs
 
-#### Skills to Invoke
-- `docs-architect` - Documentation architecture
-- `documentation-templates` - Documentation templates
+Template: `resources/templates.md#readme`.
 
-#### Actions
-1. Identify documentation needs
-2. Choose documentation tools
-3. Plan documentation structure
-4. Define style guidelines
-5. Set up documentation site
+## API documentation
 
-#### Copy-Paste Prompts
-```
-Use @docs-architect to plan documentation structure
-```
+**Per-endpoint, document:** method + path, auth requirement, path/query/header params with types and required/optional, request body schema, every response status (success and all error codes) with example payloads, and a code example in at least curl + one language SDK.
 
-```
-Use @documentation-templates to set up documentation
-```
+**Recommended doc site structure:** Introduction (base URL, version) → Authentication → Quick Start → Endpoints (grouped by resource) → Data Models → Error Handling reference → Rate Limiting → Changelog → SDKs/Postman/OpenAPI spec.
 
-### Phase 2: API Documentation
+**Auth documentation:** show the full token-acquisition flow (e.g. `POST /auth/login` → token + expiry + refresh token), the exact header format (`Authorization: Bearer <token>`), and what happens on expiry (refresh endpoint). For OAuth2/OIDC, document the flow type used, scopes, and redirect handling — don't just say "OAuth2 supported."
 
-#### Skills to Invoke
-- `api-documenter` - API documentation
-- `api-documentation-generator` - Auto-generation
-- `openapi-spec-generation` - OpenAPI specs
+**Do:** be consistent across endpoints, document every error code, show realistic data, state parameter constraints (min/max, format), version the API in the URL, link related endpoints, provide a Postman collection or OpenAPI spec.
+**Don't:** skip error cases, use vague descriptions ("gets data"), leave examples untested, let docs drift from code without a regeneration step.
 
-#### Actions
-1. Extract API endpoints
-2. Generate OpenAPI specs
-3. Create API reference
-4. Add usage examples
-5. Set up auto-generation
+**OpenAPI** is the default spec format (3.1+); generate interactive docs from it (Swagger UI/Redoc) rather than hand-maintaining a parallel description. For event-driven/webhook APIs, use AsyncAPI instead and document payload examples + signature verification. For GraphQL, document by query/mutation with variables + response + possible error extensions, not by REST-style endpoint.
 
-#### Copy-Paste Prompts
-```
-Use @api-documenter to generate API documentation
-```
+Template: `resources/templates.md#api-endpoint` and `#openapi-skeleton`.
 
-```
-Use @openapi-spec-generation to create OpenAPI specs
-```
+## Architecture / system documentation (long-form)
 
-### Phase 3: Architecture Documentation
+For a manual meant to onboard new engineers or serve as the system's definitive technical reference:
+1. **Discovery** — map components, dependencies, data flows, and the design decisions behind them (not just what exists, but why).
+2. **Structure** — a chapter hierarchy with progressive disclosure: executive summary → architecture overview → design decisions/rationale → core components (one deep-dive per module) → data models → integration points (APIs/events/external deps) → deployment architecture → performance characteristics → security model → appendix (glossary, references).
+3. **Write** top-down: overview before implementation detail, concrete examples from the actual codebase (not generic ones), and a troubleshooting/common-pitfalls section near the end.
 
-#### Skills to Invoke
-- `c4-architecture-c4-architecture` - C4 architecture
-- `c4-context` - Context diagrams
-- `c4-container` - Container diagrams
-- `c4-component` - Component diagrams
-- `c4-code` - Code diagrams
-- `mermaid-expert` - Mermaid diagrams
+Use `file_path:line_number` links into the real source so claims are checkable. This format runs long (10–100+ pages) by design — it's a reference manual, not a quick read.
 
-#### Actions
-1. Create C4 diagrams
-2. Document architecture
-3. Generate sequence diagrams
-4. Document data flows
-5. Create deployment docs
+## Explaining code / onboarding walkthroughs
 
-#### Copy-Paste Prompts
-```
-Use @c4-architecture-c4-architecture to create C4 diagrams
-```
+Use progressive disclosure: **overview** (what it does, key concepts, one-sentence purpose) → **step-by-step** (one section per function/stage, in execution order) → **deep dive** (only for the genuinely non-obvious concepts: async flows, decorators, generators, recursion). Reach for an analogy on the first pass of an unfamiliar concept (e.g. "a generator is a ticket dispenser — one value at a time, not all printed upfront"), then show the real code.
 
-```
-Use @mermaid-expert to create architecture diagrams
-```
+Visualize when a diagram answers a question text can't: a Mermaid `flowchart` for call/data flow, a `classDiagram` for relationships between types, or a traced call stack for recursion. Don't diagram something a two-line sentence already explains.
 
-### Phase 4: Code Documentation
+Call out pitfalls as "Problem → Why it's bad → Better approach", each with a before/after snippet — this is more useful than a text warning.
 
-#### Skills to Invoke
-- `code-documentation-code-explain` - Code explanation
-- `code-documentation-doc-generate` - Doc generation
-- `documentation-generation-doc-generate` - Auto-generation
+## Tutorials
 
-#### Actions
-1. Extract code comments
-2. Generate JSDoc/TSDoc
-3. Create type documentation
-4. Document functions
-5. Add usage examples
+**Structure:** opening (what you'll learn, prerequisites, time estimate, preview of the end result) → progressive sections (concept intro with analogy → minimal working example → guided walkthrough → variations → self-directed challenge → troubleshooting) → closing (summary, next steps, further resources).
 
-#### Copy-Paste Prompts
-```
-Use @code-documentation-code-explain to explain code
-```
+**Principles:** show the code, then explain it — not the reverse. Each step must run and produce visible output before moving on. Include at least one intentional failure and how to debug it. Exercise types to mix in: fill-in-the-blank, debug-the-broken-code, extend-the-working-example, build-from-spec.
 
-```
-Use @code-documentation-doc-generate to generate docs
-```
+**Before shipping a tutorial, check:** can a beginner follow it without getting stuck, is every code block complete and runnable, are errors anticipated rather than discovered by the reader, does difficulty increase one step at a time.
 
-### Phase 5: README and Getting Started
-
-#### Skills to Invoke
-- `readme` - README generation
-- `environment-setup-guide` - Setup guides
-- `tutorial-engineer` - Tutorial creation
-
-#### Actions
-1. Create README
-2. Write getting started guide
-3. Document installation
-4. Add usage examples
-5. Create troubleshooting guide
-
-#### Copy-Paste Prompts
-```
-Use @readme to create project README
-```
-
-```
-Use @tutorial-engineer to create tutorials
-```
-
-### Phase 6: Wiki and Knowledge Base
-
-#### Skills to Invoke
-- `wiki-architect` - Wiki architecture
-- `wiki-page-writer` - Wiki pages
-- `wiki-onboarding` - Onboarding docs
-- `wiki-qa` - Wiki Q&A
-- `wiki-researcher` - Wiki research
-- `wiki-vitepress` - VitePress wiki
-
-#### Actions
-1. Design wiki structure
-2. Create wiki pages
-3. Write onboarding guides
-4. Document processes
-5. Set up wiki site
-
-#### Copy-Paste Prompts
-```
-Use @wiki-architect to design wiki structure
-```
-
-```
-Use @wiki-page-writer to create wiki pages
-```
-
-```
-Use @wiki-onboarding to create onboarding docs
-```
-
-### Phase 7: Changelog and Release Notes
-
-#### Skills to Invoke
-- `changelog-automation` - Changelog generation
-- `wiki-changelog` - Changelog from git
-
-#### Actions
-1. Extract commit history
-2. Categorize changes
-3. Generate changelog
-4. Create release notes
-5. Publish updates
-
-#### Copy-Paste Prompts
-```
-Use @changelog-automation to generate changelog
-```
-
-```
-Use @wiki-changelog to create release notes
-```
-
-### Phase 8: Documentation Maintenance
-
-#### Skills to Invoke
-- `doc-coauthoring` - Collaborative writing
-- `reference-builder` - Reference docs
-
-#### Actions
-1. Review documentation
-2. Update outdated content
-3. Fix broken links
-4. Add new features
-5. Gather feedback
-
-#### Copy-Paste Prompts
-```
-Use @doc-coauthoring to collaborate on docs
-```
-
-## Documentation Types
-
-### Code-Level
-- JSDoc/TSDoc comments
-- Function documentation
-- Type definitions
-- Example code
-
-### API Documentation
-- Endpoint reference
-- Request/response schemas
-- Authentication guides
-- SDK documentation
-
-### Architecture Documentation
-- System overview
-- Component diagrams
-- Data flow diagrams
-- Deployment architecture
-
-### User Documentation
-- Getting started guides
-- User manuals
-- Tutorials
-- FAQs
-
-### Process Documentation
-- Runbooks
-- Onboarding guides
-- SOPs
-- Decision records
-
-## Quality Gates
-
-- [ ] All APIs documented
-- [ ] Architecture diagrams current
-- [ ] README up to date
-- [ ] Code comments helpful
-- [ ] Examples working
-- [ ] Links valid
-
-## Related Workflow Bundles
-
-- `development` - Development workflow
-- `testing-qa` - Documentation testing
-- `ai-ml` - AI documentation
+## Resources
+- `resources/templates.md` — README skeleton, API endpoint template, OpenAPI skeleton, changelog (Keep a Changelog), ADR template, llms.txt template.

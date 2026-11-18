@@ -135,7 +135,7 @@ At nightly maintenance, `skill-augment-agent` runs as the Knowledge Seeding step
 
 Examples of domain mappings auto-applied by the hook:
 - `import|pip|npm` → `dependency-management`
-- `docker|kubectl` → `deployment-engineer`
+- `docker|kubectl` → `deployment-pipeline-design`
 - `git|merge|rebase` → `git-advanced-workflows`
 - `python|\.py` → `python-pro`
 - *(default)* → `systematic-debugging`

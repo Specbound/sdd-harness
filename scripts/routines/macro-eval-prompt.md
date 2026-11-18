@@ -12,7 +12,7 @@ Read `.claude/commands/kiro/macro-eval-sweep.md` and execute its pipeline end to
 
 Critical rules:
 1. **Preflight first.** If the Raindrop MCP server is unreachable (tool missing or query errors), do NOT fail silently — write `.claude/reports/macro-evals/TODAY_PLACEHOLDER-SKIPPED.md` explaining the skip, print one line saying it was skipped, and exit 0.
-2. Follow the `evaluation/macro` skill's five-phase methodology exactly. Ground every finding in real `run_id`/`span_id` values from `query_traces`.
+2. Follow the `evaluation/macro` skill's five-phase methodology exactly, including the Consistency Gap step (Step 4b in the sweep pipeline) for any task signature with ≥3 repeated runs in the window. Ground every finding in real `run_id`/`span_id` values from `query_traces`.
 3. Write the dated report to `.claude/reports/macro-evals/TODAY_PLACEHOLDER.md` and post annotations back to Workshop for the top failing patterns (cap ~5 runs per pattern).
 4. Keep context lean: prefer counts/IDs/SUBSTR previews; only pull full span payloads when a diagnosis truly needs them.
 

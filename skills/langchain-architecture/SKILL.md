@@ -1,352 +1,172 @@
 ---
 name: langchain-architecture
-description: "Design LLM applications using the LangChain framework with agents, memory, and tool integration patterns. Use when building LangChain applications, implementing AI agents, or creating complex LLM w..."
+description: "Build LLM apps with modern LangChain — LCEL, LangGraph agents, retrievers, persistent state. Use when writing or reviewing LangChain code, porting pre-0.1 code off removed APIs (initialize_agent, ConversationBufferMemory, chain.run), or choosing LCEL vs LangGraph vs a plain SDK call."
 risk: unknown
 source: community
 ---
 
 # LangChain Architecture
 
-Master the LangChain framework for building sophisticated LLM applications with agents, chains, memory, and tool integration.
-
-## Do not use this skill when
-
-- The task is unrelated to langchain architecture
-- You need a different domain or tool outside this scope
-
-## Instructions
-
-- Clarify goals, constraints, and required inputs.
-- Apply relevant best practices and validate outcomes.
-- Provide actionable steps and verification.
-- If detailed examples are required, open `resources/implementation-playbook.md`.
+LangChain split into `langchain-core`, provider packages (`langchain-openai`, …),
+`langchain-community`, and `langgraph`. Most LangChain code on the public internet —
+and most of what a model recalls by default — predates that split and calls APIs that
+were deprecated in 0.1 and removed since. Writing it produces an `ImportError`, not a
+subtly worse app.
 
 ## Use this skill when
 
-- Building autonomous AI agents with tool access
-- Implementing complex multi-step LLM workflows
-- Managing conversation memory and state
-- Integrating LLMs with external data sources and APIs
-- Creating modular, reusable LLM application components
-- Implementing document processing pipelines
-- Building production-grade LLM applications
+- Writing or reviewing LangChain code
+- Porting pre-0.1 LangChain off removed APIs
+- Building an agent with tools, or a RAG pipeline
+- Deciding whether LangChain earns its dependency at all
 
-## Core Concepts
+## First: does this need LangChain?
 
-### 1. Agents
-Autonomous systems that use LLMs to decide which actions to take.
+Reach for the provider SDK directly when the task is one prompt, one call, one parse.
+LangChain pays off when you need **swappable providers**, **retrieval plumbing**, or
+**durable multi-step state**. A single `client.chat.completions.create(...)` wrapped in
+LCEL is a dependency with no return.
 
-**Agent Types:**
-- **ReAct**: Reasoning + Acting in interleaved manner
-- **OpenAI Functions**: Leverages function calling API
-- **Structured Chat**: Handles multi-input tools
-- **Conversational**: Optimized for chat interfaces
-- **Self-Ask with Search**: Decomposes complex queries
+| Need | Use |
+|---|---|
+| One prompt → one answer | Provider SDK directly |
+| Composable prompt→model→parse, streaming, batching | LCEL |
+| Tool-calling loop, branching, human-in-the-loop, resumable state | LangGraph |
+| Document ingest → chunk → embed → retrieve | LangChain retrievers + a vector store |
 
-### 2. Chains
-Sequences of calls to LLMs or other utilities.
+## Removed-API migration table
 
-**Chain Types:**
-- **LLMChain**: Basic prompt + LLM combination
-- **SequentialChain**: Multiple chains in sequence
-- **RouterChain**: Routes inputs to specialized chains
-- **TransformChain**: Data transformations between steps
-- **MapReduceChain**: Parallel processing with aggregation
+This is the highest-value part of this skill. Each left-hand entry is code a model will
+emit from memory and that no longer imports.
 
-### 3. Memory
-Systems for maintaining context across interactions.
+| Pre-0.1 (gone) | Current |
+|---|---|
+| `from langchain.llms import OpenAI` | `from langchain_openai import ChatOpenAI` |
+| `initialize_agent(...)`, `AgentType.*` | `create_react_agent` from `langgraph.prebuilt` |
+| `chain.run(x)` / `agent.run(x)` | `.invoke(x)` (also `.stream`, `.batch`, `.ainvoke`) |
+| `LLMChain(llm=..., prompt=...)` | `prompt \| llm \| parser` (LCEL) |
+| `SequentialChain`, `SimpleSequentialChain` | LCEL pipe, or a LangGraph graph if it branches |
+| `ConversationBufferMemory` and the `Memory` classes | LangGraph checkpointer, or `RunnableWithMessageHistory` |
+| `from langchain.embeddings import OpenAIEmbeddings` | `from langchain_openai import OpenAIEmbeddings` |
+| `from langchain.vectorstores import Chroma` | `from langchain_chroma import Chroma` |
 
-**Memory Types:**
-- **ConversationBufferMemory**: Stores all messages
-- **ConversationSummaryMemory**: Summarizes older messages
-- **ConversationBufferWindowMemory**: Keeps last N messages
-- **EntityMemory**: Tracks information about entities
-- **VectorStoreMemory**: Semantic similarity retrieval
+Rule of thumb for any import: if it is `from langchain.<something> import <Provider>`,
+the provider moved to its own package. `langchain-community` holds the long tail.
 
-### 4. Document Processing
-Loading, transforming, and storing documents for retrieval.
-
-**Components:**
-- **Document Loaders**: Load from various sources
-- **Text Splitters**: Chunk documents intelligently
-- **Vector Stores**: Store and retrieve embeddings
-- **Retrievers**: Fetch relevant documents
-- **Indexes**: Organize documents for efficient access
-
-### 5. Callbacks
-Hooks for logging, monitoring, and debugging.
-
-**Use Cases:**
-- Request/response logging
-- Token usage tracking
-- Latency monitoring
-- Error handling
-- Custom metrics collection
-
-## Quick Start
+## LCEL — composition
 
 ```python
-from langchain.agents import AgentType, initialize_agent, load_tools
-from langchain.llms import OpenAI
-from langchain.memory import ConversationBufferMemory
+from langchain_openai import ChatOpenAI
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.output_parsers import StrOutputParser
 
-# Initialize LLM
-llm = OpenAI(temperature=0)
+llm = ChatOpenAI(model="gpt-4o", temperature=0)
+prompt = ChatPromptTemplate.from_messages([
+    ("system", "Summarize in one sentence."),
+    ("human", "{text}"),
+])
 
-# Load tools
-tools = load_tools(["serpapi", "llm-math"], llm=llm)
+chain = prompt | llm | StrOutputParser()
 
-# Add memory
-memory = ConversationBufferMemory(memory_key="chat_history")
-
-# Create agent
-agent = initialize_agent(
-    tools,
-    llm,
-    agent=AgentType.CONVERSATIONAL_REACT_DESCRIPTION,
-    memory=memory,
-    verbose=True
-)
-
-# Run agent
-result = agent.run("What's the weather in SF? Then calculate 25 * 4")
+chain.invoke({"text": "..."})          # single
+chain.batch([{"text": "a"}, {"text": "b"}])   # parallel
+for tok in chain.stream({"text": "..."}):     # token stream
+    print(tok, end="")
 ```
 
-## Architecture Patterns
+Everything in a pipe is a `Runnable` and shares that interface. Structured output goes
+through the model, not a parser bolted on after:
 
-### Pattern 1: RAG with LangChain
 ```python
-from langchain.chains import RetrievalQA
-from langchain.document_loaders import TextLoader
-from langchain.text_splitter import CharacterTextSplitter
-from langchain.vectorstores import Chroma
-from langchain.embeddings import OpenAIEmbeddings
+from pydantic import BaseModel, Field
 
-# Load and process documents
-loader = TextLoader('documents.txt')
-documents = loader.load()
+class Entity(BaseModel):
+    name: str = Field(description="entity name")
+    kind: str
 
-text_splitter = CharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
-texts = text_splitter.split_documents(documents)
-
-# Create vector store
-embeddings = OpenAIEmbeddings()
-vectorstore = Chroma.from_documents(texts, embeddings)
-
-# Create retrieval chain
-qa_chain = RetrievalQA.from_chain_type(
-    llm=llm,
-    chain_type="stuff",
-    retriever=vectorstore.as_retriever(),
-    return_source_documents=True
-)
-
-# Query
-result = qa_chain({"query": "What is the main topic?"})
+structured = llm.with_structured_output(Entity)
+structured.invoke("Ada Lovelace was a mathematician.")   # -> Entity(...)
 ```
 
-### Pattern 2: Custom Agent with Tools
+Prefer `with_structured_output` over asking for JSON in the prompt and parsing the
+string — it uses the provider's native tool/JSON-schema mode and removes a class of
+parse failures entirely.
+
+## LangGraph — agents and state
+
+`initialize_agent` is gone; the prebuilt ReAct agent replaces it directly.
+
 ```python
-from langchain.agents import Tool, AgentExecutor
-from langchain.agents.react.base import ReActDocstoreAgent
-from langchain.tools import tool
+from langchain_core.tools import tool
+from langgraph.prebuilt import create_react_agent
+from langgraph.checkpoint.memory import InMemorySaver
 
 @tool
-def search_database(query: str) -> str:
-    """Search internal database for information."""
-    # Your database search logic
-    return f"Results for: {query}"
+def search_orders(customer_id: str) -> str:
+    """Look up a customer's recent orders. Use for order status questions."""
+    return db.query(customer_id)
 
-@tool
-def send_email(recipient: str, content: str) -> str:
-    """Send an email to specified recipient."""
-    # Email sending logic
-    return f"Email sent to {recipient}"
-
-tools = [search_database, send_email]
-
-agent = initialize_agent(
-    tools,
-    llm,
-    agent=AgentType.ZERO_SHOT_REACT_DESCRIPTION,
-    verbose=True
+agent = create_react_agent(
+    model=ChatOpenAI(model="gpt-4o"),
+    tools=[search_orders],
+    checkpointer=InMemorySaver(),      # this is "memory" now
 )
+
+config = {"configurable": {"thread_id": "customer-42"}}
+agent.invoke({"messages": [("user", "Where is my order?")]}, config)
+agent.invoke({"messages": [("user", "And the one before that?")]}, config)
 ```
 
-### Pattern 3: Multi-Step Chain
-```python
-from langchain.chains import LLMChain, SequentialChain
-from langchain.prompts import PromptTemplate
+The checkpointer, keyed by `thread_id`, is what the old `Memory` classes did — and it
+persists the whole graph state, not just a transcript. Swap `InMemorySaver` for a
+Postgres/SQLite saver and conversations survive a restart.
 
-# Step 1: Extract key information
-extract_prompt = PromptTemplate(
-    input_variables=["text"],
-    template="Extract key entities from: {text}\n\nEntities:"
+The `@tool` docstring is the tool description the model selects on. A vague docstring is
+the most common cause of an agent that will not call the tool it needs.
+
+Drop to an explicit `StateGraph` when you need branching, retries, parallel fan-out, or
+a human approval step; `create_react_agent` only covers the single tool-calling loop.
+
+## RAG
+
+```python
+from langchain_openai import OpenAIEmbeddings
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_chroma import Chroma
+
+chunks = RecursiveCharacterTextSplitter(
+    chunk_size=1000, chunk_overlap=200
+).split_documents(docs)
+
+store = Chroma.from_documents(chunks, OpenAIEmbeddings(model="text-embedding-3-small"))
+retriever = store.as_retriever(search_kwargs={"k": 4})
+
+rag = (
+    {"context": retriever | (lambda ds: "\n\n".join(d.page_content for d in ds)),
+     "question": lambda x: x}
+    | ChatPromptTemplate.from_template(
+        "Answer using only the context. Say you don't know if it isn't there.\n\n"
+        "{context}\n\nQ: {question}")
+    | llm
+    | StrOutputParser()
 )
-extract_chain = LLMChain(llm=llm, prompt=extract_prompt, output_key="entities")
-
-# Step 2: Analyze entities
-analyze_prompt = PromptTemplate(
-    input_variables=["entities"],
-    template="Analyze these entities: {entities}\n\nAnalysis:"
-)
-analyze_chain = LLMChain(llm=llm, prompt=analyze_prompt, output_key="analysis")
-
-# Step 3: Generate summary
-summary_prompt = PromptTemplate(
-    input_variables=["entities", "analysis"],
-    template="Summarize:\nEntities: {entities}\nAnalysis: {analysis}\n\nSummary:"
-)
-summary_chain = LLMChain(llm=llm, prompt=summary_prompt, output_key="summary")
-
-# Combine into sequential chain
-overall_chain = SequentialChain(
-    chains=[extract_chain, analyze_chain, summary_chain],
-    input_variables=["text"],
-    output_variables=["entities", "analysis", "summary"],
-    verbose=True
-)
+rag.invoke("What is the refund window?")
 ```
 
-## Memory Management Best Practices
+Retrieval quality dominates generation quality here. Before tuning the prompt, check
+what the retriever actually returned — `retriever.invoke(q)` — because most bad RAG
+answers are retrieval misses, not generation failures.
 
-### Choosing the Right Memory Type
-```python
-# For short conversations (< 10 messages)
-from langchain.memory import ConversationBufferMemory
-memory = ConversationBufferMemory()
+## Failure modes
 
-# For long conversations (summarize old messages)
-from langchain.memory import ConversationSummaryMemory
-memory = ConversationSummaryMemory(llm=llm)
-
-# For sliding window (last N messages)
-from langchain.memory import ConversationBufferWindowMemory
-memory = ConversationBufferWindowMemory(k=5)
-
-# For entity tracking
-from langchain.memory import ConversationEntityMemory
-memory = ConversationEntityMemory(llm=llm)
-
-# For semantic retrieval of relevant history
-from langchain.memory import VectorStoreRetrieverMemory
-memory = VectorStoreRetrieverMemory(retriever=retriever)
-```
-
-## Callback System
-
-### Custom Callback Handler
-```python
-from langchain.callbacks.base import BaseCallbackHandler
-
-class CustomCallbackHandler(BaseCallbackHandler):
-    def on_llm_start(self, serialized, prompts, **kwargs):
-        print(f"LLM started with prompts: {prompts}")
-
-    def on_llm_end(self, response, **kwargs):
-        print(f"LLM ended with response: {response}")
-
-    def on_llm_error(self, error, **kwargs):
-        print(f"LLM error: {error}")
-
-    def on_chain_start(self, serialized, inputs, **kwargs):
-        print(f"Chain started with inputs: {inputs}")
-
-    def on_agent_action(self, action, **kwargs):
-        print(f"Agent taking action: {action}")
-
-# Use callback
-agent.run("query", callbacks=[CustomCallbackHandler()])
-```
-
-## Testing Strategies
-
-```python
-import pytest
-from unittest.mock import Mock
-
-def test_agent_tool_selection():
-    # Mock LLM to return specific tool selection
-    mock_llm = Mock()
-    mock_llm.predict.return_value = "Action: search_database\nAction Input: test query"
-
-    agent = initialize_agent(tools, mock_llm, agent=AgentType.ZERO_SHOT_REACT_DESCRIPTION)
-
-    result = agent.run("test query")
-
-    # Verify correct tool was selected
-    assert "search_database" in str(mock_llm.predict.call_args)
-
-def test_memory_persistence():
-    memory = ConversationBufferMemory()
-
-    memory.save_context({"input": "Hi"}, {"output": "Hello!"})
-
-    assert "Hi" in memory.load_memory_variables({})['history']
-    assert "Hello!" in memory.load_memory_variables({})['history']
-```
-
-## Performance Optimization
-
-### 1. Caching
-```python
-from langchain.cache import InMemoryCache
-import langchain
-
-langchain.llm_cache = InMemoryCache()
-```
-
-### 2. Batch Processing
-```python
-# Process multiple documents in parallel
-from langchain.document_loaders import DirectoryLoader
-from concurrent.futures import ThreadPoolExecutor
-
-loader = DirectoryLoader('./docs')
-docs = loader.load()
-
-def process_doc(doc):
-    return text_splitter.split_documents([doc])
-
-with ThreadPoolExecutor(max_workers=4) as executor:
-    split_docs = list(executor.map(process_doc, docs))
-```
-
-### 3. Streaming Responses
-```python
-from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
-
-llm = OpenAI(streaming=True, callbacks=[StreamingStdOutCallbackHandler()])
-```
-
-## Resources
-
-- **references/agents.md**: Deep dive on agent architectures
-- **references/memory.md**: Memory system patterns
-- **references/chains.md**: Chain composition strategies
-- **references/document-processing.md**: Document loading and indexing
-- **references/callbacks.md**: Monitoring and observability
-- **assets/agent-template.py**: Production-ready agent template
-- **assets/memory-config.yaml**: Memory configuration examples
-- **assets/chain-example.py**: Complex chain examples
-
-## Common Pitfalls
-
-1. **Memory Overflow**: Not managing conversation history length
-2. **Tool Selection Errors**: Poor tool descriptions confuse agents
-3. **Context Window Exceeded**: Exceeding LLM token limits
-4. **No Error Handling**: Not catching and handling agent failures
-5. **Inefficient Retrieval**: Not optimizing vector store queries
-
-## Production Checklist
-
-- [ ] Implement proper error handling
-- [ ] Add request/response logging
-- [ ] Monitor token usage and costs
-- [ ] Set timeout limits for agent execution
-- [ ] Implement rate limiting
-- [ ] Add input validation
-- [ ] Test with edge cases
-- [ ] Set up observability (callbacks)
-- [ ] Implement fallback strategies
-- [ ] Version control prompts and configurations
+- **Pinning `langchain` only.** The meta-package does not pull every provider. Pin each
+  package you import (`langchain-core`, `langchain-openai`, `langgraph`) — they version
+  independently and a mismatched `langchain-core` is a common break.
+- **Treating deprecation warnings as noise.** In this library they are removal notices
+  with a lead time, not style advice.
+- **Agent when a chain would do.** A tool-calling loop is nondeterministic and costs
+  several calls per turn. If the step order is known, write the pipe.
+- **Unbounded message history.** The checkpointer grows forever by default. Trim or
+  summarize before the context window, not after it errors.
+- **Debugging by print.** Set `LANGCHAIN_TRACING_V2=true` and read the trace; the
+  intermediate prompt is usually not what you assume.

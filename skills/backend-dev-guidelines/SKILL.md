@@ -319,7 +319,7 @@ No tests → no merge.
 * **error-tracking** → Sentry standards
 * **database-verification** → Schema correctness
 * **analytics-tracking** → Event pipelines
-* **skill-developer** → Skill governance
+* **skill-creator** → Skill governance
 
 ---
 

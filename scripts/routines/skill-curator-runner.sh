@@ -56,8 +56,12 @@ trap 'rm -rf "$LOCK_DIR"' EXIT
 # --- Cadence guard: skip if last run was < MIN_GAP_DAYS ago (unless forced) ---
 if [ "${SKILL_CURATOR_FORCE:-0}" != "1" ] && [ -s "$STATE_FILE" ]; then
   LAST_RAW="$(cat "$STATE_FILE")"
-  LAST_EPOCH="$(date -j -f "%Y-%m-%dT%H:%M:%S%z" "$LAST_RAW" +%s 2>/dev/null \
-              || date -d "$LAST_RAW" +%s 2>/dev/null || echo 0)"
+  # fromisoformat reads the `date -Iseconds` stamp ("+02:00") on any OS. BSD
+  # `date -j -f ...%z` only accepts "+0200": every macOS parse failed, read as epoch
+  # 0, and the cadence gate never fired. Found here ~2026-08-06 and fixed by
+  # stripping the colon in this runner only; the other eight runners kept the bug
+  # until 2026-11-18 (weekly/bi-weekly sweeps ran daily).
+  LAST_EPOCH="$(python3 -c 'import sys, datetime; print(int(datetime.datetime.fromisoformat(sys.argv[1]).timestamp()))' "$LAST_RAW" 2>/dev/null || echo 0)"
   if [ "$LAST_EPOCH" -gt 0 ]; then
     GAP_DAYS=$(( ($(date +%s) - LAST_EPOCH) / 86400 ))
     if [ "$GAP_DAYS" -lt "$MIN_GAP_DAYS" ]; then

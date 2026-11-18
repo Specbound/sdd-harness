@@ -1,4 +1,5 @@
 #!/bin/bash
+# purpose: After each reply, runs end-of-turn checks: update notice, memory health, overdue items, loop-debt, cost.
 # SDD Harness stop hook
 # 1. Check if harness has updates since last install
 # 2. Nudge /kiro:housekeeping if observations.md > 50 entries
@@ -69,26 +70,24 @@ fi
 # --- Memory-gap detection (re-explanation signal) ---
 # Scan the current session's transcript for phrases indicating the user had to
 # re-explain context — each hit = a memory the harness should have saved.
-# Runs in background; failures are silent (detector is best-effort).
 #
-# Interpreter choice matters here: the detector imports `anthropic`. Bare `python3`
-# resolves to whatever the *target repo* provides, and that environment belongs to
-# the repo's owner — one dependency prune or lockfile regen there and this detector
-# goes quiet forever with no symptom. Prefer the harness-owned .venv-tools, which
-# check-harness-deps.sh keeps stocked from scripts/setup/harness-requirements.txt.
+# The detector classifies via `claude --print`, i.e. a nested headless session,
+# which fires this same hook when it ends. SDD_HEADLESS marks those children (the
+# detector sets it, as do scripts/routines/*-runner.sh), so skipping here is what
+# stops the recursion. It also keeps routine sessions — which have no user in them
+# to re-explain anything — out of the measurement.
+#
+# Failures are NOT silent: the detector emits a `[detector-down]` observation and
+# exits 4. A swallowed failure showed up on the dashboard as "0 memory gaps",
+# which is indistinguishable from a clean session, and it stayed that way for the
+# whole time the API-key-based detector was deployed without a key.
 DETECTOR=".claude/scripts/session/detect_reexplanation.py"
-DETECTOR_PY="python3"
-if [ -x "$HARNESS_DIR/.venv-tools/bin/python" ]; then
-  DETECTOR_PY="$HARNESS_DIR/.venv-tools/bin/python"
-elif [ -x "$HARNESS_DIR/.venv-tools/Scripts/python.exe" ]; then
-  DETECTOR_PY="$HARNESS_DIR/.venv-tools/Scripts/python.exe"
-fi
-if [ -f "$DETECTOR" ] && [ -f "$OBS_FILE" ]; then
+if [ "${SDD_HEADLESS:-0}" != "1" ] && [ -f "$DETECTOR" ] && [ -f "$OBS_FILE" ]; then
   (
     today=$(date +%Y-%m-%d)
-    # Skip if today's [memory-gap] already exists (idempotency guard)
-    if ! grep -q "^- $today \[memory-gap\]:" "$OBS_FILE" 2>/dev/null; then
-      "$DETECTOR_PY" "$DETECTOR" --auto-transcript --emit observation 2>/dev/null >> "$OBS_FILE" || true
+    # Idempotency guard: one detector verdict per day, success or failure.
+    if ! grep -qF -e "- $today [memory-gap]:" -e "- $today [detector-down]:" "$OBS_FILE" 2>/dev/null; then
+      SDD_HEADLESS=1 python3 "$DETECTOR" --auto-transcript --emit observation --record-metric >> "$OBS_FILE" 2>/dev/null
     fi
   ) &
 fi
@@ -100,6 +99,16 @@ if [ -d ".claude/memory" ]; then
   if [ -f "$SESSION_HISTORY" ]; then
     tail -30 "$SESSION_HISTORY" > "${SESSION_HISTORY}.tmp" && mv "${SESSION_HISTORY}.tmp" "$SESSION_HISTORY"
   fi
+fi
+
+# --- Hook run log size cap ---
+# _run-hook.sh appends one line per hook run, so the log grows with every tool
+# call. Keep the newest lines only. A line appended while this trims can be lost;
+# the log is for "did it run", not an audit trail.
+HOOK_RUN_LOG=".claude/logs/hook-runs.jsonl"
+HOOK_RUN_LOG_MAX="${SDD_HOOK_LOG_MAX_LINES:-20000}"
+if [ -f "$HOOK_RUN_LOG" ] && [ "$(wc -l < "$HOOK_RUN_LOG" | tr -d ' ')" -gt "$HOOK_RUN_LOG_MAX" ]; then
+  tail -n "$HOOK_RUN_LOG_MAX" "$HOOK_RUN_LOG" > "${HOOK_RUN_LOG}.tmp" && mv "${HOOK_RUN_LOG}.tmp" "$HOOK_RUN_LOG"
 fi
 
 # --- Agent failure pattern detection (self-tightening loop) ---
@@ -129,7 +138,13 @@ fi
 # --- Loop-debt detection (cognitive surrender proxy) ---
 # Emit [loop-debt] if skill updates ran ≥3 days ago with no session-charge since.
 # Signal: loop shipped improvements the human never engaged with.
-if [ -f "$OBS_FILE" ]; then
+#
+# Interactive sessions only. A headless routine (SDD_HEADLESS=1) has no human in
+# it, so "the human never engaged" is true by construction there — on an idle day
+# the nightly routine's own Stop emitted this, and trust_score charged -1 for a
+# window session-quality had already scored idle. An interactive Stop the same day
+# still emits it, since the per-day guard below has not fired yet.
+if [ "${SDD_HEADLESS:-0}" != "1" ] && [ -f "$OBS_FILE" ]; then
   today=$(date +%Y-%m-%d)
   if ! grep -q "^- $today \[loop-debt\]:" "$OBS_FILE" 2>/dev/null; then
     python3 - "$OBS_FILE" "$today" <<'PYEOF' >> "$OBS_FILE" 2>/dev/null || true

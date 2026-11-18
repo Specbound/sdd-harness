@@ -1,218 +1,154 @@
 ---
 name: security-audit
-description: "Comprehensive security auditing workflow covering web application testing, API security, penetration testing, vulnerability scanning, and security hardening."
-source: personal
-risk: safe
-domain: security
-category: workflow-bundle
-version: 1.0.0
+description: "Full-spectrum security audit: OWASP Top 10 review, SAST/dependency/secrets scanning, risk prioritization, and a pre-deployment checklist. Use when auditing an app/API for vulnerabilities, triaging scanner output, or signing off a security-sensitive release."
 ---
 
-# Security Auditing Workflow Bundle
+# Security Audit
 
-## Overview
+## When to Use
 
-Comprehensive security auditing workflow for web applications, APIs, and infrastructure. This bundle orchestrates skills for penetration testing, vulnerability assessment, security scanning, and remediation.
+- Auditing a web app, API, or service for vulnerabilities
+- Triaging SAST/dependency/secrets scanner output and prioritizing fixes
+- Running a structured pen-test or pre-deployment security review
+- Hardening an app against OWASP Top 10 classes of bugs
 
-## When to Use This Workflow
+Do not use for: formal compliance certification (needs legal/audit sign-off), or intrusive testing without written authorization.
 
-Use this workflow when:
-- Performing security audits on web applications
-- Testing API security
-- Conducting penetration tests
-- Scanning for vulnerabilities
-- Hardening application security
-- Compliance security assessments
+## Mindset
 
-## Workflow Phases
+| Principle | Application |
+|-----------|-------------|
+| Assume Breach | Design as if attacker already inside |
+| Zero Trust | Never trust, always verify |
+| Defense in Depth | Multiple layers, no single point of failure |
+| Least Privilege | Minimum required access only |
+| Fail Secure | On error, deny access — never fail open |
 
-### Phase 1: Reconnaissance
+Before scanning, answer: What are we protecting (assets)? Who would attack (threat actors)? How (attack vectors)? What's the impact (business risk)?
 
-#### Skills to Invoke
-- `scanning-tools` - Security scanning
-- `shodan-reconnaissance` - Shodan searches
-- `top-web-vulnerabilities` - OWASP Top 10
+## Workflow
 
-#### Actions
-1. Identify target scope
-2. Gather intelligence
-3. Map attack surface
-4. Identify technologies
-5. Document findings
+1. **Recon** — map attack surface: entry points (APIs, forms, uploads), data flows, trust boundaries, where auth/authz is actually checked.
+2. **Scan** — run SAST + dependency + secrets scanners (see tool tables below). Generate an SBOM for supply-chain visibility.
+3. **Manual test** — walk the OWASP Top 10 checklist against the real code, not just scanner output; scanners miss business-logic flaws.
+4. **Prioritize** — score findings by CVSS + EPSS + asset value + exposure (decision tree below).
+5. **Fix & validate** — parameterized queries, output encoding, auth checks, etc.; re-scan; confirm no regression.
+6. **Report** — structured findings (below) with severity, reproduction, business impact, and concrete remediation.
 
-#### Copy-Paste Prompts
-```
-Use @scanning-tools to perform initial reconnaissance
-```
+## OWASP Top 10 Checklist
 
-```
-Use @shodan-reconnaissance to find exposed services
-```
+- [ ] **A01 Broken Access Control** — authz on every protected route, deny-by-default, no IDOR (object refs checked against requester), CORS not wildcard
+- [ ] **A02 Cryptographic Failures** — passwords hashed (bcrypt/argon2, cost 12+), TLS 1.2+ everywhere, no secrets in code/logs, encryption at rest
+- [ ] **A03 Injection** — parameterized queries only, input validated, output encoded for XSS, no `eval`/dynamic code exec
+- [ ] **A04 Insecure Design** — threat model exists, security requirements defined, business logic abuse cases tested
+- [ ] **A05 Security Misconfiguration** — unused features disabled, errors sanitized, security headers set, no default creds
+- [ ] **A06 Vulnerable Components** — dependencies current, no known CVEs, unused deps removed
+- [ ] **A07 Authentication Failures** — MFA available, session invalidated on logout, timeout enforced, brute-force protected
+- [ ] **A08 Integrity Failures** — dependency integrity verified (lockfiles committed), CI/CD pipeline secured, signed updates
+- [ ] **A09 Logging Failures** — security events logged, logs protected, no sensitive data logged, alerting configured
+- [ ] **A10 SSRF / Exceptional Conditions** — URL allow-list for outbound calls, network segmentation, no catch-all exception handlers that fail open
 
-### Phase 2: Vulnerability Scanning
+2025 shift to be aware of: SSRF folded into A01, new **Supply Chain** (deps/CI-CD/build integrity) and **Exceptional Conditions** (fail-open states) categories, root-cause focus over symptom patching.
 
-#### Skills to Invoke
-- `vulnerability-scanner` - Vulnerability analysis
-- `security-scanning-security-sast` - Static analysis
-- `security-scanning-security-dependencies` - Dependency scanning
-
-#### Actions
-1. Run automated scanners
-2. Perform static analysis
-3. Scan dependencies
-4. Identify misconfigurations
-5. Document vulnerabilities
-
-#### Copy-Paste Prompts
-```
-Use @vulnerability-scanner to scan for OWASP Top 10 vulnerabilities
-```
+## Risk Prioritization
 
 ```
-Use @security-scanning-security-dependencies to audit dependencies
+Is it actively exploited (EPSS > 0.5)?
+├── YES → CRITICAL: immediate action
+└── NO → check CVSS
+         ├── ≥ 9.0            → HIGH
+         ├── 7.0–8.9          → weigh against asset value/exposure
+         └── < 7.0            → schedule for later
 ```
 
-### Phase 3: Web Application Testing
+Severity classification for findings: **Critical** = RCE/auth bypass/mass data exposure. **High** = data exposure/privilege escalation. **Medium** = limited scope, needs conditions. **Low** = informational/best-practice.
 
-#### Skills to Invoke
-- `top-web-vulnerabilities` - OWASP vulnerabilities
-- `sql-injection-testing` - SQL injection
-- `xss-html-injection` - XSS testing
-- `broken-authentication` - Authentication testing
-- `idor-testing` - IDOR testing
-- `file-path-traversal` - Path traversal
-- `burp-suite-testing` - Burp Suite testing
+## SAST — Tool Quick Reference
 
-#### Actions
-1. Test for injection flaws
-2. Test authentication mechanisms
-3. Test session management
-4. Test access controls
-5. Test input validation
-6. Test security headers
+| Language | Tool | Command |
+|----------|------|---------|
+| Python | Bandit | `bandit -r . -ll -ii -f json` |
+| JS/TS | ESLint Security | `eslint . --ext .js,.ts -f json` (plugin `security/recommended`) |
+| Multi | Semgrep | `semgrep --config=auto --json` / `--config=p/owasp-top-ten` |
+| Java | SpotBugs | `mvn spotbugs:check` |
+| Ruby | Brakeman | `brakeman -o report.json -f json` |
+| Go | gosec | `gosec -fmt=json -out=gosec.json ./...` |
+| Rust | clippy | `cargo clippy -- -W clippy::unwrap_used` |
 
-#### Copy-Paste Prompts
-```
-Use @sql-injection-testing to test for SQL injection vulnerabilities
-```
+Run Semgrep first (multi-language baseline), then the language-specific tool. Combine ≥2 tools — each catches different classes. Tune false positives with exclusions, not by disabling rules wholesale.
 
-```
-Use @xss-html-injection to test for cross-site scripting
-```
+**Vulnerable → Secure patterns to check for:**
+- SQL: string-built queries → parameterized queries / ORM
+- XSS: raw `innerHTML`/`document.write` → `textContent`, framework auto-escaping, or `DOMPurify.sanitize()`
+- Secrets: hardcoded keys/passwords → `os.environ.get(...)` / secret manager
+- Path traversal: user input straight into `open()` → `os.path.realpath()` + prefix check against an allow-listed dir
+- Deserialization: `pickle.loads`/`yaml.load` on untrusted data → `json.loads` / `yaml.safe_load`
+- Command injection: `shell=True` + concatenated input → array args (`subprocess.run([...])`) or `shlex.quote`
+- Randomness: `random` for tokens/sessions → `secrets.token_hex` / `token_urlsafe`
 
-```
-Use @broken-authentication to test authentication security
-```
+## Dependency & Secrets Scanning
 
-### Phase 4: API Security Testing
-
-#### Skills to Invoke
-- `api-fuzzing-bug-bounty` - API fuzzing
-- `api-security-best-practices` - API security
-
-#### Actions
-1. Enumerate API endpoints
-2. Test authentication/authorization
-3. Test rate limiting
-4. Test input validation
-5. Test error handling
-6. Document API vulnerabilities
-
-#### Copy-Paste Prompts
-```
-Use @api-fuzzing-bug-bounty to fuzz API endpoints
+```bash
+# Python
+pip install safety pip-audit pip-licenses
+# JavaScript
+npm audit; npm install -g snyk npm-check-updates
+# Go
+go install golang.org/x/vuln/cmd/govulncheck@latest
+# Rust
+cargo install cargo-audit
 ```
 
-### Phase 5: Penetration Testing
+- Generate an SBOM (CycloneDX/SPDX) for supply-chain visibility and license compliance.
+- Prioritize by CVSS + exploit availability; auto-update patch versions only, major versions need manual review + full test suite.
+- Pin versions, commit lockfiles, verify package checksums; use private registries for critical deps where possible.
+- Secrets to grep for: `api_key`/`apikey`, `token`/`bearer`/`jwt`, `password`/`secret`, cloud creds (`AKIA...`, `AWS_`/`AZURE_`/`GCP_` prefixes), `-----BEGIN ... PRIVATE KEY-----`.
 
-#### Skills to Invoke
-- `pentest-commands` - Penetration testing commands
-- `pentest-checklist` - Pentest planning
-- `ethical-hacking-methodology` - Ethical hacking
-- `metasploit-framework` - Metasploit
+## Pre-Deployment Checklist
 
-#### Actions
-1. Plan penetration test
-2. Execute attack scenarios
-3. Exploit vulnerabilities
-4. Document proof of concept
-5. Assess impact
+Before any production deploy:
 
-#### Copy-Paste Prompts
+- [ ] No hardcoded secrets — all in env vars / secret manager, `.env*` gitignored
+- [ ] All user input validated against a schema (allow-list, not deny-list)
+- [ ] File uploads restricted by size, MIME type, and extension
+- [ ] All queries parameterized; no string-built SQL
+- [ ] Tokens in httpOnly/Secure/SameSite cookies, not `localStorage`
+- [ ] Authorization checked before every sensitive operation (not just authentication)
+- [ ] Row Level Security / equivalent enabled on multi-tenant tables
+- [ ] User-supplied HTML sanitized; CSP header configured
+- [ ] CSRF tokens on state-changing requests; SameSite=Strict cookies
+- [ ] Rate limiting on all endpoints, stricter on expensive ones (search, auth)
+- [ ] Errors return generic messages to clients; stack traces only in server logs
+- [ ] No sensitive data (passwords, tokens, full card numbers) in logs
+- [ ] `npm audit` / equivalent clean; lockfiles committed; Dependabot-equivalent enabled
+- [ ] HTTPS enforced; security headers set (see below)
+
+## Security Headers
+
 ```
-Use @pentest-checklist to plan penetration test
-```
-
-```
-Use @pentest-commands to execute penetration testing
-```
-
-### Phase 6: Security Hardening
-
-#### Skills to Invoke
-- `security-scanning-security-hardening` - Security hardening
-- `auth-implementation-patterns` - Authentication
-- `api-security-best-practices` - API security
-
-#### Actions
-1. Implement security controls
-2. Configure security headers
-3. Set up authentication
-4. Implement authorization
-5. Configure logging
-6. Apply patches
-
-#### Copy-Paste Prompts
-```
-Use @security-scanning-security-hardening to harden application security
+Content-Security-Policy: default-src 'self'; script-src 'self'
+X-Content-Type-Options: nosniff
+X-Frame-Options: DENY
+Strict-Transport-Security: max-age=31536000; includeSubDomains
+Referrer-Policy: strict-origin-when-cross-origin
+Permissions-Policy: geolocation=(), microphone=()
 ```
 
-### Phase 7: Reporting
+## Anti-Patterns
 
-#### Skills to Invoke
-- `reporting-standards` - Security reporting
+| Don't | Do |
+|-------|-----|
+| Scan without mapping attack surface first | Recon, then scan |
+| Alert on every CVE | Prioritize by exploitability + asset value |
+| Ignore recurring false positives | Maintain a verified baseline |
+| Fix symptoms only | Address root cause |
+| Scan once before deploy | Continuous scanning (CI/CD + schedule) |
+| Trust third-party deps blindly | Verify integrity, pin, audit |
 
-#### Actions
-1. Document findings
-2. Assess risk levels
-3. Provide remediation steps
-4. Create executive summary
-5. Generate technical report
+## Reporting
 
-## Security Testing Checklist
+Each finding should answer: **What** (clear description) · **Where** (file/line or endpoint) · **Why** (root cause) · **Impact** (business consequence) · **How to fix** (specific remediation). Use the severity classification above; include CVSS/EPSS where available.
 
-### OWASP Top 10
-- [ ] Injection (SQL, NoSQL, OS, LDAP)
-- [ ] Broken Authentication
-- [ ] Sensitive Data Exposure
-- [ ] XML External Entities (XXE)
-- [ ] Broken Access Control
-- [ ] Security Misconfiguration
-- [ ] Cross-Site Scripting (XSS)
-- [ ] Insecure Deserialization
-- [ ] Using Components with Known Vulnerabilities
-- [ ] Insufficient Logging & Monitoring
+## Related Skills
 
-### API Security
-- [ ] Authentication mechanisms
-- [ ] Authorization checks
-- [ ] Rate limiting
-- [ ] Input validation
-- [ ] Error handling
-- [ ] Security headers
-
-## Quality Gates
-
-- [ ] All planned tests executed
-- [ ] Vulnerabilities documented
-- [ ] Proof of concepts captured
-- [ ] Risk assessments completed
-- [ ] Remediation steps provided
-- [ ] Report generated
-
-## Related Workflow Bundles
-
-- `development` - Secure development practices
-- `wordpress` - WordPress security
-- `cloud-devops` - Cloud security
-- `testing-qa` - Security testing
+For deep dives beyond this audit pass: `sql-injection-testing`, `xss-html-injection`, `broken-authentication`, `idor-testing`, `file-path-traversal`, `api-security-best-practices`, `pentest-checklist`, `pentest-commands`.

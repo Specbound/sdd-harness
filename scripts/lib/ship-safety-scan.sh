@@ -46,14 +46,25 @@ if [ ! -d "$ROOT" ]; then
 fi
 
 # Directories never worth scanning (noise / VCS / generated).
-PRUNE='-path */.git -o -path */node_modules -o -path */__pycache__ -o -path */.venv -o -path */.venv-tools -o -path */venv -o -path */memory/glacier -o -path */.dashboard/data'
+# An array of quoted words: an unquoted string here was glob-expanded against
+# the caller's cwd, so `*/__pycache__` turned into whatever matched there and
+# `find` failed or pruned the wrong paths depending on where update.sh ran.
+PRUNE=(-path '*/.git' -o -path '*/node_modules' -o -path '*/__pycache__' -o -path '*/.venv'
+       -o -path '*/.venv-tools' -o -path '*/venv' -o -path '*/memory/glacier' -o -path '*/.dashboard/data')
 
 # Collect shipping text files (skip binaries by extension heuristic + grep -I).
 # bash 3.2 (macOS default) lacks `mapfile`, so read null-delimited into the array.
 FILES=()
 while IFS= read -r -d '' f; do
   FILES+=("$f")
-done < <(find "$ROOT" \( $PRUNE \) -prune -o -type f -print0 2>/dev/null)
+done < <(find "$ROOT" \( "${PRUNE[@]}" \) -prune -o -type f -print0 2>/dev/null)
+
+# Nothing collected means the scan saw nothing, not that the harness is clean —
+# fail closed rather than report "no secrets" for files it never read.
+if [ "${#FILES[@]}" -eq 0 ]; then
+  echo "ship-safety-scan: no files collected under $ROOT — refusing to report clean" >&2
+  exit 1
+fi
 
 blocking=0
 warnings=0
@@ -69,10 +80,16 @@ SECRET_RE='-----BEGIN ([A-Z ]+)?PRIVATE KEY-----|AKIA[0-9A-Z]{16}|ghp_[A-Za-z0-9
 echo "Ship-safety scan: $ROOT"
 echo "── secrets ──"
 for f in "${FILES[@]}"; do
-  # grep -I skips binary; -E extended; -q quiet first-hit
-  if grep -IEq "$SECRET_RE" "$f" 2>/dev/null; then
-    hit="$(grep -IEn "$SECRET_RE" "$f" 2>/dev/null | head -1 | cut -c1-100)"
-    note_block "${f#$ROOT/}: $hit"
+  # grep -I skips binary; -E extended; -q quiet first-hit. -e is required: the
+  # pattern starts with `-----BEGIN`, which grep otherwise parses as an option,
+  # exits 2 into the discarded stderr, and so never matched a single secret.
+  if grep -IEq -e "$SECRET_RE" "$f" 2>/dev/null; then
+    # AWS's documented placeholder keys (AKIAIOSFODNN7EXAMPLE and kin) end in
+    # EXAMPLE and are quoted by skill docs; they are prose, not credentials.
+    real="$(grep -IEo -e "$SECRET_RE" "$f" 2>/dev/null | grep -v 'EXAMPLE$' | head -1)"
+    [ -n "$real" ] || continue
+    hit="$(grep -IEn -e "$SECRET_RE" "$f" 2>/dev/null | grep -vF 'EXAMPLE' | head -1 | cut -c1-100)"
+    note_block "${f#$ROOT/}: ${hit:-$real}"
   fi
 done
 
@@ -100,7 +117,8 @@ done < <(find "$ROOT/templates" -type f -name '*settings*.json*' -print0 2>/dev/
 # Standard danger denies a shipped template should carry.
 EXPECTED_DENIES=('Bash(rm -rf*)' 'Bash(git push*)' 'Edit(.env*)' 'Edit(secrets/*)')
 
-for f in "${SETTINGS[@]}"; do
+# ${arr[@]+...}: bash 3.2 treats an empty array as unbound under `set -u`.
+for f in ${SETTINGS[@]+"${SETTINGS[@]}"}; do
   rel="${f#$ROOT/}"
   # Only inspect files that actually declare a permissions block.
   grep -IEq '"(permissions|allow|deny)"' "$f" 2>/dev/null || continue

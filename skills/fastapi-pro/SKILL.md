@@ -1,191 +1,167 @@
 ---
 name: fastapi-pro
-description: "Build high-performance async APIs with FastAPI, SQLAlchemy 2.0, and"
-  Pydantic V2. Master microservices, WebSockets, and modern Python async
-  patterns. Use PROACTIVELY for FastAPI development, async optimization, or API
-  architecture.
-metadata:
-  model: opus
-risk: unknown
-source: community
+description: FastAPI expert for async-first REST APIs — layered architecture (router/service/repository), SQLAlchemy 2.0 async, Pydantic V2, JWT auth, and pytest-asyncio testing. Use when building endpoints, CRUD routers, auth, or reviewing FastAPI architecture/performance.
 ---
 
-## Use this skill when
+# FastAPI Pro
 
-- Working on fastapi pro tasks or workflows
-- Needing guidance, best practices, or checklists for fastapi pro
+If the API's purpose, auth requirements, or Python version is ambiguous, ask one question. Otherwise: start from the Pydantic models and OpenAPI schema, implement async-first, validate with Pydantic V2, and include at least one working pytest example per endpoint.
+
+## Use this skill when
+- Building REST endpoints, CRUD routers, or microservices with FastAPI
+- Implementing JWT/OAuth2 auth, async SQLAlchemy, or WebSockets
+- Reviewing FastAPI code for async correctness or layering
+- Writing pytest-asyncio tests for API endpoints
 
 ## Do not use this skill when
+- The task is unrelated to FastAPI/async Python APIs
+- General Python architecture guidance without a framework is needed (see python-pro)
 
-- The task is unrelated to fastapi pro
-- You need a different domain or tool outside this scope
+## Project Structure
+```
+app/
+├── api/v1/endpoints/{users,auth,items}.py   # routers
+├── api/dependencies.py                       # shared Depends
+├── core/{config,security,database}.py
+├── models/            # SQLAlchemy models
+├── schemas/           # Pydantic schemas
+├── services/           # business logic
+├── repositories/        # data access
+└── main.py
+```
+Keep business logic out of routes (service layer), keep data access out of services (repository layer) — each layer is independently testable and mockable.
 
-## Instructions
+## App Entry & Config
+```python
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    await database.connect()
+    yield
+    await database.disconnect()
 
-If the API's purpose, auth requirements, or Python version is ambiguous, ask one question. Otherwise: start from the Pydantic models and OpenAPI schema, implement async-first, validate with Pydantic V2, and include at minimum one working pytest example per endpoint.
+app = FastAPI(title="API", version="1.0.0", lifespan=lifespan)
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+app.include_router(api_router, prefix="/api/v1")
+```
+```python
+# core/config.py
+class Settings(BaseSettings):
+    DATABASE_URL: str
+    SECRET_KEY: str
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+    class Config: env_file = ".env"
 
-You are a FastAPI expert specializing in high-performance, async-first API development with modern Python patterns.
+@lru_cache()
+def get_settings() -> Settings: return Settings()
+```
+```python
+# core/database.py — async session dependency with commit/rollback
+async def get_db() -> AsyncSession:
+    async with AsyncSessionLocal() as session:
+        try:
+            yield session
+            await session.commit()
+        except Exception:
+            await session.rollback()
+            raise
+        finally:
+            await session.close()
+```
 
-## Purpose
+## Repository Pattern (generic base)
+```python
+class BaseRepository(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
+    def __init__(self, model: Type[ModelType]): self.model = model
+    async def get(self, db: AsyncSession, id: int) -> ModelType | None:
+        return (await db.execute(select(self.model).where(self.model.id == id))).scalars().first()
+    async def get_multi(self, db: AsyncSession, skip=0, limit=100) -> list[ModelType]:
+        return (await db.execute(select(self.model).offset(skip).limit(limit))).scalars().all()
+    async def create(self, db: AsyncSession, obj_in: CreateSchemaType) -> ModelType:
+        db_obj = self.model(**obj_in.dict()); db.add(db_obj); await db.flush(); await db.refresh(db_obj)
+        return db_obj
+    async def update(self, db: AsyncSession, db_obj: ModelType, obj_in: UpdateSchemaType) -> ModelType:
+        for field, value in obj_in.dict(exclude_unset=True).items(): setattr(db_obj, field, value)
+        await db.flush(); await db.refresh(db_obj)
+        return db_obj
+```
+Subclass per resource (`UserRepository(BaseRepository[User, UserCreate, UserUpdate])`) and add resource-specific queries (`get_by_email`, etc).
 
-Expert FastAPI developer specializing in high-performance, async-first API development. Masters modern Python web development with FastAPI, focusing on production-ready microservices, scalable architectures, and cutting-edge async patterns.
+## Service Layer
+Owns business rules the repository shouldn't know about — e.g. rejecting a duplicate email, hashing a password before create, re-hashing on update only if a new password was supplied. Routes call services; services call repositories; repositories never leak into routes.
 
-## Capabilities
+## Router Patterns
+```python
+# Optional auth - None if not authenticated; required auth - 401 if missing
+current_user: Optional[User] = Depends(get_current_user)
+current_user: User = Depends(get_current_user_required)
 
-### Core FastAPI Expertise
+@router.get("/items/{item_id}", response_model=Item)
+async def get_item(item_id: str) -> Item: ...
+@router.post("/items", status_code=status.HTTP_201_CREATED)
+@router.delete("/items/{id}", status_code=status.HTTP_204_NO_CONTENT)
+```
+Integration steps for a new resource: router in `api/v1/endpoints/`, mount in `main.py`, Pydantic schemas, service layer if there's real logic, then frontend API functions if needed.
+Raise `HTTPException(status_code=400/403/404, detail=...)` from the route after the service signals failure (`ValueError`, `None` return, etc.) — don't let repository exceptions leak raw to the client.
 
-- FastAPI 0.100+ features including Annotated types and modern dependency injection
-- Async/await patterns for high-concurrency applications
-- Pydantic V2 for data validation and serialization
-- Automatic OpenAPI/Swagger documentation generation
-- WebSocket support for real-time communication
-- Background tasks with BackgroundTasks and task queues
-- File uploads and streaming responses
-- Custom middleware and request/response interceptors
+## Auth & Security
+```python
+# core/security.py
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+def verify_password(plain, hashed) -> bool: return pwd_context.verify(plain, hashed)
+def get_password_hash(password) -> str: return pwd_context.hash(password)
+def create_access_token(data: dict, expires_delta: timedelta | None = None):
+    to_encode = data.copy()
+    to_encode.update({"exp": datetime.utcnow() + (expires_delta or timedelta(minutes=15))})
+    return jwt.encode(to_encode, settings.SECRET_KEY, algorithm="HS256")
+```
+```python
+# api/dependencies.py
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{settings.API_V1_STR}/auth/login")
+async def get_current_user(db: AsyncSession = Depends(get_db), token: str = Depends(oauth2_scheme)):
+    try:
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=["HS256"])
+    except JWTError:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Could not validate credentials", headers={"WWW-Authenticate": "Bearer"})
+    return await user_repository.get_by_email(db, payload.get("sub"))
+```
+Always verify JWT signature and expiry; never trust a decoded payload without the `except JWTError` guard. CORS, rate limiting, and input validation (Pydantic) sit at the same boundary — never inside services.
 
-### Data Management & ORM
+## Async Discipline
+- `async def` for DB/HTTP/I-O-bound handlers; plain `def` for CPU-bound work (FastAPI runs it in a threadpool automatically).
+- Never call a sync/blocking driver from an async handler — use the async variant (asyncpg, aiomysql, Motor) or `run_in_executor`.
+- Connection pooling: configure pool size on the engine, not per-request.
 
-- SQLAlchemy 2.0+ with async support (asyncpg, aiomysql)
-- Alembic for database migrations
-- Repository pattern and unit of work implementations
-- Database connection pooling and session management
-- MongoDB integration with Motor and Beanie
-- Redis for caching and session storage
-- Query optimization and N+1 query prevention
-- Transaction management and rollback strategies
+## Testing
+```python
+# conftest.py — in-memory async DB + dependency override
+TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
 
-### API Design & Architecture
+@pytest.fixture
+async def client(db_session):
+    async def override_get_db(): yield db_session
+    app.dependency_overrides[get_db] = override_get_db
+    async with AsyncClient(app=app, base_url="http://test") as client:
+        yield client
 
-- RESTful API design principles
-- GraphQL integration with Strawberry or Graphene
-- Microservices architecture patterns
-- API versioning strategies
-- Rate limiting and throttling
-- Circuit breaker pattern implementation
-- Event-driven architecture with message queues
-- CQRS and Event Sourcing patterns
+@pytest.mark.asyncio
+async def test_create_user(client):
+    response = await client.post("/api/v1/users/", json={"email": "t@x.com", "password": "pw", "name": "T"})
+    assert response.status_code == 201
+```
+Test each layer independently where it matters (repository against a real/in-memory DB, service with a mocked repository, router via `AsyncClient`).
 
-### Authentication & Security
+## Common Pitfalls
+- Blocking code in async handlers (sync DB drivers, `requests` instead of `httpx`)
+- No service layer — business logic leaking into routes
+- Missing type hints — loses Pydantic/OpenAPI generation benefits
+- Not managing DB sessions properly (missing commit/rollback/close)
+- Tight coupling — routes querying the DB directly instead of going through a repository
+- Skipping integration tests and relying on unit tests alone
 
-- OAuth2 with JWT tokens (python-jose, pyjwt)
-- Social authentication (Google, GitHub, etc.)
-- API key authentication
-- Role-based access control (RBAC)
-- Permission-based authorization
-- CORS configuration and security headers
-- Input sanitization and SQL injection prevention
-- Rate limiting per user/IP
+## Stack & Quality Gates
+Typical stack: FastAPI, Python 3.11+, SQLAlchemy 2.0 (async), Pydantic v2, PostgreSQL, Alembic migrations, JWT/OAuth2, pytest.
+Before shipping: tests passing (>80% coverage), mypy clean, ruff/black clean, OpenAPI docs complete, security scan passed, performance benchmarks met.
 
-### Testing & Quality Assurance
-
-- pytest with pytest-asyncio for async tests
-- TestClient for integration testing
-- Factory pattern with factory_boy or Faker
-- Mock external services with pytest-mock
-- Coverage analysis with pytest-cov
-- Performance testing with Locust
-- Contract testing for microservices
-- Snapshot testing for API responses
-
-### Performance Optimization
-
-- Async programming best practices
-- Connection pooling (database, HTTP clients)
-- Response caching with Redis or Memcached
-- Query optimization and eager loading
-- Pagination and cursor-based pagination
-- Response compression (gzip, brotli)
-- CDN integration for static assets
-- Load balancing strategies
-
-### Observability & Monitoring
-
-- Structured logging with loguru or structlog
-- OpenTelemetry integration for tracing
-- Prometheus metrics export
-- Health check endpoints
-- APM integration (DataDog, New Relic, Sentry)
-- Request ID tracking and correlation
-- Performance profiling with py-spy
-- Error tracking and alerting
-
-### Deployment & DevOps
-
-- Docker containerization with multi-stage builds
-- Kubernetes deployment with Helm charts
-- CI/CD pipelines (GitHub Actions, GitLab CI)
-- Environment configuration with Pydantic Settings
-- Uvicorn/Gunicorn configuration for production
-- ASGI servers optimization (Hypercorn, Daphne)
-- Blue-green and canary deployments
-- Auto-scaling based on metrics
-
-### Integration Patterns
-
-- Message queues (RabbitMQ, Kafka, Redis Pub/Sub)
-- Task queues with Celery or Dramatiq
-- gRPC service integration
-- External API integration with httpx
-- Webhook implementation and processing
-- Server-Sent Events (SSE)
-- GraphQL subscriptions
-- File storage (S3, MinIO, local)
-
-### Advanced Features
-
-- Dependency injection with advanced patterns
-- Custom response classes
-- Request validation with complex schemas
-- Content negotiation
-- API documentation customization
-- Lifespan events for startup/shutdown
-- Custom exception handlers
-- Request context and state management
-
-## Behavioral Traits
-
-- Writes async-first code by default
-- Emphasizes type safety with Pydantic and type hints
-- Follows API design best practices
-- Implements comprehensive error handling
-- Uses dependency injection for clean architecture
-- Writes testable and maintainable code
-- Documents APIs thoroughly with OpenAPI
-- Considers performance implications
-- Implements proper logging and monitoring
-- Follows 12-factor app principles
-
-## Knowledge Base
-
-- FastAPI official documentation
-- Pydantic V2 migration guide
-- SQLAlchemy 2.0 async patterns
-- Python async/await best practices
-- Microservices design patterns
-- REST API design guidelines
-- OAuth2 and JWT standards
-- OpenAPI 3.1 specification
-- Container orchestration with Kubernetes
-- Modern Python packaging and tooling
-
-## Response Approach
-
-1. **Analyze requirements** for async opportunities
-2. **Design API contracts** with Pydantic models first
-3. **Implement endpoints** with proper error handling
-4. **Add comprehensive validation** using Pydantic
-5. **Write async tests** covering edge cases
-6. **Optimize for performance** with caching and pooling
-7. **Document with OpenAPI** annotations
-8. **Consider deployment** and scaling strategies
-
-## Example Interactions
-
-- "Create a FastAPI microservice with async SQLAlchemy and Redis caching"
-- "Implement JWT authentication with refresh tokens in FastAPI"
-- "Design a scalable WebSocket chat system with FastAPI"
-- "Optimize this FastAPI endpoint that's causing performance issues"
-- "Set up a complete FastAPI project with Docker and Kubernetes"
-- "Implement rate limiting and circuit breaker for external API calls"
-- "Create a GraphQL endpoint alongside REST in FastAPI"
-- "Build a file upload system with progress tracking"
+## Resources
+- `resources/implementation-playbook.md` — full worked examples (complete app, repository/service/router layers, auth, test fixtures).
+</content>

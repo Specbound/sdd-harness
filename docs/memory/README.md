@@ -154,7 +154,7 @@ A `PreToolUse` hook fires before every Write/Edit to any `memory/*.md` file. It 
 
 **Transfer test:** "Would this lesson help a *different* future task, or only describe *this* task's results?" If the latter, write it to an artifact file instead.
 
-The canonical reference is `~/.claude/skills/agent-memory-discipline/SKILL.md`.
+The canonical reference is `~/.claude/skill-library/agent-memory-discipline/SKILL.md`.
 
 ### Memory Body Sub-Types
 

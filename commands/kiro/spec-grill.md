@@ -30,7 +30,7 @@ Also explore the codebase for related source files that touch this feature domai
 
 ## Run Grill Session
 
-Invoke the `grill-with-docs` skill.
+Read `~/.claude/skill-library/grill-with-docs/SKILL.md` and follow it.
 
 Adapt its scope to this spec context:
 - **Domain to challenge**: the requirements and design documents read above

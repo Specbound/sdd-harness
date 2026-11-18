@@ -64,6 +64,41 @@ Flag rules that limit more than intended:
 
 Flag pairs of lines — within one CLAUDE.md, or across CLAUDE.md/skills/system prompt — that pull in opposite directions on the same decision (e.g. "leave documentation as appropriate" vs. "never add comments"). These force the model to arbitrate every time instead of acting directly. Propose which should win, or how to scope them apart.
 
+**Hook-injected context is in scope for this check.** Any hook that emits
+`hookSpecificOutput.additionalContext` (`SubagentStart`, `SessionStart`, `UserPromptSubmit`)
+is a first-class instruction surface: always resident, and for a subagent it is the *only*
+one — CLAUDE.md and `.claude/rules/` never reach a spawned agent. Read those hook bodies in
+`hooks/claude/` and include their injected text alongside the CLAUDE.md files when hunting
+for conflicts and duplicates.
+
+Two failure modes live here and nowhere else:
+- **Duplicate statement.** A rule stated in both CLAUDE.md and an injected hook costs context
+  on every spawn and gives you two copies to keep in sync. Ask which surface actually reaches
+  the audience that needs it, and delete the other.
+- **Unsatisfiable MUST.** A rule naming a tool that currently errors trains the model to
+  discount every other MUST. Flag any absolute rule whose tool you cannot verify works.
+
+This does **not** relax the Phase 4 ablation fence — hooks are read as *inputs* here, never
+edited by an ablation experiment.
+
+### Code-Ownership Stance
+
+Newer models change how much they restructure based on who the prompt says owns
+the code. Per Anthropic's *Prompting Claude Fable 5.2* guide: with no ownership
+statement (or code framed as someone else's) the model adds onto existing
+structure even when that duplicates code, and reports nearby bugs instead of
+fixing them. With *"You are the owner and long-term maintainer of this codebase,
+and its design is up to you."* it consolidated duplicates in ~75% of runs vs
+<10% — at the cost of 70–80% more output tokens, unrequested changes, and
+occasional behavior changes to existing features that PR summaries omitted.
+
+Check whether the file states ownership, then recommend per repo — never apply:
+- **User owns it and wants structure improved** → suggest the guide's sentence, quoted exactly. A reworded ownership line is not this fix: the ~75% was measured on that exact wording only, so any paraphrase is an unmeasured prompt.
+- **Minimal-change repos** (vendored, client code, strict blast-radius rules) → it should be absent.
+- **Sentence present alongside a scope-limiting rule** ("no drive-by refactors", blast-radius caps) → flag as a Conflicting Instruction: per the guide the scope rule does **not** cancel it (still >50% consolidation). Pick one.
+
+Guidance is model-specific; note which model the repo runs before recommending.
+
 ### Outdated Gotchas
 
 Flag gotchas that may no longer be true:
@@ -88,6 +123,60 @@ If both files exist in the same directory, compare them:
 ### Hardcoded File-Path Staleness
 
 Flag instructions that name an exact file path to describe a capability or convention (e.g. "see `scripts/foo.sh` for X"). These go stale as the codebase evolves and the file moves, renames, or is deleted. Verify the path still exists; if not, flag as stale and propose either updating the path or rephrasing to describe the capability without pinning a path.
+
+### Unenforced MUST Rules
+
+The Over-Constraining check above runs one direction — it flags prose that
+*duplicates* an existing hook. This is the other direction, and it is the one that
+actually costs something.
+
+Collect every hard rule in the file (MUST / NEVER / ALWAYS / "on every X"). For each,
+find what mechanically enforces it: a hook matcher in `settings.json`, a
+`permissions.deny` entry, a lint rule, a test. Then:
+
+| Enforcement | Verdict |
+|---|---|
+| A hook, permission, or test enforces it | Fine. If the prose adds nothing the mechanism doesn't, it may be redundant — hand it to Over-Constraining. |
+| Nothing enforces it | **Flag it.** Propose the concrete artifact: which event, which matcher, which deny rule. |
+
+A hard rule backed only by prose is a hope. It holds while the context is short and
+attention is on it, and quietly stops holding under long sessions, compaction, and
+subagents — which is exactly when it mattered. This is the check that decides whether
+a rule belongs in CLAUDE.md at all: **if it must always hold, it belongs in a hook, a
+permission, or a test, and CLAUDE.md should at most point at it.** Prose is for
+judgement calls, not invariants.
+
+Do not propose a hook for every MUST reflexively. Some rules are genuinely
+unenforceable mechanically (they need semantic judgement about intent), and saying so
+explicitly is a valid outcome — but say it, rather than leaving the rule unexamined.
+
+### Three-Axis Leakage
+
+Content that is already enforced or already stated elsewhere costs context on every
+session and changes nothing. Check all three axes — the review historically only
+checked the first:
+
+1. **Lint leakage** — rules a formatter or linter already enforces (line length,
+   quote style, import order, naming). Compare against `ruff.toml`,
+   `.eslintrc`/`eslint.config.*`, `pyproject.toml`, `.editorconfig`. The linter wins
+   every time: it is deterministic and it runs whether the model remembered or not.
+   Empirically the most common of the three — worth checking first.
+2. **README / manifest leakage** — setup steps, dependency lists, script names, and
+   project descriptions copied from `README.md`, `package.json`, or `pyproject.toml`.
+   Point at the source instead of restating it, so there is one copy to keep true.
+3. **Skill leakage** — guidance duplicated from a `SKILL.md` body. Skills load on
+   invocation; CLAUDE.md loads always. Anything living in both is paid for on every
+   session to say what the skill will say anyway when it fires.
+
+Axes 1 and 3 are near-mechanical (compare against config files and skill bodies).
+Axis 2 needs judgement about whether a restatement adds project-specific context or
+merely repeats.
+
+Keep only what the model **cannot infer** from the repo itself: expensive or
+destructive commands, generated files it must not edit, areas it must not touch, and
+conventions that genuinely surprise. Everything else it can read from the source —
+and reading the source beats reading a summary of the source, which goes stale
+silently.
 
 ---
 

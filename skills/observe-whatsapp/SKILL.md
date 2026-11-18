@@ -1,109 +1,80 @@
 ---
 name: observe-whatsapp
-description: "Observe and troubleshoot WhatsApp in Kapso: debug message delivery, inspect webhook deliveries/retries, triage API errors, and run health checks. Use when investigating production issues, message f..."
+description: "Diagnose Kapso WhatsApp operations: message delivery, webhook deliveries and retries, API error triage, phone-number health checks."
 source: "https://github.com/gokapso/agent-skills/tree/master/skills/observe-whatsapp"
 risk: safe
 ---
 
-# Observe WhatsApp
+# Observe WhatsApp (Kapso)
 
-## When to use
+Operational diagnostics for WhatsApp on Kapso: why a message did not arrive, why a
+webhook did not fire, what the API actually returned, and whether a phone number is
+healthy. Read-only — nothing here changes configuration.
 
-Use this skill for operational diagnostics: message delivery investigation, webhook delivery debugging, error triage, and WhatsApp health checks.
+## Before running any command — check the toolchain is present
+
+**This skill ships as `SKILL.md` only.** The `scripts/`, `references/` and `assets/`
+directories that the commands below invoke are **not installed here**. Running
+`node scripts/<anything>.js` as-is fails with `Cannot find module`.
+
+```bash
+ls scripts/messages.js 2>/dev/null || echo "NOT INSTALLED — fetch the toolchain first"
+```
+
+If it is missing, fetch the upstream skill directory (see `source:` in the frontmatter)
+into the skill folder and run `npm i` there once. Everything below assumes that has
+happened. If you cannot fetch it, say so and fall back to the Kapso Platform API
+directly — do not report a `scripts/` command as run when it was not.
 
 ## Setup
 
 Env vars:
-- `KAPSO_API_BASE_URL` (host only, no `/platform/v1`)
+- `KAPSO_API_BASE_URL` — host only, no `/platform/v1` suffix
 - `KAPSO_API_KEY`
 
-## How to
+## Investigate message delivery
 
-### Investigate message delivery
+Work outward from the message, not from the conversation — the message record carries
+the delivery status and the error code; the conversation only tells you it exists.
 
-1. List messages: `node scripts/messages.js --phone-number-id <id>`
-2. Inspect message: `node scripts/message-details.js --message-id <id>`
-3. Find conversation: `node scripts/lookup-conversation.js --phone-number <e164>`
+1. `node scripts/messages.js --phone-number-id <id>` — find the message
+2. `node scripts/message-details.js --message-id <id>` — status and failure reason
+3. `node scripts/lookup-conversation.js --phone-number <e164>` — if you have a phone
+   number but no message ID, start here instead and come back to step 2
 
-### Triage errors
+## Triage an error
 
-1. Message errors: `node scripts/errors.js`
-2. API logs: `node scripts/api-logs.js`
-3. Webhook deliveries: `node scripts/webhook-deliveries.js`
+Three different layers, and they disagree often enough that checking only one is how
+a delivery failure gets misattributed:
 
-### Run health checks
+1. `node scripts/errors.js` — message-level errors (what WhatsApp rejected)
+2. `node scripts/api-logs.js` — external API call logs (what Kapso sent and got back)
+3. `node scripts/webhook-deliveries.js` — inbound webhook attempts and retries
+   (what reached your endpoint, and how many times it was retried)
 
-1. Project overview: `node scripts/overview.js`
-2. Phone number health: `node scripts/whatsapp-health.js --phone-number-id <id>`
+A message that shows no error in step 1 but a failed webhook in step 3 is a delivery
+problem on your side, not on WhatsApp's.
 
-## Scripts
+## Health check
 
-### Messages
+1. `node scripts/overview.js` — project-wide state
+2. `node scripts/whatsapp-health.js --phone-number-id <id>` — per-number health
 
-| Script | Purpose |
-|--------|---------|
-| `messages.js` | List messages |
-| `message-details.js` | Get message details |
-| `lookup-conversation.js` | Find conversation by phone or ID |
+## Explore the API surface
 
-### Errors and logs
-
-| Script | Purpose |
-|--------|---------|
-| `errors.js` | List message errors |
-| `api-logs.js` | List external API logs |
-| `webhook-deliveries.js` | List webhook delivery attempts |
-
-### Health
-
-| Script | Purpose |
-|--------|---------|
-| `overview.js` | Project overview |
-| `whatsapp-health.js` | Phone number health check |
-
-### OpenAPI
-
-| Script | Purpose |
-|--------|---------|
-| `openapi-explore.mjs` | Explore OpenAPI (search/op/schema/where) |
-
-Install deps (once):
-```bash
-npm i
-```
-
-Examples:
 ```bash
 node scripts/openapi-explore.mjs --spec platform search "webhook deliveries"
 node scripts/openapi-explore.mjs --spec platform op listWebhookDeliveries
 node scripts/openapi-explore.mjs --spec platform schema WebhookDelivery
 ```
 
-## Notes
+Use this rather than guessing an endpoint — it is also the fallback path for working
+against the Platform API directly when the `scripts/` toolchain is unavailable.
 
-- For webhook setup (create/update/delete, signature verification, event types), use `integrate-whatsapp`.
+## Scope
 
-## References
-
-- references/message-debugging-reference.md - Message debugging guide
-- references/triage-reference.md - Error triage guide
-- references/health-reference.md - Health check guide
-
-## Related skills
-
-- `integrate-whatsapp` - Onboarding, webhooks, messaging, templates, flows
-- `automate-whatsapp` - Workflows, agents, and automations
-
-<!-- FILEMAP:BEGIN -->
-```text
-[observe-whatsapp file map]|root: .
-|.:{package.json,SKILL.md}
-|assets:{health-example.json,message-debugging-example.json,triage-example.json}
-|references:{health-reference.md,message-debugging-reference.md,triage-reference.md}
-|scripts:{api-logs.js,errors.js,lookup-conversation.js,message-details.js,messages.js,openapi-explore.mjs,overview.js,webhook-deliveries.js,whatsapp-health.js}
-|scripts/lib/messages:{args.js,kapso-api.js}
-|scripts/lib/status:{args.js,kapso-api.js}
-|scripts/lib/triage:{args.js,kapso-api.js}
-```
-<!-- FILEMAP:END -->
-
+| Need | Skill |
+|---|---|
+| Read delivery state, errors, logs, health | this skill |
+| Build or debug workflows, triggers, functions, D1 | `automate-whatsapp` |
+| Webhook setup, templates, flows, onboarding | `integrate-whatsapp` — **not installed in this library**; fetch from the same upstream org or use the Platform API |

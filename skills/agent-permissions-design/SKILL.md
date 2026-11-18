@@ -153,6 +153,77 @@ In regulated domains, permission errors compound across interdependent systems (
 | Audit logs in observability stack only | Logs lost on infra change; not co-located with data | Write to SoR in-transaction |
 | Permission check at agent configuration time | Stale permissions; doesn't reflect role changes | Check at request-execution time |
 | Sub-agents inherit parent agent's full scope | Privilege escalation via delegation chain | Each sub-agent re-derives scope from SoR |
+| Guard matches the rendered string form of a structured value | Trivially bypassed by re-rendering the same value | Normalize before comparing (see below) |
+| "Ask the human" verdict emitted in a headless run | Unanswerable; degrades to a hang or an implicit allow | Degrade `ask` → `deny` when unattended |
+
+## Verdict Computation and Context-Dependence
+
+A permission decision has two halves that are usually conflated: **how the verdict is
+computed**, and **what the verdict means where it fires**. Both are load-bearing.
+
+### Normalize before comparing
+
+**Never match a guard rule against the rendered string form of a structured value.**
+Shell commands, URLs, IP addresses, and file paths all have many textual renderings of
+the same underlying value. A guard that greps the text can always be defeated by
+re-rendering — and the bypass looks nothing like an attack, so it will not be noticed.
+
+The canonical illustration: a rule blocking the literal string `169.254.169.254` does
+nothing about `curl http://2852039166/`, which is the same address in decimal form.
+The same class of bug lived in this harness's own `git-destructive-guard-hook.sh` until
+2026-08, where quote-stripping plus `grep -E` was defeated by every one of:
+
+```
+F=--force; git push $F        # value arrives via expansion
+bash -c 'git push --force'    # hidden inside a quoted wrapper
+git push --fo""rce            # token split by empty quotes
+cd sub && git push --force    # not the first command in the line
+```
+
+**The rule:** parse the input into its structure — argv via a real lexer, URLs via a URL
+parser, addresses into their numeric form — then compare fields and tokens *exactly*.
+Substring and regex matching over prose or command text is not a security control.
+(This harness additionally bans regex-parsing outright; emit or parse structured data.)
+
+**Fail closed on what you cannot resolve.** If a value arrives through an unresolvable
+expansion (`$VAR`, `$(...)`), the guard cannot prove it is safe. For a small set of
+high-stakes verbs, refuse and ask for the literal value — deliberate over-blocking on a
+narrow surface beats a guard that is confidently wrong.
+
+**Fail closed on the guard's own failures too.** The same rule applies one layer down, to
+the guard's machinery rather than its input: a missing interpreter, a malformed event, or
+a crashed analyzer must not resolve to allow. The fail-open shape is an error swallowed
+into an empty string (`|| echo ""`, `except: print('')`) followed by an emptiness check
+that exits 0 — a broken `python3` then disables the control with no signal anywhere.
+Scope the failure block to events that mention the protected surface, using a literal
+match, so a broken dependency does not refuse every call. Equally: a guard that computes
+a refusal must *propagate* it. A heredoc'd analyzer that exits 2 under a script ending in
+a bare `exit 0` has no effect at all — this harness's `agent-behavior-guard.sh` logged
+`"mode": "enforce"` findings while blocking nothing until 2026-10-01 for exactly that
+reason. Both halves were fixed in `git-destructive-guard-hook.sh`,
+`ledger-append-only.sh`, and `agent-behavior-guard.sh` on 2026-10-01, with a
+malformed-event and an interpreter-off-`PATH` case added to each hook's test suite —
+without those two cases a fail-open regression passes the suite.
+
+**Grant matching should be tiered.** If approvals are cached or reused, match secret- and
+credential-tier grants on *exact* command shape, and cheaper tiers loosely. Otherwise an
+approval granted for one command can be replayed by a rewrapped variant that smuggles
+something past — approve `curl X`, then reuse it for `cd t && curl X && echo $KEY`.
+*(Note: Claude Code exposes no persistent grant store a harness can control, so in this
+harness this half is design guidance for systems you build, not a mechanism you can wire.)*
+
+### An `ask` verdict is context-dependent
+
+`allow` / `ask` / `deny` is not a three-valued constant — `ask` only exists where a human
+is present to answer. In an unattended run there is nobody to prompt, so `ask` silently
+becomes either a hang or an implicit allow, which is the worst of both.
+
+**Rule: `ask` degrades to `deny` under headless execution.** Any guard reachable from a
+scheduled or background context needs to know which it is in. In this harness that means
+anything invoked via `scripts/orchestration/daily-orchestrator.sh` or `scripts/routines/*`
+— those runs have no interactive user, so a guard there must decide, not ask. Evaluate
+guards short-circuit and cheapest-deterministic-first, leaving any human prompt last: a
+human's attention is the most expensive thing a guard can spend.
 
 ## Delegation Ceiling (Checkability × Reversibility)
 
@@ -167,7 +238,7 @@ Level-up moves — how to raise the ceiling for a task stuck in a low quadrant, 
 
 - **L0 → smaller pieces:** decompose until sub-tasks fall into checkable or undoable quadrants; keep only the irreducible sensitive core at L0.
 - **L1 → proxy for judgment:** add an LLM-as-judge pass (a *separate* verification model — see Principle 3), or replace subjective eval with a scoped, measurable success contract (e.g. "iterate until conversion ≥3%") that turns taste into a check.
-- **L2 → guardrails as code:** don't default every irreversible action to a human gate — encode it (dry-run-by-default, scoped credentials, feature-flagged rollout, deny-list hard-blocks). This harness already does this for git/gh: `hooks/claude/agent-behavior-guard.sh` and the destructive-op PreToolUse block hard-fail rather than prompt a human per call.
+- **L2 → guardrails as code:** don't default every irreversible action to a human gate — encode it (dry-run-by-default, scoped credentials, feature-flagged rollout, deny-list hard-blocks). This harness already does this for git/gh: the destructive-op PreToolUse block hard-fails rather than prompting a human per call. `hooks/claude/agent-behavior-guard.sh` is the partial case worth knowing — it is monitor-only by default and only hard-blocks for rules named in `SDD_AGENT_GUARD_ENFORCE`, and that enforce path discarded its own verdict until 2026-10-01, so it logged findings while blocking nothing. Encoding a guardrail is not the same as having one enforced; check that the exit code reaches the tool call.
 - **L3 → sharpen the signal:** the bottleneck at this level isn't trust, it's knowing there's real work to do — invest in the thing that tells a scheduled/autonomous agent *when* to act (clear trigger conditions), not further loosening its permissions.
 
 This axis composes with the Ladder of Agency below — checkability narrows which rungs are reachable, reversibility (Step 4) narrows further within that.

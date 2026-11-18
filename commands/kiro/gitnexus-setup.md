@@ -10,7 +10,7 @@ One-command setup for GitNexus code intelligence integration. Installs GitNexus,
 
 ## Parse Arguments
 
-- `--skip-embeddings`: Skip vector embeddings during indexing (faster, still useful)
+- `--skip-embeddings`: No-op, kept for back-compat — embeddings are off by default since gitnexus 1.6, which rejects this flag. Never pass it to `gitnexus analyze`
 - `--force`: Force re-index even if `.gitnexus/` already exists
 
 ## Step 1: Check / Install GitNexus
@@ -38,7 +38,7 @@ Check if `.gitnexus/` exists and `--force` was not passed:
 - If missing or `--force`: run indexing
 
 ```bash
-npx gitnexus analyze [--skip-embeddings if flag passed]
+npx gitnexus analyze
 ```
 
 Report indexing progress to the user. If indexing fails, show the error output and stop.
@@ -70,9 +70,11 @@ If not present, append:
 
 ## Step 5: Register Editor Integration
 
-`gitnexus setup` also writes a managed MUST/NEVER block into `CLAUDE.md` that
-calls `gitnexus_*` tools, so gate it on index + MCP both being present, then
-reconcile the block:
+`gitnexus setup` also writes a managed MUST/NEVER block into `CLAUDE.md` (or
+`AGENTS.md`, if that's where the project keeps its conventions) that calls
+`gitnexus_*` tools, so gate it on index + MCP both being present, then
+reconcile the block — this also repairs skill paths and rewrites any bare
+`gitnexus_*` tool names to the `mcp__gitnexus__*` form the MCP server exposes:
 
 ```bash
 bash .claude/scripts/setup/gitnexus-reconcile.sh . --check \
@@ -100,5 +102,5 @@ Enhanced agents:
   /kiro:verify             — Now includes optional Stage 0 (impact detection)
   /kiro:skill-extract-scan — Now seeds from GitNexus community clusters
 
-Documentation: .claude/docs/gitnexus/README.md
+Documentation: .claude/docs/integrations/gitnexus/README.md
 ```

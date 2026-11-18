@@ -1,26 +1,11 @@
 ---
 name: shopify-development
-description: "|"
-  Build Shopify apps, extensions, themes using GraphQL Admin API, Shopify CLI, Polaris UI, and Liquid.
-  TRIGGER: "shopify", "shopify app", "checkout extension", "admin extension", "POS extension",
-  "shopify theme", "liquid template", "polaris", "shopify graphql", "shopify webhook",
-  "shopify billing", "app subscription", "metafields", "shopify functions"
+description: "Build Shopify apps, extensions, and themes with the GraphQL Admin API, Shopify CLI, Polaris, and Liquid. Covers extensions, themes, webhooks, billing, metafields."
 risk: unknown
 source: community
 ---
 
 # Shopify Development Skill
-
-Use this skill when the user asks about:
-
-- Building Shopify apps or extensions
-- Creating checkout/admin/POS UI customizations
-- Developing themes with Liquid templating
-- Integrating with Shopify GraphQL or REST APIs
-- Implementing webhooks or billing
-- Working with metafields or Shopify Functions
-
----
 
 ## ROUTING: What to Build
 
@@ -365,7 +350,6 @@ For detailed implementation guides, read these files:
 - Shopify CLI Reference: https://shopify.dev/docs/api/shopify-cli
 - Polaris Design System: https://polaris.shopify.com
 
-API Version: 2026-01 (quarterly releases, 12-month deprecation window)
-
-## When to Use
-This skill is applicable to execute the workflow or actions described in the overview.
+API Version: 2026-01 (quarterly releases, 12-month deprecation window). Check the
+CLI's own `shopify version` and the API reference above before pinning a version
+string in generated code — this line is a snapshot, not a live value.

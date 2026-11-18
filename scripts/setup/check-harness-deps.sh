@@ -67,6 +67,302 @@ read_manifest() {
   done < "$file"
 }
 
+# jeff_listen_addr <port> — echo the bound local address:port for whatever is
+# LISTENing on <port> (e.g. "127.0.0.1:8000" or "*:8000"), or nothing if no
+# process is listening there at all. lsof is the default on macOS (this
+# repo's primary dev platform); ss is the fallback for the Linux/systemd
+# target other model-router tasks install against.
+jeff_listen_addr() {
+  local port="$1" line word addr=""
+  [ -n "$port" ] || return 0
+  if command -v lsof >/dev/null 2>&1; then
+    while IFS= read -r line; do
+      [ -n "$line" ] || continue
+      for word in $line; do
+        case "$word" in
+          *:"$port") addr="$word" ;;
+        esac
+      done
+      [ -n "$addr" ] && break
+    done <<EOF
+$(lsof -nP -iTCP:"$port" -sTCP:LISTEN 2>/dev/null)
+EOF
+  elif command -v ss >/dev/null 2>&1; then
+    while IFS= read -r line; do
+      case "$line" in
+        *LISTEN*) ;;
+        *) continue ;;
+      esac
+      for word in $line; do
+        case "$word" in
+          *:"$port") addr="$word" ;;
+        esac
+      done
+      [ -n "$addr" ] && break
+    done <<EOF
+$(ss -ltn 2>/dev/null)
+EOF
+  fi
+  printf '%s' "$addr"
+}
+
+# check_classifier — report the model-router's local classifier (jeff), if one
+# is configured: model weights present, bound to 127.0.0.1 and not the
+# wildcard address (R2.1 — a wildcard bind still answers a 127.0.0.1 probe, so
+# curl reachability alone cannot catch it; the actual listen address must be
+# inspected), and one real classification succeeding.
+#
+# router.toml is written by router-setup.sh (task 9.1, not yet built as of
+# this task) — its absence means "not installed yet," not broken, so that
+# case is a skip, not a failure. Once configured, though, a dead classifier
+# must be exactly as visible as a dead headroom proxy is in section 3 below.
+# Verifies: specs/model-router/requirements.md#2.5, #10.3
+check_classifier() {
+  local router_toml="$HOME/.sdd-router/router.toml"
+  local info="" backend="" base_url="" api_key_env=""
+
+  if [ -f "$router_toml" ] && [ -n "${VPY:-}" ]; then
+    info="$("$VPY" - "$router_toml" <<'PYEOF' 2>/dev/null
+import sys
+try:
+    import tomllib
+except ImportError:
+    print("ERROR")
+    raise SystemExit(0)
+try:
+    with open(sys.argv[1], "rb") as fh:
+        data = tomllib.load(fh)
+except (OSError, tomllib.TOMLDecodeError):
+    print("ERROR")
+    raise SystemExit(0)
+classifier = data.get("classifier")
+if not isinstance(classifier, dict):
+    print("ERROR")
+    raise SystemExit(0)
+print(
+    "{}\t{}\t{}".format(
+        classifier.get("backend", ""),
+        classifier.get("base_url", ""),
+        classifier.get("api_key_env", ""),
+    )
+)
+PYEOF
+)"
+  fi
+
+  if [ -z "$info" ] || [ "$info" = "ERROR" ]; then
+    report "global" "classifier" "skipped (no router.toml / classifier config yet)"
+    return 0
+  fi
+
+  IFS="$(printf '\t')" read -r backend base_url api_key_env <<EOF
+$info
+EOF
+
+  if [ "$backend" != "jeff" ]; then
+    report "global" "classifier" "skipped (backend=$backend, not jeff)"
+    return 0
+  fi
+
+  # ── model present ────────────────────────────────────────────────────────
+  local model_path="$HOME/.sdd-router/jeff/models/gliformer-large-v1"
+  if [ -d "$model_path" ] && [ -n "$(ls -A "$model_path" 2>/dev/null)" ]; then
+    report "global" "jeff model" "ok"
+  else
+    report "global" "jeff model" "FAILED (not found at $model_path)"
+    echo "      Install it: bash $__here/jeff-setup.sh"
+    FAILURES=$((FAILURES + 1))
+  fi
+
+  # ── loopback-vs-wildcard bind (R2.1) ────────────────────────────────────
+  local port="${base_url##*:}" addr
+  addr="$(jeff_listen_addr "$port")"
+  if [ -n "$addr" ]; then
+    case "$addr" in
+      127.0.0.1:*)
+        report "global" "jeff bind" "ok (127.0.0.1)"
+        ;;
+      *)
+        report "global" "jeff bind" "FAILED (wildcard-bound: $addr — violates loopback-only, R2.1)"
+        echo "      Reinstall with the loopback fix: bash $__here/jeff-setup.sh"
+        FAILURES=$((FAILURES + 1))
+        ;;
+    esac
+  fi
+  # Nothing listening at all is reported below, via the classify probe itself
+  # — a connection failure there is the same "dead classifier" signal, without
+  # double-reporting the same outage on two rows.
+
+  # ── one real classification ─────────────────────────────────────────────
+  local api_key="" code="" attempt
+  if [ -n "$api_key_env" ]; then
+    api_key="${!api_key_env:-}"
+  fi
+  if command -v curl >/dev/null 2>&1; then
+    local payload='{"state": "test", "model": "jev-latest", "questions": {"check": {"type": "noul", "instructions": "test"}}}'
+    for attempt in 1 2; do
+      if [ -n "$api_key" ]; then
+        code="$(curl -s -o /dev/null -w '%{http_code}' --connect-timeout 2 -m 5 \
+          -X POST "${base_url}/v1/systemone" \
+          -H "Content-Type: application/json" \
+          -H "Authorization: Bearer ${api_key}" \
+          -d "$payload" 2>/dev/null || true)"
+      else
+        code="$(curl -s -o /dev/null -w '%{http_code}' --connect-timeout 2 -m 5 \
+          -X POST "${base_url}/v1/systemone" \
+          -H "Content-Type: application/json" \
+          -d "$payload" 2>/dev/null || true)"
+      fi
+      [ "$code" = "200" ] && break
+    done
+  fi
+
+  if [ "$code" = "200" ]; then
+    report "global" "jeff classify" "ok (HTTP 200)"
+  else
+    report "global" "jeff classify" "FAILED (HTTP ${code:-no response})"
+    FAILURES=$((FAILURES + 1))
+  fi
+}
+
+# check_router — report the model-router's per-service health (sentinel,
+# worker) and its single global routing state (wired / unwired / looped).
+# Read-only diagnostic probe: never writes router.toml or settings.json,
+# never restarts a service — unlike router-setup.sh (task 9.1), which
+# installs and wires.
+#
+# router.toml absence means router-setup.sh has simply not run yet on this
+# machine — a skip, not a failure, same convention check_classifier() above
+# already uses. Once router.toml exists, an installed-but-bypassed router is
+# invisible by construction unless this row says otherwise, and a worker
+# down while the sentinel is up is a distinct, equally invisible state that
+# must surface as its own row rather than being swallowed into one combined
+# status (design.md Monitoring; R4.5a).
+# Verifies: specs/model-router/requirements.md#3.4, #4.5a, #10.3
+check_router() {
+  local router_toml="$HOME/.sdd-router/router.toml"
+  local fields="" port="" upstream=""
+
+  if [ -f "$router_toml" ] && [ -n "${VPY:-}" ]; then
+    fields="$("$VPY" - "$router_toml" <<'PYEOF' 2>/dev/null
+import sys
+try:
+    import tomllib
+except ImportError:
+    print("ERROR")
+    raise SystemExit(0)
+try:
+    with open(sys.argv[1], "rb") as fh:
+        data = tomllib.load(fh)
+except (OSError, tomllib.TOMLDecodeError):
+    print("ERROR")
+    raise SystemExit(0)
+router = data.get("router")
+if not isinstance(router, dict):
+    router = {}
+print("{}\t{}".format(router.get("port", 8799), router.get("upstream") or ""))
+PYEOF
+)"
+  fi
+
+  if [ -z "$fields" ] || [ "$fields" = "ERROR" ]; then
+    report "global" "model router" "skipped (not installed yet — bash scripts/setup/router-setup.sh)"
+    return 0
+  fi
+
+  IFS="$(printf '\t')" read -r port upstream <<EOF
+$fields
+EOF
+  [ -n "$port" ] || port=8799
+  local sentinel_url="http://127.0.0.1:${port}"
+
+  # ── sentinel: listening check, reusing jeff_listen_addr() directly rather
+  # than duplicating its lsof/ss logic (R4.5a) ────────────────────────────
+  local sentinel_addr
+  sentinel_addr="$(jeff_listen_addr "$port")"
+  if [ -z "$sentinel_addr" ]; then
+    report "global" "router sentinel" "FAILED (not listening)"
+    FAILURES=$((FAILURES + 1))
+  else
+    case "$sentinel_addr" in
+      127.0.0.1:*)
+        report "global" "router sentinel" "ok (listening on 127.0.0.1)"
+        ;;
+      *)
+        report "global" "router sentinel" "FAILED (wildcard-bound: $sentinel_addr — violates loopback-only, R2.1)"
+        FAILURES=$((FAILURES + 1))
+        ;;
+    esac
+  fi
+
+  # ── worker: its own row, independent of the sentinel's (R4.5a) — a down
+  # worker while the sentinel is up must not be swallowed into one combined
+  # status. Worker port is server.py's own DEFAULT_PORT, not read from
+  # router.toml (router.toml only ever records the sentinel's port).
+  local worker_addr
+  worker_addr="$(jeff_listen_addr 8798)"
+  if [ -z "$worker_addr" ]; then
+    report "global" "router worker" "FAILED (not listening)"
+    FAILURES=$((FAILURES + 1))
+  else
+    case "$worker_addr" in
+      127.0.0.1:*)
+        report "global" "router worker" "ok (listening on 127.0.0.1)"
+        ;;
+      *)
+        report "global" "router worker" "FAILED (wildcard-bound: $worker_addr — violates loopback-only, R2.1)"
+        FAILURES=$((FAILURES + 1))
+        ;;
+    esac
+  fi
+
+  # ── routing state — wired / unwired / looped (R3.4): a single global
+  # state describing whether ANTHROPIC_BASE_URL points at the sentinel,
+  # not a per-service fact. An installed-but-bypassed router (unwired) and
+  # a self-forwarding loop with no real upstream ever recorded (looped) are
+  # the two states router-setup.sh's own cmd_install() either repairs or
+  # refuses to create at install time; here they are read-only diagnostics.
+  local current_base_url=""
+  if [ -n "${VPY:-}" ]; then
+    current_base_url="$("$VPY" - "$HOME/.claude/settings.json" <<'PYEOF' 2>/dev/null
+import json
+import sys
+try:
+    with open(sys.argv[1], encoding="utf-8") as fh:
+        data = json.load(fh)
+except (OSError, json.JSONDecodeError):
+    data = {}
+env = data.get("env")
+if not isinstance(env, dict):
+    env = {}
+print(env.get("ANTHROPIC_BASE_URL") or "")
+PYEOF
+)"
+  fi
+
+  if [ -n "$upstream" ] && [ "$current_base_url" = "$sentinel_url" ]; then
+    report "global" "router routing" "ok (wired)"
+  elif [ -n "$upstream" ]; then
+    report "global" "router routing" "FAILED (unwired — ANTHROPIC_BASE_URL does not point at the router; re-run: bash scripts/setup/router-setup.sh)"
+    FAILURES=$((FAILURES + 1))
+  elif [ "$current_base_url" = "$sentinel_url" ]; then
+    report "global" "router routing" "FAILED (looped — ANTHROPIC_BASE_URL points at the router but no real upstream was ever recorded; re-run: bash scripts/setup/router-setup.sh)"
+    FAILURES=$((FAILURES + 1))
+  else
+    report "global" "router routing" "skipped (not fully installed — run bash scripts/setup/router-setup.sh)"
+  fi
+}
+
+# Testing seam: sourcing this file with SDD_HARNESS_DEPS_SOURCE_ONLY=1 defines
+# every function above and returns before any real venv/repo/network work —
+# lets check-harness-deps.test.sh exercise check_classifier() and
+# check_router() (and jeff_listen_addr()) in a throwaway HOME, with
+# lsof/ss/curl stubbed on PATH, without touching this machine's real
+# .venv-tools, real projects.txt, or real ~/.sdd-router / ~/.claude/settings.json.
+if [ "${SDD_HARNESS_DEPS_SOURCE_ONLY:-0}" = "1" ]; then
+  return 0 2>/dev/null || exit 0
+fi
+
 echo "Harness dependency check"
 
 # ── 1. Harness-owned deps -> .venv-tools ───────────────────────────────────────
@@ -82,7 +378,7 @@ else
     elif [ "$CHECK_ONLY" = "1" ]; then
       report ".venv-tools" "$spec" "MISSING (check-only)"
       FAILURES=$((FAILURES + 1))
-    elif out="$("$VPY" -m pip install --upgrade "$spec" 2>&1)" \
+    elif out="$(pip_cooldown_install "$VPY" --upgrade "$spec" 2>&1)" \
          && "$VPY" -c "import $imp" >/dev/null 2>&1; then
       report ".venv-tools" "$spec" "healed (installed)"
     else
@@ -238,6 +534,12 @@ else
     report "global" "headroom proxy" "not running (optional)"
   fi
 fi
+
+# ── 4. Model-router local classifier (jeff), if configured ────────────────
+check_classifier
+
+# ── 5. Model router — sentinel/worker wiring and routing state ────────────
+check_router
 
 echo ""
 if [ "$FAILURES" -eq 0 ]; then

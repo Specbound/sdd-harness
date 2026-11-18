@@ -15,6 +15,7 @@ This skill is the entry point for all evaluation work. It routes to the right su
 | **macro** | `Skill("evaluation/macro")` | Many runs — cluster recurring failure patterns, rank by impact, diagnose suspect workflow steps |
 | **long-trajectory** | `Skill("evaluation/long-trajectory")` | Single run too long for a standard judge, agent mutates external state, or rubric needs calibration |
 | **funnel** | `Skill("evaluation/funnel")` | Deciding whether to run an A/B test, pre-experiment filtering, or calibrating judges against user outcomes |
+| **harness-testing-pyramid** | `Skill("evaluation/harness-testing-pyramid")` | Designing the test suite for an LLM feature before shipping — build-time regression tests, not production grading |
 
 ### Loading Multiple Sub-Skills
 

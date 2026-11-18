@@ -23,7 +23,7 @@ date: 2026-05-06
 
 GitNexus is the code intelligence layer wired into this harness. It builds a knowledge graph from your codebase — symbols, dependencies, call chains, execution flows — and exposes them via 16 MCP tools. It runs entirely on-device; no data leaves your machine.
 
-**Full docs:** `$SDD_HARNESS/docs/gitnexus/README.md`
+**Full docs:** `$SDD_HARNESS/docs/integrations/gitnexus/README.md`
 
 ---
 
@@ -168,8 +168,8 @@ Produces markdown documentation covering symbols, processes, execution flows, an
 | Flag | Effect |
 |------|--------|
 | `gitnexus analyze` | Full index |
-| `--skip-embeddings` | Faster index; disables semantic search |
-| `--embeddings` | Enable embeddings (slower, more accurate) |
+| `--embeddings` | Enable embeddings (slower, more accurate); off by default since 1.6 |
+| `--drop-embeddings` | Drop existing embeddings on rebuild (a plain `analyze` keeps them) |
 | `--skills` | Auto-generate repo-specific skills from the graph |
 | `--force` | Force full re-index |
 | `--skip-agents-md` | Preserve custom AGENTS.md edits |
@@ -196,11 +196,13 @@ When `.gitnexus/` exists, these activate without any commands:
 | Where | What happens |
 |-------|-------------|
 | Every `Read`/`Edit` | PreToolUse hook injects 360-degree symbol context |
-| Every `git commit` | Post-commit hook re-indexes (`--skip-embeddings`) |
+| Every `git commit` | Post-commit hook re-indexes (autopilot worktrees, `gitnexus` on PATH) |
+| Weekly | `gitnexus-reindex-runner.sh` (daily orchestrator) re-indexes any repo whose index is behind HEAD |
 | `/kiro:verify` | Stage 0 runs `detect_changes`, flags HIGH-risk regressions |
 | `/kiro:spec-impl` | Blast radius scan before TDD cycle; tests cover downstream dependents |
 | `/kiro:debug` | Step 2 queries call chain instead of manual grep |
 | `/kiro:skill-extract-scan` | Seeds candidates from Leiden community clusters |
+| Weekly reseed | `risk-zone-reseed-runner.sh` uses `impact` risk levels as one of the signals scored into `.claude/steering/risk-zones.md` — see the `risk-zone-engine` skill |
 
 ---
 
@@ -212,5 +214,6 @@ When `.gitnexus/` exists, these activate without any commands:
 | MCP tools not in Claude | Run `/kiro:gitnexus-setup` or add `mcpServers` config manually |
 | Stale index | `gitnexus analyze` or check post-commit hook |
 | `detect_changes` returns empty | No uncommitted changes — make changes first |
-| Slow indexing | Use `--skip-embeddings` for faster indexing |
+| Slow indexing | Leave off `--embeddings` (default since 1.6; `--skip-embeddings` is now rejected) |
+| Index behind HEAD | Weekly `gitnexus-reindex-runner.sh` catches up; `--force` to run now |
 | Web UI port conflict | `gitnexus serve --port 4568` |

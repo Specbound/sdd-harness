@@ -19,7 +19,7 @@ skills/evaluation/
 ## Sub-Skills
 
 ### `evaluation` — Router
-`~/.claude/skills/evaluation/SKILL.md`
+`~/.claude/skill-library/evaluation/SKILL.md`
 
 Always invoke first. Provides the decision tree and tells you which sub-skill(s) to load. For multi-layer tasks, invoke all relevant sub-skills before implementation.
 
@@ -28,7 +28,7 @@ Always invoke first. Provides the decision tree and tells you which sub-skill(s)
 ---
 
 ### `evaluation/micro` — Per-Run Grading
-`~/.claude/skills/evaluation/micro/SKILL.md`
+`~/.claude/skill-library/evaluation/micro/SKILL.md`
 
 The foundational grading layer. Covers:
 - Error-analysis bootstrap — read ~100 real traces, build the initial failure-category taxonomy before you have any rubric
@@ -47,7 +47,7 @@ Error-analysis section extracted from: Hamel Husain's `error-analysis` skill ([h
 ---
 
 ### `evaluation/macro` — Population-Scale Pattern Discovery
-`~/.claude/skills/evaluation/macro/SKILL.md`
+`~/.claude/skill-library/evaluation/macro/SKILL.md`
 
 Extracted from: [OpenAI Cookbook — Macro Evals for Agentic Systems](https://developers.openai.com/cookbook/examples/partners/macro_evals_for_agentic_systems/macro_evals_for_agentic_systems) (2026-05-31)
 
@@ -62,7 +62,7 @@ Automated as the ~twice-weekly `/kiro:macro-eval-sweep` routine over Raindrop Wo
 ---
 
 ### `evaluation/funnel` — Pre-Experiment Filtering & Judge Calibration
-`~/.claude/skills/evaluation/funnel/SKILL.md`
+`~/.claude/skill-library/evaluation/funnel/SKILL.md`
 
 Extracted from: [Spotify Engineering — LLM Evals: A Funnel, Not a Fork](https://engineering.atspotify.com/2026/5/better-experiments-with-llm-evals-a-funnel-not-a-fork) (2026-05-27)
 
@@ -77,7 +77,7 @@ Key numbers: 12% of A/B tests ship positive; 42% of launched experiments eventua
 ---
 
 ### `evaluation/long-trajectory` — Long-Horizon Agent Evaluation
-`~/.claude/skills/evaluation/long-trajectory/SKILL.md`
+`~/.claude/skill-library/evaluation/long-trajectory/SKILL.md`
 
 Extracted from: [JudgmentLabs — Agent Judge: Solving Long-Context Evaluations](https://www.judgmentlabs.ai/blogs/agent-judge-solving-long-context-evaluations) (2026-06-01)
 
@@ -105,7 +105,7 @@ Interactive checklist. Run before committing to an A/B test to verify Stage 1–
 ## Related Skills (Outside This Family)
 
 ### `cma-outcomes` — Automated Grade-and-Revise Loops
-`~/.claude/skills/cma-outcomes/SKILL.md`
+`~/.claude/skill-library/cma-outcomes/SKILL.md`
 
 Implements the full grade-and-revise loop using the Claude Managed Agents Outcomes feature. Use alongside `evaluation/micro` when you want the grader to loop automatically — no custom orchestration needed.
 
@@ -137,6 +137,6 @@ Multi-skill combos:
 
 ## When Evaluation Becomes a Training Signal
 
-To use your evaluation/reward signal to **update model weights** rather than just measure quality, see the `rl-agent-training` skill (`~/.claude/skills/rl-agent-training/skill.md`). It covers online RL training with ART (Agent Reinforcement Trainer): run the agent many times, score with a reward function or RULER (comparative LLM judge), and update via GRPO. Typical cost: $15–$200 in GPU time.
+To use your evaluation/reward signal to **update model weights** rather than just measure quality, see the `rl-agent-training` skill (`~/.claude/skill-library/rl-agent-training/skill.md`). It covers online RL training with ART (Agent Reinforcement Trainer): run the agent many times, score with a reward function or RULER (comparative LLM judge), and update via GRPO. Typical cost: $15–$200 in GPU time.
 
 **Use `rl-agent-training` when:** you can run the agent and score outcomes, and want to bake the winning behavior into model weights rather than just measure it.

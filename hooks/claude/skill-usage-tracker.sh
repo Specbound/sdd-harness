@@ -1,4 +1,5 @@
 #!/bin/bash
+# purpose: Logs each Skill tool call to the global skill-usage log (silent).
 # PostToolUse(Skill) — token-free skill usage tracker.
 # Appends one JSON line per Skill-tool invocation to a global log so the
 # skill-curator can make evidence-based deprecation decisions and the

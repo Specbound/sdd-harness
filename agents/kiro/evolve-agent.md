@@ -55,6 +55,7 @@ Measure and report:
 | Metric | Target | Method |
 |--------|--------|--------|
 | hot-memory.md lines | <50 | `wc -l` |
+| hot-memory.md bytes | <8,000 | `wc -c` |
 | meta/patterns.md lines | <70 | `wc -l` |
 | observations.md entries | <50 | count `^- [0-9]` lines |
 | action-items open | track | count `^- \[ \]` lines |
@@ -100,6 +101,31 @@ Produce an alignment scorecard:
 - `PROMOTE?`: Mean alignment < 3.0 at haiku/sonnet — candidate for more capable tier
 
 Agents with fewer than 3 scored entries are excluded from alignment analysis (insufficient data).
+
+### Step 1d: Prompt-Drift Check
+
+Run `bash scripts/quality/prompt-drift-check.sh` (no args — sweeps `CLAUDE.md` and every
+`skills/*/SKILL.md`). It reports, per file, the deletions:insertions ratio across that
+file's full git history. A file with enough history and a near-zero delete ratio is
+flagged `accretion-only` — content only ever gets appended, never pruned, which is how
+skills and CLAUDE.md silently bloat over time even though no single edit looks wrong.
+
+This is advisory input to Step 3, not a metric with its own pass/fail target — a file
+legitimately growing (new real capability) looks identical in this signal to one just
+accumulating unpruned cruft. Cross-reference flagged files against friction patterns
+(Step 2) and memory-gap history before proposing anything: only propose a pruning pass
+on a flagged file if there's independent evidence (stale content, superseded advice,
+duplicate coverage) — the flag alone is not sufficient justification.
+
+Produce a scorecard:
+
+```
+### Prompt-Drift Scorecard
+| File | Commits | Delete Ratio | Flag |
+|------|---------|--------------|------|
+| skills/foo/SKILL.md | 9 | 0.02 | accretion-only |
+| CLAUDE.md | 17 | 0.28 | — |
+```
 
 ### Step 2: Analyze Friction
 
@@ -270,6 +296,7 @@ Chat summary only (self-observations updated directly):
 | Metric | Value | Status |
 |--------|-------|--------|
 | hot-memory lines | N/50 | ✅/⚠️ |
+| hot-memory bytes | N/8,000 | ✅/⚠️ |
 | patterns lines | N/70 | ✅/⚠️ |
 | observations | N/50 | ✅/⚠️ |
 | open action items | N | ℹ️ |
@@ -281,6 +308,12 @@ Chat summary only (self-observations updated directly):
 |-------|-------------|-----------|------------|-------|------|
 | [agent] | N | X.X | Y% | [trend] | [flag or —] |
 (only agents with 3+ scored entries shown)
+
+## Prompt-Drift Scorecard
+| File | Commits | Delete Ratio | Flag |
+|------|---------|--------------|------|
+| [file] | N | X.XX | [accretion-only or —] |
+(only files with 5+ commits touching them are shown)
 
 ## Friction Patterns
 - [description of each friction pattern found]

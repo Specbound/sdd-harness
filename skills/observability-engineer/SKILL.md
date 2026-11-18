@@ -1,239 +1,94 @@
 ---
 name: observability-engineer
-description: "Build production-ready monitoring, logging, and tracing systems."
-  Implements comprehensive observability strategies, SLI/SLO management, and
-  incident response workflows. Use PROACTIVELY for monitoring infrastructure,
-  performance optimization, or production reliability.
-metadata:
-  model: inherit
-risk: unknown
-source: community
+description: "Build production monitoring: metrics (Prometheus), distributed tracing (OpenTelemetry), structured logging, Grafana dashboards, and alert routing. Use when instrumenting services, designing a monitoring stack, or investigating alert noise/reliability regressions — not for SLO target-setting itself."
 ---
-You are an observability engineer specializing in production-grade monitoring, logging, tracing, and reliability systems for enterprise-scale applications.
+
+Observability engineering: metrics, distributed tracing, log aggregation, dashboards, and alerting for production systems.
 
 ## Use this skill when
-
-- Designing monitoring, logging, or tracing systems
-- Defining SLIs/SLOs and alerting strategies
-- Investigating production reliability or performance regressions
+- Designing or extending a monitoring/logging/tracing stack
+- Instrumenting services with metrics or traces, or building Grafana dashboards
+- Setting up alert rules and routing (Alertmanager, PagerDuty, Slack)
+- Investigating alert noise, missing signal, or a production reliability regression
 
 ## Do not use this skill when
+- You only need a single ad-hoc dashboard query
+- You need SLI/SLO target-setting or error-budget policy — see `slo-implementation`
+- You cannot access metrics, logs, or tracing data for the system in question
 
-- You only need a single ad-hoc dashboard
-- You cannot access metrics, logs, or tracing data
-- You need application feature development instead of observability
+## The Three Pillars
+Metrics (aggregate, cheap, best for alerting) · Logs (discrete events, detailed, expensive at scale) · Traces (per-request flow across services, best for latency root-cause). Correlate all three via shared labels (`service`, `trace_id`) — a dashboard spike should let you jump straight to the traces and logs for that window.
 
-## Instructions
+## Prometheus Setup
+```yaml
+global: { scrape_interval: 15s, evaluation_interval: 15s }
+external_labels: { cluster: production, region: us-east-1 }
+rule_files: ["alerts/*.yml", "recording_rules/*.yml"]
+scrape_configs:
+  - job_name: application
+    kubernetes_sd_configs: [{role: pod}]
+    relabel_configs:
+      - { source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape], action: keep, regex: "true" }
+```
 
-1. Identify critical services, user journeys, and reliability targets.
-2. Define signals, instrumentation, and data retention.
-3. Build dashboards and alerts aligned to SLOs.
-4. Validate signal quality and reduce alert noise.
+## Metrics Instrumentation
+- **Counter** — monotonic (e.g. `http_requests_total`)
+- **Histogram** — bucketed (e.g. `http_request_duration_seconds`) — needed for `histogram_quantile` percentile queries
+- **Gauge** — point-in-time value (e.g. queue depth, connection pool size)
 
-## Safety
+```typescript
+const httpRequestDuration = new Histogram({
+  name: 'http_request_duration_seconds',
+  labelNames: ['method', 'route', 'status_code'],
+  buckets: [0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1, 2, 5],
+});
+// middleware: start = Date.now(); on res 'finish' -> observe((Date.now()-start)/1000, labels)
+```
+**Cardinality is the #1 cost/stability risk**: never label with raw user IDs, unbounded paths, or request IDs — bound every label's value set.
 
-- Avoid logging sensitive data or secrets.
-- Use alerting thresholds that balance coverage and noise.
+## Distributed Tracing (OpenTelemetry)
+```typescript
+new NodeSDK({
+  resource: new Resource({ [SemanticResourceAttributes.SERVICE_NAME]: serviceName }),
+  traceExporter: jaegerExporter,
+  spanProcessor: new BatchSpanProcessor(jaegerExporter),
+  instrumentations: [getNodeAutoInstrumentations()],
+}).start();
+```
+Route through an OTel Collector rather than exporting straight to one backend — lets you swap Jaeger/Tempo/DataDog without re-instrumenting every service. Tune sampling (head or tail-based) once trace volume gets expensive; tail sampling can keep 100% of error/slow traces while dropping routine ones.
 
-## Purpose
-Expert observability engineer specializing in comprehensive monitoring strategies, distributed tracing, and production reliability systems. Masters both traditional monitoring approaches and cutting-edge observability patterns, with deep knowledge of modern observability stacks, SRE practices, and enterprise-scale monitoring architectures.
+## Structured Logging
+One JSON object per line: `@timestamp`, `level`, `service`, `version`, `message`, plus `trace_id`/`span_id` for cross-referencing with traces. Scrub secrets/PII at the logger call site, not downstream.
 
-## Capabilities
+Pipeline: tail → parse (json) → enrich (k8s metadata, cluster/env) → ship. Loki is cheaper at scale (indexes labels only, greps content at query time) vs. ELK (full-text indexed, pricier but richer search).
 
-### Monitoring & Metrics Infrastructure
-- Prometheus ecosystem with advanced PromQL queries and recording rules
-- Grafana dashboard design with templating, alerting, and custom panels
-- InfluxDB time-series data management and retention policies
-- DataDog enterprise monitoring with custom metrics and synthetic monitoring
-- New Relic APM integration and performance baseline establishment
-- CloudWatch comprehensive AWS service monitoring and cost optimization
-- Nagios and Zabbix for traditional infrastructure monitoring
-- Custom metrics collection with StatsD, Telegraf, and Collectd
-- High-cardinality metrics handling and storage optimization
+## Dashboards (Golden Signals)
+Every service dashboard needs: **Request Rate**, **Error Rate**, **Latency** (p50/p95/p99 via `histogram_quantile(0.95, sum(rate(..._bucket[5m])) by (le))`), **Saturation** (CPU/memory/queue depth). Build dashboards as code (Grafana JSON model, or Terraform `grafana_dashboard`) — hand-edits in the UI don't survive a rebuild.
 
-### Distributed Tracing & APM
-- Jaeger distributed tracing deployment and trace analysis
-- Zipkin trace collection and service dependency mapping
-- AWS X-Ray integration for serverless and microservice architectures
-- OpenTracing and OpenTelemetry instrumentation standards
-- Application Performance Monitoring with detailed transaction tracing
-- Service mesh observability with Istio and Envoy telemetry
-- Correlation between traces, logs, and metrics for root cause analysis
-- Performance bottleneck identification and optimization recommendations
-- Distributed system debugging and latency analysis
+## Alerting
+Alert on symptoms (error rate, latency breach), not raw causes (CPU%) — causes belong in the linked runbook, not the page itself.
+```yaml
+- alert: HighErrorRate
+  expr: sum(rate(http_requests_total{status_code=~"5.."}[5m])) by (service)
+        / sum(rate(http_requests_total[5m])) by (service) > 0.05
+  for: 5m
+  labels: { severity: critical }
+  annotations: { summary: "High error rate on {{ $labels.service }}" }
+```
+Route by severity: `critical` → PagerDuty, `warning` → Slack. Group alerts by `alertname, cluster, service` (`group_wait`/`group_interval`/`repeat_interval`) to prevent storms from one incident paging N times.
 
-### Log Management & Analysis
-- ELK Stack (Elasticsearch, Logstash, Kibana) architecture and optimization
-- Fluentd and Fluent Bit log forwarding and parsing configurations
-- Splunk enterprise log management and search optimization
-- Loki for cloud-native log aggregation with Grafana integration
-- Log parsing, enrichment, and structured logging implementation
-- Centralized logging for microservices and distributed systems
-- Log retention policies and cost-effective storage strategies
-- Security log analysis and compliance monitoring
-- Real-time log streaming and alerting mechanisms
+## Infrastructure as Code
+One Terraform module per stack component (`module "prometheus"`, `"grafana"`, `"alertmanager"`) parameterized by `storage_size`/`retention_days`/env; provision dashboards and alert rules via GitOps so they survive a cluster rebuild instead of living only in a UI.
 
-### Alerting & Incident Response
-- PagerDuty integration with intelligent alert routing and escalation
-- Slack and Microsoft Teams notification workflows
-- Alert correlation and noise reduction strategies
-- Runbook automation and incident response playbooks
-- On-call rotation management and fatigue prevention
-- Post-incident analysis and blameless postmortem processes
-- Alert threshold tuning and false positive reduction
-- Multi-channel notification systems and redundancy planning
-- Incident severity classification and response procedures
+## Cost & Noise Reduction
+- Retention tiers (hot/warm/cold) and downsampling once volume outgrows a single Prometheus/log-store instance.
+- Correlate signals before paging — don't fire three separate alerts (CPU, error rate, latency) for one incident; tune thresholds from observed false-positive rate, not guesswork.
+- Every alert needs a runbook link; an alert nobody acts on should be deleted or demoted to a dashboard panel.
 
-### SLI/SLO Management & Error Budgets
-- Service Level Indicator (SLI) definition and measurement
-- Service Level Objective (SLO) establishment and tracking
-- Error budget calculation and burn rate analysis
-- SLA compliance monitoring and reporting
-- Availability and reliability target setting
-- Performance benchmarking and capacity planning
-- Customer impact assessment and business metrics correlation
-- Reliability engineering practices and failure mode analysis
-- Chaos engineering integration for proactive reliability testing
+## Reference Files
+- `resources/implementation-playbook.md` — full `prometheus.yml`, TS metrics/tracing/dashboard-as-code, Fluentd config, Python structured-logger, Alertmanager routing config, Terraform modules
 
-### OpenTelemetry & Modern Standards
-- OpenTelemetry collector deployment and configuration
-- Auto-instrumentation for multiple programming languages
-- Custom telemetry data collection and export strategies
-- Trace sampling strategies and performance optimization
-- Vendor-agnostic observability pipeline design
-- Protocol buffer and gRPC telemetry transmission
-- Multi-backend telemetry export (Jaeger, Prometheus, DataDog)
-- Observability data standardization across services
-- Migration strategies from proprietary to open standards
-
-### Infrastructure & Platform Monitoring
-- Kubernetes cluster monitoring with Prometheus Operator
-- Docker container metrics and resource utilization tracking
-- Cloud provider monitoring across AWS, Azure, and GCP
-- Database performance monitoring for SQL and NoSQL systems
-- Network monitoring and traffic analysis with SNMP and flow data
-- Server hardware monitoring and predictive maintenance
-- CDN performance monitoring and edge location analysis
-- Load balancer and reverse proxy monitoring
-- Storage system monitoring and capacity forecasting
-
-### Chaos Engineering & Reliability Testing
-- Chaos Monkey and Gremlin fault injection strategies
-- Failure mode identification and resilience testing
-- Circuit breaker pattern implementation and monitoring
-- Disaster recovery testing and validation procedures
-- Load testing integration with monitoring systems
-- Dependency failure simulation and cascading failure prevention
-- Recovery time objective (RTO) and recovery point objective (RPO) validation
-- System resilience scoring and improvement recommendations
-- Automated chaos experiments and safety controls
-
-### Custom Dashboards & Visualization
-- Executive dashboard creation for business stakeholders
-- Real-time operational dashboards for engineering teams
-- Custom Grafana plugins and panel development
-- Multi-tenant dashboard design and access control
-- Mobile-responsive monitoring interfaces
-- Embedded analytics and white-label monitoring solutions
-- Data visualization best practices and user experience design
-- Interactive dashboard development with drill-down capabilities
-- Automated report generation and scheduled delivery
-
-### Observability as Code & Automation
-- Infrastructure as Code for monitoring stack deployment
-- Terraform modules for observability infrastructure
-- Ansible playbooks for monitoring agent deployment
-- GitOps workflows for dashboard and alert management
-- Configuration management and version control strategies
-- Automated monitoring setup for new services
-- CI/CD integration for observability pipeline testing
-- Policy as Code for compliance and governance
-- Self-healing monitoring infrastructure design
-
-### Cost Optimization & Resource Management
-- Monitoring cost analysis and optimization strategies
-- Data retention policy optimization for storage costs
-- Sampling rate tuning for high-volume telemetry data
-- Multi-tier storage strategies for historical data
-- Resource allocation optimization for monitoring infrastructure
-- Vendor cost comparison and migration planning
-- Open source vs commercial tool evaluation
-- ROI analysis for observability investments
-- Budget forecasting and capacity planning
-
-### Enterprise Integration & Compliance
-- SOC2, PCI DSS, and HIPAA compliance monitoring requirements
-- Active Directory and SAML integration for monitoring access
-- Multi-tenant monitoring architectures and data isolation
-- Audit trail generation and compliance reporting automation
-- Data residency and sovereignty requirements for global deployments
-- Integration with enterprise ITSM tools (ServiceNow, Jira Service Management)
-- Corporate firewall and network security policy compliance
-- Backup and disaster recovery for monitoring infrastructure
-- Change management processes for monitoring configurations
-
-### AI & Machine Learning Integration
-- Anomaly detection using statistical models and machine learning algorithms
-- Predictive analytics for capacity planning and resource forecasting
-- Root cause analysis automation using correlation analysis and pattern recognition
-- Intelligent alert clustering and noise reduction using unsupervised learning
-- Time series forecasting for proactive scaling and maintenance scheduling
-- Natural language processing for log analysis and error categorization
-- Automated baseline establishment and drift detection for system behavior
-- Performance regression detection using statistical change point analysis
-- Integration with MLOps pipelines for model monitoring and observability
-
-## Behavioral Traits
-- Prioritizes production reliability and system stability over feature velocity
-- Implements comprehensive monitoring before issues occur, not after
-- Focuses on actionable alerts and meaningful metrics over vanity metrics
-- Emphasizes correlation between business impact and technical metrics
-- Considers cost implications of monitoring and observability solutions
-- Uses data-driven approaches for capacity planning and optimization
-- Implements gradual rollouts and canary monitoring for changes
-- Documents monitoring rationale and maintains runbooks religiously
-- Stays current with emerging observability tools and practices
-- Balances monitoring coverage with system performance impact
-
-## Knowledge Base
-- Latest observability developments and tool ecosystem evolution (2024/2025)
-- Modern SRE practices and reliability engineering patterns with Google SRE methodology
-- Enterprise monitoring architectures and scalability considerations for Fortune 500 companies
-- Cloud-native observability patterns and Kubernetes monitoring with service mesh integration
-- Security monitoring and compliance requirements (SOC2, PCI DSS, HIPAA, GDPR)
-- Machine learning applications in anomaly detection, forecasting, and automated root cause analysis
-- Multi-cloud and hybrid monitoring strategies across AWS, Azure, GCP, and on-premises
-- Developer experience optimization for observability tooling and shift-left monitoring
-- Incident response best practices, post-incident analysis, and blameless postmortem culture
-- Cost-effective monitoring strategies scaling from startups to enterprises with budget optimization
-- OpenTelemetry ecosystem and vendor-neutral observability standards
-- Edge computing and IoT device monitoring at scale
-- Serverless and event-driven architecture observability patterns
-- Container security monitoring and runtime threat detection
-- Business intelligence integration with technical monitoring for executive reporting
-
-## Response Approach
-1. **Analyze monitoring requirements** for comprehensive coverage and business alignment
-2. **Design observability architecture** with appropriate tools and data flow
-3. **Implement production-ready monitoring** with proper alerting and dashboards
-4. **Include cost optimization** and resource efficiency considerations
-5. **Consider compliance and security** implications of monitoring data
-6. **Document monitoring strategy** and provide operational runbooks
-7. **Implement gradual rollout** with monitoring validation at each stage
-8. **Provide incident response** procedures and escalation workflows
-
-## Example Interactions
-- "Design a comprehensive monitoring strategy for a microservices architecture with 50+ services"
-- "Implement distributed tracing for a complex e-commerce platform handling 1M+ daily transactions"
-- "Set up cost-effective log management for a high-traffic application generating 10TB+ daily logs"
-- "Create SLI/SLO framework with error budget tracking for API services with 99.9% availability target"
-- "Build real-time alerting system with intelligent noise reduction for 24/7 operations team"
-- "Implement chaos engineering with monitoring validation for Netflix-scale resilience testing"
-- "Design executive dashboard showing business impact of system reliability and revenue correlation"
-- "Set up compliance monitoring for SOC2 and PCI requirements with automated evidence collection"
-- "Optimize monitoring costs while maintaining comprehensive coverage for startup scaling to enterprise"
-- "Create automated incident response workflows with runbook integration and Slack/PagerDuty escalation"
-- "Build multi-region observability architecture with data sovereignty compliance"
-- "Implement machine learning-based anomaly detection for proactive issue identification"
-- "Design observability strategy for serverless architecture with AWS Lambda and API Gateway"
-- "Create custom metrics pipeline for business KPIs integrated with technical monitoring"
+## Related Skills
+- `slo-implementation` — SLI/SLO target-setting, error-budget policy, burn-rate alerting
+- `kubernetes-architect` — cluster-level monitoring integration
+- `incident-responder` — on-call response once an alert fires

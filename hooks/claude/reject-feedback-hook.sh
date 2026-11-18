@@ -1,4 +1,5 @@
 #!/bin/bash
+# purpose: When the user rejects a tool call, records the reason they give in the next prompt.
 # Reject-feedback hook — UserPromptSubmit, SOFT (never blocks).
 #
 # When the user rejects/interrupts a tool call, Claude Code records it in the

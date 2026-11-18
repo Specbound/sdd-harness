@@ -133,4 +133,4 @@ OPF is a **detection aid, not an anonymization guarantee**:
 - Placeholder `<REDACTED>` is not format-preserving (a redacted email is not a valid email)
 - High-sensitivity use cases (medical, legal, financial, government) need additional human review
 
-See [docs/privacy-filter/README.md]($SDD_HARNESS/docs/privacy-filter/README.md) for full setup and troubleshooting.
+See [docs/security/privacy-filter/README.md]($SDD_HARNESS/docs/security/privacy-filter/README.md) for full setup and troubleshooting.

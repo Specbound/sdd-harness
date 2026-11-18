@@ -1,3 +1,4 @@
+# purpose: Warns before writing .env files, keys, certificates, credentials or ~/.ssh files.
 set -euo pipefail
 
 EVENT=$(cat)

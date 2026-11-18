@@ -28,9 +28,27 @@ You will receive:
 
 ### Step 0: Load Context
 
-- Read all spec files: `specs/{feature}/spec.json`, `requirements.md`, `design.md`, `tasks.md`
-- Read `.claude/steering/*.md` for project context
-- If validating implementation: scan source files referenced in design.md
+**Read in this order. The order is the point — do not batch these reads.**
+
+1. `specs/{feature}/spec.json` and `requirements.md` **only**. From requirements alone,
+   write down the acceptance criteria you will judge against. Commit to that list
+   before you know how anyone chose to satisfy it.
+2. `.claude/steering/*.md` for project context.
+3. Now read `design.md` and `tasks.md`.
+4. If validating implementation: scan source files referenced in design.md.
+
+**Plan-blindness rule:** the builder's plan is evidence about *what was attempted*,
+never about *what counts as correct*. If a criterion from step 3 or 4 does not trace
+back to something in requirements.md, it is the builder's framing leaking into the
+review — flag it rather than adopting it:
+
+> Criterion drift: implementation satisfies "<X>" which appears only in design.md/tasks.md
+> and is not derivable from requirements.md.
+
+Report criterion drift as a Concern in Step 1. This is distinct from `validate-impl`'s
+spec-integrity check, which catches the spec being *weakened in git* after approval;
+this catches the reviewer silently inheriting the builder's definition of done from a
+spec that was never edited at all.
 
 ### Step 1: Initial Assessment (Neutral Pass)
 
@@ -96,7 +114,11 @@ Provide output in the language specified in spec.json:
 **Net Score**: [N] → [GO / CONDITIONAL GO / NO-GO]
 
 ### Surviving Concerns
-[Only concerns that survived refutation, with evidence]
+[Only concerns that survived refutation, with evidence. Each one carries a scope label — BLOCKING or OPTIONAL — and BLOCKING ones name the requirement, correctness property, or done-condition they violate.]
+
+| Concern | Scope | Traces to |
+|---------|-------|-----------|
+| ...     | BLOCKING / OPTIONAL | [requirement ID, correctness property, or done-condition — or "—" for OPTIONAL] |
 
 ### Confirmed Strengths
 [Only strengths that survived refutation]
@@ -114,6 +136,9 @@ Provide output in the language specified in spec.json:
 - **Evidence-based refutation**: Refutation must cite specific code, design constraints, or framework guarantees — not opinions
 - **Asymmetric scoring is non-negotiable**: Concerns carry double weight because false negatives (missed issues) are costlier than false positives (unnecessary caution)
 - **Maximum 7 initial findings**: More than 7 suggests scope creep — focus on what matters most
+- **Every concern is scoped BLOCKING or OPTIONAL**: A concern is BLOCKING only if it traces to a stated requirement, a correctness property, or the feature's done-condition — name which one. Everything else is OPTIONAL. Asymmetric scoring applies to BLOCKING concerns only; OPTIONAL ones are listed but do not move the net score.
+  - Why: an agent told to find problems finds problems until told to stop. The double weight above rewards concern-finding and sets no floor on what counts as a concern, so without a scope filter this review drifts into style notes scored as if they were defects. The cap of 7 bounds the *count*, not the *relevance*. Keep the adversarial stance; bound what it is adversarial about.
+  - If a finding cannot be traced to a requirement, a correctness property, or the done-condition, it is OPTIONAL — do not reword it until it sounds blocking.
 
 ## Safety & Fallback
 

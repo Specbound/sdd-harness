@@ -1,6 +1,6 @@
 ---
 name: hugging-face-jobs
-description: "This skill should be used when users want to run any workload on Hugging Face Jobs infrastructure. Covers UV scripts, Docker-based jobs, hardware selection, cost estimation, authentication with tok..."
+description: "Run workloads on Hugging Face Jobs: UV scripts, Docker jobs, GPU/TPU selection, HF_TOKEN secrets, timeouts, scheduling, cost, Hub persistence."
 license: "Complete terms in LICENSE.txt"
 source: "https://github.com/huggingface/skills/tree/main/skills/hugging-face-jobs"
 risk: safe
@@ -10,29 +10,20 @@ risk: safe
 
 ## Overview
 
-Run any workload on fully managed Hugging Face infrastructure. No local setup required—jobs run on cloud CPUs, GPUs, or TPUs and can persist results to the Hugging Face Hub.
+Run any workload on fully managed Hugging Face infrastructure. No local setup required —
+jobs run on cloud CPUs, GPUs, or TPUs and can persist results to the Hugging Face Hub.
 
-**Common use cases:**
-- **Data Processing** - Transform, filter, or analyze large datasets
-- **Batch Inference** - Run inference on thousands of samples
-- **Experiments & Benchmarks** - Reproducible ML experiments
-- **Model Training** - Fine-tune models (see `model-trainer` skill for TRL-specific training)
-- **Synthetic Data Generation** - Generate datasets using LLMs
-- **Development & Testing** - Test code without local GPU setup
-- **Scheduled Jobs** - Automate recurring tasks
+Use this skill when a user wants to: process data at scale, run batch inference,
+run reproducible experiments or benchmarks, generate synthetic data, use a GPU/TPU
+without local hardware, schedule a recurring job, or persist results to the Hub.
 
-**For model training specifically:** See the `model-trainer` skill for TRL-based training workflows.
+**For model training specifically:** see the `model-trainer` skill for TRL-based
+training workflows.
 
-## When to Use This Skill
-
-Use this skill when users want to:
-- Run Python workloads on cloud infrastructure
-- Execute jobs without local GPU/TPU setup
-- Process data at scale
-- Run batch inference or experiments
-- Schedule recurring tasks
-- Use GPUs/TPUs for any workload
-- Persist results to the Hugging Face Hub
+**This skill ships as `SKILL.md` only** — there are no `references/` or `scripts/`
+files here. Everything needed is in this file; the external links at the end are the
+place to go deeper. The three workload patterns below name upstream script files that
+are *not* installed locally; treat them as recipes to inline, not paths to read.
 
 ## Key Directives
 
@@ -40,12 +31,15 @@ When assisting with jobs:
 
 1. **ALWAYS use `hf_jobs()` MCP tool** - Submit jobs using `hf_jobs("uv", {...})` or `hf_jobs("run", {...})`. The `script` parameter accepts Python code directly. Do NOT save to local files unless the user explicitly requests it. Pass the script content as a string to `hf_jobs()`.
 
-2. **Always handle authentication** - Jobs that interact with the Hub require `HF_TOKEN` via secrets. See Token Usage section below.
+2. **Always handle authentication** - Jobs that interact with the Hub require `HF_TOKEN` via secrets. Always `secrets={"HF_TOKEN": "$HF_TOKEN"}`; never hardcode a token. See Token Usage section below.
 
-3. **Provide job details after submission** - After submitting, provide job ID, monitoring URL, estimated time, and note that the user can request status checks later.
+3. **Jobs are asynchronous** - Don't wait or poll. After submitting, provide job ID, monitoring URL, and estimated time, and note that the user can request a status check later.
 
 4. **Set appropriate timeouts** - Default 30min may be insufficient for long-running tasks.
 
+5. **Always persist results** - The environment is ephemeral; without an explicit persistence step, all work is lost.
+
+6. **Start small on hardware** - Test on the smallest flavor that fits, scale up on measured need. This is also the main cost lever.
 ## Prerequisites Checklist
 
 Before starting any job, verify:
@@ -56,22 +50,7 @@ Before starting any job, verify:
 - **HF_TOKEN for Hub Access** ⚠️ CRITICAL - Required for any Hub operations (push models/datasets, download private repos, etc.)
 - Token must have appropriate permissions (read for downloads, write for uploads)
 
-### ✅ **Token Usage** (See Token Usage section for details)
-
-**When tokens are required:**
-- Pushing models/datasets to Hub
-- Accessing private repositories
-- Using Hub APIs in scripts
-- Any authenticated Hub operations
-
-**How to provide tokens:**
-```python
-{
-    "secrets": {"HF_TOKEN": "$HF_TOKEN"}  # Recommended: automatic token
-}
-```
-
-**⚠️ CRITICAL:** The `$HF_TOKEN` placeholder is automatically replaced with your logged-in token. Never hardcode tokens in scripts.
+- Full token mechanics — when required, how to pass, verification, common failures — are in the Token Usage Guide directly below. Do not duplicate that checklist here.
 
 ## Token Usage Guide
 
@@ -490,7 +469,6 @@ hub_repo_details(["uv-scripts/classification"], repo_type="dataset", include_rea
 - Scale up based on actual needs
 - Use multi-GPU for parallel workloads or large models
 - Use TPUs for JAX/Flax workloads
-- See `references/hardware_guide.md` for detailed specifications
 
 ## Critical: Saving Results
 
@@ -563,8 +541,6 @@ Before submitting:
 - [ ] `secrets={"HF_TOKEN": "$HF_TOKEN"}` if using Hub
 - [ ] Script handles missing token gracefully
 - [ ] Test persistence path works
-
-**See:** `references/hub_saving.md` for detailed Hub persistence guide
 
 ## Timeout Management
 
@@ -973,30 +949,7 @@ Add to PEP 723 header:
 3. Re-login: `hf auth login`
 4. Check token has required permissions
 
-## Troubleshooting
-
-**Common issues:**
-- Job times out → Increase timeout, optimize code
-- Results not saved → Check persistence method, verify HF_TOKEN
-- Out of Memory → Reduce batch size, upgrade hardware
-- Import errors → Add dependencies to PEP 723 header
-- Authentication errors → Check token, verify secrets parameter
-
-**See:** `references/troubleshooting.md` for complete troubleshooting guide
-
 ## Resources
-
-### References (In This Skill)
-- `references/token_usage.md` - Complete token usage guide
-- `references/hardware_guide.md` - Hardware specs and selection
-- `references/hub_saving.md` - Hub persistence guide
-- `references/troubleshooting.md` - Common issues and solutions
-
-### Scripts (In This Skill)
-- `scripts/generate-responses.py` - vLLM batch generation: dataset → responses → push to Hub
-- `scripts/cot-self-instruct.py` - CoT Self-Instruct synthetic data generation + filtering → push to Hub
-- `scripts/finepdfs-stats.py` - Polars streaming stats over `finepdfs-edu` parquet on Hub (optional push)
-
 ### External Links
 
 **Official Documentation:**
@@ -1010,19 +963,6 @@ Add to PEP 723 header:
 - [UV Scripts Organization](https://huggingface.co/uv-scripts) - Community UV script collection
 - [HF Hub Authentication](https://huggingface.co/docs/huggingface_hub/quick-start#authentication) - Token setup
 - [Webhooks Documentation](https://huggingface.co/docs/huggingface_hub/guides/webhooks) - Event triggers
-
-## Key Takeaways
-
-1. **Submit scripts inline** - The `script` parameter accepts Python code directly; no file saving required unless user requests
-2. **Jobs are asynchronous** - Don't wait/poll; let user check when ready
-3. **Always set timeout** - Default 30 min may be insufficient; set appropriate timeout
-4. **Always persist results** - Environment is ephemeral; without persistence, all work is lost
-5. **Use tokens securely** - Always use `secrets={"HF_TOKEN": "$HF_TOKEN"}` for Hub operations
-6. **Choose appropriate hardware** - Start small, scale up based on needs (see hardware guide)
-7. **Use UV scripts** - Default to `hf_jobs("uv", {...})` with inline scripts for Python workloads
-8. **Handle authentication** - Verify tokens are available before Hub operations
-9. **Monitor jobs** - Provide job URLs and status check commands
-10. **Optimize costs** - Choose right hardware, set appropriate timeouts
 
 ## Quick Reference: MCP Tool vs CLI vs Python API
 

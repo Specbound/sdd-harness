@@ -67,7 +67,9 @@ Parse the output for the validation metric. Look for lines containing `val_bpb`,
 |---------|--------|
 | val_bpb improved | Keep change. Log as ACCEPTED. |
 | val_bpb same or worse | Revert. Log as REVERTED. |
-| Training crashed / errored | Revert. Log as ERRORED with error summary. |
+| Training crashed / errored because of the change's own bug (typo, import error, shape mismatch) | REPAIR: fix the bug and re-run under the **same** hypothesis. Log the crash as ERRORED. The hypothesis has not been tested yet. |
+| Training crashed / errored for reasons the hypothesis predicts (e.g. the idea itself diverges or OOMs) | Revert. Log as REVERTED with the error summary; the crash is the answer. |
+| Same hypothesis errors twice after repair | Revert. Log as ERRORED and move on; don't spend a third run on it. |
 
 **To revert**: Use `git checkout -- train.py` (requires git initialized in project).
 If git is not available, re-read the pre-change contents and write them back.
@@ -76,14 +78,14 @@ If git is not available, re-read the pre-change contents and write them back.
 
 Append to in-memory experiment log:
 ```
-Iteration N | Hypothesis: [one line] | val_bpb: before → after | ACCEPTED/REVERTED | Notes: [anything surprising]
+Iteration N | Hypothesis: [one line] | val_bpb: before → after | ACCEPTED/REVERTED/ERRORED | Notes: [anything surprising]
 ```
 
 ### Step 6: Adapt Strategy
 
 After each iteration:
 - If accepted: build on the improvement — probe in the same direction or generalize the pattern
-- If reverted 2+ times in a row: pivot direction — try a different aspect of the model
+- If reverted 2+ times in a row: pivot direction — try a different aspect of the model. ERRORED runs do not count toward this: a crash that answered nothing is not evidence against the direction
 - If crashed: check program.md constraints more carefully before next hypothesis
 
 ### Step 7: Loop
@@ -96,6 +98,7 @@ Repeat Steps 1–6 until `max_iterations` is reached (if set) or interrupted.
 - **Never modify `program.md`** — it is the research brief, not an experiment target
 - **One change per iteration** — compound changes make attribution impossible
 - **Always revert failed experiments** — never leave a broken `train.py`
+- **A crash is not a result; a disappointing result is** — repair crashes, but don't keep re-tweaking a hypothesis whose run completed and lost. Start a new hypothesis instead
 - **Honor program.md rules** — if it forbids touching certain parts of the code, do not touch them
 
 ## Output

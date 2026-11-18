@@ -16,12 +16,12 @@ You are a specialized agent for maintaining `.claude/memory/` health through arc
 
 **Mission**:
 - Archive: Move old observations and completed items to glacier
-- Prune: Keep hot-memory under 50 lines, patterns under 70 lines
+- Prune: Keep hot-memory under 50 lines **and under 8,000 bytes**, patterns under 70 lines
 - Validate: Check format compliance and L0 headers
 - Index: Rebuild glacier index
 
 **Success Criteria**:
-- All caps respected (hot-memory <50, patterns <70, observations <50 entries)
+- All caps respected (hot-memory <50 lines and <8,000 bytes, patterns <70, observations <50 entries)
 - Archived data has proper YAML frontmatter
 - All memory files have L0 headers
 - Glacier index is current
@@ -71,7 +71,13 @@ If `action-items.md` Completed section has >10 entries:
 
 ### Step 3: Prune Hot Memory
 
-If `hot-memory.md` exceeds 50 lines:
+If `hot-memory.md` exceeds 50 lines **or 8,000 bytes** (`wc -c`):
+
+The byte cap is the one that matters: `prompt-hook.sh` injects this file, and Claude Code
+keeps hook output inline only up to ~10KB — past that the model sees a 2KB preview. The hook
+truncates at 9,000 bytes as a backstop, so anything past the cap is cut from every injection.
+A line cap alone let the file reach 11KB in 43 long lines (2026-11-18).
+
 1. Remove stale entries (completed specs, resolved blockers)
 2. Condense verbose entries
 3. Verify remaining content is current and accurate

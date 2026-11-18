@@ -1,0 +1,39 @@
+# Port registry — read by scripts/utils/check-ports.py (pre-commit guard).
+#
+# One line per file that names a port:   <port> <service> <repo-relative path>
+#
+# Rules the guard enforces:
+#   - a port belongs to exactly one service, and a service has exactly one port
+#   - a port literal in a file with no line here fails the commit
+#   - a line whose file no longer names that port fails the commit
+#
+# Adding a service: pick a port that does not appear below, then add a line for
+# every file that names it. Never reuse a number that is already listed.
+
+4569  dashboard          scripts/utils/dashboard.py
+
+4747  gitnexus           scripts/utils/dashboard.py
+
+5899  raindrop-workshop  scripts/setup/raindrop-setup.sh
+5899  raindrop-workshop  scripts/utils/dashboard.py
+
+8000  jeff-classifier    scripts/setup/jeff-setup.sh
+8000  jeff-classifier    templates/router.toml.template
+
+8787  headroom-proxy     scripts/setup/check-harness-deps.sh
+8787  headroom-proxy     scripts/setup/headroom-setup.sh
+8787  headroom-proxy     scripts/utils/dashboard.py
+
+8798  router-worker      scripts/router/sentinel.py
+8798  router-worker      scripts/router/server.py
+
+8799  router-sentinel    scripts/router/sentinel.py
+8799  router-sentinel    scripts/setup/check-harness-deps.sh
+8799  router-sentinel    scripts/setup/router-setup.sh
+8799  router-sentinel    templates/router.toml.template
+
+11434 ollama             scripts/utils/ollama_model_test.py
+
+8000  jeff-classifier    scripts/router/router-ctl.sh
+8798  router-worker      scripts/router/router-ctl.sh
+8799  router-sentinel    scripts/router/router-ctl.sh

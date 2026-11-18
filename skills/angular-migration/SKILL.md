@@ -1,430 +1,141 @@
 ---
 name: angular-migration
-description: "Migrate from AngularJS to Angular using hybrid mode, incremental component rewriting, and dependency injection updates. Use when upgrading AngularJS applications, planning framework migrations, or ..."
+description: "Migrate an AngularJS (1.x) app to modern Angular with ngUpgrade hybrid mode — bidirectional DI bridging, component downgrade/upgrade, and dual-router coexistence. Use when planning or executing an AngularJS-to-Angular migration, running both frameworks side by side, or debugging hybrid interop failures."
 risk: unknown
 source: community
 ---
 
-# Angular Migration
+# AngularJS → Angular Migration
 
-Master AngularJS to Angular migration, including hybrid apps, component conversion, dependency injection changes, and routing migration.
+Covers the part of migration that is actually hard: running both frameworks in one page
+while you move code across, and getting out again.
 
-## Use this skill when
+## Version facts (verified against the npm registry, 2026-10-22)
 
-- Migrating AngularJS (1.x) applications to Angular (2+)
-- Running hybrid AngularJS/Angular applications
-- Converting directives to components
-- Modernizing dependency injection
-- Migrating routing systems
-- Updating to latest Angular versions
-- Implementing Angular best practices
+- Current Angular: **v22** (`@angular/core@22.2.3`).
+- **`@angular/upgrade` is still published and versioned in lockstep — `22.2.3`.** ngUpgrade
+  is not abandoned; the hybrid path is still supported.
+- `angular@1.8.3` (AngularJS) is **formally deprecated on npm**: *"AngularJS support has
+  officially ended."* No security patches. This is the business case for the migration —
+  cite it, don't re-argue it.
 
-## Do not use this skill when
+Pin `@angular/upgrade` to the exact same version as `@angular/core`. A mismatched pair
+fails in ways that look like application bugs.
 
-- You are not migrating from AngularJS to Angular
-- The app is already on a modern Angular version
-- You need only a small UI fix without framework changes
+## Pick a strategy
 
-## Instructions
+| Strategy | Use when | Real cost |
+|---|---|---|
+| **Hybrid (ngUpgrade)** | Large app, must keep shipping | Both frameworks in the bundle for the whole migration; interop bugs |
+| **Rewrite alongside** | Small app, or AngularJS code is already being replaced | Two codebases to keep at feature parity until cutover |
+| **Vertical slice** | Clear feature boundaries, new work can go in Angular | Needs a route-level seam; still ngUpgrade under the hood |
 
-1. Assess the AngularJS codebase, dependencies, and migration risks.
-2. Choose a migration strategy (hybrid vs rewrite) and define milestones.
-3. Set up ngUpgrade and migrate modules, components, and routing.
-4. Validate with tests and plan a safe cutover.
+Avoid a big-bang cutover without a staging validation and a rollback path.
 
-## Safety
+## Hybrid bootstrap
 
-- Avoid big-bang cutovers without rollback and staging validation.
-- Keep hybrid compatibility testing during incremental migration.
-
-## Migration Strategies
-
-### 1. Big Bang (Complete Rewrite)
-- Rewrite entire app in Angular
-- Parallel development
-- Switch over at once
-- **Best for:** Small apps, green field projects
-
-### 2. Incremental (Hybrid Approach)
-- Run AngularJS and Angular side-by-side
-- Migrate feature by feature
-- ngUpgrade for interop
-- **Best for:** Large apps, continuous delivery
-
-### 3. Vertical Slice
-- Migrate one feature completely
-- New features in Angular, maintain old in AngularJS
-- Gradually replace
-- **Best for:** Medium apps, distinct features
-
-## Hybrid App Setup
+Hybrid bootstrap is still **NgModule-based**, even though standalone components are the
+default for new Angular code. `UpgradeModule` needs the module injector, so this file stays
+on `bootstrapModule` until AngularJS is fully gone. Components you *write* during migration
+can still be standalone — it is only the bootstrap that is constrained.
 
 ```typescript
-// main.ts - Bootstrap hybrid app
+// main.ts
 import { platformBrowserDynamic } from '@angular/platform-browser-dynamic';
 import { UpgradeModule } from '@angular/upgrade/static';
 import { AppModule } from './app/app.module';
 
 platformBrowserDynamic()
   .bootstrapModule(AppModule)
-  .then(platformRef => {
-    const upgrade = platformRef.injector.get(UpgradeModule);
-    // Bootstrap AngularJS
+  .then(ref => {
+    const upgrade = ref.injector.get(UpgradeModule);
+    // strictDi:true fails loudly on implicit DI annotations — turn it on NOW,
+    // while you still have AngularJS experts around. Minification breaks
+    // implicit annotations silently, and only in the production build.
     upgrade.bootstrap(document.body, ['myAngularJSApp'], { strictDi: true });
   });
 ```
 
-```typescript
-// app.module.ts
-import { NgModule } from '@angular/core';
-import { BrowserModule } from '@angular/platform-browser';
-import { UpgradeModule } from '@angular/upgrade/static';
+`AppModule` imports `UpgradeModule` and declares an empty `ngDoBootstrap()` — Angular must
+not bootstrap a root component itself, because AngularJS owns the DOM.
 
-@NgModule({
-  imports: [
-    BrowserModule,
-    UpgradeModule
-  ]
-})
-export class AppModule {
-  constructor(private upgrade: UpgradeModule) {}
+## Bridging DI in both directions
 
-  ngDoBootstrap() {
-    // Bootstrapped manually in main.ts
-  }
-}
-```
-
-## Component Migration
-
-### AngularJS Controller → Angular Component
-```javascript
-// Before: AngularJS controller
-angular.module('myApp').controller('UserController', function($scope, UserService) {
-  $scope.user = {};
-
-  $scope.loadUser = function(id) {
-    UserService.getUser(id).then(function(user) {
-      $scope.user = user;
-    });
-  };
-
-  $scope.saveUser = function() {
-    UserService.saveUser($scope.user);
-  };
-});
-```
+This is the core of ngUpgrade and the part worth keeping in context.
 
 ```typescript
-// After: Angular component
-import { Component, OnInit } from '@angular/core';
-import { UserService } from './user.service';
-
-@Component({
-  selector: 'app-user',
-  template: `
-    <div>
-      <h2>{{ user.name }}</h2>
-      <button (click)="saveUser()">Save</button>
-    </div>
-  `
-})
-export class UserComponent implements OnInit {
-  user: any = {};
-
-  constructor(private userService: UserService) {}
-
-  ngOnInit() {
-    this.loadUser(1);
-  }
-
-  loadUser(id: number) {
-    this.userService.getUser(id).subscribe(user => {
-      this.user = user;
-    });
-  }
-
-  saveUser() {
-    this.userService.saveUser(this.user);
-  }
-}
-```
-
-### AngularJS Directive → Angular Component
-```javascript
-// Before: AngularJS directive
-angular.module('myApp').directive('userCard', function() {
-  return {
-    restrict: 'E',
-    scope: {
-      user: '=',
-      onDelete: '&'
-    },
-    template: `
-      <div class="card">
-        <h3>{{ user.name }}</h3>
-        <button ng-click="onDelete()">Delete</button>
-      </div>
-    `
-  };
-});
-```
-
-```typescript
-// After: Angular component
-import { Component, Input, Output, EventEmitter } from '@angular/core';
-
-@Component({
-  selector: 'app-user-card',
-  template: `
-    <div class="card">
-      <h3>{{ user.name }}</h3>
-      <button (click)="delete.emit()">Delete</button>
-    </div>
-  `
-})
-export class UserCardComponent {
-  @Input() user: any;
-  @Output() delete = new EventEmitter<void>();
-}
-
-// Usage: <app-user-card [user]="user" (delete)="handleDelete()"></app-user-card>
-```
-
-## Service Migration
-
-```javascript
-// Before: AngularJS service
-angular.module('myApp').factory('UserService', function($http) {
-  return {
-    getUser: function(id) {
-      return $http.get('/api/users/' + id);
-    },
-    saveUser: function(user) {
-      return $http.post('/api/users', user);
-    }
-  };
-});
-```
-
-```typescript
-// After: Angular service
-import { Injectable } from '@angular/core';
-import { HttpClient } from '@angular/common/http';
-import { Observable } from 'rxjs';
-
-@Injectable({
-  providedIn: 'root'
-})
-export class UserService {
-  constructor(private http: HttpClient) {}
-
-  getUser(id: number): Observable<any> {
-    return this.http.get(`/api/users/${id}`);
-  }
-
-  saveUser(user: any): Observable<any> {
-    return this.http.post('/api/users', user);
-  }
-}
-```
-
-## Dependency Injection Changes
-
-### Downgrading Angular → AngularJS
-```typescript
-// Angular service
-import { Injectable } from '@angular/core';
-
-@Injectable({ providedIn: 'root' })
-export class NewService {
-  getData() {
-    return 'data from Angular';
-  }
-}
-
-// Make available to AngularJS
+// Angular service → usable from AngularJS
 import { downgradeInjectable } from '@angular/upgrade/static';
+angular.module('myApp').factory('newService', downgradeInjectable(NewService) as any);
 
-angular.module('myApp')
-  .factory('newService', downgradeInjectable(NewService));
+// Angular component → usable from an AngularJS template
+import { downgradeComponent } from '@angular/upgrade/static';
+angular.module('myApp').directive(
+  'appUserCard',
+  downgradeComponent({ component: UserCardComponent })
+);
+// NOTE: `inputs`, `outputs` and `selectors` are accepted but have been
+// @deprecated since v4 and are NOT used — verified in the v22.2.3 typings.
+// Bindings come from the component's own @Input/@Output metadata. Copying
+// an older snippet that passes them gives a false sense of wiring.
 
-// Use in AngularJS
-angular.module('myApp').controller('OldController', function(newService) {
-  console.log(newService.getData());
-});
+// AngularJS service → usable from Angular
+export const OLD_SERVICE = new InjectionToken<unknown>('oldService');
+
+// in AppModule providers:
+{ provide: OLD_SERVICE, useFactory: (i: any) => i.get('oldService'), deps: ['$injector'] }
 ```
 
-### Upgrading AngularJS → Angular
-```typescript
-// AngularJS service
-angular.module('myApp').factory('oldService', function() {
-  return {
-    getData: function() {
-      return 'data from AngularJS';
-    }
-  };
-});
+Rules that save time:
+- Downgraded components are AngularJS **directives** — match AngularJS naming
+  (`appUserCard` → `<app-user-card>`).
+- To avoid paying Angular's bootstrap cost up front, `downgradeModule()` bootstraps the
+  Angular side lazily, the first time a downgraded component is actually instantiated.
+  Worth it when only a few AngularJS routes use Angular so far.
+- A service must have exactly one owner. Two implementations bridged both ways means two
+  instances and two sources of truth.
+- Migrate **services before components**. Services have no template or change-detection
+  surface, so they port cleanly and shrink the next step.
 
-// Make available to Angular
-import { InjectionToken } from '@angular/core';
+## Routing: the decision people get wrong
 
-export const OLD_SERVICE = new InjectionToken<any>('oldService');
+Do not run both routers against the same URL. They will fight over `location` and you will
+get double navigations and lost history entries.
 
-@NgModule({
-  providers: [
-    {
-      provide: OLD_SERVICE,
-      useFactory: (i: any) => i.get('oldService'),
-      deps: ['$injector']
-    }
-  ]
-})
+Pick one:
+- **Keep the AngularJS router until the end** (simplest). Angular components mount inside
+  AngularJS routes as downgraded directives.
+- **Hand specific paths to the Angular router** using the router's `UrlHandlingStrategy` to
+  declare which URLs Angular owns and which it must ignore.
 
-// Use in Angular
-@Component({...})
-export class NewComponent {
-  constructor(@Inject(OLD_SERVICE) private oldService: any) {
-    console.log(this.oldService.getData());
-  }
-}
-```
+Switching routers and migrating components in the same PR is how migrations stall.
 
-## Routing Migration
+## Interop failures and what they mean
 
-```javascript
-// Before: AngularJS routing
-angular.module('myApp').config(function($routeProvider) {
-  $routeProvider
-    .when('/users', {
-      template: '<user-list></user-list>'
-    })
-    .when('/users/:id', {
-      template: '<user-detail></user-detail>'
-    });
-});
-```
+| Symptom | Cause |
+|---|---|
+| `$digest already in progress` | Angular code called into AngularJS outside the digest; use `$applyAsync` or let ngUpgrade's zone integration drive it |
+| Angular view does not update from an AngularJS callback | The change ran outside Angular's zone — re-enter via `NgZone.run()` |
+| Works in dev, DI fails in prod | Implicit DI annotation lost to minification — this is what `strictDi: true` catches |
+| Two instances of one service | The service was bridged in both directions |
+| Double navigation / lost history | Both routers are handling the same URL |
 
-```typescript
-// After: Angular routing
-import { NgModule } from '@angular/core';
-import { RouterModule, Routes } from '@angular/router';
+## Porting patterns
 
-const routes: Routes = [
-  { path: 'users', component: UserListComponent },
-  { path: 'users/:id', component: UserDetailComponent }
-];
+- Controller + `$scope` → component class with fields; `$scope.x = v` becomes `this.x = v`.
+- Directive with isolate scope → component: `scope: { user: '=' }` → `@Input() user`,
+  `onDelete: '&'` → `@Output() delete = new EventEmitter<void>()`.
+- `$http` → `HttpClient`. Note the semantic change: `$http` returns a **promise** (eager,
+  one shot), `HttpClient` returns a **cold Observable** that does nothing until subscribed
+  and re-fires the request on every subscribe. Code that subscribed twice to "reuse" a
+  response now issues two requests.
+- `ng-model` form → prefer **reactive forms** (`FormBuilder`/`formControlName`) over
+  template-driven; validation becomes testable without a DOM.
+- Type as you port. Carrying `any` across the boundary forfeits the main reason to migrate.
 
-@NgModule({
-  imports: [RouterModule.forRoot(routes)],
-  exports: [RouterModule]
-})
-export class AppRoutingModule {}
-```
+## Exit criteria
 
-## Forms Migration
-
-```html
-<!-- Before: AngularJS -->
-<form name="userForm" ng-submit="saveUser()">
-  <input type="text" ng-model="user.name" required>
-  <input type="email" ng-model="user.email" required>
-  <button ng-disabled="userForm.$invalid">Save</button>
-</form>
-```
-
-```typescript
-// After: Angular (Template-driven)
-@Component({
-  template: `
-    <form #userForm="ngForm" (ngSubmit)="saveUser()">
-      <input type="text" [(ngModel)]="user.name" name="name" required>
-      <input type="email" [(ngModel)]="user.email" name="email" required>
-      <button [disabled]="userForm.invalid">Save</button>
-    </form>
-  `
-})
-
-// Or Reactive Forms (preferred)
-import { FormBuilder, FormGroup, Validators } from '@angular/forms';
-
-@Component({
-  template: `
-    <form [formGroup]="userForm" (ngSubmit)="saveUser()">
-      <input formControlName="name">
-      <input formControlName="email">
-      <button [disabled]="userForm.invalid">Save</button>
-    </form>
-  `
-})
-export class UserFormComponent {
-  userForm: FormGroup;
-
-  constructor(private fb: FormBuilder) {
-    this.userForm = this.fb.group({
-      name: ['', Validators.required],
-      email: ['', [Validators.required, Validators.email]]
-    });
-  }
-
-  saveUser() {
-    console.log(this.userForm.value);
-  }
-}
-```
-
-## Migration Timeline
-
-```
-Phase 1: Setup (1-2 weeks)
-- Install Angular CLI
-- Set up hybrid app
-- Configure build tools
-- Set up testing
-
-Phase 2: Infrastructure (2-4 weeks)
-- Migrate services
-- Migrate utilities
-- Set up routing
-- Migrate shared components
-
-Phase 3: Feature Migration (varies)
-- Migrate feature by feature
-- Test thoroughly
-- Deploy incrementally
-
-Phase 4: Cleanup (1-2 weeks)
-- Remove AngularJS code
-- Remove ngUpgrade
-- Optimize bundle
-- Final testing
-```
-
-## Resources
-
-- **references/hybrid-mode.md**: Hybrid app patterns
-- **references/component-migration.md**: Component conversion guide
-- **references/dependency-injection.md**: DI migration strategies
-- **references/routing.md**: Routing migration
-- **assets/hybrid-bootstrap.ts**: Hybrid app template
-- **assets/migration-timeline.md**: Project planning
-- **scripts/analyze-angular-app.sh**: App analysis script
-
-## Best Practices
-
-1. **Start with Services**: Migrate services first (easier)
-2. **Incremental Approach**: Feature-by-feature migration
-3. **Test Continuously**: Test at every step
-4. **Use TypeScript**: Migrate to TypeScript early
-5. **Follow Style Guide**: Angular style guide from day 1
-6. **Optimize Later**: Get it working, then optimize
-7. **Document**: Keep migration notes
-
-## Common Pitfalls
-
-- Not setting up hybrid app correctly
-- Migrating UI before logic
-- Ignoring change detection differences
-- Not handling scope properly
-- Mixing patterns (AngularJS + Angular)
-- Inadequate testing
+Migration is done when `@angular/upgrade` and `angular` are removed from `package.json`,
+not when the last component is converted. Until both are gone you are still shipping two
+frameworks. Delete the hybrid bootstrap, drop back to a normal (or standalone) bootstrap,
+and re-check bundle size — the drop is the deliverable to report.

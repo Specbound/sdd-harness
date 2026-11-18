@@ -1,0 +1,75 @@
+# model-mention-debt.txt — known-stale model mentions not yet paid down.
+# Read by scripts/utils/model-staleness.py. Lines here are COUNTED (debt_count),
+# not reported as new findings, so a model release surfaces as fresh [MODEL-STALE]
+# findings instead of drowning in this backlog. Same pattern as no-regex-debt.txt.
+#
+# Format: <repo-relative path> <mention>   or   <repo-relative path> *
+# Pay down by fixing the mention (prefer an alias) and deleting its line; the
+# report's debt_cleared list names lines that no longer match anything.
+# Seeded 2026-11-11 against the live lineup fable-5-2 / opus-5-5 / sonnet-5-5 / haiku-5-5.
+
+# --- Harness-authored, behavior-affecting: pay these first ---
+# Pricing constants: RTK/caveman $ estimates still use Sonnet 4.6 rates ($3/$15);
+# Sonnet 5.5 is $2/$10. The label map also has no entries for the 5.x models.
+scripts/utils/dashboard.py claude-haiku-4-5
+scripts/utils/dashboard.py claude-haiku-4-5-20251001
+scripts/utils/dashboard.py claude-opus-4-5
+scripts/utils/dashboard.py claude-opus-4-6
+scripts/utils/dashboard.py claude-opus-4-7
+scripts/utils/dashboard.py claude-opus-4-8
+scripts/utils/dashboard.py claude-sonnet-4-5
+scripts/utils/dashboard.py claude-sonnet-4-6
+scripts/utils/dashboard.py haiku 4.5
+scripts/utils/dashboard.py opus 4.5
+scripts/utils/dashboard.py opus 4.6
+scripts/utils/dashboard.py opus 4.7
+scripts/utils/dashboard.py opus 4.8
+scripts/utils/dashboard.py sonnet 4.5
+scripts/utils/dashboard.py sonnet 4.6
+# Output-price prefix table has no 5.x prefixes.
+hooks/global/caveman-stats.js claude-3-5-haiku
+hooks/global/caveman-stats.js claude-3-5-sonnet
+hooks/global/caveman-stats.js claude-3-opus
+hooks/global/caveman-stats.js claude-haiku-4
+hooks/global/caveman-stats.js claude-opus-4
+hooks/global/caveman-stats.js claude-sonnet-4
+hooks/global/caveman-stats.js claude-sonnet-4-20250514
+hooks/global/caveman-stats.js claude-sonnet-4-7
+# Usage examples in the docstring.
+scripts/skill-eval-staleness.py claude-opus-5
+# Cache-minimum table lists no current models.
+skills/context-optimization/SKILL.md haiku 3.5
+skills/context-optimization/SKILL.md opus 4.5
+skills/context-optimization/SKILL.md opus 4.6
+skills/context-optimization/SKILL.md opus 4.8
+skills/context-optimization/SKILL.md sonnet 4.5
+skills/context-optimization/SKILL.md sonnet 5
+
+# --- Vendored/third-party skills: code examples pinned to old IDs ---
+skills/ai-wrapper-product/SKILL.md claude-3-haiku
+skills/ai-wrapper-product/SKILL.md claude-3-haiku-20240307
+skills/cc-skill-project-guidelines-example/SKILL.md claude-sonnet-4-5-20250514
+skills/cma-advisor/SKILL.md claude-opus-4-8
+skills/cma-advisor/SKILL.md claude-sonnet-4-6
+skills/cma-outcomes/SKILL.md claude-sonnet-4-6
+skills/computer-use-agents/SKILL.md claude-sonnet-4-20250514
+skills/computer-use-agents/SKILL.md opus 4.5
+skills/crypto-bd-agent/SKILL.md haiku 4.5
+skills/crypto-bd-agent/SKILL.md opus 4.5
+skills/github-workflow-automation/SKILL.md claude-3-sonnet-20240229
+skills/llm-app-patterns/SKILL.md claude-3-sonnet
+skills/llm-application-dev-langchain-agent/SKILL.md claude-sonnet-4-5
+skills/llm-application-dev-langchain-agent/SKILL.md sonnet 4.5
+skills/loki-mode/README.md opus 4.5
+skills/loki-mode/SKILL.md haiku 4.5
+skills/loki-mode/SKILL.md opus 4.7
+skills/loki-mode/SKILL.md sonnet 4.6
+skills/loki-mode/autonomy/run.sh sonnet 4.5
+skills/loki-mode/references/lab-research-patterns.md opus 4
+skills/loki-mode/references/lab-research-patterns.md sonnet 4
+skills/mcp-builder/reference/evaluation.md claude-3-7-sonnet-20250219
+skills/mcp-builder/scripts/evaluation.py claude-3-5-sonnet-20241022
+skills/mcp-builder/scripts/evaluation.py claude-3-7-sonnet-20250219
+skills/rl-agent-training/skill.md claude-sonnet-4-5
+skills/setup-agent-replay/SKILL.md claude-sonnet-4-20250514
+skills/voice-ai-engine-development/references/provider_comparison.md claude-3-opus

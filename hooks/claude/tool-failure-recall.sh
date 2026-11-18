@@ -1,4 +1,5 @@
 #!/bin/bash
+# purpose: Before a Bash or MCP call, warns if the same command shape has failed repeatedly before.
 # Tool-failure recall hook — PreToolUse (matcher: Bash|mcp__.*), SOFT gate.
 #
 # Before a Bash/MCP call runs, computes the same signature as the capture hook
