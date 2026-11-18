@@ -3,9 +3,10 @@
 # are stubbed, so no network and no LLM run. Run: bash scripts/routines/code-review-learning-runner.test.sh
 
 set -u
-HERE="$(cd "$(dirname "$0")" && pwd)"
-RUNNER="$HERE/code-review-learning-runner.sh"
-PROMPT="$HERE/code-review-learning-prompt.md"
+__here="$(cd -P "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
+. "$__here/../lib/resolve-harness-dir.sh" || exit 1
+RUNNER="$HARNESS_DIR/scripts/routines/code-review-learning-runner.sh"
+PROMPT="$HARNESS_DIR/scripts/routines/code-review-learning-prompt.md"
 ROOT="$(mktemp -d "${TMPDIR:-/tmp}/crl-test.XXXXXX")"
 trap 'rm -rf "$ROOT"' EXIT
 
