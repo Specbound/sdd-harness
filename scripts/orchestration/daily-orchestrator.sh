@@ -203,6 +203,24 @@ run_one() {
     rm -f "$tf_errbuf"
   fi
 
+  # Housekeeping — full /kiro:housekeeping (hot-memory prune + staleness check,
+  # observation archive, cap checks). The nightly daily-maintenance step only archives
+  # observations, so nothing pruned hot-memory until it outgrew prompt-hook.sh's
+  # inline budget (2026-11-18). Self-paces to weekly (MIN_GAP_DAYS=7) and runs only
+  # in an active repo (commit or Claude session in 14d, or hot-memory over its byte
+  # cap). Applies to every repo. Opt out with SDD_SKIP_HOUSEKEEPING=1.
+  if [ "${SDD_SKIP_HOUSEKEEPING:-0}" != "1" ] && [ -f "$repo/.claude/scripts/routines/housekeeping-runner.sh" ]; then
+    local hk_start=$(date +%s)
+    local hk_errbuf; hk_errbuf=$(mktemp)
+    (cd "$repo" && run_bounded bash .claude/scripts/routines/housekeeping-runner.sh) > /dev/null 2>"$hk_errbuf" < /dev/null
+    local hk_exit=$?
+    echo "$ts $repo housekeeping exit=$hk_exit duration=$(($(date +%s) - hk_start))s" >> "$LOG_FILE"
+    if [ "$hk_exit" -ne 0 ] && [ -s "$hk_errbuf" ]; then
+      { echo "--- $ts $repo housekeeping (exit=$hk_exit) ---"; cat "$hk_errbuf"; } >> "$ERR_LOG"
+    fi
+    rm -f "$hk_errbuf"
+  fi
+
   # Code-review learning sweep — compares pr-babysit's logged reviews against real
   # human review activity on merged PRs, promotes low-risk findings into memory, and
   # reports higher-risk methodology changes for human approval. Cheaply no-ops unless
