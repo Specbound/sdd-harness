@@ -87,11 +87,13 @@ curl -s -o /dev/null -w '%{http_code}\n' -X POST http://127.0.0.1:8799/v1/messag
   -H 'Content-Type: application/json' -d '{}'          # any HTTP answer = front door alive (only while a wired session is open)
 
 bash scripts/setup/check-harness-deps.sh                # router sentinel / router worker / router routing rows
-python3 scripts/utils/dashboard.py                       # Router layer: Net Saving, routed/fallback, per-lane/model
+python3 scripts/utils/dashboard.py                       # Router layer: Net Saving, tokens rerouted, per-route table
 tail -5 ~/.sdd-router/ledger.jsonl                       # per-request routing decisions
 ```
 
 `check-harness-deps.sh` reports health (is the chain wired); the dashboard's Router layer reports whether being wired is worth anything (Net Saving, priced through the same pricing history the other savings layers use). The layer renders dimmed when `~/.sdd-router/stats.json` is absent, which is the uninstalled state, not a failure.
+
+Since 2026-11-17 every ledger row also carries the call's prompt-cache usage (`cache_read_tokens`, `cache_creation_tokens`, `cache_creation_1h_tokens`, harvested from Anthropic's `usage` by `stream.py`'s `cache_fields`) plus the baseline model's counterfactual cache counts (`baseline_cache_*`). The counterfactual rule lives in one place, `ledger.py`'s `counterfactual_cache_tokens`: an unrouted call's baseline is what was billed; a rerouted call's cache writes are counted as baseline cache *reads* (the requested model is assumed to already hold the prefix), so the reported saving is a lower bound. The dashboard's dollars and token counts come from the ledger, not `stats.json`: a **Router Routes** table shows one row per (requested → used) route with input, output, cache read/write, cost as requested, cost as routed and saved. Costs are the full bill including cache (1-hour writes at 2× input). Rows logged before 2026-11-17 carry no cache tokens and are counted but excluded from costs. Routing never shrinks a request, so the card reports **tokens rerouted**, not tokens saved, and the pipeline's total-tokens-saved figure gets nothing from this layer.
 
 ## jeff's API Key Wiring
 

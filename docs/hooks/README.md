@@ -7,6 +7,10 @@ Hook output is injected into Claude's context as system messages — Claude read
 
 > `.claude/settings.json` must be strict JSON: no comments, nothing after the closing brace. Claude Code drops a malformed file whole and silently, so **every** hook below stops firing while the session looks normal. Keep notes in the `.claude/settings.notes.md` sidecar, and check a file with `scripts/setup/check-settings-json.sh .claude/settings.json`. `install.sh` and `update.sh` validate the templates and repair legacy comment-broken files automatically.
 
+> **Installed settings wrap every hook in a run logger.** Claude Code writes a hook run into the transcript only when the hook prints something, so a guard that exits 0 quietly was indistinguishable from one that never ran. `install.sh`/`update.sh` now run `scripts/setup/wrap-hook-commands.py`, which rewrites each simple hook command in a project's `.claude/settings.json`/`settings.local.json` (and the harness's own generated settings) to `bash "${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/_run-hook.sh" <original command>`. `_run-hook.sh` passes the same stdin, cwd and environment through, returns the wrapped command's stdout, stderr and exit code unchanged, prints nothing of its own, and appends one JSON line per run (`ts, hook, event, tool, session, exit, ms`) to `.claude/logs/hook-runs.jsonl` in the background — `ms` is `null` under bash < 5 (no `EPOCHREALTIME`). Commands with shell operators, substitution or a leading `VAR=` assignment are left unwrapped; the templates themselves stay unwrapped; `--unwrap` restores the originals. `SDD_HOOK_LOG=0` disables logging. The dashboard's Hooks tab reads the log to show every run (silent ones included), blocks, errors and the triggering tools. Tests: `hooks/claude/_run-hook.test.sh`, `scripts/setup/wrap-hook-commands.test.sh`.
+
+> **Hooks added to the template later now get registered.** `install.sh` writes `settings.json` once, while `update.sh` re-copies every hook *file*, so template hooks added after install used to be copied but never wired. Both installers now run `scripts/setup/sync-hook-registrations.py` (before the wrap step) to add any registration the project is missing — template command verbatim, settings.json created if absent, never removing or reordering, `settings.local.json` untouched. Offers are recorded in `.claude/.hook-offers.json`, so a hook the project removed stays removed. Tests: `scripts/setup/sync-hook-registrations.test.sh`.
+
 **Hook types used in this harness:**
 
 | Type | When it fires |
@@ -67,7 +71,7 @@ Hook output is injected into Claude's context as system messages — Claude read
 ### `stop-hook.sh`
 **Event:** `Stop` — **Matcher:** _(all sessions)_
 
-**Purpose:** Nine end-of-session health checks, all lightweight:
+**Purpose:** End-of-session health checks, all lightweight:
 
 1. **Harness update check** — compares the harness repo’s latest commit timestamp to `.claude/.last-harness-check`. Prints a `Run: update.sh` nudge if the harness has changes since last install.
 2. **Memory health** — counts entries in `observations.md`. If >50, suggests `/kiro:housekeeping` to prune before the file bloats.
@@ -78,6 +82,8 @@ Hook output is injected into Claude's context as system messages — Claude read
 7. **learnings.jsonl promoter** — deterministic fallback for `reflect-agent`'s Step 6 (a prose instruction that attention decays on, so the file was never actually created). Once per day, ranks today's `observations.md` entries by tag priority (`judge` > `skill-update` > `skill-update-flagged`/`-repair` > `seed-target` > `memory-gap` > `loop-debt` > `stale-action-item`, else skipped as noise) and appends the top-ranked one as a JSON line to `.claude/memory/learnings.jsonl`. Skips if `reflect-agent` already wrote a curated entry for today — the human/LLM-curated entry always wins.
 8. **Stale action-item escalator** — parses `.claude/memory/action-items.md`’s `- [ ] <desc> | due:YYYY-MM-DD` format and, once per day, appends a `[stale-action-item]` observation for the most-overdue item. Action-item due-dates were never mechanically checked before this — items sat silently past due until a human happened to re-read the file.
 9. **Cache-cost dominance nudge** — reads `transcript_path` from the Stop hook’s stdin JSON, parses the transcript for `cache_read_input_tokens`/`cache_creation_input_tokens`/`input_tokens`/`output_tokens` and any `isCompactSummary`/`compactMetadata` marker. If cache tokens are ≥70% of the session total *and* the session compacted at least once, appends a `[cache-cost]` observation (once per day) and automatically invokes `scripts/session/write_handoff.py --trigger cache-cost` to write a resumable handoff snapshot to `.claude/memory/handoff/latest.md` — unconditionally, not gated on the user noticing a warning.
+10. **Hook run log cap** — `_run-hook.sh` appends one line per hook run to `.claude/logs/hook-runs.jsonl`, so the log grows with every tool call. Trims it to the newest `SDD_HOOK_LOG_MAX_LINES` lines (default 20000). A line appended mid-trim can be lost — the log answers "did it run", it is not an audit trail.
+11. **Loop-debt detection** — emits a once-per-day `[loop-debt]` observation when skill updates ran ≥3 days ago with no `[session-charge]` since. Interactive sessions only: skipped when `SDD_HEADLESS=1`, because a routine has no human in it, so "the human never engaged" is true by construction — on an idle day the nightly routine's own Stop emitted it and trust_score charged -1 for a window session-quality had already scored idle.
 
 **Why it’s needed:** Session-end is the only consistent window to look back at what happened without adding latency to the conversation. These checks surface problems that accumulate across sessions rather than within them. Session depth tracking gives the dashboard a lightweight signal for context load without requiring transcript analysis. Setup sequence capture ensures environment bootstrap steps are never lost — they are captured automatically without requiring Claude to remember to save them. The learnings promoter and stale-action-item escalator close two gaps where memory files existed in spec/skill instructions but had no deterministic writer, so they sat empty indefinitely.
 
@@ -565,7 +571,7 @@ Plus a discovery-before-eval pointer: read `~/.claude/skill-library/active-obser
 
 **Outputs:** Appends one JSON line to `.claude/memory/caveman-savings.jsonl` (`ts`, `mode`, `method`, `actual_tokens`, `baseline_tokens`, `saved_tokens`, `saved_pct`). Exits silently (no-op) if Caveman isn't active, `jq`/`claude` aren't on PATH, today's sample already ran (`.claude/memory/.last-caveman-savings-run`), or the transcript/expansion call comes back empty.
 
-**Consumed by:** `scripts/utils/dashboard.py`'s `_read_caveman_savings()`, which feeds the Caveman layer in the dashboard's Budget & Efficiency → Compression Pipeline view and folds its estimated $ savings (at the Sonnet 4.6 *output* rate, ~$15/M, since this is response-side savings) into the combined-savings total alongside RTK and lean-ctx.
+**Consumed by:** `scripts/utils/dashboard.py`'s `_read_caveman_savings()`, which feeds the Caveman layer in the dashboard's Budget & Efficiency → Compression Pipeline view and folds its estimated $ savings (at the *output* rate of the newest Sonnet in the models.dev pricing snapshot, since this is response-side savings; not estimated when the snapshot has no Sonnet price) into the combined-savings total alongside RTK and lean-ctx.
 
 **Location:** ships in `hooks/claude/`; wired via `Stop` (all turns) in `templates/settings.harness.json.template` (harness-only for now — not shipped to consumer repos via `templates/settings.json.template`).
 
@@ -1064,12 +1070,12 @@ denies `git push*` outright where projects only deny force-push.
 1. Write the script to the harness source at `hooks/claude/<name>.sh` — **not** to an installed `.claude/hooks/` copy, which `update.sh` overwrites. `install.sh`/`update.sh` propagate every `hooks/claude/*.sh` to every project automatically and `chmod +x` it; no per-hook edit to the installers is needed.
 2. Add the wiring entry to `templates/settings.json.template` so the hook ships everywhere, and to the local `.claude/settings.json` so it fires this session.
 3. Document it in this file (the `hook-added-notify.sh` hook will remind you if you forget).
-4. Update the Wiring Reference table above.
+4. Update the Wiring Reference table above. Existing projects pick the new registration up on their next `update.sh` (via `sync-hook-registrations.py`), and it is wrapped by the run logger automatically — no `_run-hook.sh` prefix belongs in the template.
 5. For any hook that blocks, or whose matching logic is non-trivial, add `hooks/claude/<name>.test.sh` with both block *and* allow cases. Files matching `*.test.sh` are skipped by the installers' copy loop, so they stay in the harness repo and never ship as runtime hooks. Run them with `bash hooks/claude/<name>.test.sh`.
 
 **Matching rule for any guard hook:** parse the command into its structure (argv via `shlex`, URLs via a URL parser) and compare tokens exactly. Do not substring- or regex-match the rendered command text — that is defeated by re-rendering the same value, and `git-destructive-guard-hook.sh` shipped with exactly that bug until 2026-08-25.
 
 **No regex, continued (2026-09-30).** `prompt-quality-check.sh` was rewritten off `re` onto the same literal-token pattern: the prompt is tokenized to lowercase words (apostrophes stay inside a word, every other non-alphanumeric character separates, so `double-check` is the two tokens `double check`) and phrases are matched on token boundaries. The rewrite was verified score-identical to the regex version on 94 real Agent prompts, and it added two anti-patterns — `think-instruction` and `show-reasoning-request`. `scripts/routines/startup-payload-audit.sh` lost its `@import` regex the same day in favour of a line-prefix parser. Both are off `scripts/utils/no-regex-debt.txt`; `action-capture.sh` and `stop-hook.sh` are the remaining hooks that regex-parse free text.
 
-_Last synced: 2026-11-12_
+_Last synced: 2026-11-18_
 
